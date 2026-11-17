@@ -61,6 +61,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -1215,12 +1216,46 @@ function rmePaymentDisplayedView(RmeInvoice $invoice, array $data = []): array
  */
 function rmeSignedConsentFor(ClinicVisit $visit): RmeVisitConsent
 {
-    return RmeVisitConsent::factory()->create([
+    $consent = RmeVisitConsent::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,
         'doctor_id' => $visit->doctor_id,
         'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien',
+    ]);
+
+    // DMS memo M1.1–M1.3 PR2 (rule 241 §2) — a "signed consent" fixture means
+    // an EXECUTED one: the patient's signature AND the treating doctor's
+    // countersignature, which together open clinical writing. Tests about the
+    // two-signature gate build their state through the services instead
+    // (RmeVisitConsentTwoSignatureGateTest, RmeOdontogramTwoSignatureGateTest).
+    rmeDoctorCountersignatureFor($consent);
+
+    return $consent;
+}
+
+/**
+ * DMS memo M1.1–M1.3 PR2 (rule 241 §2) — FIXTURE: give a consent the treating
+ * doctor's countersignature row directly, for tests whose subject is not the
+ * countersignature (it writes no image object and no audit row). The doctor is
+ * the consent's own; its linked account signs, else a fresh account stands in.
+ * Tests about the countersignature itself use
+ * RmeVisitConsentService::countersign() (RmeVisitConsentDoctorCountersignTest).
+ */
+function rmeDoctorCountersignatureFor(RmeVisitConsent $consent): RmeVisitConsentDoctorSignature
+{
+    $doctor = $consent->doctor_id !== null ? Doctor::query()->find($consent->doctor_id) : null;
+    $doctor ??= Doctor::factory()->create();
+
+    return RmeVisitConsentDoctorSignature::query()->create([
+        'rme_visit_consent_id' => $consent->id,
+        'doctor_id' => $doctor->id,
+        // The doctor's own account; else any account already on the consent;
+        // only then a fresh one (concurrency suites clean users by watermark).
+        'signed_by' => $doctor->user_id ?? $consent->signed_by ?? User::factory()->create()->id,
+        'signature_path' => 'rme-consents/'.$consent->consent_number.'/doctor-countersign-fixture.png',
+        'signature_sha256' => str_repeat('0', 64),
+        'signed_at' => $consent->signed_at,
     ]);
 }
 

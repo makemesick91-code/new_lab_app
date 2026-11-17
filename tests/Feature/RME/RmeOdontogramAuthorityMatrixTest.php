@@ -99,7 +99,8 @@ it('refuses a FIRST chart before attempting the insert, not by rolling it back',
     expect(odmRefused(fn () => app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser)))->toBeTrue()
         ->and($attempts)->toBe(0);
 
-    app(OdontogramService::class)->saveForVisit(odmVisit(ClinicVisit::STATUS_IN_PROGRESS), odmPayload(), $this->doctorUser);
+    // Rule 241 §2 — the positive control needs the EXECUTED consent.
+    app(OdontogramService::class)->saveForVisit(rmeActiveConsentedEncounter(odmVisit(ClinicVisit::STATUS_IN_PROGRESS)), odmPayload(), $this->doctorUser);
     expect($attempts)->toBe(1);
 })->with($closedStatuses);
 
@@ -121,11 +122,22 @@ it('refuses a REVISION outside a live encounter and leaves the chart unchanged',
         ->and($chart->fresh()->tooth_map_payload)->toBe($before);
 })->with($closedStatuses);
 
-it('allows first save, revision and finalize on an in-progress encounter with and without consent', function (bool $signed) {
+// FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2): was 'allows first save,
+// revision and finalize on an in-progress encounter with and without consent'.
+// The unsigned row is now refused; the executed row is allowed.
+it('allows first save, revision and finalize on an in-progress encounter only with the executed consent', function (bool $signed) {
     $visit = odmVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     if ($signed) {
         rmeSignedConsentFor($visit);
+    }
+
+    if (! $signed) {
+        expect(odmRefused(fn () => app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser)))->toBeTrue()
+            ->and(Odontogram::query()->where('clinic_visit_id', $visit->id)->exists())->toBeFalse()
+            ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeFalse();
+
+        return;
     }
 
     $chart = app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser);
@@ -134,11 +146,14 @@ it('allows first save, revision and finalize on an in-progress encounter with an
 
     expect($chart->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED)
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
-        ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBe($signed);
+        ->and(app(RmeVisitConsentService::class)->hasExecutedConsent($visit->fresh()))->toBeTrue();
 })->with(['consent unsigned' => [false], 'consent signed' => [true]]);
 
-it('keeps a finalized chart revisable on an UNSIGNED live encounter', function () {
-    $visit = odmVisit(ClinicVisit::STATUS_IN_PROGRESS);
+// FLIPPED (rule 241 §2): was 'keeps a finalized chart revisable on an UNSIGNED
+// live encounter'. A finalized chart stays revisable (Sprint 59) — on the
+// executed consent; on an unsigned encounter the revision is refused.
+it('keeps a finalized chart revisable on an EXECUTED live encounter, and refuses it unsigned', function () {
+    $visit = rmeActiveConsentedEncounter(odmVisit(ClinicVisit::STATUS_IN_PROGRESS));
     $chart = app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser);
     app(OdontogramService::class)->finalize($chart, $this->doctorUser);
 
@@ -148,8 +163,14 @@ it('keeps a finalized chart revisable on an UNSIGNED live encounter', function (
         $this->doctorUser,
     );
 
-    expect($chart->fresh()->tooth_map_payload['teeth'])->toHaveKey('21')
-        ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeFalse();
+    expect($chart->fresh()->tooth_map_payload['teeth'])->toHaveKey('21');
+
+    $unsigned = odmVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    $visit->forceFill(['status' => ClinicVisit::STATUS_COMPLETED])->save();
+    $finalized = Odontogram::factory()->create(['clinic_visit_id' => $unsigned->id, 'branch_id' => $unsigned->branch_id, 'status' => Odontogram::STATUS_FINALIZED]);
+
+    expect(odmRefused(fn () => app(OdontogramService::class)->updatePlaceholder($finalized, odmPayload(), $this->doctorUser)))->toBeTrue()
+        ->and(app(RmeVisitConsentService::class)->hasValidConsent($unsigned->fresh()))->toBeFalse();
 });
 
 it('renders the structured odontogram print template with table layout only, never flexbox or grid', function () {

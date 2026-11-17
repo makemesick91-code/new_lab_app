@@ -197,6 +197,9 @@ it('C2-02 refuses the doctor authoring the RME of a consented encounter in anoth
 
 it('C2-03 refuses the doctor charting the odontogram of a consented encounter in another room', function () {
     rmeActiveConsentedEncounter($this->visitB);
+    // Rule 241 §2 — the positive control (the doctor's own room) needs the
+    // executed consent too since pre-consent charting ended.
+    rmeActiveConsentedEncounter($this->visitA);
 
     $service = app(RmeVisitConsentService::class);
 

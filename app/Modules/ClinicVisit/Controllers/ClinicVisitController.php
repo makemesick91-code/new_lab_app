@@ -130,14 +130,25 @@ class ClinicVisitController extends Controller
         }
 
         $visits = $this->visits->roomWorklist($request->user(), $filters);
+        $countersignOutlook = $consents->countersignOutlookFor($request->user(), $visits->getCollection());
 
         return view('rme.visits.room-worklist', [
             'roomScoped' => $roomScoped,
             'visits' => $visits,
-            // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — "Tanda Tangani PTM": the
-            // live consents this account may countersign now, keyed by visit id,
-            // decided by the consent service (never in Blade).
-            'countersignableConsents' => $consents->countersignableConsentsFor($request->user(), $visits->getCollection()),
+            // DMS memo M1.1–M1.3 (rule 241 §1, §3) — "Tanda Tangani PTM": for the
+            // doctor's own in-progress visits, the live consent awaiting the
+            // countersignature and why it may not be signed now (null when it
+            // may), keyed by visit id; plus the PTM state of every in-progress
+            // row. Decided by the consent service, never in Blade.
+            'countersignableConsents' => array_map(
+                fn (array $row) => $row['consent'],
+                array_filter($countersignOutlook, fn (array $row): bool => $row['refusal'] === null),
+            ),
+            'countersignSelfCaptured' => array_filter(
+                array_map(fn (array $row): ?string => $row['refusal'], $countersignOutlook),
+                fn (?string $refusal): bool => $refusal === RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF,
+            ),
+            'ptmStates' => $consents->ptmStatesFor($visits->getCollection()),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)
@@ -153,7 +164,7 @@ class ClinicVisitController extends Controller
      * branch set, including patients with and without an assigned treatment room.
      * Reuses the Sprint 58.6 assign-room route for the per-row room selector.
      */
-    public function patientQueue(Request $request): View
+    public function patientQueue(Request $request, RmeVisitConsentService $consents): View
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
@@ -169,8 +180,13 @@ class ClinicVisitController extends Controller
             $filters['branch_id'] = null;
         }
 
+        $visits = $this->visits->registeredQueue($request->user(), $filters);
+
         return view('rme.patient-queue.index', [
-            'visits' => $this->visits->registeredQueue($request->user(), $filters),
+            'visits' => $visits,
+            // DMS memo M1.1–M1.3 PR2 (rule 241 §3) — the PTM state of every
+            // in-progress row (awaiting patient / awaiting doctor / complete).
+            'ptmStates' => $consents->ptmStatesFor($visits->getCollection()),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
@@ -396,7 +412,33 @@ class ClinicVisitController extends Controller
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no
             // prior visit, so the page offers no "Buat Kontrol" from it.
             'canStartKontrolFromHere' => $clinicVisit->status !== ClinicVisit::STATUS_CANCELLED,
-        ]);
+        ] + $this->ptmPresentationFor($clinicVisit));
+    }
+
+    /**
+     * DMS memo M1.1–M1.3 PR2 (rule 241 §3; MEMO-F5) — the visit page's PTM
+     * facts, decided here rather than by service calls in Blade: the state, the
+     * live consent, whether "Selesai Pemeriksaan" may be offered (EXECUTED
+     * consent) and, for the treating doctor, the consent to countersign or the
+     * reason they cannot. Presentation only; the services decide every write.
+     *
+     * @return array<string, mixed>
+     */
+    private function ptmPresentationFor(ClinicVisit $clinicVisit): array
+    {
+        $consents = app(RmeVisitConsentService::class);
+        $consent = $consents->validConsentFor($clinicVisit);
+        $outlook = $consent !== null
+            ? ($consents->countersignOutlookFor(request()->user(), [$clinicVisit])[(int) $clinicVisit->getKey()] ?? null)
+            : null;
+
+        return [
+            'ptmState' => $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS ? $consents->ptmStateFor($clinicVisit) : null,
+            'visitConsent' => $consent,
+            'examinationConsentExecuted' => $consents->hasExecutedConsent($clinicVisit),
+            'countersignConsent' => $outlook !== null && $outlook['refusal'] === null ? $outlook['consent'] : null,
+            'countersignRefusal' => $outlook['refusal'] ?? null,
+        ];
     }
 
     private function recordAuthorableHere(ClinicVisit $clinicVisit): bool

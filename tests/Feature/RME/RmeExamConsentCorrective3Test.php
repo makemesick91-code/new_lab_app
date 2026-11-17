@@ -13,6 +13,11 @@
 //     "Selesai Pemeriksaan" (explicit, authorized) -> cashier_pending
 //     -> and only then is the visit billable.
 //
+// RESTORED by DMS memo M1.1–M1.3 PR2 (rule 241 §2, owner decision 2026-11-17):
+// the active odontogram again waits for consent — now the EXECUTED consent
+// (patient + treating doctor countersignature). The odontogram cases below that
+// the pre-consent revision had flipped are flipped back (kept, never deleted).
+//
 // PARTIALLY SUPERSEDED by REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1.
 // CORRECTIVE-03 also made a signed consent a precondition of authoring the
 // ACTIVE ODONTOGRAM. That clause is withdrawn: charting teeth is observation,
@@ -108,53 +113,56 @@ it('lets an authorized doctor VIEW the active odontogram while consent is unsign
         ->assertOk();
 });
 
-// REVISED by REVISION-...-PRECONSENT-EDIT-1: was 'denies active odontogram
-// mutation while consent is unsigned'. Charting is now permitted from
-// "Mulai Pemeriksaan"; the RME and finish gates below are untouched.
-it('allows active odontogram mutation while consent is unsigned', function () {
+// FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2, owner decision 2026-11-17):
+// was 'allows active odontogram mutation while consent is unsigned' (rule 134).
+// Charting now waits for the EXECUTED consent — the patient's signature and the
+// treating doctor's countersignature — like the RME beside it.
+it('denies active odontogram mutation while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
+    $before = $odontogram->tooth_map_payload;
 
-    app(OdontogramService::class)->updatePlaceholder($odontogram, c3ToothPayload(), $this->doctorUser);
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder($odontogram, c3ToothPayload(), $this->doctorUser))
+        ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect($odontogram->fresh()->tooth_map_payload)->toBe($before);
 });
 
-// REVISED: was 'denies active odontogram finalization while consent is unsigned'.
-it('allows active odontogram finalization while consent is unsigned', function () {
+// FLIPPED (rule 241 §2): was 'allows active odontogram finalization while consent is unsigned'.
+it('denies active odontogram finalization while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
-    app(OdontogramService::class)->finalize($odontogram, $this->doctorUser);
+    expect(fn () => app(OdontogramService::class)->finalize($odontogram, $this->doctorUser))
+        ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
-    // Finalizing a CHART is not finishing the EXAMINATION.
+    expect($odontogram->fresh()->status)->not->toBe(Odontogram::STATUS_FINALIZED);
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
-// REVISED: was 'denies a crafted odontogram PATCH while consent is unsigned'.
-// The request is no longer "crafted" — it is the ordinary save.
-it('accepts the odontogram PATCH while consent is unsigned', function () {
+// FLIPPED (rule 241 §2): was 'accepts the odontogram PATCH while consent is unsigned'.
+it('denies the odontogram PATCH while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
+    $before = $odontogram->tooth_map_payload;
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.odontograms.update', $odontogram), c3ToothPayload())
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasErrors('consent');
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect($odontogram->fresh()->tooth_map_payload)->toBe($before);
 });
 
-// REVISED: was 'denies a crafted odontogram finalize POST while consent is unsigned'.
-it('accepts the odontogram finalize POST while consent is unsigned', function () {
+// FLIPPED (rule 241 §2): was 'accepts the odontogram finalize POST while consent is unsigned'.
+it('denies the odontogram finalize POST while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->post(route('rme.odontograms.finalize', $odontogram))
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasErrors('consent');
 
-    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
+    expect($odontogram->fresh()->status)->not->toBe(Odontogram::STATUS_FINALIZED);
 });
 
 it('allows active odontogram authoring once consent is signed', function () {
@@ -175,17 +183,17 @@ it('allows active odontogram finalization once consent is signed', function () {
     expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
 });
 
-// REVISED: was 'shows the read-only notice on the odontogram page while consent
-// is unsigned'. The page now offers the save controls AND still names the
-// outstanding signature, because it continues to gate the RME and the finish.
-it('shows the pending-consent reminder alongside the save controls', function () {
+// FLIPPED (rule 241 §2–§3): was 'shows the pending-consent reminder alongside
+// the save controls'. The page stays readable and names the outstanding
+// signature, but no longer offers a save the server refuses (rule 135 mirror).
+it('names the pending consent instead of offering the save controls', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
-        ->assertSee('Simpan Odontogram');
+        ->assertDontSee('Simpan Odontogram');
 });
 
 /*

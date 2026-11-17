@@ -17,9 +17,11 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        <x-ui.alert variant="warning" title="Pembayaran menunggu persetujuan.">
-            Kasir belum dapat memproses pembayaran kunjungan ini sampai Surat Persetujuan Tindakan Medis
-            ditandatangani oleh pasien atau keluarga yang berhak.
+        {{-- Rule 241 §4 — consent gates clinical WRITING, never payment
+             (AIR-RMC-11); the old "payment waits" text was false. --}}
+        <x-ui.alert variant="warning" title="Rekam medis dan odontogram menunggu persetujuan.">
+            Rekam medis dan odontogram kunjungan ini baru dapat ditulis setelah Surat Persetujuan Tindakan
+            Medis ditandatangani oleh pasien atau keluarga yang berhak, lalu oleh dokter yang menangani.
         </x-ui.alert>
 
         @if ($errors->any())
@@ -157,23 +159,14 @@
                         @error('consenter_signature')<p class="mt-1 text-sm text-danger-700">{{ $message }}</p>@enderror
                     </div>
 
-                    <div>
-                        <div class="mb-2 flex items-center justify-between">
-                            <span class="text-sm font-semibold text-ink">Dokter (opsional)</span>
-                            <x-ui.button type="button" variant="secondary" id="clear-doctor-signature" class="min-h-[44px]">
-                                Bersihkan
-                            </x-ui.button>
-                        </div>
-                        <canvas id="doctor-signature-canvas" width="700" height="220"
-                                class="w-full touch-none rounded-lg border border-hairline bg-white"
-                                style="max-width:100%;height:auto;"></canvas>
-                        <input type="hidden" name="doctor_signature" id="doctor-signature-data">
-                        <p class="mt-1 text-xs text-ink-muted">
-                            Nama dokter penanggung jawab tetap tercantum pada surat meskipun tanda tangan dokter
-                            tidak diambil di sini.
-                        </p>
-                        @error('doctor_signature')<p class="mt-1 text-sm text-danger-700">{{ $message }}</p>@enderror
-                    </div>
+                    {{-- DMS memo M1.1–M1.3 PR2 (rule 241 §4) — the doctor no longer signs
+                         here. The treating doctor countersigns this consent from Ruang
+                         Perawatan ("Tanda Tangani PTM"); writing the RME and the
+                         odontogram waits for both signatures. --}}
+                    <p class="text-xs text-ink-muted" data-testid="consent-doctor-countersign-note">
+                        Dokter yang menangani menandatangani persetujuan ini dari Ruang Perawatan setelah
+                        disimpan. Rekam medis dan odontogram baru dapat ditulis setelah kedua tanda tangan lengkap.
+                    </p>
                 </div>
             </x-ui.card>
 
@@ -262,7 +255,6 @@
         }
 
         const consenter = initSignatureCanvas('consenter-signature-canvas', 'consenter-signature-data', 'clear-consenter-signature');
-        const doctor = initSignatureCanvas('doctor-signature-canvas', 'doctor-signature-data', 'clear-doctor-signature');
 
         // "Saya sendiri" copies the patient's own canonical identity server-side,
         // so the typed fields are hidden to avoid implying they are authoritative.
@@ -286,7 +278,6 @@
                 return;
             }
             if (consenter) consenter.hidden.value = consenter.serialize();
-            if (doctor) doctor.hidden.value = doctor.serialize();
         });
     })();
     </script>

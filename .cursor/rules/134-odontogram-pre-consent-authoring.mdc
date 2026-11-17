@@ -11,6 +11,14 @@ alwaysApply: false
 
 # ODONTOGRAM PRE-CONSENT AUTHORING FOUNDATION
 
+> **SUPERSEDED for WRITING by `241-rme-ptm-double-signature.mdc` §2 (DMS memo M1.1–M1.3 PR2, owner decision
+> 2026-11-17).** The active odontogram may be charted, revised and finalized only on an EXECUTED Persetujuan Tindakan
+> Medis (the patient's signature AND the treating doctor's countersignature), decided by
+> `assertOdontogramAuthoringAllowed()` on the visit row it locks first. Pre-consent charting ends. What stays from this
+> rule: one authority method; conditions 1–3 (live `in_progress` encounter, actor may work on it, the chart is that
+> encounter's); finalizing a chart never completes the examination (§5); history stays permanently read-only and
+> READING is never gated; no consent check in a controller, FormRequest, Blade or JS.
+
 REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — durable rules.
 
 This rule is **authoritative** over

@@ -305,10 +305,13 @@ class RoleSeeder extends Seeder
             'send_prescription_whatsapp',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
-            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
-            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — read the signed
+            // PERSETUJUAN TINDAKAN MEDIS. DMS memo M1.1–M1.3 PR2 (rule 241 §4;
+            // owner default 1, 2026-11-17): the Doctor no longer CAPTURES the
+            // patient's signature (`manage_rme_consents` removed) — the front
+            // office, Kasir and Admin Klinik do, Supervisor RME as fallback; the
+            // doctor countersigns instead.
             'view_rme_consents',
-            'manage_rme_consents',
             // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — countersign the PTM of the
             // doctor's own visit (identity, not role, is decided in the service).
             'countersign_rme_consents',

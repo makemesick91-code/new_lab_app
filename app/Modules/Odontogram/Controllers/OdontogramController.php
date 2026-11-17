@@ -4,6 +4,7 @@ namespace App\Modules\Odontogram\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
@@ -134,17 +135,24 @@ class OdontogramController extends Controller
         $odontogramAuthoringAllowed = $consents->canAuthorOdontogramFor($clinicVisit, $request->user());
 
         /*
-         * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — an unsigned consent
-         * no longer blocks THIS page, so the old "you may not chart yet" warning
-         * would now be false. It is replaced by what is still true: the signature
-         * is outstanding, and it still gates the RME and "Selesai Pemeriksaan".
-         *
-         * Saying so here is not decoration. The doctor can now complete the whole
-         * chart without ever meeting the gate, and would otherwise first learn the
-         * visit is stuck when they try to finish it.
+         * DMS memo M1.1–M1.3 PR2 (rule 241 §2–§3; supersedes the
+         * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 reminder) — charting
+         * now waits for BOTH PTM signatures. When the live encounter would be
+         * chartable by this account but for the PTM, the page names that state
+         * (awaiting the patient / the treating doctor) instead of offering a
+         * form the server refuses; the treating doctor gets the countersign link,
+         * or the reason they cannot sign (MESSAGE_COUNTERSIGN_SELF). The page
+         * and the history stay readable either way. Decided here (MEMO-F5).
          */
-        $consentPendingForRme = $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS
-            && ! $consents->hasValidConsent($clinicVisit);
+        $odontogramPtmBlock = $consents->odontogramPtmBlockFor($clinicVisit, $request->user());
+        $countersignOutlook = $odontogramPtmBlock === RmeVisitConsentService::PTM_AWAITING_DOCTOR
+            ? ($consents->countersignOutlookFor($request->user(), [$clinicVisit])[(int) $clinicVisit->getKey()] ?? null)
+            : null;
+        $countersignConsent = $countersignOutlook !== null && $countersignOutlook['refusal'] === null ? $countersignOutlook['consent'] : null;
+        $countersignRefusal = $countersignOutlook['refusal'] ?? null;
+        // MEMO-F5 — "is this the live encounter's chart?" for the read-only
+        // banner, asked here rather than from Blade.
+        $odontogramIsLiveEncounter = app(ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit);
 
         return view('rme.visits.odontogram.show', compact(
             'clinicVisit',
@@ -154,7 +162,10 @@ class OdontogramController extends Controller
             'structured',
             'odontogramHistory',
             'odontogramAuthoringAllowed',
-            'consentPendingForRme',
+            'odontogramPtmBlock',
+            'countersignConsent',
+            'countersignRefusal',
+            'odontogramIsLiveEncounter',
         ));
     }
 

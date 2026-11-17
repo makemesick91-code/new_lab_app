@@ -320,7 +320,8 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
 
 it('CV-13 locks the encounter visit row inside a write transaction before re-checking the consent', function () {
     $visit = rcsvVisit();
-    rcsvSign($visit);
+    // Rule 241 §2 — writes need the EXECUTED consent (fixture countersignature).
+    rmeDoctorCountersignatureFor(rcsvSign($visit));
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
 
     $locks = [];
@@ -340,6 +341,7 @@ it('CV-13 locks the encounter visit row inside a write transaction before re-che
 it('CV-14 refuses an RM write after the consent was voided, even inside a transaction', function () {
     $visit = rcsvVisit();
     $consent = rcsvSign($visit);
+    rmeDoctorCountersignatureFor($consent); // Rule 241 §2 — writes need the EXECUTED consent.
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
     $consents = app(RmeVisitConsentService::class);
 
@@ -453,7 +455,8 @@ it('CV-15 answers an account inside the route middleware but outside the policy 
 
 it('CV-16 re-decides the consent under the visit lock inside every consent-gated write transaction', function () {
     $visit = rcsvVisit();
-    rcsvSign($visit);
+    // Rule 241 §2 — writes need the EXECUTED consent (fixture countersignature).
+    rmeDoctorCountersignatureFor(rcsvSign($visit));
     $record = MedicalRecord::query()->where('clinic_visit_id', $visit->id)->sole();
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
     // The override is only relevant on a pilot_enforced branch (never a default).

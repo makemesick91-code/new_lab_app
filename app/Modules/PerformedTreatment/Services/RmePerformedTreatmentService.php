@@ -486,7 +486,8 @@ class RmePerformedTreatmentService
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT);
         }
 
-        if (! $this->consent->hasValidConsent($locked)) {
+        // Rule 241 §2 — the EXECUTED consent (patient and treating doctor).
+        if (! $this->consent->hasExecutedConsent($locked)) {
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
         }
 

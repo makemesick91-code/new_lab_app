@@ -78,7 +78,8 @@ class RmeVisitConsentController extends Controller
             ->route('rme.consents.show', $consent)
             // CW5-08 — consent unlocks the examination record, not the payment
             // (AIR-RMC-11: the cashier never consults consent).
-            ->with('status', 'Persetujuan tindakan medis berhasil ditandatangani. Rekam medis pemeriksaan ini kini dapat ditulis.');
+            // Rule 241 §2 — the patient's signature alone does not open writing.
+            ->with('status', 'Persetujuan tindakan medis berhasil ditandatangani pasien. Rekam medis dan odontogram dapat ditulis setelah dokter yang menangani menandatanganinya dari Ruang Perawatan.');
     }
 
     public function show(RmeVisitConsent $consent): View
@@ -97,6 +98,9 @@ class RmeVisitConsentController extends Controller
             // Rule 241 §1 — decided by the service (identity binds Super Admin,
             // which Gate::before lets through every policy).
             'canCountersign' => $this->consents->canCountersign($consent, request()->user()),
+            // Rule 241 §3 — the one obstacle a doctor can act on: they captured
+            // the patient's signature themselves (a supervised void is needed).
+            'countersignRefusal' => $this->consents->countersignRefusal($consent, request()->user()),
         ]);
     }
 

@@ -176,26 +176,49 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        {{-- REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the signature no
-             longer blocks charting, so this is a REMINDER, not a refusal. It
-             names the two things still waiting on it, because the doctor can now
-             finish the whole chart without ever meeting the gate. --}}
-        @if (($consentPendingForRme ?? false) && ($odontogramAuthoringAllowed ?? false))
-            <x-ui.alert variant="info" title="Persetujuan Tindakan Medis belum ditandatangani">
-                <p class="text-sm">
-                    Odontogram sudah dapat dicatat dan disimpan sekarang.
-                    Rekam Medis kunjungan ini dan tombol Selesai Pemeriksaan masih
-                    terkunci sampai pasien menandatangani Persetujuan Tindakan Medis.
-                </p>
-                <div class="mt-3">
-                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
-                        Buka Detail Kunjungan
-                    </x-ui.button>
-                </div>
-            </x-ui.alert>
+        {{-- DMS memo M1.1–M1.3 PR2 (rule 241 §2–§3) — charting waits for BOTH
+             PTM signatures (supersedes the rule 134 pre-consent reminder). When
+             only the PTM stands between this account and the live chart, the page
+             names it; the controller decides the state and the countersign link
+             (MEMO-F5). Reading the chart and its history stays open. --}}
+        @if (($odontogramPtmBlock ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_DOCTOR)
+            <div data-ptm-state="awaiting_doctor">
+                <x-ui.alert variant="warning" title="Odontogram menunggu tanda tangan dokter">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Pasien sudah menandatangani Persetujuan Tindakan Medis. Odontogram, rekam medis
+                            dan tombol Selesai Pemeriksaan menunggu tanda tangan dokter yang menangani;
+                            odontogram dan riwayatnya tetap dapat dibaca.
+                        </p>
+                        @if ($countersignConsent ?? null)
+                            <x-ui.button variant="primary" :href="route('rme.consents.countersign.create', $countersignConsent)" data-testid="odontogram-countersign-ptm">
+                                Tanda Tangani PTM
+                            </x-ui.button>
+                        @endif
+                    </div>
+                    @if (($countersignRefusal ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF)
+                        <p class="mt-2 text-xs" data-testid="odontogram-countersign-self-captured">{{ $countersignRefusal }}</p>
+                    @endif
+                </x-ui.alert>
+            </div>
+        @elseif (($odontogramPtmBlock ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_PATIENT)
+            <div data-ptm-state="awaiting_patient">
+                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Odontogram, rekam medis dan tombol Selesai Pemeriksaan menunggu Surat Persetujuan
+                            Tindakan Medis ditandatangani pasien, lalu oleh dokter yang menangani. Odontogram dan
+                            riwayatnya tetap dapat dibaca.
+                        </p>
+                        <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                            Buka Detail Kunjungan
+                        </x-ui.button>
+                    </div>
+                </x-ui.alert>
+            </div>
         @elseif (! ($odontogramAuthoringAllowed ?? false)
             && (auth()->user()?->can('update', $odontogram) ?? false)
-            && app(\App\Modules\ClinicVisit\Services\ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit))
+            && ($odontogramIsLiveEncounter ?? false))
             {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — this IS the live
                  encounter's chart, so "past visit" would be the wrong reason: the
                  account itself may not chart it (e.g. the front office). --}}

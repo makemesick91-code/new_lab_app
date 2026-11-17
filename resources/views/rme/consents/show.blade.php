@@ -37,16 +37,30 @@
 
         @if ($consent->isVoided())
             <x-ui.alert variant="danger" title="Persetujuan ini telah dibatalkan.">
-                Persetujuan yang dibatalkan tidak lagi membuka pembayaran. Tanda tangan baru harus diambil
-                untuk kunjungan ini.
+                Persetujuan yang dibatalkan tidak lagi membuka penulisan rekam medis dan odontogram. Tanda
+                tangan baru pasien dan dokter harus diambil untuk kunjungan ini.
                 @if ($consent->void_reason)
                     <span class="block mt-1">Alasan: {{ $consent->void_reason }}</span>
                 @endif
             </x-ui.alert>
         @else
-            <x-ui.alert variant="success" title="Persetujuan tindakan medis sudah ditandatangani.">
-                Pembayaran untuk kunjungan ini sudah dapat diproses oleh kasir.
-            </x-ui.alert>
+            {{-- Rule 241 §3 — consent gates clinical writing, never payment
+                 (AIR-RMC-11); the state is decided in the controller. --}}
+            @if ($doctorCountersignaturePending ?? false)
+                <x-ui.alert variant="warning" title="Persetujuan tindakan medis menunggu tanda tangan dokter.">
+                    Pasien sudah menandatangani. Rekam medis dan odontogram kunjungan ini dapat ditulis setelah
+                    dokter yang menangani menandatanganinya.
+                    @if (($countersignRefusal ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF)
+                        <span class="mt-1 block" data-testid="consent-countersign-self-captured">{{ $countersignRefusal }}</span>
+                    @endif
+                </x-ui.alert>
+            @else
+                <x-ui.alert variant="success" title="Persetujuan tindakan medis sudah ditandatangani.">
+                    @if ($doctorCountersignature ?? null)
+                        Ditandatangani pasien dan dokter yang menangani.
+                    @endif
+                </x-ui.alert>
+            @endif
         @endif
 
         <x-ui.card>

@@ -43,8 +43,9 @@
         // an unsigned examination would strand it: unconsented, unwritable, and
         // already at the cashier. The server refuses the transition regardless;
         // hiding the button here just stops the doctor walking into the refusal.
-        $examinationConsentSigned = app(\App\Modules\Consent\Services\RmeVisitConsentService::class)
-            ->hasValidConsent($visit);
+        // Rule 241 §2 — "signed" means EXECUTED (patient and treating doctor),
+        // decided in the controller (MEMO-F5), never by a service call here.
+        $examinationConsentSigned = (bool) ($examinationConsentExecuted ?? false);
         $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING
@@ -142,24 +143,20 @@
         {{-- CORRECTIVE-01 — consent becomes actionable ONLY once the doctor has
              explicitly started the examination. Before that there is no decided
              treatment to consent to; after it, signing would be after the fact. --}}
-        @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS)
-            @php $visitSignedConsent = $visit->consents()->whereNull('voided_at')->latest('signed_at')->first(); @endphp
-
-            @if ($visitSignedConsent === null)
+        {{-- DMS memo M1.1–M1.3 PR2 (rule 241 §3) — the PTM state of the live
+             examination, from the controller (MEMO-F5): awaiting the patient's
+             signature, awaiting the treating doctor's, or complete. Writing the
+             RME and the odontogram, and "Selesai Pemeriksaan", wait for both.
+             Presentation only — RmeVisitConsentService is the authority. --}}
+        @if (($ptmState ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_PATIENT)
+            <div data-ptm-state="awaiting_patient">
                 <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
-                        {{-- REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — this
-                             used to say "Rekam medis dan odontogram ... belum dapat
-                             ditulis", which is now false: the odontogram is editable
-                             from "Mulai Pemeriksaan". Naming the odontogram here
-                             would send the doctor to take a signature before the
-                             examination that produces its content. --}}
                         <p class="max-w-xl text-sm">
-                            Odontogram kunjungan ini sudah dapat dicatat. Rekam medis belum
-                            dapat ditulis sampai Surat Persetujuan Tindakan Medis
-                            ditandatangani pasien atau pemberi persetujuan, dan pemeriksaan
-                            belum dapat diselesaikan.
-                            Riwayat klinis pasien tetap dapat dibaca.
+                            Rekam medis dan odontogram kunjungan ini belum dapat ditulis, dan pemeriksaan
+                            belum dapat diselesaikan, sampai Surat Persetujuan Tindakan Medis ditandatangani
+                            pasien atau pemberi persetujuan (oleh petugas front office) lalu oleh dokter yang
+                            menangani. Riwayat klinis pasien tetap dapat dibaca.
                         </p>
                         @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])
                             <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $visit)">
@@ -168,22 +165,56 @@
                         @endcan
                     </div>
                 </x-ui.alert>
-            @else
-                <x-ui.alert variant="success" title="Persetujuan Tindakan Medis sudah ditandatangani">
+            </div>
+        @elseif (($ptmState ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_DOCTOR)
+            <div data-ptm-state="awaiting_doctor">
+                <x-ui.alert variant="warning" title="Menunggu tanda tangan dokter">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <p class="max-w-xl text-sm">
-                            {{ $visitSignedConsent->consent_number }} &middot;
-                            {{ $visitSignedConsent->signed_at?->format('d/m/Y H:i') }}.
-                            Penulisan rekam medis kunjungan ini sudah terbuka.
+                            Pasien sudah menandatangani Persetujuan Tindakan Medis
+                            {{ $visitConsent?->consent_number }}. Rekam medis dan odontogram kunjungan ini
+                            menunggu tanda tangan dokter yang menangani; riwayat klinis pasien tetap dapat dibaca.
                         </p>
-                        @can('view', $visitSignedConsent)
-                            <x-ui.button variant="secondary" :href="route('rme.consents.show', $visitSignedConsent)">
-                                Lihat Persetujuan
-                            </x-ui.button>
-                        @endcan
+                        <div class="flex flex-wrap gap-2">
+                            @if ($countersignConsent ?? null)
+                                <x-ui.button variant="primary" :href="route('rme.consents.countersign.create', $countersignConsent)" data-testid="visit-countersign-ptm">
+                                    Tanda Tangani PTM
+                                </x-ui.button>
+                            @endif
+                            @if ($visitConsent)
+                                @can('view', $visitConsent)
+                                    <x-ui.button variant="secondary" :href="route('rme.consents.show', $visitConsent)">
+                                        Lihat Persetujuan
+                                    </x-ui.button>
+                                @endcan
+                            @endif
+                        </div>
+                    </div>
+                    @if (($countersignRefusal ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF)
+                        <p class="mt-2 text-xs" data-testid="visit-countersign-self-captured">{{ $countersignRefusal }}</p>
+                    @endif
+                </x-ui.alert>
+            </div>
+        @elseif (($ptmState ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_EXECUTED)
+            <div data-ptm-state="executed">
+                <x-ui.alert variant="success" title="Persetujuan Tindakan Medis lengkap">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-xl text-sm">
+                            {{ $visitConsent?->consent_number }} &middot;
+                            {{ $visitConsent?->signed_at?->format('d/m/Y H:i') }}.
+                            Ditandatangani pasien dan dokter yang menangani; penulisan rekam medis dan odontogram
+                            kunjungan ini sudah terbuka.
+                        </p>
+                        @if ($visitConsent)
+                            @can('view', $visitConsent)
+                                <x-ui.button variant="secondary" :href="route('rme.consents.show', $visitConsent)">
+                                    Lihat Persetujuan
+                                </x-ui.button>
+                            @endcan
+                        @endif
                     </div>
                 </x-ui.alert>
-            @endif
+            </div>
         @endif
 
         {{-- Hotfix Sprint 60.8 — room-assignment gate. An active visit must be
