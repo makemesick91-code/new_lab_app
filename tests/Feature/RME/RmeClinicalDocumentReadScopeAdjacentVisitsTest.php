@@ -228,6 +228,29 @@ it('never offers a doctor an active visit of another treatment room', function (
         ->assertSee(adjnavNextLink($routeName, $today), false);
 })->with('adjnav pages');
 
+it('skips refused visits, across more than one chunk, to the nearest visit the doctor may open (review LOW)', function () {
+    $doctor = rmeMakeDoctorOnline($this->doctorA, $this->branchA, $this->roomA);
+    $otherRoom = adjnavRoom($this->branchA);
+
+    // 25 of today's visits wait in ANOTHER room (refused, rule 138) — more than
+    // one 20-row chunk — and only then comes one in this doctor's own room.
+    $refused = [];
+    foreach (range(1, 25) as $i) {
+        $refused[] = adjnavVisit($this->branchA, $this->patient, $this->doctorB, $otherRoom,
+            'VIS-ADJNAV-SKIP'.$i, clinicalToday()->toDateString(), ClinicVisit::STATUS_WAITING);
+    }
+    $openable = adjnavVisit($this->branchA, $this->patient, $this->doctorA, $this->roomA,
+        'VIS-ADJNAV-OPEN', clinicalToday()->toDateString(), ClinicVisit::STATUS_WAITING);
+
+    $response = $this->actingAs($doctor)->get(route('rme.visits.odontogram.show', $this->v[5]))
+        ->assertOk()
+        ->assertSee(adjnavNextLink('rme.visits.odontogram.show', $openable), false);
+
+    foreach ($refused as $visit) {
+        $response->assertDontSee($visit->visit_number.' ', false)->assertDontSee($visit->visit_number.'"', false);
+    }
+});
+
 /*
 |--------------------------------------------------------------------------
 | The service decides it, for the explicit persisted viewer
