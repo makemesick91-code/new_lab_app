@@ -18,8 +18,10 @@ use Illuminate\Support\Facades\Schema;
  *
  * Backstops on PostgreSQL (the service refuses first, binding Super Admin):
  * maker ≠ checker (`decided_by <> requested_by`), the reason bounds, the shape of
- * each status. On both engines, a partial unique index keeps one `pending`
- * amendment per subject. Explicit constraint names (`trx_rme_amd_*`) — the
+ * each status, and the trigger `trx_rme_amendments_guard`: the request columns
+ * never change, a row that left `pending` never changes, no row is deleted or
+ * truncated (the model refuses the same on every engine). On both engines, a
+ * partial unique index keeps one `pending` amendment per subject. Explicit constraint names (`trx_rme_amd_*`) — the
  * generated ones would exceed PostgreSQL's 63 characters. Additive only (CG-09);
  * down() refuses to drop the table while an amendment exists.
  */
@@ -69,19 +71,57 @@ return new class extends Migration
             'trx_rme_amd_reason_chk CHECK (char_length(btrim(reason)) BETWEEN 10 AND 1000)',
             // Maker ≠ checker (CG-07): the account that asked never decides.
             'trx_rme_amd_maker_checker_chk CHECK (decided_by IS NULL OR decided_by <> requested_by)',
-            "trx_rme_amd_pending_chk CHECK (status <> 'pending' OR (decided_by IS NULL AND decided_at IS NULL AND cancelled_at IS NULL))",
-            "trx_rme_amd_cancelled_chk CHECK (status <> 'cancelled' OR (cancelled_at IS NOT NULL AND decided_by IS NULL))",
-            "trx_rme_amd_decided_chk CHECK (status NOT IN ('rejected', 'applied') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL))",
+            "trx_rme_amd_pending_chk CHECK (status <> 'pending' OR (decided_by IS NULL AND decided_at IS NULL AND cancelled_at IS NULL AND decision_reason IS NULL))",
+            "trx_rme_amd_cancelled_chk CHECK (status <> 'cancelled' OR (cancelled_at IS NOT NULL AND decided_by IS NULL AND decided_at IS NULL AND decision_reason IS NULL))",
+            "trx_rme_amd_decided_chk CHECK (status NOT IN ('rejected', 'applied') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL AND cancelled_at IS NULL))",
             "trx_rme_amd_rejected_chk CHECK (status <> 'rejected' OR (decision_reason IS NOT NULL AND char_length(btrim(decision_reason)) BETWEEN 10 AND 1000))",
         ] as $constraint) {
             DB::statement('ALTER TABLE '.self::TABLE.' ADD CONSTRAINT '.$constraint);
         }
+
+        // What was requested never changes; a decided row never changes; no row is
+        // deleted or truncated (rule 240 §6.1). `json` has no equality operator, so
+        // the proposal is compared as text — it is stored as written.
+        DB::statement(<<<'SQL'
+            CREATE OR REPLACE FUNCTION trx_rme_amendments_guard() RETURNS trigger AS $$
+            BEGIN
+                IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
+                    RAISE EXCEPTION 'trx_rme_amendments rows are immutable (rule 240 §6): % refused', TG_OP;
+                END IF;
+                IF OLD.status <> 'pending' THEN
+                    RAISE EXCEPTION 'trx_rme_amendments row % is % and immutable (rule 240 §6)', OLD.id, OLD.status;
+                END IF;
+                IF NEW.subject_type IS DISTINCT FROM OLD.subject_type
+                    OR NEW.subject_id IS DISTINCT FROM OLD.subject_id
+                    OR NEW.branch_id IS DISTINCT FROM OLD.branch_id
+                    OR NEW.clinic_visit_id IS DISTINCT FROM OLD.clinic_visit_id
+                    OR NEW.patient_id IS DISTINCT FROM OLD.patient_id
+                    OR NEW.base_version_id IS DISTINCT FROM OLD.base_version_id
+                    OR NEW.base_version IS DISTINCT FROM OLD.base_version
+                    OR NEW.reason IS DISTINCT FROM OLD.reason
+                    OR NEW.proposed_content::text IS DISTINCT FROM OLD.proposed_content::text
+                    OR NEW.requested_by IS DISTINCT FROM OLD.requested_by
+                    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+                    RAISE EXCEPTION 'trx_rme_amendments row %: the request is immutable (rule 240 §6)', OLD.id;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            SQL);
+        DB::statement('CREATE TRIGGER trx_rme_amendments_guard BEFORE UPDATE OR DELETE ON trx_rme_amendments FOR EACH ROW EXECUTE FUNCTION trx_rme_amendments_guard()');
+        DB::statement('CREATE TRIGGER trx_rme_amendments_guard_truncate BEFORE TRUNCATE ON trx_rme_amendments FOR EACH STATEMENT EXECUTE FUNCTION trx_rme_amendments_guard()');
     }
 
     public function down(): void
     {
         if (Schema::hasTable(self::TABLE) && DB::table(self::TABLE)->exists()) {
             throw new RuntimeException('Refusing to drop trx_rme_amendments: it holds amendment requests of medical records.');
+        }
+
+        if (DB::connection()->getDriverName() === 'pgsql' && Schema::hasTable(self::TABLE)) {
+            DB::statement('DROP TRIGGER IF EXISTS trx_rme_amendments_guard_truncate ON trx_rme_amendments');
+            DB::statement('DROP TRIGGER IF EXISTS trx_rme_amendments_guard ON trx_rme_amendments');
+            DB::statement('DROP FUNCTION IF EXISTS trx_rme_amendments_guard()');
         }
 
         Schema::dropIfExists(self::TABLE);

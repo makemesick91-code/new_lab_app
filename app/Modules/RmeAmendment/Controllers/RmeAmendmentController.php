@@ -37,8 +37,13 @@ class RmeAmendmentController extends Controller
 
         $status = in_array($request->query('status'), RmeAmendment::STATUSES, true) ? (string) $request->query('status') : null;
 
+        $rows = $this->amendments->queueFor($request->user(), $status);
+
         return view('rme.amendments.index', [
-            'rows' => $this->amendments->queueFor($request->user(), $status),
+            'rows' => $rows,
+            // A row shows the patient's identity and its link only when this
+            // account may open it (the doctor-patient scope may narrow an approver).
+            'viewable' => $this->amendments->viewableIds($request->user(), $rows->getCollection()),
             'counts' => $this->amendments->statusCountsFor($request->user()),
             'status' => $status,
         ]);

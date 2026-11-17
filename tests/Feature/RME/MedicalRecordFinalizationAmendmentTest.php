@@ -31,6 +31,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
+use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
@@ -463,3 +464,107 @@ it('locks the visit, then the sheet, then writes the amendment (PostgreSQL)', fu
         ->and($visit)->toBeLessThan($record)
         ->and($record)->toBeLessThan($insert);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL row locks');
+
+// ─── Review fixes (M3.3 PR4 review) ──────────────────────────────────────────
+
+it('never lets the finalizer decide either: a Supervisor RME or a Super Admin who finalized the sheet (HIGH-1)', function () {
+    // A Supervisor RME finalized the doctor's sheet; the doctor of record requests.
+    $amendment = m33aRequest(m33aSheet($this->supervisor));
+
+    expect(m33aRefusal(fn () => m33aService()->reject($amendment, $this->supervisor, 'm33a pemfinal menolak koreksi')))->toContain(RmeAmendmentService::MESSAGE_FINALIZER)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
+
+    // The same for a Super Admin finalizer, whom Gate::before lets past every policy.
+    $superAdmin = m33aSuperAdmin();
+    $theirs = m33aRequest(m33aSheet($superAdmin));
+    expect(m33aRefusal(fn () => m33aService()->reject($theirs, $superAdmin, 'm33a super admin pemfinal')))->toContain(RmeAmendmentService::MESSAGE_FINALIZER);
+
+    // Another Supervisor RME — neither requester, doctor of record nor finalizer — may.
+    expect(m33aService()->reject($amendment, userInRole('Supervisor RME'), 'm33a supervisor lain menolak')->status)->toBe(RmeAmendment::STATUS_REJECTED);
+});
+
+it('refuses unknown keys inside a diagnosis row (LOW-1)', function () {
+    $sheet = m33aSheet();
+    $active = ClinicalDiagnosis::factory()->create(['code' => 'K02.2', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
+
+    expect(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $active->id, 'diagnosis_role' => 'secondary', 'x_extra' => str_repeat('x', 1000)]]]])))->not->toBe('')
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => ['x']]])))->not->toBe('')
+        ->and(RmeAmendment::query()->count())->toBe(0);
+});
+
+it('refuses removing the last primary diagnosis on a pilot_enforced branch, as finalizing would (LOW-3)', function () {
+    DiagnosisRolloutSetting::create(['branch_id' => $this->branch->id, 'mode' => DiagnosisRolloutSetting::MODE_PILOT_ENFORCED, 'reason' => 'm33a pilot cabang', 'configured_by' => $this->supervisor->id]);
+    $sheet = m33aSheet();
+    $primary = m33aDiagnosis($sheet, 'K04.1', MedicalRecordDiagnosis::ROLE_PRIMARY);
+    $replacement = ClinicalDiagnosis::factory()->create(['code' => 'K04.2', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
+
+    expect(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => [$primary->id]]])))->toContain(RmeAmendmentService::MESSAGE_PRIMARY_REQUIRED)
+        ->and(RmeAmendment::query()->count())->toBe(0);
+
+    // Replacing it in the same proposal keeps the finalization gate satisfied.
+    $amendment = m33aRequest($sheet, proposal: ['diagnoses' => [
+        'remove' => [$primary->id],
+        'add' => [['clinical_diagnosis_id' => $replacement->id, 'diagnosis_role' => 'primary']],
+    ]]);
+    expect($amendment->status)->toBe(RmeAmendment::STATUS_PENDING);
+});
+
+it('checks the field length only on a changed field (INFO)', function () {
+    $sheet = m33aSheet();
+    $sheet->forceFill(['notes' => str_repeat('n', RmeAmendmentService::SHEET_FIELD_MAX + 5)])->save();
+
+    $amendment = m33aRequest($sheet->fresh(), proposal: ['fields' => [
+        'notes' => str_repeat('n', RmeAmendmentService::SHEET_FIELD_MAX + 5),
+        'assessment' => 'm33a pulpitis ireversibel',
+    ]]);
+
+    expect($amendment->proposed_content)->toBe(['fields' => ['assessment' => 'm33a pulpitis ireversibel']]);
+});
+
+it('keeps the status out of mass assignment and guards a decided row in the model (INFO, LOW-5)', function () {
+    expect((new RmeAmendment(['status' => RmeAmendment::STATUS_APPLIED]))->status)->toBeNull();
+
+    $amendment = m33aRequest(m33aSheet());
+    expect(fn () => $amendment->fresh()->forceFill(['reason' => 'm33a alasan diganti diam-diam'])->save())->toThrow(LogicException::class);
+
+    $rejected = m33aService()->reject($amendment, $this->supervisor, 'm33a usulan tidak sesuai');
+    expect(fn () => $rejected->fresh()->forceFill(['status' => RmeAmendment::STATUS_PENDING])->save())->toThrow(LogicException::class)
+        ->and(fn () => $rejected->fresh()->delete())->toThrow(LogicException::class)
+        ->and($rejected->fresh()->status)->toBe(RmeAmendment::STATUS_REJECTED);
+});
+
+it('refuses raw edits of a request and any change of a decided row (PostgreSQL trigger, LOW-5)', function () {
+    $amendment = m33aRequest(m33aSheet());
+
+    expect(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->update(['reason' => 'm33a alasan diganti diam-diam'])))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->update(['proposed_content' => '{"fields":{"plan":"x"}}'])))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->update(['requested_by' => $this->supervisor->id])))
+        ->toThrow(QueryException::class, 'immutable');
+
+    m33aService()->reject($amendment, $this->supervisor, 'm33a usulan tidak sesuai');
+
+    expect(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->update(['status' => 'pending', 'decided_by' => null, 'decided_at' => null, 'decision_reason' => null])))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->update(['decision_reason' => 'm33a alasan keputusan diubah'])))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and(fn () => DB::transaction(fn () => DB::table('trx_rme_amendments')->where('id', $amendment->id)->delete()))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and($amendment->fresh()->decision_reason)->toBe('m33a usulan tidak sesuai');
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL trigger');
+
+it('refuses the shape of each status at the database (PostgreSQL CHECKs, LOW-5)', function () {
+    $amendment = m33aRequest(m33aSheet());
+    $row = collect($amendment->getAttributes())->except(['id'])->all();
+    $insert = function (array $over) use ($row): void {
+        DB::transaction(fn () => DB::table('trx_rme_amendments')->insert(array_merge($row, ['status' => 'cancelled'], $over)));
+    };
+
+    m33aService()->cancel($amendment, $this->doctorUser);
+
+    expect(fn () => $insert(['cancelled_at' => now(), 'decided_at' => now()]))->toThrow(QueryException::class, 'trx_rme_amd_cancelled_chk')
+        ->and(fn () => $insert(['cancelled_at' => now(), 'decision_reason' => 'm33a alasan']))->toThrow(QueryException::class, 'trx_rme_amd_cancelled_chk')
+        ->and(fn () => $insert(['status' => 'rejected', 'cancelled_at' => now(), 'decided_by' => $this->supervisor->id, 'decided_at' => now(), 'decision_reason' => 'm33a alasan tolak']))->toThrow(QueryException::class, 'trx_rme_amd_decided_chk')
+        ->and(fn () => $insert(['status' => 'pending', 'decision_reason' => 'm33a alasan tolak']))->toThrow(QueryException::class, 'trx_rme_amd_pending_chk');
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL CHECK constraints');

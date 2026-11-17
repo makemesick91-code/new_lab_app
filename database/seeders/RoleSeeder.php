@@ -588,7 +588,7 @@ class RoleSeeder extends Seeder
             'void_rme_consents',
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the checker of a
             // supervised amendment; never the maker (no request_rme_amendments), never
-            // on a record it is the doctor of (RmeAmendmentService).
+            // on a record it is the doctor of or finalized (RmeAmendmentService).
             'approve_rme_amendments',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',

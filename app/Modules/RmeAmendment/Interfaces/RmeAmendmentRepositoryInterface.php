@@ -20,7 +20,11 @@ use Illuminate\Support\Collection;
  */
 interface RmeAmendmentRepositoryInterface
 {
-    /** @param array<string, mixed> $data */
+    /**
+     * File a new amendment; it is always `pending`.
+     *
+     * @param  array<string, mixed>  $data
+     */
     public function create(array $data): RmeAmendment;
 
     public function find(int $id): ?RmeAmendment;

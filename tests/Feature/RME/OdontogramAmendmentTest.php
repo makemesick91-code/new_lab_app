@@ -31,6 +31,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -139,7 +140,22 @@ it('validates the proposed chart like a chart save and refuses a proposal that c
 
 it('refuses a draft chart, another doctor and a Super Admin who is neither', function () {
     $service = app(RmeAmendmentService::class);
+    // Another doctor who also treated the patient: may read the chart, is neither.
     $other = userInRole('Doctor');
+    $otherDoctor = Doctor::factory()->create(['user_id' => $other->id, 'branch_id' => $this->branch->id]);
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $otherDoctor->id,
+        'clinic_room_id' => $this->room->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+    ]);
+
+    // A doctor who never treated the patient may not see it: "not found" (review LOW-2).
+    $stranger = userInRole('Doctor');
+    Doctor::factory()->create(['user_id' => $stranger->id, 'branch_id' => $this->branch->id]);
+    expect(fn () => $service->request(m33qChart(), $stranger, 'm33q dokter tanpa akses pasien', m33qProposal()))
+        ->toThrow(ModelNotFoundException::class);
 
     expect(m33qRefusal(fn () => $service->request(m33qChart(status: Odontogram::STATUS_DRAFT), $this->doctorUser, 'm33q draf belum final', m33qProposal())))->toContain(RmeAmendmentService::MESSAGE_NOT_FINAL)
         ->and(m33qRefusal(fn () => $service->request(m33qChart(), $other, 'm33q dokter lain mengajukan', m33qProposal())))->toContain(RmeAmendmentService::MESSAGE_NOT_REQUESTER)
@@ -217,4 +233,60 @@ it('accepts the chart request form over HTTP with the editor payload as JSON', f
         ->assertHeader('Cache-Control', 'max-age=0, no-store, private')
         ->assertSeeInOrder(['caries', 'm33q tumpatan', 'filling', 'm33q tumpatan komposit'])
         ->assertSee('data-amendment-reject', false);
+});
+
+// ─── Review fixes (M3.3 PR4 review) ──────────────────────────────────────────
+
+it('refuses a malformed or empty tooth map from the form and never stores it as an empty chart (MEDIUM-1)', function () {
+    $chart = m33qChart();
+
+    foreach (['{not json', ''] as $broken) {
+        $this->actingAs($this->doctorUser)
+            ->from(route('rme.amendments.create-chart', $chart))
+            ->post(route('rme.amendments.store-chart', $chart), [
+                'reason' => 'm33q diagnosis gigi 36 salah pilih',
+                'proposed' => ['summary_notes' => 'm33q ringkasan baru', 'tooth_map_payload' => $broken],
+            ])
+            ->assertRedirect(route('rme.amendments.create-chart', $chart))
+            ->assertSessionHasErrors('proposed.tooth_map_payload');
+    }
+
+    expect(RmeAmendment::query()->count())->toBe(0);
+
+    // Through the service: an explicit null is refused; an absent key keeps the chart.
+    $service = app(RmeAmendmentService::class);
+    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q peta gigi kosong', ['summary_notes' => 'm33q ringkasan baru', 'tooth_map_payload' => null])))->not->toBe('');
+
+    $amendment = $service->request($chart, $this->doctorUser, 'm33q hanya ringkasan berubah', ['summary_notes' => 'm33q ringkasan baru']);
+    expect($amendment->proposed_content['tooth_map_payload'])->toBe($chart->tooth_map_payload)
+        ->and($amendment->proposed_content['summary_notes'])->toBe('m33q ringkasan baru');
+});
+
+it('refuses unknown keys at every level of the tooth map (LOW-1)', function () {
+    $chart = m33qChart();
+    $service = app(RmeAmendmentService::class);
+
+    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan peta', ['tooth_map_payload' => ['teeth' => m33qPayload('filling')['teeth'], 'x_top' => str_repeat('x', 5000)]])))->not->toBe('')
+        ->and(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan gigi', ['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'filling', 'x_extra' => str_repeat('x', 5000)]]]])))->not->toBe('')
+        ->and(RmeAmendment::query()->count())->toBe(0);
+});
+
+it('renders every stored tooth field in the before/after view and marks the changed rows (MEDIUM-2)', function () {
+    $chart = m33qChart();
+    $chart->forceFill(['tooth_map_payload' => ['teeth' => [
+        '11' => ['status' => 'normal', 'note' => 'm33q gigi sehat'],
+        '36' => ['status' => 'caries', 'conditions' => ['caries'], 'note' => 'm33q catatan lama', 'additional_note' => 'm33q tumpatan'],
+    ]]])->save();
+
+    $amendment = app(RmeAmendmentService::class)->request($chart->fresh(), $this->doctorUser, 'm33q kondisi gigi 36 bertambah', ['tooth_map_payload' => ['teeth' => [
+        '11' => ['status' => 'normal', 'note' => 'm33q gigi sehat'],
+        '36' => ['status' => 'caries', 'conditions' => ['caries', 'mobility'], 'note' => 'm33q catatan baru', 'additional_note' => 'm33q tumpatan'],
+    ]]]);
+
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.show', $amendment))
+        ->assertOk()
+        ->assertSee('data-chart-row-changed="36"', false)
+        ->assertDontSee('data-chart-row-changed="11"', false)
+        ->assertSeeInOrder(['m33q catatan lama', 'm33q catatan baru'])
+        ->assertSee('mobility');
 });

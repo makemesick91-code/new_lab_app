@@ -19,7 +19,11 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
 {
     public function create(array $data): RmeAmendment
     {
-        return RmeAmendment::query()->create($data);
+        // Always filed as pending; the status is not mass-assignable.
+        $amendment = new RmeAmendment($data);
+        $amendment->forceFill(['status' => RmeAmendment::STATUS_PENDING])->save();
+
+        return $amendment;
     }
 
     public function find(int $id): ?RmeAmendment

@@ -34,7 +34,7 @@ beforeEach(function () {
 
     $this->branch = Branch::factory()->create(['code' => 'AMZ1', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->room = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
-    $this->patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $this->patient = Patient::factory()->create(['branch_id' => $this->branch->id, 'name' => 'M33Z Pasien Amandemen']);
     $this->doctorUser = userInRole('Doctor');
     $this->doctor = Doctor::factory()->create(['user_id' => $this->doctorUser->id, 'branch_id' => $this->branch->id, 'is_active' => true]);
     // RME pages need a doctor's online context (EnsureRmeOnlineContext).
@@ -114,8 +114,21 @@ it('lets only the doctor of record (or finalizer) request over HTTP', function (
         $this->actingAs($user)->post(route('rme.amendments.store-sheet', $sheet), m33zForm())->assertForbidden();
     }
 
-    $otherDoctor = rmeMakeDoctorOnline(Doctor::factory()->create(['branch_id' => $this->branch->id]), $this->branch);
+    // A doctor who also treated this patient reads the record but is not its doctor
+    // of record nor its finalizer: 403 with the reason. One who never treated the
+    // patient may not even see it: 404 (review LOW-2).
+    $treating = Doctor::factory()->create(['branch_id' => $this->branch->id]);
+    $otherDoctor = rmeMakeDoctorOnline($treating, $this->branch);
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $treating->id,
+        'clinic_room_id' => $this->room->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+    ]);
     $this->actingAs($otherDoctor)->post(route('rme.amendments.store-sheet', $sheet), m33zForm())->assertForbidden();
+    $stranger = rmeMakeDoctorOnline(Doctor::factory()->create(['branch_id' => $this->branch->id]), $this->branch);
+    $this->actingAs($stranger)->post(route('rme.amendments.store-sheet', $sheet), m33zForm())->assertNotFound();
     $this->actingAs($this->supervisor)->post(route('rme.amendments.store-sheet', $sheet), m33zForm())->assertForbidden();
 
     $superAdmin = userInRole('Super Admin');
@@ -263,4 +276,69 @@ it('offers the request on the final sheet page only to the doctor of record, and
         ->assertOk()
         ->assertSee('data-amendment-status="pending"', false)
         ->assertSee(route('rme.amendments.show', $amendment), false);
+});
+
+// ─── Review fixes (M3.3 PR4 review) ──────────────────────────────────────────
+
+it('never lets the finalizer decide over HTTP and offers them no decision (HIGH-1)', function () {
+    $amendment = m33zPending(m33zSheet(finalizer: $this->supervisor));
+    $decision = ['decision_reason' => 'm33z pemfinal menolak koreksi'];
+
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.show', $amendment))
+        ->assertOk()
+        ->assertDontSee('data-amendment-reject', false);
+    $this->actingAs($this->supervisor)->post(route('rme.amendments.reject', $amendment), $decision)->assertForbidden();
+
+    $superAdmin = userInRole('Super Admin');
+    $theirs = m33zPending(m33zSheet(finalizer: $superAdmin));
+    $this->actingAs($superAdmin)->get(route('rme.amendments.show', $theirs))
+        ->assertOk()
+        ->assertDontSee('data-amendment-reject', false);
+    $this->actingAs($superAdmin)->post(route('rme.amendments.reject', $theirs), $decision)->assertSessionHasErrors('amendment');
+
+    expect($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING)
+        ->and($theirs->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
+});
+
+it('answers 404 before anything else to an account that may not see the record (LOW-2)', function () {
+    $final = m33zSheet();
+    $draft = m33zSheet();
+    $draft->forceFill(['status' => MedicalRecord::STATUS_DRAFT, 'finalized_at' => null, 'finalized_by' => null])->save();
+
+    // A doctor of another practice: no treating relationship with this patient.
+    $stranger = rmeMakeDoctorOnline(Doctor::factory()->create(['branch_id' => $this->branch->id]), $this->branch);
+
+    foreach ([$final, $draft] as $sheet) {
+        $this->actingAs($stranger)->get(route('rme.amendments.create-sheet', $sheet))->assertNotFound();
+        $this->actingAs($stranger)->post(route('rme.amendments.store-sheet', $sheet), ['reason' => 'x'])->assertNotFound();
+    }
+
+    // An approver outside the amendment's branch scope: 404, never a validation error.
+    $other = Branch::factory()->create(['code' => 'AMZ3', 'is_active' => true, 'is_rme_enabled' => true]);
+    $amendment = m33zPending($final);
+    $pinned = userInRole('Perawat');
+    $pinned->givePermissionTo(RmeAmendmentService::PERMISSION_APPROVE);
+    rmeMakePerawatActive($pinned, $other);
+
+    $this->actingAs($pinned)->post(route('rme.amendments.reject', $amendment), ['decision_reason' => 'x'])
+        ->assertNotFound();
+    expect(RmeAmendment::query()->count())->toBe(1);
+});
+
+it('shows patient identity in the queue only for a row the approver may open (LOW-4)', function () {
+    $amendment = m33zPending();
+
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.index'))
+        ->assertOk()
+        ->assertSee('M33Z Pasien Amandemen');
+
+    // An approver narrowed by the doctor-patient scope: the row is counted, its identity is not shown.
+    $narrowed = rmeMakeDoctorOnline(Doctor::factory()->create(['branch_id' => $this->branch->id]), $this->branch);
+    $narrowed->givePermissionTo(RmeAmendmentService::PERMISSION_APPROVE);
+
+    $this->actingAs($narrowed->fresh())->get(route('rme.amendments.index'))
+        ->assertOk()
+        ->assertSee('data-amendment-row="'.$amendment->id.'"', false)
+        ->assertDontSee('M33Z Pasien Amandemen')
+        ->assertDontSee(route('rme.amendments.show', $amendment), false);
 });

@@ -10,10 +10,13 @@ use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
+use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
+use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Support\FdiToothNumbers;
 use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
@@ -43,9 +46,13 @@ use Illuminate\Validation\ValidationException;
  *   not role: a Super Admin who is neither is refused.
  * - Checker: an account holding `approve_rme_amendments` (Supervisor RME; Super
  *   Admin through Gate::before) whose branch scope covers the amendment, that is
- *   not the requester and not the doctor of record — re-decided here inside the
- *   transaction, so it binds Super Admin (CG-06, CG-07); the PostgreSQL CHECK
- *   `decided_by <> requested_by` is the backstop.
+ *   not the requester, not the doctor of record and not the finalizer (creator ≠
+ *   approver) — re-decided here inside the transaction on the locked rows, so it
+ *   binds Super Admin (CG-06, CG-07); the PostgreSQL CHECK
+ *   `decided_by <> requested_by` and the row trigger are the backstops.
+ * - An account that may not `view` the record (or, for a decision, the
+ *   amendment) is answered "not found" before anything else, so neither the
+ *   record's state nor the amendment's existence leaks (CG-05).
  *
  * Every write locks the subject's visit (FOR NO KEY UPDATE), then the subject
  * row, then the amendment (rule 240 §1.4 extended), and re-decides on those rows.
@@ -104,6 +111,25 @@ final class RmeAmendmentService
 
     public const MESSAGE_DOCTOR_OF_RECORD = 'Dokter penanggung jawab rekam medis ini tidak dapat memutuskan amandemennya.';
 
+    public const MESSAGE_FINALIZER = 'Yang memfinalisasi rekam medis ini tidak dapat memutuskan amandemennya.';
+
+    public const MESSAGE_PRIMARY_REQUIRED = 'Cabang ini mewajibkan minimal satu diagnosis utama terstruktur; amandemen tidak boleh meninggalkan rekam medis tanpa diagnosis utama.';
+
+    public const MESSAGE_TOOTH_MAP = 'Peta gigi usulan tidak terbaca. Muat ulang formulir lalu ajukan kembali.';
+
+    /** The keys of a diagnosis row a proposal may add. */
+    private const DIAGNOSIS_ROW_KEYS = ['clinical_diagnosis_id', 'diagnosis_role', 'notes'];
+
+    /** Labels of the per-tooth fields a chart save stores (UpdateOdontogramPlaceholderRequest). */
+    private const TOOTH_FIELD_LABELS = [
+        'status' => 'Diagnosa',
+        'conditions' => 'Kondisi',
+        'note' => 'Catatan',
+        'additional_condition' => 'Detail diagnosa',
+        'additional_note' => 'Perawatan',
+        'dokter' => 'Dokter',
+    ];
+
     public function __construct(
         private readonly RmeAmendmentRepositoryInterface $amendments,
         private readonly RmeRecordVersionRepositoryInterface $versions,
@@ -114,6 +140,7 @@ final class RmeAmendmentService
         private readonly RmeWorkingBranchScope $branchScope,
         private readonly ActiveEncounterResolver $encounters,
         private readonly AuditLogService $auditLog,
+        private readonly DiagnosisRolloutService $diagnosisRollout,
     ) {}
 
     // ─── Writes ─────────────────────────────────────────────────────────────
@@ -162,7 +189,6 @@ final class RmeAmendmentService
                     'patient_id' => $this->patientId($locked),
                     'base_version_id' => (int) $base->getKey(),
                     'base_version' => (int) $base->version,
-                    'status' => RmeAmendment::STATUS_PENDING,
                     'reason' => $reason,
                     'proposed_content' => $content,
                     'requested_by' => (int) $requester->getKey(),
@@ -222,7 +248,8 @@ final class RmeAmendmentService
     /**
      * Refuse a pending amendment with a written reason. Account authority first,
      * then scope (out of scope is "not found"), then the state and separation of
-     * duties — all on the locked rows, binding Super Admin.
+     * duties (not the requester, the doctor of record or the finalizer) — all on
+     * the locked rows, binding Super Admin.
      */
     public function reject(RmeAmendment $amendment, User $approver, string $decisionReason): RmeAmendment
     {
@@ -266,9 +293,18 @@ final class RmeAmendmentService
 
     // ─── Authority (the policy and the pages ask the same predicates) ────────
 
-    /** Why this account may not request an amendment of the subject, or null. */
+    /**
+     * Why this account may not request an amendment of the subject, or null. An
+     * account that may not even read the record gets MESSAGE_NOT_FINAL here (the
+     * pages only need "no"); callers that answer it use maySeeSubject() first and
+     * answer 404, so the record's state never leaks.
+     */
     public function requestRefusal(MedicalRecord|Odontogram $subject, ?User $user): ?string
     {
+        if ($user === null || ! $this->maySeeSubject($user, $subject)) {
+            return self::MESSAGE_NOT_FINAL;
+        }
+
         if (! $subject->exists || ! $this->isFinal($subject)) {
             return self::MESSAGE_NOT_FINAL;
         }
@@ -282,17 +318,40 @@ final class RmeAmendmentService
             return self::MESSAGE_NOT_REQUESTER;
         }
 
-        // The requester reads the record like anyone else (rule 240 §5.7).
-        if (! Gate::forUser($user)->allows('view', $subject)) {
-            return self::MESSAGE_NOT_REQUESTER;
+        return null;
+    }
+
+    /** May this account read the record at all (MedicalRecordPolicy / OdontogramPolicy `view`)? */
+    public function maySeeSubject(User $user, MedicalRecord|Odontogram $subject): bool
+    {
+        return $subject->exists && Gate::forUser($user)->allows('view', $subject);
+    }
+
+    /**
+     * Ids of the given amendments this account may open — the queue shows a
+     * patient's identity only on those rows (an approver may be narrowed by the
+     * doctor-patient scope).
+     *
+     * @param  iterable<RmeAmendment>  $amendments
+     * @return list<int>
+     */
+    public function viewableIds(User $user, iterable $amendments): array
+    {
+        $ids = [];
+        foreach ($amendments as $amendment) {
+            if ($this->mayView($user, $amendment)) {
+                $ids[] = (int) $amendment->getKey();
+            }
         }
 
-        return null;
+        return $ids;
     }
 
     /** For the request form: refuses (403) unless the server would accept a request now. */
     public function assertMayRequest(MedicalRecord|Odontogram $subject, User $user): void
     {
+        $this->assertVisibleSubject($subject, $user);
+
         $refusal = $this->requestRefusal($subject, $user)
             ?? ($this->amendments->pendingFor(...$this->subjectKey($subject)) !== null ? self::MESSAGE_PENDING_EXISTS : null);
 
@@ -356,7 +415,7 @@ final class RmeAmendmentService
      * request offer mirrors the service (rule 135): shown only when request()
      * would accept this account now.
      *
-     * @return array{subject_type: string, subject_id: int, pending: ?RmeAmendment, recent: Collection<int, RmeAmendment>, can_request: bool, viewable: list<int>}|null
+     * @return array{subject_type: string, subject_id: int, is_chart: bool, pending: ?RmeAmendment, history: Collection<int, RmeAmendment>, can_request: bool, viewable: list<int>}|null
      */
     public function panelFor(MedicalRecord|Odontogram $subject, ?User $user): ?array
     {
@@ -372,8 +431,10 @@ final class RmeAmendmentService
         return [
             'subject_type' => $type,
             'subject_id' => $id,
+            'is_chart' => $subject instanceof Odontogram,
             'pending' => $pending,
-            'recent' => $recent,
+            // The closed ones, newest first (the pending one is shown on its own).
+            'history' => $recent->reject(fn (RmeAmendment $amendment): bool => $amendment->isPending())->values(),
             'can_request' => $pending === null && $this->requestRefusal($subject, $user) === null,
             'viewable' => $user === null ? [] : $recent
                 ->filter(fn (RmeAmendment $amendment): bool => $this->mayView($user, $amendment, $subject))
@@ -437,8 +498,7 @@ final class RmeAmendmentService
 
         if ($amendment->subject_type === RmeRecordVersion::SUBJECT_ODONTOGRAM) {
             return $detail + [
-                'chart_before' => $this->chartView($before),
-                'chart_after' => $this->chartView($proposed),
+                'chart_diff' => $this->chartDiff($before, $proposed),
             ];
         }
 
@@ -466,6 +526,7 @@ final class RmeAmendmentService
 
     private function assertRequester(MedicalRecord|Odontogram $subject, User $user): void
     {
+        $this->assertVisibleSubject($subject, $user);
         $refusal = $this->requestRefusal($subject, $user);
 
         if ($refusal !== null) {
@@ -473,7 +534,19 @@ final class RmeAmendmentService
         }
     }
 
-    /** Why this account may not decide the amendment now (state, permission, separation of duties), or null. */
+    /** A record this account may not read is "not found" — before any other answer. */
+    private function assertVisibleSubject(MedicalRecord|Odontogram $subject, User $user): void
+    {
+        if (! $this->maySeeSubject($user, $subject)) {
+            throw (new ModelNotFoundException)->setModel($subject::class, [$subject->getKey()]);
+        }
+    }
+
+    /**
+     * Why this account may not decide the amendment now, or null: state,
+     * permission, then separation of duties — not the requester, not the doctor
+     * of record, not the finalizer (CG-07; binds Super Admin).
+     */
     public function decisionRefusal(RmeAmendment $amendment, MedicalRecord|Odontogram $subject, User $user): ?string
     {
         if (! $amendment->isPending()) {
@@ -490,6 +563,12 @@ final class RmeAmendmentService
 
         if ($this->doctorOfRecordUserId($subject) === (int) $user->getKey()) {
             return self::MESSAGE_DOCTOR_OF_RECORD;
+        }
+
+        // Creator ≠ approver (CG-07): whoever finalized the record never decides a
+        // correction of it. Decided on the locked subject inside reject().
+        if ((int) ($subject->finalized_by ?? 0) === (int) $user->getKey()) {
+            return self::MESSAGE_FINALIZER;
         }
 
         return null;
@@ -557,13 +636,17 @@ final class RmeAmendmentService
             }
 
             $value = $this->text($fields[$field]);
+            if ($value === $this->text($sheet->{$field})) {
+                continue;
+            }
+
+            // Bounded only when it changes: a longer text already on the sheet,
+            // sent back unchanged, is not part of the proposal.
             if ($value !== null && mb_strlen($value) > self::SHEET_FIELD_MAX) {
                 throw $this->refusal("proposed.fields.$field", 'Isi kolom yang diusulkan terlalu panjang (maksimal '.self::SHEET_FIELD_MAX.' karakter).');
             }
 
-            if ($value !== $this->text($sheet->{$field})) {
-                $changed[$field] = $value;
-            }
+            $changed[$field] = $value;
         }
 
         $diagnoses = $this->diagnosisProposal($sheet, $this->arrayPart($proposed, 'diagnoses'));
@@ -584,22 +667,51 @@ final class RmeAmendmentService
 
         $remove = [];
         foreach ($this->arrayPart($input, 'remove') as $id) {
-            if (! is_numeric($id) || ! $current->has((int) $id)) {
+            if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
+                throw $this->refusal('proposed.diagnoses.remove', 'Diagnosis yang akan dihapus bukan diagnosis rekam medis ini.');
+            }
+            if (! $current->has((int) $id)) {
                 throw $this->refusal('proposed.diagnoses.remove', 'Diagnosis yang akan dihapus bukan diagnosis rekam medis ini.');
             }
             $remove[(int) $id] = (int) $id;
         }
         $remove = array_values($remove);
 
-        $rows = array_values(array_filter($this->arrayPart($input, 'add'), fn ($row): bool => is_array($row) && ($row['clinical_diagnosis_id'] ?? null) !== null && $row['clinical_diagnosis_id'] !== ''));
+        $rows = [];
+        foreach ($this->arrayPart($input, 'add') as $row) {
+            if (! is_array($row)) {
+                throw $this->refusal('proposed.diagnoses.add', 'Usulan diagnosis tidak valid.');
+            }
+            $this->assertKeys($row, self::DIAGNOSIS_ROW_KEYS, 'proposed.diagnoses.add');
+
+            // The form always posts one add row; an untouched one names no diagnosis.
+            if (($row['clinical_diagnosis_id'] ?? null) === null || $row['clinical_diagnosis_id'] === '') {
+                if ($this->text($row['notes'] ?? null) !== null) {
+                    throw $this->refusal('proposed.diagnoses.add', 'Pilih diagnosis untuk catatan yang diusulkan.');
+                }
+
+                continue;
+            }
+
+            $rows[] = $row;
+        }
+
         if (count($rows) > self::DIAGNOSIS_ADD_MAX) {
             throw $this->refusal('proposed.diagnoses.add', 'Paling banyak '.self::DIAGNOSIS_ADD_MAX.' diagnosis baru per amandemen.');
         }
 
-        $masters = $this->amendments->clinicalDiagnoses(array_map(fn (array $row): int => (int) $row['clinical_diagnosis_id'], $rows));
         $kept = $current->reject(fn (MedicalRecordDiagnosis $diagnosis): bool => in_array((int) $diagnosis->getKey(), $remove, true));
-        $onSheet = $kept->map(fn (MedicalRecordDiagnosis $diagnosis): int => (int) $diagnosis->clinical_diagnosis_id)->all();
+        $masters = $this->amendments->clinicalDiagnoses(array_values(array_unique(array_merge(
+            array_map(fn (array $row): int => (int) $row['clinical_diagnosis_id'], $rows),
+            $kept->map(fn (MedicalRecordDiagnosis $diagnosis): int => (int) $diagnosis->clinical_diagnosis_id)->values()->all(),
+        ))));
+        $onSheet = $kept->map(fn (MedicalRecordDiagnosis $diagnosis): int => (int) $diagnosis->clinical_diagnosis_id)->values()->all();
         $primaries = $kept->where('diagnosis_role', MedicalRecordDiagnosis::ROLE_PRIMARY)->count();
+        // DiagnosisRolloutService::hasActivePrimaryDiagnosis() counts a primary whose master is ACTIVE.
+        $activePrimaries = $kept
+            ->filter(fn (MedicalRecordDiagnosis $diagnosis): bool => $diagnosis->diagnosis_role === MedicalRecordDiagnosis::ROLE_PRIMARY
+                && $masters->get((int) $diagnosis->clinical_diagnosis_id)?->status === ClinicalDiagnosis::STATUS_ACTIVE)
+            ->count();
 
         $add = [];
         foreach ($rows as $row) {
@@ -624,7 +736,9 @@ final class RmeAmendmentService
             }
 
             $onSheet[] = $masterId;
-            $primaries += $role === MedicalRecordDiagnosis::ROLE_PRIMARY ? 1 : 0;
+            $isPrimary = $role === MedicalRecordDiagnosis::ROLE_PRIMARY;
+            $primaries += $isPrimary ? 1 : 0;
+            $activePrimaries += $isPrimary ? 1 : 0;
             $add[] = ['clinical_diagnosis_id' => $masterId, 'diagnosis_role' => $role, 'notes' => $this->text($notes)];
         }
 
@@ -632,38 +746,67 @@ final class RmeAmendmentService
             throw $this->refusal('proposed.diagnoses.add', 'Rekam medis hanya boleh memiliki satu diagnosis utama — hapus diagnosis utama sebelumnya dalam usulan yang sama.');
         }
 
-        return array_filter(['add' => $add, 'remove' => $remove], fn (array $part): bool => $part !== []);
+        $change = array_filter(['add' => $add, 'remove' => $remove], fn (array $part): bool => $part !== []);
+
+        // The state after the change must pass the finalization gate the sheet
+        // passed (DiagnosisRolloutService::assertFinalizationAllowed(): on a
+        // pilot_enforced branch, an active primary or a usable override). M3.3
+        // PR5 re-checks it when applying.
+        if ($change !== []
+            && $activePrimaries === 0
+            && $this->diagnosisRollout->modeForBranch((int) $sheet->branch_id) === DiagnosisRolloutSetting::MODE_PILOT_ENFORCED
+            && ! $this->diagnosisRollout->hasUsableOverride($sheet)) {
+            throw $this->refusal('proposed.diagnoses', self::MESSAGE_PRIMARY_REQUIRED);
+        }
+
+        return $change;
     }
 
-    /** @return array{summary_notes: ?string, additional_conditions: ?string, tooth_map_payload: ?array<string, mixed>} the whole proposed chart */
+    /**
+     * The whole proposed chart. Validated with the rules of a chart save
+     * (UpdateOdontogramPlaceholderRequest is the source of truth for the fields and
+     * their bounds), plus: only `teeth` in the tooth map, only the known per-tooth
+     * keys, FDI numbers, no duplicate condition. An absent key keeps the current
+     * value; an explicit null or an unreadable tooth map is refused — it cannot be
+     * told apart from a broken editor, and an approval must never erase a chart
+     * from it (an empty chart is `{"teeth": {}}`).
+     *
+     * @return array{summary_notes: ?string, additional_conditions: ?string, tooth_map_payload: mixed}
+     */
     private function chartProposal(Odontogram $chart, array $proposed): array
     {
         $this->assertKeys($proposed, ['summary_notes', 'additional_conditions', 'tooth_map_payload'], 'proposed');
 
-        if (is_string($proposed['tooth_map_payload'] ?? null)) {
-            $decoded = json_decode($proposed['tooth_map_payload'], true);
-            $proposed['tooth_map_payload'] = is_array($decoded) ? $decoded : $proposed['tooth_map_payload'];
+        if (array_key_exists('tooth_map_payload', $proposed)) {
+            if (is_string($proposed['tooth_map_payload'])) {
+                $decoded = json_decode($proposed['tooth_map_payload'], true);
+                // An unreadable string stays a string, so the `array` rule refuses it.
+                $proposed['tooth_map_payload'] = is_array($decoded) ? $decoded : $proposed['tooth_map_payload'];
+            }
+
+            if ($proposed['tooth_map_payload'] === null) {
+                throw $this->refusal('proposed.tooth_map_payload', self::MESSAGE_TOOTH_MAP);
+            }
         }
 
-        // The rules of a chart save (UpdateOdontogramPlaceholderRequest), so an
-        // amendment can never propose a chart the editor could not have saved.
-        $statuses = 'in:normal,caries,missing,filling,crown,root_treated';
-        $validator = Validator::make(['proposed' => $proposed], [
-            'proposed.summary_notes' => ['nullable', 'string', 'max:5000'],
-            'proposed.additional_conditions' => ['nullable', 'string', 'max:5000'],
-            'proposed.tooth_map_payload' => ['nullable', 'array'],
-            'proposed.tooth_map_payload.teeth' => ['nullable', 'array'],
-            'proposed.tooth_map_payload.teeth.*' => ['nullable', 'array'],
-            'proposed.tooth_map_payload.teeth.*.status' => ['nullable', 'string', $statuses],
-            'proposed.tooth_map_payload.teeth.*.note' => ['nullable', 'string', 'max:1000'],
-            'proposed.tooth_map_payload.teeth.*.conditions' => ['nullable', 'array'],
-            'proposed.tooth_map_payload.teeth.*.conditions.*' => ['nullable', 'string', 'in:caries,missing,crown,root_treated,mobility,impaction,filling'],
-            'proposed.tooth_map_payload.teeth.*.additional_condition' => ['nullable', 'string', 'max:1000'],
-            'proposed.tooth_map_payload.teeth.*.additional_note' => ['nullable', 'string', 'max:1000'],
-            'proposed.tooth_map_payload.teeth.*.dokter' => ['nullable', 'string', 'max:255'],
-        ]);
-        $validator->after(function ($v) use ($proposed): void {
-            $teeth = $proposed['tooth_map_payload']['teeth'] ?? null;
+        $rules = [];
+        foreach ((new UpdateOdontogramPlaceholderRequest)->rules() as $key => $rule) {
+            $rules['proposed.'.$key] = $rule;
+        }
+        $toothKeys = $this->toothKeys();
+
+        $validator = Validator::make(['proposed' => $proposed], $rules);
+        $validator->after(function ($v) use ($proposed, $toothKeys): void {
+            $map = $proposed['tooth_map_payload'] ?? null;
+            if (! is_array($map)) {
+                return;
+            }
+
+            if (array_diff(array_keys($map), ['teeth']) !== []) {
+                $v->errors()->add('proposed.tooth_map_payload', 'Peta gigi usulan memuat bagian yang tidak dikenal.');
+            }
+
+            $teeth = $map['teeth'] ?? null;
             if (! is_array($teeth)) {
                 return;
             }
@@ -672,6 +815,10 @@ final class RmeAmendmentService
             foreach ($teeth as $tooth => $entry) {
                 if (! in_array((string) $tooth, $valid, true)) {
                     $v->errors()->add('proposed.tooth_map_payload.teeth', "Nomor gigi '{$tooth}' tidak valid. Gunakan nomor FDI.");
+                }
+
+                if (is_array($entry) && array_diff(array_keys($entry), $toothKeys) !== []) {
+                    $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}", "Gigi '{$tooth}' memuat isian yang tidak dikenal.");
                 }
 
                 $conditions = is_array($entry) && is_array($entry['conditions'] ?? null) ? array_values(array_filter($entry['conditions'], fn ($c) => $c !== null)) : [];
@@ -696,30 +843,99 @@ final class RmeAmendmentService
             'tooth_map_payload' => array_key_exists('tooth_map_payload', $proposed) ? $proposed['tooth_map_payload'] : $current['tooth_map_payload'],
         ];
 
-        if ($this->sorted($after) === $this->sorted($current)) {
+        // "Changes nothing" is judged on what the reviewer sees (chartDiff()), so an
+        // editor that only adds empty fields is not a proposal.
+        $diff = $this->chartDiff($current, $after);
+        if (! collect($diff['rows'])->contains('changed', true) && ! collect($diff['notes'])->contains('changed', true)) {
             throw $this->refusal('proposed', self::MESSAGE_NO_CHANGE);
         }
 
         return $after;
     }
 
-    /** @return array{summary_notes: ?string, additional_conditions: ?string, teeth: list<array<string, ?string>>} */
-    private function chartView(array $chart): array
+    /** @return list<string> the per-tooth keys a chart save validates */
+    private function toothKeys(): array
     {
-        $teeth = (array) (($chart['tooth_map_payload'] ?? [])['teeth'] ?? []);
-        uksort($teeth, fn ($a, $b): int => strnatcmp((string) $a, (string) $b));
+        $keys = [];
+        foreach (array_keys((new UpdateOdontogramPlaceholderRequest)->rules()) as $rule) {
+            if (preg_match('/^tooth_map_payload\.teeth\.\*\.([a-z_]+)/', $rule, $m) === 1) {
+                $keys[$m[1]] = $m[1];
+            }
+        }
 
-        return [
-            'summary_notes' => $chart['summary_notes'] ?? null,
-            'additional_conditions' => $chart['additional_conditions'] ?? null,
-            'teeth' => collect($teeth)->map(fn ($entry, $tooth): array => [
-                'tooth' => (string) $tooth,
-                'status' => is_array($entry) ? ($entry['status'] ?? null) : null,
-                'additional_condition' => is_array($entry) ? ($entry['additional_condition'] ?? null) : null,
-                'additional_note' => is_array($entry) ? ($entry['additional_note'] ?? null) : null,
-                'dokter' => is_array($entry) ? ($entry['dokter'] ?? null) : null,
-            ])->values()->all(),
-        ];
+        return array_values($keys);
+    }
+
+    /**
+     * Before and after of a chart, tooth by tooth: every field each side stores
+     * (a key a save no longer writes is still shown, by name), and whether the
+     * rendered tooth differs.
+     *
+     * @return array{rows: list<array{tooth: string, before: list<string>, after: list<string>, changed: bool}>, notes: list<array{label: string, before: ?string, after: ?string, changed: bool}>}
+     */
+    private function chartDiff(array $before, array $after): array
+    {
+        $teethBefore = $this->teethOf($before);
+        $teethAfter = $this->teethOf($after);
+        $teeth = array_values(array_unique(array_merge(array_keys($teethBefore), array_keys($teethAfter))));
+        usort($teeth, fn ($a, $b): int => strnatcmp((string) $a, (string) $b));
+
+        $rows = [];
+        foreach ($teeth as $tooth) {
+            $lineBefore = $this->toothLines($teethBefore[$tooth] ?? null);
+            $lineAfter = $this->toothLines($teethAfter[$tooth] ?? null);
+            $rows[] = ['tooth' => (string) $tooth, 'before' => $lineBefore, 'after' => $lineAfter, 'changed' => $lineBefore !== $lineAfter];
+        }
+
+        $notes = [];
+        foreach (['summary_notes' => 'Ringkasan', 'additional_conditions' => 'Kondisi tambahan'] as $key => $label) {
+            $from = $this->text($before[$key] ?? null);
+            $to = $this->text($after[$key] ?? null);
+            $notes[] = ['label' => $label, 'before' => $from, 'after' => $to, 'changed' => $from !== $to];
+        }
+
+        return ['rows' => $rows, 'notes' => $notes];
+    }
+
+    /** @return array<string, mixed> keyed by tooth number (string) */
+    private function teethOf(array $chart): array
+    {
+        $teeth = $chart['tooth_map_payload']['teeth'] ?? [];
+        $out = [];
+        foreach (is_array($teeth) ? $teeth : [] as $tooth => $entry) {
+            $out[(string) $tooth] = $entry;
+        }
+
+        return $out;
+    }
+
+    /** @return list<string> one "Label: value" line per non-empty field, known fields first */
+    private function toothLines(mixed $entry): array
+    {
+        if ($entry === null) {
+            return [];
+        }
+
+        if (! is_array($entry)) {
+            return [(string) json_encode($entry, JSON_UNESCAPED_UNICODE)];
+        }
+
+        $lines = [];
+        $unknown = array_diff(array_keys($entry), array_keys(self::TOOTH_FIELD_LABELS));
+        sort($unknown);
+        foreach ([...array_keys(self::TOOTH_FIELD_LABELS), ...$unknown] as $key) {
+            $value = $entry[$key] ?? null;
+            if ($value === null || $value === '' || $value === []) {
+                continue;
+            }
+
+            $text = is_array($value)
+                ? implode(', ', array_map(fn ($item): string => is_scalar($item) ? (string) $item : (string) json_encode($item, JSON_UNESCAPED_UNICODE), $value))
+                : (is_scalar($value) ? (string) $value : (string) json_encode($value, JSON_UNESCAPED_UNICODE));
+            $lines[] = (self::TOOTH_FIELD_LABELS[$key] ?? $key).': '.$text;
+        }
+
+        return $lines;
     }
 
     private function doctorOfRecordUserId(MedicalRecord|Odontogram $subject): ?int
@@ -804,20 +1020,6 @@ final class RmeAmendmentService
         }
 
         return $part;
-    }
-
-    private function sorted(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-
-        $value = array_map(fn (mixed $child): mixed => $this->sorted($child), $value);
-        if (! array_is_list($value)) {
-            ksort($value, SORT_STRING);
-        }
-
-        return $value;
     }
 
     private function diagnosisLabel(?ClinicalDiagnosis $master): string

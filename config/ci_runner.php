@@ -1693,7 +1693,8 @@ return [
         // Same rule, §6 (M3.3 PR4) — the supervised amendment: request (doctor of record or finalizer,
         // final subject, bounded reason, validated proposal, base = latest version, one pending per subject
         // with the partial unique index refused cleanly in a savepoint), cancel (requester only), reject
-        // (approver ≠ requester, ≠ doctor of record, binding Super Admin; PostgreSQL CHECK backstop),
+        // (approver ≠ requester, ≠ doctor of record, ≠ finalizer, binding Super Admin; PostgreSQL CHECK and
+        // trigger backstops),
         // branch-scoped queue and detail (404 out of scope), no-store pages, the record page mirroring the
         // server. Selected by the existing `MedicalRecordFinalization`, `Odontogram` and
         // `RmeClinicalWriteAuthority` tokens in BOTH critical variants.

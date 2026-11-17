@@ -1,13 +1,14 @@
-@php
-    use App\Modules\ClinicOversight\Support\OversightFormat;
-    use App\Modules\RmeAmendment\Models\RmeRecordVersion;
-@endphp
 {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — one amendment:
      the version it was requested against beside the proposal, the reason, the
      decision, and the actions the service would accept from this account
-     (`$actions` from RmeAmendmentService::actionsFor()). Approve-and-apply is
-     M3.3 PR5 and has no control here yet. --}}
+     (`$actions` from RmeAmendmentService::actionsFor()). A chart is shown tooth by
+     tooth with every stored field and the changed rows marked
+     (RmeAmendmentService::chartDiff()). Approve-and-apply is M3.3 PR5 and has no
+     control here yet. --}}
 @php
+    use App\Modules\ClinicOversight\Support\OversightFormat;
+    use App\Modules\RmeAmendment\Models\RmeRecordVersion;
+
     $isChart = $amendment->subject_type === RmeRecordVersion::SUBJECT_ODONTOGRAM;
     $recordUrl = $isChart
         ? route('rme.visits.odontogram.show', $amendment->clinic_visit_id)
@@ -49,37 +50,40 @@
 
         <x-ui.card title="Sebelum dan sesudah" description="Kiri: versi {{ $amendment->base_version }} yang tercatat. Kanan: usulan. Rekam medis tidak berubah sebelum amandemen disetujui dan diterapkan.">
             @if ($isChart)
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    @foreach (['Versi '.$amendment->base_version => $chart_before, 'Usulan' => $chart_after] as $heading => $chart)
-                        <div>
-                            <h4 class="mb-2 text-sm font-semibold text-navy">{{ $heading }}</h4>
-                            <x-ui.table>
-                                <thead class="bg-navy-50">
-                                    <tr>
-                                        <th class="px-3 py-2 text-left font-medium text-ink-soft">Gigi</th>
-                                        <th class="px-3 py-2 text-left font-medium text-ink-soft">Diagnosa</th>
-                                        <th class="px-3 py-2 text-left font-medium text-ink-soft">Perawatan</th>
-                                        <th class="px-3 py-2 text-left font-medium text-ink-soft">Dokter</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-hairline">
-                                    @forelse ($chart['teeth'] as $tooth)
-                                        <tr>
-                                            <td class="px-3 py-2 font-semibold">{{ $tooth['tooth'] }}</td>
-                                            <td class="px-3 py-2">{{ $tooth['status'] }} {{ $tooth['additional_condition'] }}</td>
-                                            <td class="px-3 py-2">{{ $tooth['additional_note'] }}</td>
-                                            <td class="px-3 py-2">{{ $tooth['dokter'] }}</td>
-                                        </tr>
-                                    @empty
-                                        <tr><td colspan="4" class="px-3 py-2 text-ink-soft">Tidak ada data gigi.</td></tr>
-                                    @endforelse
-                                </tbody>
-                            </x-ui.table>
-                            <p class="mt-2 text-sm"><span class="text-ink-soft">Ringkasan:</span> {{ $chart['summary_notes'] ?? '—' }}</p>
-                            <p class="text-sm"><span class="text-ink-soft">Kondisi tambahan:</span> {{ $chart['additional_conditions'] ?? '—' }}</p>
-                        </div>
-                    @endforeach
-                </div>
+                <x-ui.table>
+                    <thead class="bg-navy-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium text-ink-soft">Gigi</th>
+                            <th class="px-3 py-2 text-left font-medium text-ink-soft">Versi {{ $amendment->base_version }}</th>
+                            <th class="px-3 py-2 text-left font-medium text-ink-soft">Usulan</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-hairline">
+                        @forelse ($chart_diff['rows'] as $toothRow)
+                            <tr class="align-top {{ $toothRow['changed'] ? 'bg-amber-50' : '' }}" @if ($toothRow['changed']) data-chart-row-changed="{{ $toothRow['tooth'] }}" @endif>
+                                <td class="px-3 py-2 font-semibold">
+                                    {{ $toothRow['tooth'] }}
+                                    @if ($toothRow['changed'])<span class="ml-1 text-xs font-medium text-warning">berubah</span>@endif
+                                </td>
+                                <td class="px-3 py-2 text-ink-soft">
+                                    @forelse ($toothRow['before'] as $line)<div>{{ $line }}</div>@empty<div>—</div>@endforelse
+                                </td>
+                                <td class="px-3 py-2">
+                                    @forelse ($toothRow['after'] as $line)<div>{{ $line }}</div>@empty<div>— (dihapus)</div>@endforelse
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="3" class="px-3 py-2 text-ink-soft">Tidak ada data gigi.</td></tr>
+                        @endforelse
+                        @foreach ($chart_diff['notes'] as $noteRow)
+                            <tr class="align-top {{ $noteRow['changed'] ? 'bg-amber-50' : '' }}" @if ($noteRow['changed']) data-chart-note-changed @endif>
+                                <td class="px-3 py-2 font-medium">{{ $noteRow['label'] }}</td>
+                                <td class="whitespace-pre-line px-3 py-2 text-ink-soft">{{ $noteRow['before'] ?? '—' }}</td>
+                                <td class="whitespace-pre-line px-3 py-2">{{ $noteRow['after'] ?? '—' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </x-ui.table>
             @else
                 @if ($field_rows !== [])
                     <x-ui.table>

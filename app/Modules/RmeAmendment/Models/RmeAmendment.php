@@ -10,18 +10,26 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use LogicException;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — a supervised
  * amendment request of a final sheet or of a finalized odontogram.
  *
  * `pending` → `cancelled` (by the requester), `rejected` (by a checker who is
- * neither the requester nor the doctor of record, with a written reason) or
- * `applied` (M3.3 PR5, approve-and-apply in one transaction). The subject is
- * named by `subject_type` (RmeRecordVersion::SUBJECT_*) and `subject_id`; the
- * branch, visit and patient are copied from the subject by the service, never
- * taken from a request. Status and decision columns are written only by
- * RmeAmendmentRepository::transition() (not mass-assignable).
+ * not the requester, not the doctor of record and not the finalizer, with a
+ * written reason) or `applied` (M3.3 PR5, approve-and-apply in one
+ * transaction). The subject is named by `subject_type`
+ * (RmeRecordVersion::SUBJECT_*) and `subject_id`; the branch, visit and patient
+ * are copied from the subject by the service, never taken from a request.
+ *
+ * Neither `status` nor the decision columns are mass-assignable: a new row is
+ * always `pending` (RmeAmendmentRepository::create()), and only
+ * RmeAmendmentRepository::transition() moves it. The request itself (subject,
+ * base version, reason, proposal, requester) never changes, and a row that left
+ * `pending` never changes at all; the row is never deleted. This model refuses
+ * all three; on PostgreSQL the trigger `trx_rme_amendments_guard` refuses them
+ * for raw SQL too.
  *
  * @property int $id
  * @property string $subject_type
@@ -68,6 +76,21 @@ class RmeAmendment extends Model
 
     public const REASON_MAX = 1000;
 
+    /** What was requested: fixed from the moment the row exists. */
+    public const REQUEST_COLUMNS = [
+        'subject_type',
+        'subject_id',
+        'branch_id',
+        'clinic_visit_id',
+        'patient_id',
+        'base_version_id',
+        'base_version',
+        'reason',
+        'proposed_content',
+        'requested_by',
+        'created_at',
+    ];
+
     protected $table = 'trx_rme_amendments';
 
     protected $fillable = [
@@ -78,11 +101,29 @@ class RmeAmendment extends Model
         'patient_id',
         'base_version_id',
         'base_version',
-        'status',
         'reason',
         'proposed_content',
         'requested_by',
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (RmeAmendment $amendment): void {
+            if ($amendment->getOriginal('status') !== self::STATUS_PENDING) {
+                throw new LogicException(sprintf('RME amendment #%d is decided and can no longer change.', (int) $amendment->getKey()));
+            }
+
+            foreach (self::REQUEST_COLUMNS as $column) {
+                if ($amendment->isDirty($column)) {
+                    throw new LogicException(sprintf('The request of RME amendment #%d is immutable (%s).', (int) $amendment->getKey(), $column));
+                }
+            }
+        });
+
+        static::deleting(function (RmeAmendment $amendment): void {
+            throw new LogicException(sprintf('RME amendment #%d can never be deleted.', (int) $amendment->getKey()));
+        });
+    }
 
     protected function casts(): array
     {

@@ -4,7 +4,8 @@
 @endphp
 {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — the supervisor
      queue of amendment requests, branch-scoped by RmeWorkingBranchScope (CG-05).
-     Patient identity here is the name and the medical record number only (CG-11). --}}
+     Patient identity here is the name and the medical record number only (CG-11),
+     and only on a row this account may open (`$viewable`). --}}
 <x-settings-shell title="Amandemen RME">
     <div class="space-y-6">
         <x-ui.page-header title="Amandemen RME" subtitle="Permintaan koreksi rekam medis dan odontogram yang sudah final. Setiap keputusan memerlukan alasan tertulis.">
@@ -39,10 +40,18 @@
                     <tbody class="divide-y divide-hairline">
                         @foreach ($rows as $row)
                             <tr data-amendment-row="{{ $row->id }}">
-                                <td class="px-4 py-3 font-mono"><a class="text-brand-700 hover:underline" href="{{ route('rme.amendments.show', $row) }}">#{{ $row->id }}</a></td>
+                                @if (in_array((int) $row->id, $viewable, true))
+                                    <td class="px-4 py-3 font-mono"><a class="text-brand-700 hover:underline" href="{{ route('rme.amendments.show', $row) }}">#{{ $row->id }}</a></td>
+                                @else
+                                    <td class="px-4 py-3 font-mono">#{{ $row->id }}</td>
+                                @endif
                                 <td class="px-4 py-3 text-ink-soft">{{ OversightFormat::clinicalTime($row->created_at, 'd/m/Y H:i') }} WITA</td>
                                 <td class="px-4 py-3">{{ $row->branch?->name }}</td>
-                                <td class="px-4 py-3">{{ $row->patient?->name }} <span class="font-mono text-ink-soft">{{ $row->patient?->medical_record_number }}</span></td>
+                                @if (in_array((int) $row->id, $viewable, true))
+                                    <td class="px-4 py-3">{{ $row->patient?->name }} <span class="font-mono text-ink-soft">{{ $row->patient?->medical_record_number }}</span></td>
+                                @else
+                                    <td class="px-4 py-3 text-ink-soft">Di luar cakupan pasien Anda</td>
+                                @endif
                                 <td class="px-4 py-3">{{ $row->subjectLabel() }} · versi {{ $row->base_version }}</td>
                                 <td class="px-4 py-3">{{ $row->requester?->name }}</td>
                                 <td class="px-4 py-3">{{ $row->statusLabel() }}</td>

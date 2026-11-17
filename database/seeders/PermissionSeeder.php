@@ -154,7 +154,8 @@ class PermissionSeeder extends Seeder
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the supervised
         // amendment of a final sheet or finalized odontogram. Request: Doctor (the
         // service further binds the doctor of record or the finalizer). Approve:
-        // Supervisor RME, never on their own request nor as the doctor of record.
+        // Supervisor RME, never on their own request, nor as the doctor of record or
+        // the finalizer of the record (creator ≠ approver).
         'request_rme_amendments',
         'approve_rme_amendments',
         // Sprint 20 Phase 1.10 — RME Cashier Billing

@@ -18,9 +18,11 @@ use Illuminate\Auth\Access\Response;
  *
  * Gate::before lets Super Admin past every clause here, which is exactly why the
  * identity rules that must bind Super Admin too (requester = doctor of record or
- * finalizer; checker ≠ requester, ≠ doctor of record) are re-decided by the
- * service inside its transaction. A record the account may not see answers 404,
- * so the existence of an amendment does not leak (CG-05).
+ * finalizer; checker ≠ requester, ≠ doctor of record, ≠ finalizer) are
+ * re-decided by the service inside its transaction. Every ability asks first
+ * whether the account may see the record (or the amendment) and answers 404
+ * otherwise, so neither the record's state nor an amendment's existence leaks
+ * (CG-05); only then does it give the service's own reason.
  */
 class RmeAmendmentPolicy
 {
@@ -40,6 +42,10 @@ class RmeAmendmentPolicy
     /** File an amendment of this final sheet or finalized chart. */
     public function request(User $user, MedicalRecord|Odontogram $subject): Response
     {
+        if (! $this->amendments()->maySeeSubject($user, $subject)) {
+            return Response::denyAsNotFound();
+        }
+
         $refusal = $this->amendments()->requestRefusal($subject, $user);
 
         return $refusal === null ? Response::allow() : Response::deny($refusal);

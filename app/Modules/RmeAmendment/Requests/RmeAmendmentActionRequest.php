@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Modules\RmeAmendment\Requests;
 
 use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the input of an
@@ -17,20 +19,40 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class RmeAmendmentActionRequest extends FormRequest
 {
+    /**
+     * Runs before validation: an account that may not see the record (store) or
+     * the amendment (decisions) gets 404 here, never a validation answer that
+     * would confirm what exists (CG-05). The abilities themselves are decided
+     * by the policy and the service.
+     */
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user = $this->user();
+        if ($user === null) {
+            return false;
+        }
+
+        $target = $this->route('amendment') ?? $this->route('medicalRecord') ?? $this->route('odontogram');
+        abort_unless(is_object($target) && Gate::forUser($user)->allows('view', $target), 404);
+
+        return true;
     }
 
-    /** The chart editor posts its tooth map as a JSON string (as on a chart save). */
+    /**
+     * The chart editor posts its tooth map as a JSON string (as on a chart save).
+     * An unreadable string is kept as it came, so the `array` rule refuses it —
+     * it never becomes an empty chart.
+     */
     protected function prepareForValidation(): void
     {
         $proposed = $this->input('proposed');
 
         if (is_array($proposed) && is_string($proposed['tooth_map_payload'] ?? null)) {
             $decoded = json_decode($proposed['tooth_map_payload'], true);
-            $proposed['tooth_map_payload'] = is_array($decoded) ? $decoded : null;
-            $this->merge(['proposed' => $proposed]);
+            if (is_array($decoded)) {
+                $proposed['tooth_map_payload'] = $decoded;
+                $this->merge(['proposed' => $proposed]);
+            }
         }
     }
 
@@ -39,10 +61,20 @@ class RmeAmendmentActionRequest extends FormRequest
     {
         $bounded = ['string', 'min:'.RmeAmendment::REASON_MIN, 'max:'.RmeAmendment::REASON_MAX];
 
-        if ($this->routeIs('rme.amendments.store-sheet', 'rme.amendments.store-chart')) {
+        if ($this->routeIs('rme.amendments.store-sheet')) {
             return [
                 'reason' => ['required', ...$bounded],
                 'proposed' => ['required', 'array'],
+            ];
+        }
+
+        // The chart form always posts the editor's tooth map; empty or unreadable
+        // means the editor failed, and is refused rather than read as "no teeth".
+        if ($this->routeIs('rme.amendments.store-chart')) {
+            return [
+                'reason' => ['required', ...$bounded],
+                'proposed' => ['required', 'array'],
+                'proposed.tooth_map_payload' => ['required', 'array'],
             ];
         }
 
@@ -61,6 +93,8 @@ class RmeAmendmentActionRequest extends FormRequest
             'reason.min' => 'Alasan amandemen minimal '.RmeAmendment::REASON_MIN.' karakter.',
             'reason.max' => 'Alasan amandemen maksimal '.RmeAmendment::REASON_MAX.' karakter.',
             'proposed.required' => 'Usulan perubahan wajib diisi.',
+            'proposed.tooth_map_payload.required' => RmeAmendmentService::MESSAGE_TOOTH_MAP,
+            'proposed.tooth_map_payload.array' => RmeAmendmentService::MESSAGE_TOOTH_MAP,
             'decision_reason.required' => 'Alasan penolakan wajib diisi.',
             'decision_reason.min' => 'Alasan penolakan minimal '.RmeAmendment::REASON_MIN.' karakter.',
             'decision_reason.max' => 'Alasan penolakan maksimal '.RmeAmendment::REASON_MAX.' karakter.',
