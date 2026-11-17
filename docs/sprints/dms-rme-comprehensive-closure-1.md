@@ -87,6 +87,18 @@ critical gate is recorded in §9.4:
 The base tree after #649, after #654 and after #656 equals the sequential merge simulation exactly; the final tree
 `eb3035ad` is the tree of the locally integrated run (§8b).
 
+Release 2 owner decisions (2026-11-17, structured question tool and written decisions "RELEASE 2 OWNER DECISIONS",
+"CONSENT STORAGE FALLBACK DECISION"):
+
+| Question | Owner answer |
+|---|---|
+| Release 2 at `c705f048` | **APPROVE**, conditional: required CI green on the exact SHA; approval signed by the owner (Contract 3); both migrations tested and compatible with production data; pre-deploy database backup succeeded; the runner on the Biznet VPS; production verification passes. Release 2 is an intermediate release; **no final GO tag** while the memo wave and every mandatory pending item are open |
+| Consent signature copy | **Show me the dry run first**: read-only dry run reporting files, conflicts, verification failures, missing sources and checksums; no `--apply` before the owner approves the dry run; do not remove or disable the old read fallback before the needed copies are migrated and verified |
+| Conflict found: `c705f048` had no read fallback (rule 121 §5, #648) | **Add temp fallback first**: a read-only fallback for historical signatures (new disk first; the old location only while the object is not on the new disk; nothing changed, copied, deleted or overwritten; authorization and BranchContext kept; regression tests for missing / invalid / unauthorized / fallback); required CI and a security review; then a NEW release SHA with post-merge CI and a NEW Contract 3 approval — the approval of `c705f048` is not reused; deploy on the Biznet VPS; pre-deploy backup; BK-2 SKIPPED; after the deploy: dry run, report, wait for approval; the fallback is removed only after every copy is verified and a separate approval |
+| Docs PR #659 | **APPROVE — merge after release 2 production verification**; the record states release 2 VERIFIED, memo wave PENDING, the program OPEN, the final GO tag not allowed, and every pending item with an owner, acceptance criteria and evidence requirements |
+
+The fallback is PR #661 (rule 237 §14.5a).
+
 ### 2b. Owner decision NO-GO (2026-11-16) and the closure wave
 
 The owner recorded the program as **DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE** and ordered
