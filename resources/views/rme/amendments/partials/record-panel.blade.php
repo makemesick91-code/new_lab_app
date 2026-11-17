@@ -21,6 +21,10 @@
                 @endif
                 <a class="text-brand-700 hover:underline" href="{{ route($amendmentPanel['is_chart'] ? 'rme.amendments.versions.chart' : 'rme.amendments.versions.sheet', $amendmentPanel['subject_id']) }}">Riwayat versi</a>
             </p>
+            {{-- Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book. --}}
+            @foreach ($amendmentPanel['correction_pages'] ?? [] as $correctionPointer)
+                <p class="mb-2 text-sm text-navy" data-correction-page-pointer>{{ $correctionPointer }}</p>
+            @endforeach
             @if ($amendmentPending !== null)
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-amendment-status="pending">
                     Permintaan amandemen #{{ $amendmentPending->id }} menunggu persetujuan Supervisor RME

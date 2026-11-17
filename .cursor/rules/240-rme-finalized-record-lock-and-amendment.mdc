@@ -573,15 +573,23 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 3. **Request** (`RmeAmendmentService::request(…, $correctionPage, $correctsPageNumber)`). After "not found", the
    reason bounds and the requester rule, and BEFORE anything is written, the canvas is decoded by
    `HandwritingPayloadGuard::decodeCanvas()` — the one canvas decoder, moved unchanged from
-   `MedicalRecordHandwritingController` (payload length, `data:` prefix, strict base64, PNG magic, rule 237 §5
-   declared-size and inflate bounds, the Sprint 59.1 blank guard) — then held to `assertCleanPng()` (signature, IHDR
-   first, every chunk complete with a valid CRC, no `tEXt`/`zTXt`/`iTXt`, no unknown critical chunk, nothing after
-   IEND: no polyglot). Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`, `MESSAGE_TOO_LARGE`,
-   `MESSAGE_BLANK`). A named page without a drawing is refused (`MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE`). Inside the
-   transaction, after visit → sheet locks, the requester re-decision and the one-pending check: the proposal may be
-   empty when a page rides with it (a page-only amendment, stored as `[]`; `allowEmpty` also at apply);
-   `corrects_page_number` must name a page of the patient's BOOK holding a stored drawing (`MESSAGE_CORRECTS_PAGE`;
-   page 1 is the legacy row, 2+ the pages table). Then, as one unit (rule 224): the object is written to
+   `MedicalRecordHandwritingController` (payload length, `data:` prefix, strict base64, PNG magic, a 13-byte IHDR —
+   on every canvas path since the review INFO, a shorter one used to answer 500 from the blank check — rule 237 §5
+   declared-size and inflate bounds, the Sprint 59.1 blank guard) — then held to `assertCleanPng()` (review L1): the
+   signature, the 13-byte IHDR first, every chunk complete with a valid CRC and on an ALLOWLIST — `IHDR`, `PLTE`,
+   `IDAT`, `IEND` and only the colour-space, density and transparency chunks a canvas export can carry (`sRGB`,
+   `gAMA`, `cHRM`, `pHYs`, `iCCP` ≤ 64 KiB, `tRNS`) — the IDAT chunks consecutive, nothing after IEND; any other
+   chunk, whatever its case bits (`tEXt`, `tEXT`, `htMl`, …), is refused, so no payload rides along with the drawing
+   (it is served as `image/png` with `nosniff` too). Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`,
+   `MESSAGE_TOO_LARGE`, `MESSAGE_BLANK`). A named page without a drawing is refused
+   (`MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE`). Inside the transaction, after visit → sheet locks, the requester
+   re-decision and the one-pending check: the proposal may be empty when a page rides with it (a page-only
+   amendment, stored as `[]`; `allowEmpty` also at apply); `corrects_page_number` must name a page of the patient's
+   BOOK holding a stored drawing (`MESSAGE_CORRECTS_PAGE`; page 1 is the legacy row, 2+ the pages table) that the
+   AMENDED ENCOUNTER wrote (review M2, `MESSAGE_CORRECTS_PAGE_ENCOUNTER`): a stamped page's `authored_clinic_visit_id`
+   is the amended sheet's visit; a page from before rule 240 (no stamp) counts only when the amended sheet sealed it
+   (`sealed_by_medical_record_id`). The request form lists exactly those pages, by book number ("Halaman buku RM N").
+   Then, as one unit (rule 224): the object is written to
    `ClinicalEvidenceStorage` under a fresh server key `handwritings/{branch}/{visit}/amendment_{YmdHis}_{16 hex}.png`
    (the client never supplies one), then the row (in the savepoint of §6.4) with the key and the SHA-256 of the
    bytes. A failure in the body — the raced one-pending index included — removes this call's object and only it; a
@@ -590,12 +598,14 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 4. **Approve and apply.** Inside §7's single transaction, after the visit → sheet → amendment locks, the checker
    rules, the stale-base check, the chain verification (§5.7, `MESSAGE_CHAIN_BROKEN` — so a broken history is never
    extended by a page or a version) and the proposal re-validation: the object is read back by
-   `HandwritingPayloadGuard::intactPng()` (present, a PNG, SHA-256 equal) — otherwise
-   `MESSAGE_CORRECTION_PAGE_INTEGRITY` and nothing is written — and re-run through today's canvas rules
+   `HandwritingPayloadGuard::storedPng()` (present, a PNG, SHA-256 equal) — a missing or tampered object answers
+   `MESSAGE_CORRECTION_PAGE_INTEGRITY`, a storage read fault `MESSAGE_CORRECTION_PAGE_UNREADABLE` ("coba lagi", no
+   new request — review L2), and nothing is written — and re-run through today's canvas rules
    (`MESSAGE_PROPOSAL_CHANGED`); then the patient's book (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`,
    R7-1 — the record new pages are written on; the amended sheet when the patient has no book in the RME branches) is
    locked with `lockForHandwriting()` — the record lock a page save takes — so the lock order is **visit → sheet →
-   amendment → book → page insert → version insert**; the named page must still be in the book. After the sheet's
+   amendment → book → page insert → version insert**; the named page must still be in the book and still the amended
+   encounter's own (`MESSAGE_PROPOSAL_CHANGED` otherwise). After the sheet's
    text and diagnoses are applied, `MedicalRecordHandwritingRepositoryInterface::appendSealedAmendmentPage()` (only
    inside a transaction) inserts the page as the book's next page on the book's visit, with the pending key and
    SHA-256, `authored_clinic_visit_id` = the amended sheet's visit (the encounter), `sealed_at` = now,
@@ -607,17 +617,26 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    key, SHA-256 and — on an amendment page only — `rme_amendment_id`; every other page is described exactly as
    before, so earlier snapshots and hashes are unchanged); `verifyChain()` stays true. A page-only apply changes
    nothing SATUSEHAT reads, so it refreshes no candidate.
-5. **Display and print.** The label `Halaman koreksi (amandemen #n, disetujui <d/m/Y H:i> WITA oleh <nama>)`
-   (`RmeAmendment::correctionPageLabel()`, null until applied) shows in the RM workspace (the active page,
-   `data-amendment-page`), the RME print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` /
-   `amendment_label` to an amendment page only) and the version history (`versionDetailFor()`). Images go only
-   through policy-gated, `private, no-store` routes, never an object key: the workspace and version pages link
-   `rme.handwriting-pages.image`, which serves an amendment page only when `intactPng()` verifies it (404 and an
-   ids-only warning otherwise); the print embeds only verified bytes, else "Gambar halaman ini tidak tersedia.". The
-   approver sees the pending page before approval on the detail page through `rme.amendments.correction-page`
-   (route permission `request_rme_amendments|approve_rme_amendments`, `RmeAmendmentPolicy::view` — the requester or
-   an approver in scope, 404 otherwise — and `RmeAmendmentService::correctionPageImage()`, verified, `nosniff`); a
-   tampered or missing object is not served and the approval is not offered (rule 135 mirror).
+5. **Display and print.** The label (`RmeAmendment::correctionPageLabel()`, null until applied, review M3) links back
+   to what it corrects: `Halaman koreksi — amandemen #id untuk kunjungan <nomor> (<tanggal> WITA)[, mengoreksi halaman
+   buku RM N]; disetujui <d/m/Y H:i> WITA oleh <nama>`. It shows in the RM workspace (the active page,
+   `data-amendment-page`, beside its book number "Halaman buku RM N" — the workspace's own index may differ), the RME
+   print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` / `amendment_label` to an amendment page only)
+   and the version history (`versionDetailFor()`). The amended sheet's page (the "Amandemen" block, `panelFor()`
+   `correction_pages`) and its print carry, beside "Diamandemen n×", one pointer per applied correction page:
+   `Halaman koreksi: buku RM halaman N (amandemen #id)` (`MedicalRecord::correctionPagePointers()`). Page numbers on
+   the form and the detail page are the book's ("halaman buku RM N"). Images go only through policy-gated,
+   `private, no-store` routes, never an object key: the workspace and version pages link
+   `rme.handwriting-pages.image`, which serves an amendment page only when `storedPng()` verifies it (404 for a
+   missing or tampered object, 503 for a storage read fault, an ids-only warning either way); the print embeds only
+   verified bytes, else "Gambar halaman ini tidak tersedia.". The approver sees the pending page before approval on
+   the detail page through `rme.amendments.correction-page` (route permission
+   `request_rme_amendments|approve_rme_amendments`, `RmeAmendmentPolicy::view` — the requester or an approver in
+   scope, 404 otherwise — and `RmeAmendmentService::correctionPageImage()`, verified, `nosniff`; 404 missing or
+   tampered, 503 unreadable); the approval is not offered unless the object verifies (rule 135 mirror). The detail
+   banner tells a read fault (`data-correction-page-unreadable`, retry) apart from tampering
+   (`data-correction-page-tampered`), and says "tidak dapat diterapkan" only while the amendment is pending (review
+   L3).
 6. **Rejected or cancelled.** The pending object is kept (committed evidence is never deleted, §5.9) and stays on
    the amendment's own page, marked "tidak diterapkan"; it never becomes a book page (no row links it).
 7. **Audit (ids and digests only, CG-11).** `RME_AMENDMENT_REQUESTED` adds `correction_page_sha256` and
@@ -638,10 +657,15 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    audit; a page-only amendment; a later sheet appending to the patient's book stamped with its own encounter; a
    tampered or missing object refused with nothing written; a broken version chain refused before any page or
    version is written (`MESSAGE_CHAIN_BROKEN`); the checker matrix (requester, finalizer, Super Admin on
-   their own request) appending nothing. Concurrency: two approvals append one page; an approval after a cancel or a
+   their own request) appending nothing; the corrected page bound to the amended encounter in the form, at request
+   and at approval, the unstamped-page rule included (review M2); a storage read fault told apart from tampering at
+   apply, on the image route (503) and on the detail page (review L2). Concurrency: two approvals append one page; an approval after a cancel or a
    reject appends none and keeps the object; a second request refused before writing; the raced one-pending index
    refused in the savepoint with this call's object removed; rule 224 compensation keeping the earlier evidence.
-   Display: the label and verified print bytes, a tampered page printed as unavailable. Constraints: the model guard
+   Canvas (review L1, INFO): `tEXT` and `htMl` chunks, an oversized `iCCP` and IDAT split around another chunk
+   refused; a short IHDR refused as a validation answer by `decodeCanvas()` (every canvas path), never a 500; a canvas
+   carrying `sRGB`, `gAMA`, `pHYs`, a small `iCCP` and split consecutive IDATs accepted. Display: the label (encounter,
+   corrected page, approval) and the pointer, verified print bytes, a tampered page printed as unavailable. Constraints: the model guard
    on the three columns, one page per amendment; on PostgreSQL the trigger refusing raw changes, the CHECKs and the
    constraint names, and the lock order visit → sheet → amendment → book → page → version. HTTP: front desk 403, a
    treating doctor who is neither and Super Admin 403, a stranger 404 before the canvas is validated, form errors
@@ -649,8 +673,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    requester and an in-scope approver only (out-of-scope approver: show, image, approve and reject 404; stranger 404;
    front office 403), a tampered one 404 with no approval offered; after approval the label in the workspace, the
    print (with the embedded bytes) and the version page, no object key anywhere, the page route serving verified
-   bytes and refusing a tampered object, the print saying so; a rejected correction never a book page, its object
-   kept and shown on the request as not applied.
+   bytes and refusing a tampered object, the print saying so, an applied amendment's tampered banner without "tidak
+   dapat diterapkan" (L3), the pointer beside "Diamandemen 1×" on the sheet's page and print, book numbering on the
+   form, the detail and the workspace; a rejected correction never a book page, its object kept and shown on the
+   request as not applied.
 10. **Known limits (follow-ups, not in this PR's `app/` budget).** (a) The existing page route
     `rme.handwriting-pages.image` keeps its pinned out-of-scope answer, 403 (`RmeClinicalDocumentReadScopeTest`,
     `ClinicalEvidencePrivacyTest`); the routes this PR adds answer 404. (b) The clinic oversight viewer

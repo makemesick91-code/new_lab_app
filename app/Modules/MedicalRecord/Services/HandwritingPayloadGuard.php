@@ -30,8 +30,10 @@ use Throwable;
  * Rule 240 §8 (memo M3.3 PR6) — decodeCanvas() is the one canvas decoder: the
  * handwriting save and the amendment correction page both call it (it moved here
  * from MedicalRecordHandwritingController unchanged). The correction page is also
- * held to assertCleanPng() (no polyglot) and, once stored, read back only through
- * intactPng() (its SHA-256 verified).
+ * held to assertCleanPng() (a chunk allowlist, IDAT consecutive, nothing after
+ * IEND — so no payload rides along with the drawing) and, once stored, read back
+ * only through storedPng() / intactPng() (its SHA-256 verified; a read fault told
+ * apart from tampering). The IHDR must be 13 bytes on every path (review INFO).
  */
 class HandwritingPayloadGuard
 {
@@ -50,11 +52,25 @@ class HandwritingPayloadGuard
 
     private const PNG_SIGNATURE = "\x89PNG\r\n\x1a\n";
 
-    /** Text chunks carry arbitrary payloads (a script, markup) and no drawing needs one. */
-    private const TEXT_CHUNKS = ['tEXt', 'zTXt', 'iTXt'];
+    /**
+     * Review L1 — the ONLY chunks an amendment page may carry: the critical ones,
+     * and the colour-space, density and transparency chunks a browser canvas
+     * export (toDataURL) can emit. Anything else — text, private or unknown
+     * chunks, whatever their case bits — could carry a payload no drawing needs.
+     */
+    private const ALLOWED_CHUNKS = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'sRGB', 'gAMA', 'cHRM', 'pHYs', 'iCCP', 'tRNS'];
 
-    /** The critical chunks a PNG may carry; any other critical chunk is refused. */
-    private const CRITICAL_CHUNKS = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
+    /** An embedded colour profile, bounded (a canvas profile is a few hundred bytes). */
+    private const ICCP_MAX_BYTES = 65536;
+
+    /** Review L2 — what reading a stored amendment page found. */
+    public const STORED_OK = 'ok';
+
+    public const STORED_MISSING = 'missing';
+
+    public const STORED_UNREADABLE = 'unreadable';
+
+    public const STORED_TAMPERED = 'tampered';
 
     /**
      * Decode, validate and blank-guard a submitted canvas (a `data:image/png`
@@ -92,9 +108,10 @@ class HandwritingPayloadGuard
 
     /**
      * Rule 240 §8 — the structure of a PNG that will be kept as an amendment page,
-     * so nothing but the drawing rides along (no polyglot): the signature, IHDR
-     * first, every chunk complete with a valid CRC, no text chunk, no unknown
-     * critical chunk, and nothing after IEND. A canvas export always passes.
+     * so nothing but the drawing rides along: the signature, a 13-byte IHDR first,
+     * every chunk complete with a valid CRC and on the ALLOWLIST (review L1), the
+     * IDAT chunks consecutive, and nothing after IEND. A canvas export passes.
+     * Served as `image/png` with `nosniff`, a stored page is never read as markup.
      */
     public function assertCleanPng(string $png): void
     {
@@ -106,18 +123,29 @@ class HandwritingPayloadGuard
 
         $offset = 8;
         $first = true;
+        $idatSeen = false;
+        $idatEnded = false;
 
         while ($offset + 12 <= $length) {
             $chunkLength = unpack('N', substr($png, $offset, 4))[1];
             $type = substr($png, $offset + 4, 4);
 
             if ($chunkLength > $length - $offset - 12
-                || preg_match('/^[A-Za-z]{4}$/', $type) !== 1
-                || ($first && $type !== 'IHDR')
-                || in_array($type, self::TEXT_CHUNKS, true)
-                || (ctype_upper($type[0]) && ! in_array($type, self::CRITICAL_CHUNKS, true))
+                || ! in_array($type, self::ALLOWED_CHUNKS, true)
+                || ($first !== ($type === 'IHDR'))
+                || ($type === 'IHDR' && $chunkLength !== 13)
+                || ($type === 'iCCP' && $chunkLength > self::ICCP_MAX_BYTES)
+                // IDAT chunks follow one another (PNG §5.6); data split around
+                // another chunk is not what an encoder writes.
+                || ($type === 'IDAT' && $idatEnded)
                 || unpack('N', substr($png, $offset + 8 + $chunkLength, 4))[1] !== crc32($type.substr($png, $offset + 8, $chunkLength))) {
                 throw ValidationException::withMessages(['handwriting_data' => self::MESSAGE_INVALID]);
+            }
+
+            if ($type === 'IDAT') {
+                $idatSeen = true;
+            } elseif ($idatSeen) {
+                $idatEnded = true;
             }
 
             $first = false;
@@ -144,31 +172,48 @@ class HandwritingPayloadGuard
      */
     public static function intactPng(?string $key, ?string $sha256): ?string
     {
+        return self::storedPng($key, $sha256)['bytes'];
+    }
+
+    /**
+     * Review L2 — the same read, saying what it found: `ok` (the bytes), `missing`
+     * (no key, no object or no recorded digest), `unreadable` (the storage read
+     * failed — a fault to retry, not evidence of tampering) or `tampered` (not a
+     * PNG, or its SHA-256 differs from the recorded one). Logs carry no key.
+     *
+     * @return array{status: string, bytes: ?string}
+     */
+    public static function storedPng(?string $key, ?string $sha256): array
+    {
         if ($key === null || $key === '' || ClinicalEvidenceStorage::isInlineDataUri($key)
             || ! is_string($sha256) || preg_match('/^[0-9a-f]{64}$/', $sha256) !== 1) {
-            return null;
+            return ['status' => self::STORED_MISSING, 'bytes' => null];
         }
 
         try {
             $disk = ClinicalEvidenceStorage::disk();
             if (! $disk->exists($key)) {
-                return null;
+                return ['status' => self::STORED_MISSING, 'bytes' => null];
             }
 
-            $bytes = (string) $disk->get($key);
+            $bytes = $disk->get($key);
         } catch (Throwable $e) {
             Log::warning('A stored clinical evidence object could not be read.', ['type' => $e::class]);
 
-            return null;
+            return ['status' => self::STORED_UNREADABLE, 'bytes' => null];
+        }
+
+        if (! is_string($bytes)) {
+            return ['status' => self::STORED_UNREADABLE, 'bytes' => null];
         }
 
         if (! str_starts_with($bytes, self::PNG_SIGNATURE) || ! hash_equals($sha256, hash('sha256', $bytes))) {
             Log::warning('A stored clinical evidence object failed its SHA-256 integrity check.');
 
-            return null;
+            return ['status' => self::STORED_TAMPERED, 'bytes' => null];
         }
 
-        return $bytes;
+        return ['status' => self::STORED_OK, 'bytes' => $bytes];
     }
 
     /** The submitted data URI, before anything is decoded or allocated from it. */
@@ -188,7 +233,10 @@ class HandwritingPayloadGuard
      */
     public function assertBoundedPng(string $png): void
     {
-        if (strlen($png) < 33 || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n" || substr($png, 12, 4) !== 'IHDR') {
+        // The IHDR holds exactly 13 bytes; a shorter one let the blank check read
+        // past its end (an "Uninitialized string offset" — a 500, review INFO).
+        if (strlen($png) < 33 || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n" || substr($png, 12, 4) !== 'IHDR'
+            || unpack('N', substr($png, 8, 4))[1] !== 13) {
             throw ValidationException::withMessages(['handwriting_data' => self::MESSAGE_INVALID]);
         }
 

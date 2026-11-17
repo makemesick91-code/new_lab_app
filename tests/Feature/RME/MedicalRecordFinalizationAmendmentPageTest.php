@@ -42,6 +42,7 @@ use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -250,6 +251,43 @@ it('refuses a canvas that is not a PNG, a polyglot, an oversized or a blank one,
         ->and(m3pgObjects())->toBe($objects);
 });
 
+it('admits only the chunks a canvas export carries, IDAT consecutive and a 13-byte IHDR (review L1)', function () {
+    $sheet = m3pgSheet();
+    $objects = m3pgObjects();
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $raw = '';
+    for ($y = 0; $y < 10; $y++) {
+        $raw .= "\0".str_repeat(pack('C4', (12 + $y) % 256, 20, 20, 255), 10);
+    }
+    $idat = gzcompress($raw);
+    $ihdr = $chunk('IHDR', pack('NNCCCCC', 10, 10, 8, 6, 0, 0, 0));
+    $split = $chunk('IDAT', substr($idat, 0, 10)).$chunk('pHYs', str_repeat("\0", 9)).$chunk('IDAT', substr($idat, 10));
+
+    $refused = [
+        'tEXT' => m3pgPng(6, extraChunks: ['tEXT' => '<script>alert(1)</script>']),
+        'htMl' => m3pgPng(6, extraChunks: ['htMl' => '<html><script>alert(1)</script></html>']),
+        'oversized iCCP' => m3pgPng(6, extraChunks: ['iCCP' => "icc\0\0".str_repeat('x', 70000)]),
+        'IDAT split by another chunk' => "\x89PNG\r\n\x1a\n".$ihdr.$split.$chunk('IEND', ''),
+    ];
+    foreach ($refused as $label => $png) {
+        $errors = m3pgErrors(fn () => m3pgRequest($sheet, m3pgUri($png)));
+        expect(in_array(HandwritingPayloadGuard::MESSAGE_INVALID, $errors['handwriting_data'] ?? [], true))->toBeTrue($label);
+    }
+
+    // A short IHDR is a validation answer on every canvas path, never a server error (INFO).
+    $shortIhdr = "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NN', 10, 10)).$chunk('IDAT', $idat).$chunk('IEND', '');
+    expect(fn () => app(HandwritingPayloadGuard::class)->decodeCanvas(m3pgUri($shortIhdr)))->toThrow(ValidationException::class);
+    $errors = m3pgErrors(fn () => m3pgRequest($sheet, m3pgUri($shortIhdr)));
+    expect($errors['handwriting_data'] ?? [])->toContain(HandwritingPayloadGuard::MESSAGE_INVALID)
+        ->and(RmeAmendment::query()->count())->toBe(0)
+        ->and(m3pgObjects())->toBe($objects);
+
+    // What a browser canvas may carry passes: colour-space and density chunks, a small iCCP, IDAT split in a row.
+    $browser = "\x89PNG\r\n\x1a\n".$ihdr.$chunk('sRGB', "\0").$chunk('gAMA', pack('N', 45455)).$chunk('pHYs', pack('NNC', 2835, 2835, 1))
+        .$chunk('iCCP', "icc\0\0".gzcompress(str_repeat('p', 400))).$chunk('IDAT', substr($idat, 0, 10)).$chunk('IDAT', substr($idat, 10)).$chunk('IEND', '');
+    expect(m3pgRequest($sheet, m3pgUri($browser))->correction_page_sha256)->toBe(hash('sha256', $browser));
+});
+
 it('validates the corrected page against the book and refuses a correction page on a chart', function () {
     $sheet = m3pgSheet();
     m3pgSealedPage($sheet, 1, 1);
@@ -397,7 +435,11 @@ it('appends to the patient\'s book when the amended sheet is a later sheet, stam
     $later->forceFill(['canonical_visit_id' => $book->clinic_visit_id])->save();
     expect(app(PatientRmWorkspaceResolver::class)->canonicalMedicalRecord($this->patient->id)?->id)->toBe($book->id);
 
-    $amendment = m3pgRequest($later->fresh(), m3pgUri(m3pgPng(41)), 1);
+    // R7-1 — the later encounter wrote its page 2 onto the book; that is the page it may correct.
+    $own = m3pgSealedPage($book, 2, 2);
+    $own->forceFill(['authored_clinic_visit_id' => $later->clinic_visit_id])->save();
+
+    $amendment = m3pgRequest($later->fresh(), m3pgUri(m3pgPng(41)), 2);
     m3pgService()->approve($amendment, $this->supervisor);
 
     $page = MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendment->id)->sole();
@@ -405,7 +447,61 @@ it('appends to the patient\'s book when the amended sheet is a later sheet, stam
         ->and($page->clinic_visit_id)->toBe($book->clinic_visit_id)
         ->and((int) $page->authored_clinic_visit_id)->toBe($later->clinic_visit_id)
         ->and((int) $page->sealed_by_medical_record_id)->toBe($later->id)
-        ->and($page->page_number)->toBe(2);
+        ->and($page->page_number)->toBe(3);
+});
+
+// ─── Security review M2 — the corrected page belongs to the amended encounter ─
+
+it('lets a correction name only a page of the amended encounter: in the form, at request and at approval (review M2)', function () {
+    $book = m3pgSheet();
+    $later = m3pgSheet();
+    $later->forceFill(['canonical_visit_id' => $book->clinic_visit_id])->save();
+    $later = $later->fresh();
+    $bookPage = m3pgSealedPage($book, 1, 1);           // written by the book's encounter (doctor A)
+    $ownPage = m3pgSealedPage($book, 2, 2);            // written by the later encounter
+    $ownPage->forceFill(['authored_clinic_visit_id' => $later->clinic_visit_id])->save();
+    $preRuleOwn = m3pgSealedPage($book, 3, 3);         // unstamped, sealed by the later sheet
+    $preRuleOwn->forceFill(['authored_clinic_visit_id' => null, 'sealed_by_medical_record_id' => $later->id])->save();
+    $preRuleOther = m3pgSealedPage($book, 4, 4);       // unstamped, sealed by the book's sheet
+    $preRuleOther->forceFill(['authored_clinic_visit_id' => null])->save();
+
+    // The form offers only the later encounter's pages.
+    expect(collect(m3pgService()->requestFormFor($later)['book_pages'])->pluck('number')->all())->toBe([2, 3]);
+
+    foreach ([1, 4] as $foreign) {
+        $errors = m3pgErrors(fn () => m3pgRequest($later, m3pgUri(m3pgPng(45)), $foreign));
+        expect($errors['corrects_page_number'] ?? [])->toContain(RmeAmendmentService::MESSAGE_CORRECTS_PAGE_ENCOUNTER);
+    }
+    expect(RmeAmendment::query()->count())->toBe(0);
+
+    // Re-decided at approval: the page no longer belongs to the amended encounter.
+    $amendment = m3pgRequest($later, m3pgUri(m3pgPng(46)), 2);
+    DB::table('trx_medical_record_handwriting_pages')->where('id', $ownPage->id)->update(['authored_clinic_visit_id' => $book->clinic_visit_id]);
+    $errors = m3pgErrors(fn () => m3pgService()->approve($amendment, $this->supervisor));
+    expect($errors['amendment'] ?? [])->toContain(RmeAmendmentService::MESSAGE_PROPOSAL_CHANGED)
+        ->and(m3pgAmendmentPages())->toBe(0);
+
+    m3pgService()->cancel($amendment, $this->doctorUser);
+    expect(m3pgRequest($later->fresh(), m3pgUri(m3pgPng(47)), 3)->corrects_page_number)->toBe(3)
+        ->and($bookPage->fresh()->handwriting_path)->not->toBeNull();
+});
+
+it('tells a storage read error apart from tampering when applying (review L2)', function () {
+    $sheet = m3pgSheet();
+    $amendment = m3pgRequest($sheet, m3pgUri(m3pgPng(57)));
+
+    $broken = Mockery::mock(Filesystem::class);
+    $broken->shouldReceive('exists')->andReturn(true);
+    $broken->shouldReceive('get')->andThrow(new RuntimeException('m3pg clinical disk offline'));
+    Storage::set(ClinicalEvidenceStorage::diskName(), $broken);
+
+    $errors = m3pgErrors(fn () => m3pgService()->approve($amendment, $this->supervisor));
+    expect($errors['amendment'] ?? [])->toContain(RmeAmendmentService::MESSAGE_CORRECTION_PAGE_UNREADABLE)
+        ->and($errors['amendment'] ?? [])->not->toContain(RmeAmendmentService::MESSAGE_CORRECTION_PAGE_INTEGRITY)
+        ->and(RmeAmendmentService::MESSAGE_CORRECTION_PAGE_UNREADABLE)->not->toContain('amandemen baru')
+        ->and(HandwritingPayloadGuard::storedPng($amendment->correction_page_path, $amendment->correction_page_sha256)['status'])->toBe(HandwritingPayloadGuard::STORED_UNREADABLE)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING)
+        ->and(m3pgAmendmentPages())->toBe(0);
 });
 
 it('refuses to apply a tampered or missing correction object, writing nothing', function () {
@@ -577,13 +673,18 @@ it('labels the applied page for the workspace and the print, and prints only ver
     $sheet = m3pgSheet();
     $bytes = m3pgPng(101);
     $amendment = m3pgRequest($sheet, m3pgUri($bytes));
+    expect($sheet->fresh()->correctionPagePointers())->toBe([]);
     m3pgService()->approve($amendment, $this->supervisor);
     $applied = $amendment->fresh();
 
     $entry = $sheet->fresh()->orderedHandwritingPages(true)->firstWhere('page_number', 2);
-    $label = 'Halaman koreksi (amandemen #'.$amendment->id.', disetujui '
-        .$applied->decided_at->copy()->setTimezone('Asia/Makassar')->format('d/m/Y H:i').' WITA oleh '.$this->supervisor->name.')';
+    $visit = $sheet->clinicVisit;
+    // Review M3 — the label links back to the amended encounter (and the corrected page, when named).
+    $label = 'Halaman koreksi — amandemen #'.$amendment->id.' untuk kunjungan '.$visit->visit_number
+        .' ('.$visit->visit_date->format('d/m/Y').' WITA); disetujui '
+        .$applied->decided_at->copy()->setTimezone('Asia/Makassar')->format('d/m/Y H:i').' WITA oleh '.$this->supervisor->name;
     expect($entry['amendment_label'])->toBe($label)
+        ->and($sheet->fresh()->correctionPagePointers())->toBe(['Halaman koreksi: buku RM halaman 2 (amandemen #'.$amendment->id.')'])
         ->and($entry['amendment_id'])->toBe($amendment->id)
         ->and($entry['preview_url'])->toBe(m3pgUri($bytes));
 
@@ -591,6 +692,12 @@ it('labels the applied page for the workspace and the print, and prints only ver
     $entry = $sheet->fresh()->orderedHandwritingPages(true)->firstWhere('page_number', 2);
     expect($entry['preview_url'])->toBeNull()
         ->and($entry['has_content'])->toBeTrue();
+
+    // With a named corrected page the label says which one (book numbering).
+    m3pgSealedPage($sheet, 3, 3);
+    $second = m3pgRequest($sheet->fresh(), m3pgUri(m3pgPng(103)), 3);
+    m3pgService()->approve($second, userInRole('Supervisor RME'));
+    expect($second->fresh()->load('decider', 'clinicVisit')->correctionPageLabel())->toContain(', mengoreksi halaman buku RM 3; disetujui ');
 });
 
 // ─── Immutability and constraints ─────────────────────────────────────────────

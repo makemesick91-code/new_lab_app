@@ -173,8 +173,11 @@ class RmeAmendment extends Model
 
     /**
      * Rule 240 §8 — how an applied correction page is labelled wherever it is
-     * shown (workspace, print, version history): the amendment, when and by whom
-     * it was approved (clinic time, WITA). Null until it is applied.
+     * shown (workspace, print, version history, oversight): the amendment, the
+     * encounter it amends (visit number and clinic date), the book page it
+     * corrects when one was named, and when (WITA) and by whom it was approved
+     * (review M3). Reads `clinicVisit` and `decider`; callers eager-load them.
+     * Null until it is applied.
      */
     public function correctionPageLabel(): ?string
     {
@@ -182,9 +185,16 @@ class RmeAmendment extends Model
             return null;
         }
 
+        $visit = $this->clinicVisit;
+        $encounter = $visit !== null
+            ? sprintf('kunjungan %s (%s WITA)', $visit->visit_number ?: '#'.$visit->getKey(), $visit->visit_date?->format('d/m/Y') ?? '—')
+            : 'kunjungan #'.(int) $this->clinic_visit_id;
+
         return sprintf(
-            'Halaman koreksi (amandemen #%d, disetujui %s WITA oleh %s)',
+            'Halaman koreksi — amandemen #%d untuk %s%s; disetujui %s WITA oleh %s',
             (int) $this->getKey(),
+            $encounter,
+            $this->corrects_page_number !== null ? ', mengoreksi halaman buku RM '.(int) $this->corrects_page_number : '',
             OversightFormat::clinicalTime($this->decided_at, 'd/m/Y H:i') ?? '—',
             $this->decider?->name ?? '—',
         );

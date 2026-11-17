@@ -9,6 +9,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use Database\Factories\MedicalRecordFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -196,7 +197,7 @@ class MedicalRecord extends Model
         // amendment, approved when and by whom), read in one query.
         $amendmentIds = $rows->pluck('rme_amendment_id')->filter()->map(fn ($id): int => (int) $id)->values()->all();
         $amendments = $amendmentIds === [] ? collect() : RmeAmendment::query()
-            ->with('decider:id,name')
+            ->with(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])
             ->whereKey($amendmentIds)
             ->get()
             ->keyBy(fn (RmeAmendment $amendment): int => (int) $amendment->getKey());
@@ -229,6 +230,39 @@ class MedicalRecord extends Model
         }
 
         return $pages;
+    }
+
+    /**
+     * Rule 240 §8 (review M3) — where this sheet's applied correction pages sit
+     * in the patient's book, for the line beside "Diamandemen n×" on the sheet's
+     * page and its print: "Halaman koreksi: buku RM halaman N (amandemen #id)".
+     *
+     * @return list<string>
+     */
+    public function correctionPagePointers(): array
+    {
+        $amendmentIds = RmeAmendment::query()
+            ->where('subject_type', RmeRecordVersion::SUBJECT_MEDICAL_RECORD)
+            ->where('subject_id', $this->getKey())
+            ->where('status', RmeAmendment::STATUS_APPLIED)
+            ->whereNotNull('correction_page_path')
+            ->pluck('id');
+
+        if ($amendmentIds->isEmpty()) {
+            return [];
+        }
+
+        return MedicalRecordHandwritingPage::query()
+            ->whereIn('rme_amendment_id', $amendmentIds)
+            ->orderBy('rme_amendment_id')
+            ->get(['page_number', 'rme_amendment_id'])
+            ->map(fn (MedicalRecordHandwritingPage $page): string => sprintf(
+                'Halaman koreksi: buku RM halaman %d (amandemen #%d)',
+                (int) $page->page_number,
+                (int) $page->getAttribute('rme_amendment_id'),
+            ))
+            ->values()
+            ->all();
     }
 
     /** Rule 240 §8 — an amendment page's bytes for print, only when they verify. */

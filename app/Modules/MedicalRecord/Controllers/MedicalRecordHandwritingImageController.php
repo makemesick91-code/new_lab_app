@@ -26,7 +26,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * Rule 240 §8 (memo M3.3 PR6) — an amendment page (a correction appended by an
  * approved amendment) is served only when its bytes match the recorded SHA-256;
- * a missing or tampered object answers 404, like an absent one.
+ * a missing or tampered object answers 404, like an absent one; a storage read
+ * fault answers 503.
  */
 class MedicalRecordHandwritingImageController extends Controller
 {
@@ -52,17 +53,20 @@ class MedicalRecordHandwritingImageController extends Controller
         $this->authorize('view', $record);
 
         if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
-            $bytes = HandwritingPayloadGuard::intactPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
+            $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
 
-            if ($bytes === null) {
-                Log::warning('An RME amendment page is missing or failed its integrity check; not served.', [
+            if ($stored['bytes'] === null) {
+                Log::warning('An RME amendment page was not served.', [
                     'handwriting_page_id' => (int) $handwritingPage->getKey(),
                     'rme_amendment_id' => (int) $handwritingPage->getAttribute('rme_amendment_id'),
+                    'status' => $stored['status'],
                 ]);
-                abort(404);
+                // A storage read fault is retried (503), never reported as a
+                // missing or tampered page (404) — review L2.
+                abort($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE ? 503 : 404);
             }
 
-            return $this->streamBytes($bytes);
+            return $this->streamBytes($stored['bytes']);
         }
 
         return $this->stream($handwritingPage->handwriting_path);

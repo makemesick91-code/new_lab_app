@@ -34,6 +34,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -142,10 +143,15 @@ function m3phOutOfScopeApprover(): User
     return $pinned->fresh();
 }
 
-function m3phLabel(RmeAmendment $amendment, User $approver): string
+/** Review M3 — the label links back to the amended encounter and the corrected page. */
+function m3phLabel(RmeAmendment $amendment, User $approver, ?int $corrects = null): string
 {
-    return 'Halaman koreksi (amandemen #'.$amendment->id.', disetujui '
-        .$amendment->decided_at->copy()->setTimezone('Asia/Makassar')->format('d/m/Y H:i').' WITA oleh '.$approver->name.')';
+    $visit = ClinicVisit::query()->findOrFail($amendment->clinic_visit_id);
+
+    return 'Halaman koreksi — amandemen #'.$amendment->id.' untuk kunjungan '.$visit->visit_number
+        .' ('.$visit->visit_date->format('d/m/Y').' WITA)'
+        .($corrects !== null ? ', mengoreksi halaman buku RM '.$corrects : '')
+        .'; disetujui '.$amendment->decided_at->copy()->setTimezone('Asia/Makassar')->format('d/m/Y H:i').' WITA oleh '.$approver->name;
 }
 
 // ─── Request ─────────────────────────────────────────────────────────────────
@@ -198,7 +204,8 @@ it('files a correction page over HTTP as the doctor of record and refuses everyo
         ->assertOk()
         ->assertSee('data-correction-canvas', false)
         ->assertSee('name="corrects_page_number"', false)
-        ->assertSee('<option value="1"', false);
+        ->assertSee('<option value="1"', false)
+        ->assertSee('Halaman buku RM 1');
 
     $response = $this->actingAs($this->doctorUser)->post(route('rme.amendments.store-sheet', $sheet), m3phForm($sheet, $png, 1));
     $amendment = RmeAmendment::query()->sole();
@@ -221,7 +228,7 @@ it('shows the pending correction to the requester and an approver in scope only:
         ->assertOk()
         ->assertSee($imageUrl, false)
         ->assertSee('data-correction-page', false)
-        ->assertSee('mengoreksi halaman 1')
+        ->assertSee('mengoreksi halaman buku RM 1')
         ->assertSee('data-amendment-approve', false)
         ->assertDontSee($amendment->correction_page_path);
 
@@ -271,7 +278,8 @@ it('approves over HTTP and shows the sealed page with its label in the workspace
 
     $applied = $amendment->fresh();
     $page = MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendment->id)->sole();
-    $label = m3phLabel($applied, $this->supervisor);
+    $label = m3phLabel($applied, $this->supervisor, 1);
+    $pointer = 'Halaman koreksi: buku RM halaman 2 (amandemen #'.$amendment->id.')';
     $key = $applied->correction_page_path;
 
     $image = $this->actingAs($this->supervisor)->get(route('rme.handwriting-pages.image', $page))
@@ -284,13 +292,21 @@ it('approves over HTTP and shows the sealed page with its label in the workspace
         $this->actingAs($reader)->get(route('rme.visits.medical-record.show', [$sheet->clinicVisit, 'rm_page' => 2]))
             ->assertOk()
             ->assertSee($label)
+            ->assertSee('Halaman buku RM 2')
             ->assertSee('data-amendment-page="'.$amendment->id.'"', false)
             ->assertDontSee($key);
     }
 
+    // Review M3 — the amended sheet points at its correction page beside "Diamandemen n×".
+    $this->actingAs($this->doctorUser)->get(route('rme.visits.medical-record.show', $sheet->clinicVisit))
+        ->assertOk()
+        ->assertSee('Diamandemen 1×')
+        ->assertSee($pointer);
+
     $this->actingAs($this->supervisor)->get(route('rme.visits.print', $sheet->clinicVisit))
         ->assertOk()
         ->assertSee($label)
+        ->assertSee($pointer)
         ->assertSee('data:image/png;base64,'.base64_encode($png), false)
         ->assertDontSee($key);
 
@@ -302,7 +318,7 @@ it('approves over HTTP and shows the sealed page with its label in the workspace
 
     $this->actingAs($this->doctorUser)->get(route('rme.amendments.show', $amendment))
         ->assertOk()
-        ->assertSee('Ditambahkan ke buku RM sebagai halaman 2')
+        ->assertSee('Ditambahkan sebagai halaman buku RM 2')
         ->assertDontSee($key);
 
     // Outside the record's scope the existing page route refuses, as it does for
@@ -318,6 +334,30 @@ it('approves over HTTP and shows the sealed page with its label in the workspace
         ->assertSee($label)
         ->assertSee('Gambar halaman ini tidak tersedia.')
         ->assertDontSee('data:image/png;base64,'.base64_encode(m3phPng(14)), false);
+
+    // Review L3 — an applied amendment is not told it "cannot be applied".
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.show', $amendment))
+        ->assertOk()
+        ->assertSee('data-correction-page-tampered', false)
+        ->assertDontSee('tidak dapat diterapkan');
+});
+
+it('tells a storage read error apart from tampering on the pending image and the detail page (review L2)', function () {
+    $sheet = m3phSheet();
+    $amendment = m3phPending($sheet, m3phPng(21));
+
+    $broken = Mockery::mock(Filesystem::class);
+    $broken->shouldReceive('exists')->andReturn(true);
+    $broken->shouldReceive('get')->andThrow(new RuntimeException('m3ph clinical disk offline'));
+    Storage::set(ClinicalEvidenceStorage::diskName(), $broken);
+
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.correction-page', $amendment))->assertStatus(503);
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.show', $amendment))
+        ->assertOk()
+        ->assertSee('data-correction-page-unreadable', false)
+        ->assertSee(RmeAmendmentService::MESSAGE_CORRECTION_PAGE_UNREADABLE)
+        ->assertDontSee('data-correction-page-tampered', false)
+        ->assertDontSee('data-amendment-approve', false);
 });
 
 it('never shows a rejected correction as a book page and keeps its object', function () {

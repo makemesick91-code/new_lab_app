@@ -14,6 +14,8 @@ use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
@@ -178,6 +180,12 @@ final class RmeAmendmentService
 
     public const MESSAGE_CORRECTION_PAGE_INTEGRITY = 'Gambar halaman koreksi tidak lolos pemeriksaan integritas (SHA-256), sehingga amandemen ini tidak dapat diterapkan. Pengaju perlu mengajukan amandemen baru.';
 
+    /** Review L2 — a storage read fault is not tampering: try again later. */
+    public const MESSAGE_CORRECTION_PAGE_UNREADABLE = 'Gambar koreksi sementara tidak dapat dibaca; coba lagi.';
+
+    /** Review M2 — a correction names only a page the amended encounter wrote. */
+    public const MESSAGE_CORRECTS_PAGE_ENCOUNTER = 'Halaman yang dikoreksi bukan halaman yang ditulis pada kunjungan rekam medis ini.';
+
     /** The largest page number a book row can hold (int4). */
     private const PAGE_NUMBER_MAX = 2147483647;
 
@@ -259,7 +267,7 @@ final class RmeAmendmentService
                     : $this->sheetProposal($locked, $proposed, allowEmpty: $page !== null);
 
                 if ($page !== null && $correctsPageNumber !== null) {
-                    $this->assertBookPage($this->bookOf($locked), $correctsPageNumber, 'corrects_page_number', self::MESSAGE_CORRECTS_PAGE);
+                    $this->assertBookPage($this->bookOf($locked), $locked, $correctsPageNumber, 'corrects_page_number', self::MESSAGE_CORRECTS_PAGE, self::MESSAGE_CORRECTS_PAGE_ENCOUNTER);
                 }
 
                 $base = $this->versions->latestFor($type, $id)
@@ -486,7 +494,7 @@ final class RmeAmendmentService
                     ?? throw $this->refusal('amendment', self::MESSAGE_PROPOSAL_CHANGED);
 
                 if ($locked->corrects_page_number !== null) {
-                    $this->assertBookPage($book, (int) $locked->corrects_page_number, 'amendment', self::MESSAGE_PROPOSAL_CHANGED);
+                    $this->assertBookPage($book, $subject, (int) $locked->corrects_page_number, 'amendment', self::MESSAGE_PROPOSAL_CHANGED, self::MESSAGE_PROPOSAL_CHANGED);
                 }
             }
 
@@ -696,28 +704,31 @@ final class RmeAmendmentService
     // ─── Reads ──────────────────────────────────────────────────────────────
 
     /**
-     * Rule 240 §8 — the bytes of an amendment's correction page, for its
-     * requester or an approver in scope (otherwise "not found"); null when the
-     * amendment carries none or the object is absent or fails its SHA-256 check.
+     * Rule 240 §8 — an amendment's correction page as read for its requester or
+     * an approver in scope (otherwise "not found"): HandwritingPayloadGuard's
+     * status and, only when it is `ok`, the bytes. Missing, unreadable (a storage
+     * fault, review L2) and tampered are told apart; only `ok` is ever served.
+     *
+     * @return array{status: string, bytes: ?string}
      */
-    public function correctionPageImage(RmeAmendment $amendment, User $user): ?string
+    public function correctionPageImage(RmeAmendment $amendment, User $user): array
     {
         if (! $this->mayView($user, $amendment)) {
             throw (new ModelNotFoundException)->setModel(RmeAmendment::class, [(int) $amendment->getKey()]);
         }
 
-        if (! $amendment->hasCorrectionPage()) {
-            return null;
-        }
+        $stored = $amendment->hasCorrectionPage()
+            ? HandwritingPayloadGuard::storedPng($amendment->correction_page_path, $amendment->correction_page_sha256)
+            : ['status' => HandwritingPayloadGuard::STORED_MISSING, 'bytes' => null];
 
-        $bytes = HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256);
-        if ($bytes === null) {
-            Log::warning('An RME amendment correction page is missing or failed its integrity check; not served.', [
+        if ($amendment->hasCorrectionPage() && $stored['status'] !== HandwritingPayloadGuard::STORED_OK) {
+            Log::warning('An RME amendment correction page was not served.', [
                 'rme_amendment_id' => (int) $amendment->getKey(),
+                'status' => $stored['status'],
             ]);
         }
 
-        return $bytes;
+        return $stored;
     }
 
     public function find(int $id): ?RmeAmendment
@@ -747,7 +758,7 @@ final class RmeAmendmentService
      * request offer mirrors the service (rule 135): shown only when request()
      * would accept this account now.
      *
-     * @return array{subject_type: string, subject_id: int, is_chart: bool, amendment_count: int, pending: ?RmeAmendment, history: Collection<int, RmeAmendment>, can_request: bool, viewable: list<int>}|null
+     * @return array{subject_type: string, subject_id: int, is_chart: bool, amendment_count: int, pending: ?RmeAmendment, history: Collection<int, RmeAmendment>, can_request: bool, correction_pages: list<string>, viewable: list<int>}|null
      */
     public function panelFor(MedicalRecord|Odontogram $subject, ?User $user): ?array
     {
@@ -770,6 +781,8 @@ final class RmeAmendmentService
             // The closed ones, newest first (the pending one is shown on its own).
             'history' => $recent->reject(fn (RmeAmendment $amendment): bool => $amendment->isPending())->values(),
             'can_request' => $pending === null && $this->requestRefusal($subject, $user) === null,
+            // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
+            'correction_pages' => $subject instanceof MedicalRecord ? $subject->correctionPagePointers() : [],
             'viewable' => $user === null ? [] : $recent
                 ->filter(fn (RmeAmendment $amendment): bool => $this->mayView($user, $amendment, $subject))
                 ->map(fn (RmeAmendment $amendment): int => (int) $amendment->getKey())
@@ -806,15 +819,9 @@ final class RmeAmendmentService
                 'label' => $this->diagnosisLabel($masters->get((int) $diagnosis->clinical_diagnosis_id)),
                 'role' => $diagnosis->diagnosis_role,
             ])->values()->all(),
-            // Rule 240 §8 — the pages of the patient's book a correction may name.
-            'book_pages' => $this->bookOf($subject)->orderedHandwritingPages()
-                ->filter(fn (array $page): bool => (bool) $page['has_content'])
-                ->map(fn (array $page): array => [
-                    'number' => (int) $page['page_number'],
-                    'label' => 'Halaman '.$page['page_number'].(isset($page['amendment_id']) ? ' (halaman koreksi)' : ''),
-                ])
-                ->values()
-                ->all(),
+            // Rule 240 §8 — the pages of the patient's book a correction may name:
+            // only those the amended encounter wrote (review M2), by book number.
+            'book_pages' => $this->encounterBookPages($subject),
         ];
     }
 
@@ -826,7 +833,7 @@ final class RmeAmendmentService
      */
     public function detailFor(RmeAmendment $amendment, User $user): array
     {
-        $amendment->loadMissing(['branch:id,name', 'clinicVisit:id,patient_id', 'clinicVisit.patient:id,name,medical_record_number', 'requester:id,name', 'decider:id,name', 'baseVersion']);
+        $amendment->loadMissing(['branch:id,name', 'clinicVisit:id,patient_id,visit_number,visit_date', 'clinicVisit.patient:id,name,medical_record_number', 'requester:id,name', 'decider:id,name', 'baseVersion']);
         $subject = $this->subjectOf($amendment);
         $before = $amendment->baseVersion?->snapshot ?? [];
         $proposed = $amendment->proposed_content ?? [];
@@ -950,7 +957,7 @@ final class RmeAmendmentService
                 'sha256' => isset($page['sha256']) ? substr((string) $page['sha256'], 0, 12) : null,
                 // Rule 240 §8 — an appended correction page says which amendment wrote it.
                 'label' => isset($page['rme_amendment_id'])
-                    ? $this->amendments->find((int) $page['rme_amendment_id'])?->loadMissing('decider:id,name')->correctionPageLabel()
+                    ? $this->amendments->find((int) $page['rme_amendment_id'])?->loadMissing(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])->correctionPageLabel()
                     : null,
             ], $snapshot['pages'] ?? []),
         ];
@@ -990,8 +997,14 @@ final class RmeAmendmentService
      */
     private function verifiedCorrectionPage(RmeAmendment $amendment): string
     {
-        $bytes = HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256);
+        $stored = HandwritingPayloadGuard::storedPng($amendment->correction_page_path, $amendment->correction_page_sha256);
 
+        // Review L2 — a read fault is retried, never reported as tampering.
+        if ($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE) {
+            throw $this->refusal('amendment', self::MESSAGE_CORRECTION_PAGE_UNREADABLE);
+        }
+
+        $bytes = $stored['bytes'];
         if ($bytes === null) {
             throw $this->refusal('amendment', self::MESSAGE_CORRECTION_PAGE_INTEGRITY);
         }
@@ -1015,11 +1028,15 @@ final class RmeAmendmentService
         return $this->workspace->canonicalMedicalRecord((int) $sheet->patient_id) ?? $sheet;
     }
 
-    /** The named page holds a stored drawing in this book (page 1: the legacy row; 2+: the pages table). */
-    private function assertBookPage(MedicalRecord $book, int $pageNumber, string $key, string $message): void
+    /**
+     * The named page holds a stored drawing in this book (page 1: the legacy row;
+     * 2+: the pages table) — `$missing` otherwise — and the amended encounter
+     * wrote it (review M2) — `$foreign` otherwise.
+     */
+    private function assertBookPage(MedicalRecord $book, MedicalRecord $sheet, int $pageNumber, string $key, string $missing, string $foreign): void
     {
         if ($pageNumber < 1 || $pageNumber > self::PAGE_NUMBER_MAX) {
-            throw $this->refusal($key, $message);
+            throw $this->refusal($key, $missing);
         }
 
         $row = $pageNumber === 1
@@ -1027,8 +1044,50 @@ final class RmeAmendmentService
             : $this->handwritings->findPageByMedicalRecordIdAndPage((int) $book->getKey(), $pageNumber);
 
         if ($row === null || blank($row->handwriting_path)) {
-            throw $this->refusal($key, $message);
+            throw $this->refusal($key, $missing);
         }
+
+        if (! $this->writtenByEncounterOf($row, $sheet)) {
+            throw $this->refusal($key, $foreign);
+        }
+    }
+
+    /**
+     * Review M2 — did the amended sheet's encounter write this page? A stamped
+     * page: its `authored_clinic_visit_id` is the sheet's visit. A page from
+     * before rule 240 (no author stamp): only when the amended sheet sealed it.
+     */
+    private function writtenByEncounterOf(MedicalRecordHandwriting|MedicalRecordHandwritingPage $row, MedicalRecord $sheet): bool
+    {
+        if ($row->authored_clinic_visit_id !== null) {
+            return (int) $row->authored_clinic_visit_id === (int) $sheet->clinic_visit_id;
+        }
+
+        return (int) ($row->sealed_by_medical_record_id ?? 0) === (int) $sheet->getKey();
+    }
+
+    /**
+     * The request form's list: the book pages with a stored drawing that the
+     * amended encounter wrote, numbered as the book numbers them.
+     *
+     * @return list<array{number: int, label: string}>
+     */
+    private function encounterBookPages(MedicalRecord $sheet): array
+    {
+        $book = $this->bookOf($sheet);
+        $rows = collect([1 => $book->latestHandwriting()]);
+        foreach ($book->handwritingPages()->get() as $page) {
+            $rows->put((int) $page->page_number, $page);
+        }
+
+        return $rows
+            ->filter(fn ($row): bool => $row !== null && filled($row->handwriting_path) && $this->writtenByEncounterOf($row, $sheet))
+            ->map(fn ($row, int $number): array => [
+                'number' => $number,
+                'label' => 'Halaman buku RM '.$number.($row->getAttribute('rme_amendment_id') !== null ? ' (halaman koreksi)' : ''),
+            ])
+            ->values()
+            ->all();
     }
 
     /** A fresh server key on the private clinical disk; the client never supplies one. */
@@ -1061,7 +1120,10 @@ final class RmeAmendmentService
      * the policy-gated image route (never the key), its digest, whether the
      * stored object still verifies, and — once applied — the book page it became.
      *
-     * @return array{url: string, sha256: string, corrects_page_number: ?int, intact: bool, applied: bool, page_number: ?int, label: ?string}|null
+     * `state` is HandwritingPayloadGuard's read status (review L2: a read fault
+     * is not tampering).
+     *
+     * @return array{url: string, sha256: string, corrects_page_number: ?int, state: string, intact: bool, applied: bool, page_number: ?int, label: ?string}|null
      */
     private function correctionPageDetail(RmeAmendment $amendment): ?array
     {
@@ -1071,12 +1133,14 @@ final class RmeAmendmentService
 
         $applied = $amendment->status === RmeAmendment::STATUS_APPLIED;
         $page = $applied ? $this->handwritings->findAmendmentPage((int) $amendment->getKey()) : null;
+        $state = HandwritingPayloadGuard::storedPng($amendment->correction_page_path, $amendment->correction_page_sha256)['status'];
 
         return [
             'url' => route('rme.amendments.correction-page', $amendment),
             'sha256' => substr((string) $amendment->correction_page_sha256, 0, 12),
             'corrects_page_number' => $amendment->corrects_page_number,
-            'intact' => HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256) !== null,
+            'state' => $state,
+            'intact' => $state === HandwritingPayloadGuard::STORED_OK,
             'applied' => $applied,
             'page_number' => $page !== null ? (int) $page->page_number : null,
             'label' => $page !== null ? $amendment->correctionPageLabel() : null,

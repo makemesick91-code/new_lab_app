@@ -25,6 +25,8 @@
     // PDF export, and dompdf cannot present a session cookie to the authorised
     // image route, so a linked image would export blank.
     $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect();
+    // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
+    $correctionPointers = $medicalRecord ? $medicalRecord->correctionPagePointers() : [];
 @endphp
 
 {{-- Medical Record --}}
@@ -47,6 +49,9 @@
         @if (($amendmentCount ?? 0) > 0)
             <p class="meta-line" data-amendment-count="{{ $amendmentCount }}">Diamandemen {{ $amendmentCount }}×</p>
         @endif
+        @foreach ($correctionPointers as $correctionPointer)
+            <p class="meta-line" data-correction-page-pointer>{{ $correctionPointer }}</p>
+        @endforeach
 
         <div class="handwriting-preview">
             <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>

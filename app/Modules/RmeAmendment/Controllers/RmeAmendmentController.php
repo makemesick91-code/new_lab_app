@@ -6,6 +6,7 @@ namespace App\Modules\RmeAmendment\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Requests\RmeAmendmentActionRequest;
@@ -61,13 +62,16 @@ class RmeAmendmentController extends Controller
     /**
      * Rule 240 §8 — the correction page an amendment carries, for its requester
      * or an approver in scope (404 otherwise), verified against its SHA-256 (404
-     * when absent or tampered). Private, no-store (route middleware), never sniffed.
+     * when absent or tampered; 503 when the storage read failed — a fault to
+     * retry, review L2). Private, no-store (route middleware), never sniffed.
      */
     public function correctionPage(Request $request, RmeAmendment $amendment): Response
     {
         $this->authorize('view', $amendment);
 
-        $bytes = $this->amendments->correctionPageImage($amendment, $request->user());
+        $stored = $this->amendments->correctionPageImage($amendment, $request->user());
+        abort_if($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE, 503, RmeAmendmentService::MESSAGE_CORRECTION_PAGE_UNREADABLE);
+        $bytes = $stored['bytes'];
         abort_if($bytes === null, 404);
 
         return response($bytes, 200, [

@@ -401,7 +401,8 @@
                          which amendment, approved when (WITA) and by whom. --}}
                     @if (($activeRmPage['amendment_label'] ?? null) !== null)
                         <p class="mb-2 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $activeRmPage['amendment_id'] }}">
-                            {{ $activeRmPage['amendment_label'] }}
+                            {{-- Review INFO — the book's own page number beside the workspace one. --}}
+                            Halaman buku RM {{ $storagePageNumber }} · {{ $activeRmPage['amendment_label'] }}
                         </p>
                     @endif
 

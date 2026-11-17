@@ -151,23 +151,32 @@
                 <div class="space-y-2 text-sm" data-correction-page>
                     <p class="text-ink-soft">
                         @if ($correction_page['corrects_page_number'] !== null)
-                            Halaman baru yang mengoreksi halaman {{ $correction_page['corrects_page_number'] }} buku RM.
+                            Halaman baru yang mengoreksi halaman buku RM {{ $correction_page['corrects_page_number'] }}.
                         @else
                             Halaman baru pada buku RM.
                         @endif
                         Halaman lama tidak diubah. SHA-256 {{ $correction_page['sha256'] }}…
                     </p>
                     @if ($correction_page['page_number'] !== null)
-                        <p class="font-medium text-navy" data-correction-page-applied="{{ $correction_page['page_number'] }}">Ditambahkan ke buku RM sebagai halaman {{ $correction_page['page_number'] }} — {{ $correction_page['label'] }}</p>
+                        <p class="font-medium text-navy" data-correction-page-applied="{{ $correction_page['page_number'] }}">Ditambahkan sebagai halaman buku RM {{ $correction_page['page_number'] }} — {{ $correction_page['label'] }}</p>
                     @elseif (! $amendment->isPending())
                         <p class="text-ink-soft" data-correction-page-not-applied>Halaman ini tidak diterapkan ke buku RM.</p>
                     @endif
                     @if ($correction_page['intact'])
                         <img src="{{ $correction_page['url'] }}" alt="Halaman koreksi amandemen #{{ $amendment->id }}" loading="lazy"
                              class="mx-auto block w-full max-w-md rounded border border-hairline" style="aspect-ratio:900/1273;object-fit:contain;">
+                    @elseif ($correction_page['state'] === \App\Modules\MedicalRecord\Services\HandwritingPayloadGuard::STORED_UNREADABLE)
+                        {{-- Review L2 — a storage read fault is temporary, not tampering. --}}
+                        <p class="rounded border border-warning-100 bg-warning-50 px-3 py-2 text-warning-700" data-correction-page-unreadable>
+                            {{ \App\Modules\RmeAmendment\Services\RmeAmendmentService::MESSAGE_CORRECTION_PAGE_UNREADABLE }}
+                        </p>
                     @else
                         <p class="rounded border border-danger bg-danger-50 px-3 py-2 text-danger" data-correction-page-tampered>
-                            Gambar halaman koreksi tidak tersedia atau tidak lolos pemeriksaan integritas (SHA-256); amandemen ini tidak dapat diterapkan.
+                            Gambar halaman koreksi tidak tersedia atau tidak lolos pemeriksaan integritas (SHA-256).
+                            {{-- Review L3 — only a pending amendment is told it cannot be applied. --}}
+                            @if ($amendment->isPending())
+                                Amandemen ini tidak dapat diterapkan.
+                            @endif
                         </p>
                     @endif
                 </div>
