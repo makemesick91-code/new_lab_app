@@ -331,32 +331,31 @@ it('keeps the visit in_progress when RME and odontogram are complete, and advanc
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-it('charts the active odontogram before the consent, and still after it', function () {
+it('charts the active odontogram only after the executed consent', function () {
     /*
-     * This case has now been inverted TWICE, which is worth stating plainly.
+     * This case has now been inverted THREE times, which is worth stating plainly.
      *
      * Originally it asserted the active odontogram was deliberately OUTSIDE the
-     * consent gate. CORRECTIVE-03 inverted it, on the reasoning that a chart is a
-     * clinical finding recorded during a treatment decision, so gating the note
-     * and not the chart consents to nothing coherent.
-     * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 restores the original
-     * behaviour, for a reason CORRECTIVE-03 did not weigh: charting is
-     * OBSERVATION, and the consent form's named treatment is derived FROM it, so
-     * requiring the signature first made the workflow circular.
+     * consent gate. CORRECTIVE-03 inverted it; REVISION-RME-CONSENT-ODONTOGRAM-
+     * PRECONSENT-EDIT-1 restored pre-consent charting (was 'charts the active
+     * odontogram before the consent, and still after it'). DMS memo M1.1–M1.3 PR2
+     * (rule 241 §2, owner decision 2026-11-17) inverts it again: BOTH PTM
+     * signatures — the patient's and the treating doctor's countersignature — are
+     * required before odontogram writing. rmeSignedConsentFor() builds that
+     * EXECUTED consent.
      *
      * What survives every inversion is the security intent: charting is reachable
-     * only inside a legitimate, in-scope, in-progress encounter, and consent
-     * still gates the RME and the finish. Those are pinned in
-     * RmeConsentOdontogramPreConsentEditTest.
+     * only inside a legitimate, in-scope, in-progress encounter. The gate itself
+     * is pinned in RmeOdontogramTwoSignatureGateTest.
      */
     $visit = corrVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = app(OdontogramService::class)->getOrCreateForVisit($visit, $this->doctorUser);
 
-    app(OdontogramService::class)->updatePlaceholder($odontogram, [
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder($odontogram, [
         'tooth_map_payload' => ['teeth' => ['21' => ['status' => 'caries']]],
-    ], $this->doctorUser);
+    ], $this->doctorUser))->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    expect($odontogram->refresh()->tooth_map_payload['teeth'])->toHaveKey('21');
+    expect($odontogram->refresh()->tooth_map_payload['teeth'] ?? [])->not->toHaveKey('21');
 
     rmeSignedConsentFor($visit);
 

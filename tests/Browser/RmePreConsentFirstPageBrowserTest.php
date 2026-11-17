@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -89,11 +90,13 @@ class RmePreConsentFirstPageBrowserTest extends DuskTestCase
                 'no create form may be rendered while the record is closed',
             );
 
-            // The odontogram is NOT dragged down with the record: the previous
-            // GO behaviour has to survive this fix, in the same browser session.
+            // FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2): the odontogram
+            // now waits for both PTM signatures like the record — the page stays
+            // readable and names the state instead of offering a save.
             $browser->visit(route('rme.visits.odontogram.show', $visit, false))
                 ->assertDontSee('Server Error')
-                ->assertSee('Simpan Odontogram');
+                ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
+                ->assertDontSee('Simpan Odontogram');
 
             // Finishing the examination stays refused.
             $browser->visit(route('rme.visits.show', $visit, false))
@@ -135,9 +138,28 @@ class RmePreConsentFirstPageBrowserTest extends DuskTestCase
                 'consenter_signature' => $this->signaturePng(),
             ]);
 
+            // Rule 241 §2 — the patient's signature alone opens nothing: the page
+            // says it waits for the treating doctor.
+            $browser->visit(route('rme.visits.medical-record.show', $visit, false))
+                ->assertDontSee('Server Error')
+                ->assertSee('menunggu tanda tangan dokter');
+
+            // The treating doctor's countersignature, as a fixture row (its own
+            // journey is pinned in RmeVisitConsentDoctorCountersignTest).
+            $consent = RmeVisitConsent::where('clinic_visit_id', $visit->id)->firstOrFail();
+            RmeVisitConsentDoctorSignature::query()->create([
+                'rme_visit_consent_id' => $consent->id,
+                'doctor_id' => $visit->doctor_id,
+                'signed_by' => $user->id,
+                'signature_path' => 'rme-consents/'.$consent->consent_number.'/doctor-countersign-dusk.png',
+                'signature_sha256' => str_repeat('0', 64),
+                'signed_at' => $consent->signed_at,
+            ]);
+
             $browser->visit(route('rme.visits.medical-record.show', $visit, false))
                 ->assertDontSee('Server Error')
                 ->assertDontSee('Persetujuan Tindakan Medis belum ditandatangani')
+                ->assertDontSee('menunggu tanda tangan dokter')
                 ->assertSee('Buat Halaman RM Pertama');
 
             // Now it is a real, pressable control — and pressing it works.
@@ -217,6 +239,10 @@ class RmePreConsentFirstPageBrowserTest extends DuskTestCase
         $recordIds = MedicalRecord::whereIn('clinic_visit_id', $visitIds)->pluck('id');
 
         MedicalRecordHandwriting::whereIn('medical_record_id', $recordIds)->forceDelete();
+        // Rule 241 — countersignature rows first (FK restrict on the consent).
+        RmeVisitConsentDoctorSignature::query()
+            ->whereIn('rme_visit_consent_id', RmeVisitConsent::whereIn('clinic_visit_id', $visitIds)->pluck('id'))
+            ->delete();
         RmeVisitConsent::whereIn('clinic_visit_id', $visitIds)->forceDelete();
         Odontogram::whereIn('clinic_visit_id', $visitIds)->forceDelete();
         MedicalRecord::whereIn('id', $recordIds)->forceDelete();

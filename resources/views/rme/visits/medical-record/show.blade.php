@@ -101,7 +101,8 @@
                     $finishOffered = $examVisitInFocus
                         && $clinicVisit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS
                         && (auth()->user()?->can('transition', $clinicVisit) ?? false)
-                        && app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($clinicVisit);
+                        // Rule 241 §2 — the EXECUTED consent, decided in the controller.
+                        && ($clinicVisitConsentExecuted ?? false);
                 @endphp
                 @if ($finishOffered)
                     @can('completeExamination', $clinicVisit)
@@ -135,43 +136,7 @@
 
              Presentation only; the service asserts the same authority. --}}
         @unless ($canAuthorRme)
-            @if ($activeEncounter === null)
-                <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
-                        pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
-                        arsip RME lama dan odontogram pasien tetap dapat dibaca.
-                    </p>
-                </x-ui.alert>
-            @elseif (app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($activeEncounter))
-                {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the encounter IS consented,
-                     so the reason is this account, not the signature. Never tell
-                     the front office to fetch a consent that already exists. --}}
-                <x-ui.alert variant="info" title="Hanya dapat dibaca">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis pemeriksaan yang sedang berjalan
-                        (Kunjungan #{{ $activeEncounter->visit_number }}) ditulis oleh tenaga
-                        klinis yang memeriksa pasien. Akun ini dapat membaca rekam medis,
-                        arsip RME lama dan odontogram pasien.
-                    </p>
-                </x-ui.alert>
-            @else
-                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <p class="max-w-2xl text-sm">
-                            Penulisan rekam medis untuk pemeriksaan yang sedang berjalan
-                            (Kunjungan #{{ $activeEncounter->visit_number }}) terkunci sampai Surat
-                            Persetujuan Tindakan Medis ditandatangani. Riwayat rekam medis, arsip
-                            RME lama dan odontogram pasien tetap dapat dibaca.
-                        </p>
-                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $activeEncounter])
-                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $activeEncounter)">
-                                Pilih Form Consent
-                            </x-ui.button>
-                        @endcan
-                    </div>
-                </x-ui.alert>
-            @endif
+            @include('rme.visits.partials.ptm-authoring-banner', ['ptmBannerSubject' => 'penulisan rekam medis'])
         @endunless
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE

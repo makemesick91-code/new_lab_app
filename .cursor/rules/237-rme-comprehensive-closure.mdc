@@ -253,7 +253,9 @@ still disabled until consent.
    RME write calls it at the top of its transaction: sheet create/update/finalize (`MedicalRecordService`), handwriting
    pages (also the edit-in-place path), structured diagnoses (`MedicalRecordDiagnosisService`), the diagnosis override
    (`DiagnosisRolloutService::grantOverride`). A void or a finish committed meanwhile is seen; a later one waits.
-   Odontogram charting does not depend on consent (AIR-RMC-14) and is unaffected.
+   Odontogram charting does not depend on consent (AIR-RMC-14) and is unaffected. **SUPERSEDED by rule 241 §2
+   (2026-11-17):** the odontogram now needs the EXECUTED consent too, decided on the visit row its authority locks
+   first, and "valid consent" in this item means EXECUTED (patient + treating doctor).
 4. **Authorization before validation (R8A-2).** `StoreRmeVisitConsentRequest::authorize()` and
    `VoidRmeVisitConsentRequest::authorize()` return the policy's `Gate::inspect()` response, so a refused account gets
    its 403/404 whatever its payload.

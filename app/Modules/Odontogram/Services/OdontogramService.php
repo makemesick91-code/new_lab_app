@@ -32,9 +32,11 @@ class OdontogramService
         private readonly RmeWorkingBranchScope $workingBranchScope,
         // Rule 134 — the active odontogram's single authoring authority is
         // assertOdontogramAuthoringAllowed(): a live in_progress encounter, an
-        // actor who may work on it, and the chart belonging to it. It carries NO
-        // consent condition (CORRECTIVE-03's consent gate was superseded; the
-        // doctor charts before consent and consent then gates the RME).
+        // actor who may work on it, and the chart belonging to it. Rule 241 §2
+        // (memo M1.1–M1.3 PR2, owner decision 2026-11-17) added the EXECUTED
+        // consent (patient + treating doctor), decided on the visit row it locks
+        // FIRST inside the write transaction — before this service locks or
+        // writes the chart. Pre-consent charting ended; reading is unchanged.
         private readonly RmeVisitConsentService $consents,
     ) {}
 
@@ -298,7 +300,8 @@ class OdontogramService
              * stands: a finalized chart on the LIVE encounter is still revisable.
              * What it may no longer do is reach back into a previous encounter's
              * chart. The chart being written must be the live encounter's own
-             * chart (rule 134: charting does NOT wait for the signed consent).
+             * chart. Rule 241 §2: charting waits for the EXECUTED consent (both
+             * signatures); the authority locks the visit row before the chart.
              *
              * The status/finalized_at/finalized_by columns keep their meaning and
              * are untouched.
@@ -332,7 +335,7 @@ class OdontogramService
             }
 
             // Finalizing a chart is a clinical write, so it needs the same
-            // authorized, live encounter (rule 134; no consent condition).
+            // authorized, live encounter and executed consent (rule 241 §2).
             // Asserted BEFORE the already-finalized short circuit, so a refused
             // caller cannot use the idempotent path to probe which charts exist.
             $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);

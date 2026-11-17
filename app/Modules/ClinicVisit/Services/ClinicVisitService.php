@@ -965,11 +965,9 @@ class ClinicVisitService
              * untouched: it is reached from `cashier_pending`, which by this rule
              * already had a consent.
              */
-            if (! app(RmeVisitConsentService::class)->hasValidConsent($visit)) {
-                throw ValidationException::withMessages([
-                    'status' => 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani. Lengkapi persetujuan terlebih dahulu.',
-                ]);
-            }
+            // DMS memo M1.1–M1.3 PR2 (rule 241 §2) — the EXECUTED consent: the
+            // patient's signature and the treating doctor's countersignature.
+            app(RmeVisitConsentService::class)->assertExecutedConsentForFinish($visit);
         }
 
         $allowed = ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];
@@ -1049,11 +1047,9 @@ class ClinicVisitService
             ]);
         }
 
-        if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING
-            && ! app(RmeVisitConsentService::class)->hasValidConsent($locked)) {
-            throw ValidationException::withMessages([
-                'status' => 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani. Lengkapi persetujuan terlebih dahulu.',
-            ]);
+        if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING) {
+            // Rule 241 §2 — both signatures, decided on the locked row.
+            app(RmeVisitConsentService::class)->assertExecutedConsentForFinish($locked);
         }
     }
 

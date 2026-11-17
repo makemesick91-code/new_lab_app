@@ -279,11 +279,13 @@ it('CV-10 answers a refused account with 403 before validating its payload', fun
 */
 
 it('CV-11 writes new signatures to the clinical evidence disk, never to the served local disk', function () {
+    // Rule 241 §4 — the capture no longer takes a doctor drawing (the doctor
+    // countersigns separately), so the patient's signature is the one object.
     $visit = rcsvVisit();
-    $consent = app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload(['doctor_signature' => validPodSignatureData()]));
+    $consent = app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload());
 
     expect(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
+        ->and($consent->doctor_signature_path)->toBeNull()
         ->and(Storage::disk('local')->allFiles())->toBe([])
         ->and(app(RmeVisitConsentService::class)->signatureDataUri($consent->consenter_signature_path))->toStartWith('data:image/png;base64,');
 });
@@ -297,7 +299,7 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
         $mock->shouldReceive('lockNumberSequence')->andReturnNull();
         $mock->shouldReceive('latestConsentNumberForMonth')->andReturnNull();
         $mock->shouldReceive('create')->andReturnUsing(function () use (&$seenAtFailure) {
-            // Both signature objects exist on the clinical evidence disk when the
+            // The signature object exists on the clinical evidence disk when the
             // insert fails…
             $seenAtFailure = count(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles());
 
@@ -305,11 +307,12 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
         });
     });
 
-    expect(fn () => app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload(['doctor_signature' => validPodSignatureData()])))
+    expect(fn () => app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload()))
         ->toThrow(RuntimeException::class, 'insert failed');
 
-    // …and none is left afterwards, on either disk.
-    expect($seenAtFailure)->toBe(2)
+    // …and none is left afterwards, on either disk. (Rule 241 §4: one object,
+    // the patient's; the capture no longer stores a doctor drawing.)
+    expect($seenAtFailure)->toBe(1)
         ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([])
         ->and(Storage::disk('local')->allFiles())->toBe([]);
 });
@@ -320,7 +323,8 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
 
 it('CV-13 locks the encounter visit row inside a write transaction before re-checking the consent', function () {
     $visit = rcsvVisit();
-    rcsvSign($visit);
+    // Rule 241 §2 — writes need the EXECUTED consent (fixture countersignature).
+    rmeDoctorCountersignatureFor(rcsvSign($visit));
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
 
     $locks = [];
@@ -340,6 +344,7 @@ it('CV-13 locks the encounter visit row inside a write transaction before re-che
 it('CV-14 refuses an RM write after the consent was voided, even inside a transaction', function () {
     $visit = rcsvVisit();
     $consent = rcsvSign($visit);
+    rmeDoctorCountersignatureFor($consent); // Rule 241 §2 — writes need the EXECUTED consent.
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
     $consents = app(RmeVisitConsentService::class);
 
@@ -453,7 +458,8 @@ it('CV-15 answers an account inside the route middleware but outside the policy 
 
 it('CV-16 re-decides the consent under the visit lock inside every consent-gated write transaction', function () {
     $visit = rcsvVisit();
-    rcsvSign($visit);
+    // Rule 241 §2 — writes need the EXECUTED consent (fixture countersignature).
+    rmeDoctorCountersignatureFor(rcsvSign($visit));
     $record = MedicalRecord::query()->where('clinic_visit_id', $visit->id)->sole();
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
     // The override is only relevant on a pilot_enforced branch (never a default).

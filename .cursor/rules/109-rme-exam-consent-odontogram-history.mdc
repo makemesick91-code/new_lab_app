@@ -32,6 +32,13 @@ Pendaftaran -> Antrian -> Input Ruangan
   -> Kasir / Pembayaran (no consent check) -> completed
 ```
 
+**AMENDED by `241-rme-ptm-double-signature.mdc` §2 (DMS memo M1.1–M1.3 PR2, 2026-11-17):** "consent" in §0, §1a,
+§2b condition 4 and §2c now means an EXECUTED consent — the patient's signature AND the treating doctor's
+countersignature. The RME, its handwriting, structured diagnoses and the override, performed treatments, the ACTIVE
+ODONTOGRAM (the rule 134 pre-consent carve-out below ends for writing) and "Selesai Pemeriksaan" all wait for both.
+§2a (sign only `in_progress`, after "Mulai Pemeriksaan"), reads never gated, prescriptions outside the gate and §3
+(payment never consults consent) are unchanged.
+
 **SUPERSEDED IN PART** by REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 —
 see `134-odontogram-pre-consent-authoring.mdc`, which is authoritative wherever
 it and this rule disagree. Before the signature the **active odontogram is
@@ -128,6 +135,9 @@ button. The UI only reveals the consent action once the examination has started.
 
 ### 2b. Authoring authority is POSITIVE, never absence-of-blocker
 
+> Amended by rule 241 §2: condition 4 below requires the EXECUTED consent (patient + treating doctor countersignature),
+> re-decided on the locked visit row inside every write.
+
 **Active RME authoring requires a legitimate current `in_progress` encounter plus
 a valid signed consent for that same encounter.**
 
@@ -188,6 +198,9 @@ Anything else **fails closed**, including "there is no encounter at all" and
   record is still editable. What is refused is writing with no encounter at all.
 
 ### 2c. What the gate covers, exactly — and what it does not
+
+> Amended by rule 241 §2: the gate also covers performed treatments and, again, the ACTIVE ODONTOGRAM; it requires the
+> EXECUTED consent. Prescriptions stay outside it (rule 226).
 
 State this precisely; overclaiming is how a control gets trusted for something it
 never did.

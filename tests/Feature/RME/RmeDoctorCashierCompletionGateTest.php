@@ -24,6 +24,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -280,6 +281,11 @@ it('accepts payment even when no consent document exists for the visit', functio
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
+    // Rule 241 §1 — the consent fixture is EXECUTED (it carries the doctor's
+    // countersignature row, FK restrict); remove that row first.
+    DB::table('trx_rme_visit_consent_doctor_signatures')
+        ->whereIn('rme_visit_consent_id', $visit->consents()->pluck('id'))
+        ->delete();
     $visit->consents()->delete();
 
     $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [

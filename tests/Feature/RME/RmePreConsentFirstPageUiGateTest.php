@@ -445,20 +445,21 @@ it('does not offer the control to a DIFFERENT doctor, consent or no consent', fu
 |--------------------------------------------------------------------------
 */
 
-it('keeps the ACTIVE odontogram editable while consent is unsigned', function () {
-    // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1. Blocking the record
-    // must not drag the chart with it: charting is observation.
+it('keeps the ACTIVE odontogram read-only while consent is unsigned', function () {
+    // FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2, owner decision 2026-11-17):
+    // was 'keeps the ACTIVE odontogram editable while consent is unsigned'
+    // (REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1). The chart now waits for
+    // the EXECUTED consent — patient and treating doctor — like the record; the
+    // page stays reachable (next case).
     $visit = pcfpVisit();
 
-    app(OdontogramService::class)->saveForVisit(
+    expect(fn () => app(OdontogramService::class)->saveForVisit(
         $visit,
         ['tooth_map_payload' => ['teeth' => ['11' => ['conditions' => ['caries']]]]],
         $this->doctorUser,
-    );
+    ))->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    $chart = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
-
-    expect($chart->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries'])
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeFalse()
         ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeFalse();
 });
 

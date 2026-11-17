@@ -10,9 +10,9 @@ declare(strict_types=1);
 |
 | Owner decisions of 2026-11-17: the PTM carries two signatures — the patient's,
 | captured by the front office, and the treating doctor's, captured from the
-| doctor's own treatment room. This PR adds the doctor's step and nothing else:
-| no authoring gate changes (RME authoring still needs only the patient's signed
-| consent; pre-consent odontogram charting is unchanged).
+| doctor's own treatment room. PR1 added the doctor's step and nothing else;
+| PR2 (rule 241 §2) then made both signatures the gate for every clinical write
+| (CDS-29 was flipped accordingly).
 |
 |  - The countersignature is a separate, insert-only row
 |    (`trx_rme_visit_consent_doctor_signatures`, UNIQUE per consent); the consent
@@ -97,6 +97,22 @@ function rcdcPatientSigned(ClinicVisit $visit, ?User $by = null, array $override
         'documentation_consent' => '0',
         'consenter_signature' => validPodSignatureData(),
     ], $overrides));
+}
+
+/**
+ * A consent that already carries the LEGACY optional doctor drawing — the shape
+ * of a consent captured before rule 241 §4 refused that field. Written as a
+ * fixture (object on the evidence disk + the column), since no current path
+ * stores it any more.
+ */
+function rcdcWithLegacyDrawing(RmeVisitConsent $consent): RmeVisitConsent
+{
+    $path = 'rme-consents/'.$consent->consent_number.'/doctor-legacy-fixture.png';
+    $png = base64_decode(substr(validPodSignatureData(), strlen('data:image/png;base64,')));
+    Storage::disk(ClinicalEvidenceStorage::diskName())->put($path, $png);
+    DB::table('trx_rme_visit_consents')->where('id', $consent->id)->update(['doctor_signature_path' => $path]);
+
+    return $consent->fresh();
 }
 
 function rcdcCountersign(RmeVisitConsent $consent, ?User $by = null, ?string $canvas = null): RmeVisitConsentDoctorSignature
@@ -807,7 +823,10 @@ it('CDS-24 says "Belum ditandatangani dokter" only while a countersignature is s
 
 it('CDS-24b renders a historical consent byte for byte as the document did before rule 241', function (bool $legacyDrawing) {
     $visit = rcdcVisit();
-    $consent = rcdcPatientSigned($visit, overrides: $legacyDrawing ? ['doctor_signature' => validPodSignatureData()] : []);
+    $consent = rcdcPatientSigned($visit);
+    if ($legacyDrawing) {
+        $consent = rcdcWithLegacyDrawing($consent);
+    }
     DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['status' => ClinicVisit::STATUS_COMPLETED]);
     $consent = $consent->fresh();
     $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy']);
@@ -838,7 +857,7 @@ it('CDS-24b renders a historical consent byte for byte as the document did befor
 })->with(['without the legacy drawing' => [false], 'with the legacy drawing' => [true]]);
 
 it('CDS-25 keeps the legacy optional doctor drawing as display history that never counts as the countersignature', function () {
-    $consent = rcdcPatientSigned(rcdcVisit(), overrides: ['doctor_signature' => validPodSignatureData()]);
+    $consent = rcdcWithLegacyDrawing(rcdcPatientSigned(rcdcVisit()));
 
     $html = $this->actingAs($this->operator)->get(route('rme.consents.print', $consent))->assertOk()->getContent();
 
@@ -938,20 +957,31 @@ it('CDS-28 lists "Tanda Tangani PTM" on Ruang Perawatan for the doctor\'s own pa
 | No authoring gate changes in this PR
 */
 
-it('CDS-29 leaves every authoring gate on the patient signature alone', function () {
+it('CDS-29 makes the countersignature the step that opens the authoring gates (rule 241 §2, PR2)', function () {
+    // FLIPPED by PR2: was 'CDS-29 leaves every authoring gate on the patient
+    // signature alone' (PR1 changed no gate). Owner decision 2026-11-17: both
+    // signatures gate writing. The full matrix is in
+    // RmeVisitConsentTwoSignatureGateTest and RmeOdontogramTwoSignatureGateTest.
     $visit = rcdcVisit();
-    rcdcPatientSigned($visit);
+    $consent = rcdcPatientSigned($visit);
     $service = app(RmeVisitConsentService::class);
 
-    // Patient-signed, not countersigned: the RME is writable and the visit has a
-    // valid consent, exactly as before this PR.
+    // Patient-signed, not countersigned: a valid consent, but no write.
+    expect($service->hasValidConsent($visit))->toBeTrue()
+        ->and($service->hasExecutedConsent($visit))->toBeFalse()
+        ->and($service->canAuthorRmeForPatient((int) $visit->patient_id, $this->doctor))->toBeFalse()
+        ->and($service->canAuthorOdontogramFor($visit, $this->doctor))->toBeFalse();
+
+    rcdcCountersign($consent);
+
     $encounter = DB::transaction(fn () => $service->assertRmeAuthoringAllowedForPatient((int) $visit->patient_id, $this->doctor));
 
     expect((int) $encounter->id)->toBe((int) $visit->id)
-        ->and($service->hasValidConsent($visit))->toBeTrue()
-        ->and($service->canAuthorRmeForPatient((int) $visit->patient_id, $this->doctor))->toBeTrue();
+        ->and($service->hasExecutedConsent($visit))->toBeTrue()
+        ->and($service->canAuthorRmeForPatient((int) $visit->patient_id, $this->doctor))->toBeTrue()
+        ->and($service->canAuthorOdontogramFor($visit, $this->doctor))->toBeTrue();
 
-    // Pre-consent odontogram charting is unchanged.
+    // Pre-consent odontogram charting has ended.
     $preConsent = rcdcVisit();
-    expect($service->canAuthorOdontogramFor($preConsent, $this->doctor))->toBeTrue();
+    expect($service->canAuthorOdontogramFor($preConsent, $this->doctor))->toBeFalse();
 });

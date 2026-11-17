@@ -1657,6 +1657,14 @@ return [
         // object, audit ids only, no authoring gate changed. Selected by the existing `RmeVisitConsent`
         // token in BOTH critical variants.
         'tests/Feature/RME/RmeVisitConsentDoctorCountersignTest.php',
+        // DMS memo M1.1–M1.3, PR2 (rule 241 §2–§4) — both PTM signatures (patient + treating doctor)
+        // gate every clinical WRITE: RME sheet/page/diagnosis/override, performed treatments, the
+        // odontogram (visit locked first, then the chart) and "Selesai Pemeriksaan"; reads, payment
+        // and prescriptions stay outside; a void reopens the gate; Super Admin bound; Doctor no longer
+        // captures the patient signature. Selected by the existing `RmeVisitConsent` and `Odontogram`
+        // tokens in BOTH critical variants.
+        'tests/Feature/RME/RmeVisitConsentTwoSignatureGateTest.php',
+        'tests/Feature/RME/RmeOdontogramTwoSignatureGateTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

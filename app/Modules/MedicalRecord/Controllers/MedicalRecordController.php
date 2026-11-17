@@ -3,6 +3,7 @@
 namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
@@ -274,7 +275,7 @@ class MedicalRecordController extends Controller
                     (int) $workspaceVisit->getKey(),
                     $legacyRecords,
                 ),
-            ]);
+            ] + $this->ptmBannerFor((int) $patientId, $request->user()));
         }
 
         // Active sheet: explicit ?sheet=, else the source visit's sheet, else the
@@ -454,7 +455,35 @@ class MedicalRecordController extends Controller
                 (int) $workspaceVisit->getKey(),
                 $legacyRecords,
             ),
-        ]);
+            // DMS memo M1.1–M1.3 PR2 (rule 241 §2; MEMO-F5) — "Selesai
+            // Pemeriksaan" in the header is offered only on an EXECUTED consent;
+            // decided here, never by a service call in Blade.
+            'clinicVisitConsentExecuted' => app(RmeVisitConsentService::class)->hasExecutedConsent($activeVisit),
+        ] + $this->ptmBannerFor((int) $patientId, $request->user()));
+    }
+
+    /**
+     * DMS memo M1.1–M1.3 PR2 (rule 241 §3; rule 135 mirror; MEMO-F5) — what the
+     * RME authoring banner says when the account may not write: the PTM state of
+     * the patient's live encounter (awaiting the patient / the doctor /
+     * executed), and, for the treating doctor, the consent to countersign or the
+     * reason they cannot. Presentation only; the services decide every write.
+     *
+     * @return array<string, mixed>
+     */
+    private function ptmBannerFor(int $patientId, ?User $viewer): array
+    {
+        $consents = app(RmeVisitConsentService::class);
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+        $outlook = $encounter !== null && $viewer !== null
+            ? ($consents->countersignOutlookFor($viewer, [$encounter])[(int) $encounter->getKey()] ?? null)
+            : null;
+
+        return [
+            'activeEncounterPtmState' => $consents->ptmStateFor($encounter),
+            'activeEncounterCountersignConsent' => $outlook !== null && $outlook['refusal'] === null ? $outlook['consent'] : null,
+            'activeEncounterCountersignRefusal' => $outlook['refusal'] ?? null,
+        ];
     }
 
     public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): RedirectResponse

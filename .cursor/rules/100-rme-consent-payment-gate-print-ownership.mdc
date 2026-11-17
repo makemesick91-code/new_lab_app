@@ -114,6 +114,11 @@ Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progre
 
 ## 6. Consent permissions
 
+> **AMENDED by `241-rme-ptm-double-signature.mdc` §4 (2026-11-17):** the Doctor role no longer holds
+> `manage_rme_consents`; the patient's signature is captured by Front Office, Kasir and Admin Klinik, with Supervisor
+> RME as fallback. The doctor countersigns with `countersign_rme_consents` (rule 241 §1). The void is
+> `void_rme_consents` (rule 237 §14.2), not this permission.
+
 - `manage_rme_consents` (sign/void), `view_rme_consents` (read/print).
 - Held by Doctor, Kasir, Admin Klinik, Supervisor RME.
 - **Do not gate consent on `manage_clinic_visits`: Kasir does not hold it**, and

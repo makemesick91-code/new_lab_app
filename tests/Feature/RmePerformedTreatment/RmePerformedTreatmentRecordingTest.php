@@ -9,6 +9,7 @@ declare(strict_types=1);
 */
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -261,6 +262,27 @@ it('DPT-038 refuses authoring while the Persetujuan Tindakan Medis is unsigned',
 
     expect(dptRefusal(fn () => dptRecord($visit, $this->scaling)))->toContain(RmePerformedTreatmentRefusal::CONSENT_REQUIRED)
         ->and(dptRefusal(fn () => dptDeclare($visit, RmeTreatmentDeclaration::TYPE_NO_TREATMENT)))->toContain(RmePerformedTreatmentRefusal::CONSENT_REQUIRED)
+        ->and(RmePerformedTreatment::query()->count() + RmeTreatmentDeclaration::query()->count())->toBe(0);
+});
+
+it('DPT-038b refuses authoring while the patient signed the PTM but the treating doctor has not (rule 241 §2)', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id, 'clinic_id' => $this->clinic->id, 'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id, 'clinic_room_id' => $this->room->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS,
+        'visit_number' => 'VIS-DPT-'.uniqid(), 'visit_date' => clinicalToday()->toDateString(),
+    ]);
+
+    // The patient's signature only — no countersignature row (awaiting the doctor).
+    RmeVisitConsent::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'patient_name_snapshot' => 'Pasien',
+    ]);
+
+    expect(dptRefusal(fn () => dptRecord($visit, $this->scaling)))->toContain(RmePerformedTreatmentRefusal::DOCTOR_SIGNATURE_REQUIRED)
+        ->and(dptRefusal(fn () => dptDeclare($visit, RmeTreatmentDeclaration::TYPE_NO_TREATMENT)))->toContain(RmePerformedTreatmentRefusal::DOCTOR_SIGNATURE_REQUIRED)
         ->and(RmePerformedTreatment::query()->count() + RmeTreatmentDeclaration::query()->count())->toBe(0);
 });
 

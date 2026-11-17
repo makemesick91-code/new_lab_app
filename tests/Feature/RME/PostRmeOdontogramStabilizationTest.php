@@ -159,13 +159,17 @@ it('switches the save form to the model-bound update route once a chart exists',
 // store form is offered from "Mulai Pemeriksaan" onward. The form-less cases
 // that still exist — a view-only operator, and a visit whose examination has not
 // started — are covered below and in RmeConsentOdontogramPreConsentEditTest.
-it('offers the first-save form while consent is unsigned', function () {
+// FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2–§3): was 'offers the
+// first-save form while consent is unsigned'. Charting waits for the EXECUTED
+// consent; the page stays readable and names the state instead.
+it('offers no first-save form while consent is unsigned', function () {
     $visit = stabVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('action="'.route('rme.visits.odontogram.store', $visit).'"', false);
+        ->assertSee('data-ptm-state="awaiting_patient"', false)
+        ->assertDontSee('action="'.route('rme.visits.odontogram.store', $visit).'"', false);
 });
 
 it('offers no save form before the examination has started', function () {

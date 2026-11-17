@@ -43,6 +43,12 @@ before "Selesai Pemeriksaan".
 
 ## 2. The matrix
 
+> **AMENDED by `241-rme-ptm-double-signature.mdc` §2–§3 (2026-11-17):** "consent VALID" below means EXECUTED (patient +
+> treating doctor). A new state sits between UNSIGNED and VALID: `in_progress`, patient signed, AWAITING DOCTOR —
+> Odontogram DENY, RME edit DENY, first-page CTA NOT ACTIONABLE (the page says "menunggu tanda tangan dokter" and, for
+> the treating doctor, offers "Tanda Tangani PTM"), Selesai Pemeriksaan DENY. The odontogram column of the UNSIGNED row
+> is DENY too (rule 134 superseded for writing).
+
 Extends the rule 134 matrix with the column that was missing — what the page is
 allowed to OFFER, as distinct from what the server allows.
 

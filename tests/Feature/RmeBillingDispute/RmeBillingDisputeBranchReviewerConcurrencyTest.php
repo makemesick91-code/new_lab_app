@@ -106,6 +106,8 @@ const RBRC_TABLES = [
     'trx_rme_payments',
     'trx_rme_invoice_items',
     'trx_rme_invoices',
+    // Rule 241 — the consent countersignature, deleted before its consent (FK).
+    'trx_rme_visit_consent_doctor_signatures',
     'trx_rme_visit_consents',
     'trx_medical_records',
     'trx_clinic_visits',
