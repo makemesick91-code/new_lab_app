@@ -1,7 +1,8 @@
 <x-settings-shell title="Persetujuan Tindakan Medis">
     @php
+        // $template (the form this page renders), $templateCode and
+        // $refillConsentAnswers are decided by the controller (rule 241 §6).
         $patient = $clinicVisit->patient;
-        $template = $templates[$defaultTemplate] ?? reset($templates);
     @endphp
 
     <div class="space-y-6">
@@ -41,7 +42,7 @@
             <x-ui.card title="1. Pilih Form Persetujuan">
                 <x-ui.select name="template_code" label="Form Persetujuan" required>
                     @foreach ($templates as $code => $definition)
-                        <option value="{{ $code }}" @selected(old('template_code', $defaultTemplate) === $code)>
+                        <option value="{{ $code }}" @selected($templateCode === $code)>
                             {{ $definition['title'] }} (versi {{ $definition['version'] }})
                         </option>
                     @endforeach
@@ -138,12 +139,12 @@
                         <p class="text-sm text-ink">{{ $template['clauses'][$answerClause] ?? '' }}</p>
                         <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                             <input type="radio" name="{{ $answerField }}" value="1" class="mt-1"
-                                   @checked(old($answerField) === '1')>
+                                   @checked($refillConsentAnswers && old($answerField) === '1')>
                             <span class="text-sm font-semibold text-ink">YA</span>
                         </label>
                         <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                             <input type="radio" name="{{ $answerField }}" value="0" class="mt-1"
-                                   @checked(old($answerField) === '0')>
+                                   @checked($refillConsentAnswers && old($answerField) === '0')>
                             <span class="text-sm font-semibold text-ink">TIDAK</span>
                         </label>
                         @error($answerField)<p class="mt-2 text-sm text-danger-700">{{ $message }}</p>@enderror
@@ -161,12 +162,12 @@
                 <div class="space-y-2">
                     <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                         <input type="radio" name="documentation_consent" value="1" class="mt-1"
-                               @checked(old('documentation_consent') === '1')>
+                               @checked($refillConsentAnswers && old('documentation_consent') === '1')>
                         <span class="text-sm text-ink"><span class="font-semibold">YA</span> — pasien menyetujui dokumentasi medis dan publikasi foto/video perawatan tanpa menampilkan informasi pribadi.</span>
                     </label>
                     <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                         <input type="radio" name="documentation_consent" value="0" class="mt-1"
-                               @checked(old('documentation_consent') === '0')>
+                               @checked($refillConsentAnswers && old('documentation_consent') === '0')>
                         <span class="text-sm text-ink"><span class="font-semibold">TIDAK</span> — pasien tidak menyetujui publikasi foto/video perawatan.</span>
                     </label>
                 </div>

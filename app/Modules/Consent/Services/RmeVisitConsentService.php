@@ -870,14 +870,20 @@ class RmeVisitConsentService
         // Clause 8 must be an explicit choice. A missing value is not "no", and
         // it is certainly not "yes" — it is an incomplete consent. On v2026.2
         // clause 8 is clinical documentation only and clause 9 (publication)
-        // is a second, equally explicit answer.
-        $documentationConsent = $this->explicitAnswer($data, 'documentation_consent', $publicationClause === null
+        // is a second, equally explicit answer. Every missing or invalid answer
+        // is reported in ONE refusal, each naming its own clause (review LOW-1;
+        // the request only binds the values, so these messages reach HTTP).
+        $requiredAnswers = ['documentation_consent' => $publicationClause === null
             ? self::MESSAGE_DOCUMENTATION_ANSWER
-            : 'Persetujuan dokumentasi klinis (poin '.$template['documentation_clause'].') harus dipilih YA atau TIDAK.');
+            : 'Persetujuan dokumentasi klinis (poin '.$template['documentation_clause'].') harus dipilih YA atau TIDAK.'];
 
-        $publicationConsent = $publicationClause === null
-            ? null
-            : $this->explicitAnswer($data, 'publication_consent', 'Persetujuan publikasi/promosi (poin '.$publicationClause.') harus dipilih YA atau TIDAK.');
+        if ($publicationClause !== null) {
+            $requiredAnswers['publication_consent'] = 'Persetujuan publikasi/promosi (poin '.$publicationClause.') harus dipilih YA atau TIDAK.';
+        }
+
+        $answers = $this->explicitAnswers($data, $requiredAnswers);
+        $documentationConsent = $answers['documentation_consent'];
+        $publicationConsent = $answers['publication_consent'] ?? null;
 
         // DMS memo M1.1–M1.3 PR2 (rule 241 §4; review LOW-1) — the capture takes
         // the patient's signature only. The legacy optional doctor drawing is
@@ -1765,23 +1771,36 @@ class RmeVisitConsentService
     }
 
     /**
-     * An explicit YA/TIDAK answer: missing, null and blank are not "no" (and
+     * Explicit YA/TIDAK answers: missing, null and blank are not "no" (and
      * certainly not "yes"), and anything that is not a boolean is refused.
+     * Every answer that fails is reported together, in one refusal.
      *
      * @param  array<string, mixed>  $data
+     * @param  array<string, string>  $required  field => its refusal message
+     * @return array<string, bool>
      */
-    private function explicitAnswer(array $data, string $key, string $message): bool
+    private function explicitAnswers(array $data, array $required): array
     {
-        if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
-            throw ValidationException::withMessages([$key => $message]);
+        $answers = [];
+        $refused = [];
+
+        foreach ($required as $key => $message) {
+            $value = $data[$key] ?? null;
+            $answer = $value === null || $value === ''
+                ? null
+                : filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+            if ($answer === null) {
+                $refused[$key] = $message;
+            } else {
+                $answers[$key] = $answer;
+            }
         }
 
-        $answer = filter_var($data[$key], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
-        if ($answer === null) {
-            throw ValidationException::withMessages([$key => $message]);
+        if ($refused !== []) {
+            throw ValidationException::withMessages($refused);
         }
 
-        return $answer;
+        return $answers;
     }
 }

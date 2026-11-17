@@ -59,10 +59,31 @@ class RmeVisitConsentController extends Controller
 
         $clinicVisit->loadMissing(['patient', 'doctor', 'branch', 'initialTreatment']);
 
+        // Rule 241 §6 — every form offered, each in the version a new consent
+        // is signed on, and the ONE form this page renders: the one the old
+        // input chose when it is still offered, else the default. Its version is
+        // what the page posts back.
+        $templates = $this->consents->availableTemplates();
+        $defaultTemplate = (string) config('rme_consent.default_template');
+        $oldCode = request()->old('template_code');
+        $templateCode = is_string($oldCode) && isset($templates[$oldCode])
+            ? $oldCode
+            : (isset($templates[$defaultTemplate]) ? $defaultTemplate : (string) array_key_first($templates));
+        $template = $templates[$templateCode];
+        $oldVersion = request()->old('template_version');
+
         return view('rme.consents.create', [
             'clinicVisit' => $clinicVisit,
-            'templates' => $this->consents->availableTemplates(),
-            'defaultTemplate' => config('rme_consent.default_template'),
+            'templates' => $templates,
+            'defaultTemplate' => $defaultTemplate,
+            'templateCode' => $templateCode,
+            'template' => $template,
+            // Review MEDIUM-1 (rule 100 §5: no default) — a YA/TIDAK given on the
+            // page of ANOTHER version (refused because the version in force
+            // changed, either way) is never refilled: a v2026.2 clause-8 YA must
+            // not come back as the 2026.1 combined documentation-AND-publication
+            // YA. Refilled only when the old input answered this very version.
+            'refillConsentAnswers' => is_string($oldVersion) && $oldVersion === (string) $template['version'],
             'relationships' => (array) config('rme_consent.relationships', []),
             'suggestedAction' => $this->suggestedAction($clinicVisit),
         ]);

@@ -186,6 +186,25 @@ function rtvsRefusedKeys(callable $sign): array
     return [];
 }
 
+/** The YA/TIDAK radios a capture page renders ticked, as "field=value". */
+function rtvsTicked(string $html): array
+{
+    preg_match_all('/<input type="radio" name="(documentation_consent|publication_consent)" value="([01])"[^>]*?\bchecked\b[^>]*>/', $html, $matches, PREG_SET_ORDER);
+
+    return array_map(fn (array $m): string => $m[1].'='.$m[2], $matches);
+}
+
+/** Submit the capture form from its own page and return the page it comes back to. */
+function rtvsSubmitFromForm(ClinicVisit $visit, array $payload): string
+{
+    return test()->actingAs(test()->frontOffice)
+        ->from(route('rme.visits.consent.create', $visit))
+        ->followingRedirects()
+        ->post(route('rme.visits.consent.store', $visit), $payload)
+        ->assertOk()
+        ->getContent();
+}
+
 /*
 | The definition
 */
@@ -429,10 +448,12 @@ it('TVS-05 requires an explicit YA/TIDAK for BOTH clauses on v2026.2 and writes 
         'clause 9 not YA/TIDAK' => [['publication_consent' => 'mungkin'], [], 'publication_consent'],
         'clause 8 missing' => [['publication_consent' => '0'], ['documentation_consent'], 'documentation_consent'],
         'clause 8 not YA/TIDAK' => [['publication_consent' => '0', 'documentation_consent' => 'mungkin'], [], 'documentation_consent'],
+        // Review LOW-1 — both missing are reported together, in one refusal.
+        'both missing' => [[], ['documentation_consent', 'publication_consent'], ['documentation_consent', 'publication_consent']],
     ];
 
-    foreach ($cases as $label => [$overrides, $unset, $key]) {
-        expect(rtvsRefusedKeys(fn () => rtvsSign($visit, $overrides, $unset)))->toBe([$key], $label);
+    foreach ($cases as $label => [$overrides, $unset, $keys]) {
+        expect(rtvsRefusedKeys(fn () => rtvsSign($visit, $overrides, $unset)))->toBe((array) $keys, $label);
     }
 
     // Over HTTP the form refuses the same way.
@@ -536,16 +557,21 @@ it('TVS-08 lets TIDAK on clause 9 — and on clause 8 — block no clinical writ
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-it('TVS-09 lets no workflow read the clause-9 answer: only the consent capture, model and document know it (PR4/PR5 extend this deliberately)', function () {
-    $readers = collect(File::allFiles(app_path()))
+it('TVS-09 lets no workflow read the clause-9 answer: only the consent capture, model and views know it (PR4/PR5 extend this deliberately)', function () {
+    $files = collect(File::allFiles(app_path()))
         ->merge(File::allFiles(resource_path('views')))
-        ->filter(fn ($file) => str_ends_with($file->getFilename(), '.php') && str_contains((string) file_get_contents($file->getPathname()), 'publication_consent'))
-        ->map(fn ($file) => str_replace(base_path().'/', '', $file->getPathname()))
+        ->filter(fn ($file) => str_ends_with($file->getFilename(), '.php'))
+        ->mapWithKeys(fn ($file) => [str_replace(base_path().'/', '', $file->getPathname()) => (string) file_get_contents($file->getPathname())]);
+
+    $readersOf = fn (string $needle): array => $files
+        ->filter(fn (string $source): bool => str_contains($source, $needle))
+        ->keys()
         ->sort()
         ->values()
         ->all();
 
-    expect($readers)->toBe([
+    // The stored answer.
+    expect($readersOf('publication_consent'))->toBe([
         'app/Modules/Consent/Models/RmeVisitConsent.php',
         'app/Modules/Consent/Requests/StoreRmeVisitConsentRequest.php',
         'app/Modules/Consent/Services/RmeVisitConsentService.php',
@@ -553,6 +579,105 @@ it('TVS-09 lets no workflow read the clause-9 answer: only the consent capture, 
         'resources/views/rme/consents/partials/document.blade.php',
         'resources/views/rme/consents/show.blade.php',
     ]);
+
+    // Review LOW-3 — the predicates that expose it: no workflow asks them.
+    expect($readersOf('publicationClause('))->toBe([
+        'app/Modules/Consent/Models/RmeVisitConsent.php',
+        'resources/views/rme/consents/show.blade.php',
+    ])
+        ->and($readersOf('allowsPublication('))->toBe(['app/Modules/Consent/Models/RmeVisitConsent.php'])
+        ->and($readersOf('allowsDocumentationPublication('))->toBe(['app/Modules/Consent/Models/RmeVisitConsent.php']);
+});
+
+/*
+| Review fixes (MEDIUM-1, LOW-1, INFO)
+*/
+
+it('TVS-11 never refills a YA/TIDAK answered on another version after a version-changed refusal, in both directions (rule 100 §5)', function () {
+    $visit = rtvsVisit();
+
+    // Activation: a page that showed 2026.1 was answered YA, then v2026.2 came into force.
+    rtvsFlag(true);
+    rtvsApproveCandidate();
+    $page = rtvsSubmitFromForm($visit, rtvsPayload(['template_version' => '2026.1', 'documentation_consent' => '1']));
+
+    expect($page)->toContain('(versi 2026.2)')
+        ->and($page)->toContain(RmeVisitConsentService::MESSAGE_TEMPLATE_VERSION_CHANGED)
+        ->and(rtvsTicked($page))->toBe([]);
+
+    // Rollback: a v2026.2 page answered clause 8 YA / clause 9 TIDAK, then the flag went off.
+    // Refilling would turn the clause-8 YA into the 2026.1 COMBINED documentation-and-publication YA.
+    rtvsFlag(false);
+    $page = rtvsSubmitFromForm($visit, rtvsPayload(['template_version' => '2026.2', 'documentation_consent' => '1', 'publication_consent' => '0']));
+
+    expect($page)->toContain('(versi 2026.1)')
+        ->and($page)->toContain(RmeVisitConsentService::MESSAGE_TEMPLATE_VERSION_CHANGED)
+        ->and(rtvsTicked($page))->toBe([]);
+
+    expect(RmeVisitConsent::query()->count())->toBe(0);
+});
+
+it('TVS-11b still refills the answers after a refusal on the SAME version (the guard is not a blanket reset)', function () {
+    $visit = rtvsVisit();
+
+    $page = rtvsSubmitFromForm($visit, rtvsPayload(['template_version' => '2026.1', 'documentation_consent' => '1', 'consenter_signature' => '']));
+    expect($page)->toContain('(versi 2026.1)')
+        ->and(rtvsTicked($page))->toBe(['documentation_consent=1']);
+
+    rtvsFlag(true);
+    rtvsApproveCandidate();
+    $page = rtvsSubmitFromForm($visit, rtvsPayload(['template_version' => '2026.2', 'documentation_consent' => '0', 'publication_consent' => '1', 'consenter_signature' => '']));
+    expect($page)->toContain('(versi 2026.2)')
+        ->and(rtvsTicked($page))->toBe(['documentation_consent=0', 'publication_consent=1']);
+
+    expect(RmeVisitConsent::query()->count())->toBe(0);
+});
+
+it('TVS-12 reports both missing answers in one refusal over HTTP with clause-specific messages, and keeps the 2026.1 message', function () {
+    $visit = rtvsVisit();
+    $store = route('rme.visits.consent.store', $visit);
+    $from = route('rme.visits.consent.create', $visit);
+
+    // 2026.1: same key, same text as before.
+    $payload = rtvsPayload(['template_version' => '2026.1']);
+    unset($payload['documentation_consent']);
+    $this->actingAs($this->frontOffice)->from($from)->post($store, $payload)
+        ->assertSessionHasErrors(['documentation_consent' => RmeVisitConsentService::MESSAGE_DOCUMENTATION_ANSWER]);
+
+    // v2026.2: both missing, both reported, each naming its own clause.
+    rtvsFlag(true);
+    rtvsApproveCandidate();
+    $payload = rtvsPayload(['template_version' => '2026.2']);
+    unset($payload['documentation_consent']);
+    $this->actingAs($this->frontOffice)->from($from)->post($store, $payload)
+        ->assertSessionHasErrors([
+            'documentation_consent' => 'Persetujuan dokumentasi klinis (poin 8) harus dipilih YA atau TIDAK.',
+            'publication_consent' => 'Persetujuan publikasi/promosi (poin 9) harus dipilih YA atau TIDAK.',
+        ]);
+
+    // A value that is not YA/TIDAK is refused at the edge without naming a clause it may not be.
+    $this->actingAs($this->frontOffice)->from($from)->post($store, rtvsPayload(['template_version' => '2026.2', 'documentation_consent' => 'mungkin', 'publication_consent' => '0']))
+        ->assertSessionHasErrors('documentation_consent');
+    expect(session('errors')->first('documentation_consent'))->not->toContain('publikasi');
+
+    expect(RmeVisitConsent::query()->count())->toBe(0);
+});
+
+it('TVS-13 renders, and posts the version of, the form the page actually shows — also when the old input chose another offered form', function () {
+    config()->set('rme_consent.templates.UJI_FORM', array_replace(config('rme_consent.templates.'.RTVS_CODE), [
+        'code' => 'UJI_FORM',
+        'version' => 'U.1',
+        'title' => 'FORM UJI',
+        'clauses' => [1 => 'Klausul form uji satu-satunya.'],
+    ]));
+    $visit = rtvsVisit();
+
+    $page = rtvsSubmitFromForm($visit, rtvsPayload(['template_code' => 'UJI_FORM', 'template_version' => 'U.1', 'documentation_consent' => '1', 'consenter_signature' => '']));
+
+    expect($page)->toContain('name="template_version" value="U.1"')
+        ->and($page)->toContain('Klausul form uji satu-satunya.')
+        ->and($page)->not->toContain('name="template_version" value="2026.1"')
+        ->and(rtvsTicked($page))->toBe(['documentation_consent=1']);
 });
 
 /*

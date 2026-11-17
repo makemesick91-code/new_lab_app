@@ -189,16 +189,23 @@ BLOCKER, never treated as done.
    `FeatureFlagService`, captured at config build — rule 92) is on; (b) the candidate is activatable: `wording_status`
    exactly `approved`, no draft marker (the configured one or `[DRAF`) in any text, and a sound definition (same code,
    a version other than the current one, clauses 8 and 9 present and distinct). Otherwise new consents use the current
-   template exactly as before. While the flag is on, a refusal logs one warning with `template_code`,
-   `candidate_version` and `reason` (`wording_not_approved`, `draft_marker_present`, `definition_invalid`) only — no
-   patient, visit, consenter or text. The version is the server's choice, never the request's.
-3. **Capture.** The page renders the selected version (label, clauses, answers) and posts `template_version`; `sign()`
-   refuses, before anything is written, a shown version that is not the version in force and a clause-9 answer filed
-   on a version without clause 9 (`template_code`, `MESSAGE_TEMPLATE_VERSION_CHANGED`), so a page rendered before the
-   version changed cannot be signed on the other one. On v2026.2 `documentation_consent` (clause 8) and
-   `publication_consent` (clause 9) are each an explicit YA/TIDAK (missing, null, blank or non-boolean is refused on
-   its own key; `StoreRmeVisitConsentRequest` binds `publication_consent` `nullable|boolean` and `template_version`
-   `nullable|string|max:20`). On 2026.1 the single clause-8 answer, its rule and its message are unchanged.
+   template exactly as before. While the flag is on and the candidate is refused, EVERY call logs one warning (each
+   capture-page render and each signing attempt) with `template_code`, `candidate_version` and `reason`
+   (`wording_not_approved`, `draft_marker_present`, `definition_invalid`) only — no patient, visit, consenter or text.
+   The version is the server's choice, never the request's.
+3. **Capture.** `RmeVisitConsentController::create()` decides the ONE form the page renders (the form the old input
+   chose when it is still offered, else the default) in its selected version, and the page posts that form's version
+   as `template_version`. `sign()` refuses, before anything is written, a shown version that is not the version in
+   force and a clause-9 answer filed on a version without clause 9 (`template_code`, `MESSAGE_TEMPLATE_VERSION_CHANGED`),
+   so a page rendered before the version changed cannot be signed on the other one. The service requires every answer
+   the selected version asks — on v2026.2 `documentation_consent` (clause 8) and `publication_consent` (clause 9), each
+   an explicit YA/TIDAK — and reports every missing, blank or non-boolean answer in ONE refusal, each message naming
+   its own clause. `StoreRmeVisitConsentRequest` only binds both to `nullable|boolean` (version-neutral messages; never
+   `required`, never defaulted) and `template_version` to `nullable|string|max:20`. On 2026.1 the single clause-8
+   answer keeps its key and its message. After a refusal a YA/TIDAK is refilled only when the old input answered the
+   version the page now shows (`refillConsentAnswers`, decided by the controller): an answer given on another version is
+   never carried over, in either direction (rule 100 §5: no default) — a v2026.2 clause-8 YA never comes back as the
+   2026.1 combined documentation-and-publication YA.
 4. **Storage.** Additive nullable `trx_rme_visit_consents.publication_consent`
    (`2026_11_17_210001_add_publication_consent_to_trx_rme_visit_consents_table.php`; no backfill, no existing row
    updated; `down()` refuses while any consent holds an answer). `sign()` writes it only on a version with clause 9 and
@@ -208,8 +215,11 @@ BLOCKER, never treated as done.
    (both) are version-aware.
 5. **Clause 9 never affects care.** No gate and no workflow reads `publication_consent`: refusing publication — or
    clinical documentation — never blocks treatment, a clinical write, "Selesai Pemeriksaan" or payment. A source scan
-   pins the only readers (the consent capture, the model and the consent views); the future photos / publication
-   features (PR4/PR5) are the only intended new readers and extend that pin deliberately.
+   (TVS-09) pins, under `app/` and `resources/views/`, every file naming `publication_consent` (the consent model,
+   request and service, the capture form, the consent page and the document partial) or a clause-9 predicate:
+   `publicationClause(` (the model and the consent page), `allowsPublication(` and `allowsDocumentationPublication(`
+   (the model only). The future photos / publication features (PR4/PR5) are the only intended new readers and extend
+   that pin deliberately.
 6. **No automatic FO/Kasir access.** PR3 grants no role access to photos or clinical documentation and changes no
    permission or role. For PR4: the photo read scope follows the plan (never Front Office, Kasir or Admin Klinik, even
    with a runtime grant), and upload needs the executed consent with `allowsClinicalDocumentation()`.

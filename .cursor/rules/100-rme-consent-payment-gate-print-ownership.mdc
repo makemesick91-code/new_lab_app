@@ -109,7 +109,9 @@ Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progre
 > **AMENDED by `241-rme-ptm-double-signature.mdc` §6 (2026-11-17):** consent template v2026.2 (built inactive until
 > the owner approves its wording) splits clause 8 into clause 8 (clinical documentation, `documentation_consent`) and
 > clause 9 (publication, `publication_consent`), two explicit YA/TIDAK answers that never affect care or payment.
-> Consents signed on 2026.1 keep their single clause-8 answer.
+> Consents signed on 2026.1 keep their single clause-8 answer. Presence is required by `RmeVisitConsentService` (every
+> missing answer in one refusal, each naming its clause); the request binds the answers `nullable|boolean` — still
+> never `required` and never defaulted.
 
 - Must be an **explicit YA/TIDAK**. No default, and a signature is not implied
   agreement to publication.

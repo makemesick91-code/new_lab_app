@@ -66,12 +66,13 @@ class StoreRmeVisitConsentRequest extends FormRequest
             'medical_action' => ['required', 'string', 'max:2000'],
             'treatment_summary' => ['nullable', 'string', 'max:2000'],
 
-            // Clause 8 — explicit YA/TIDAK. `present` + `boolean` rather than
-            // `required`, because `required` rejects the legitimate answer "0".
-            'documentation_consent' => ['present', 'boolean'],
-            // Rule 241 §6 — clause 9 (publication) on v2026.2 only. Its presence
-            // depends on the version the SERVICE selects, so the service requires
-            // it (or refuses it on a version without clause 9); here it is bound.
+            // Clause 8 (and on v2026.2 clause 9, rule 241 §6) — explicit YA/TIDAK.
+            // Which answers a form asks depends on the version the SERVICE
+            // selects, so the service requires them — every missing answer in
+            // one refusal, each message naming its own clause (review LOW-1);
+            // here the values are only bound to YA/TIDAK, never `required`, and
+            // never defaulted.
+            'documentation_consent' => ['nullable', 'boolean'],
             'publication_consent' => ['nullable', 'boolean'],
 
             // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — the signature
@@ -94,9 +95,9 @@ class StoreRmeVisitConsentRequest extends FormRequest
             'consenter_relationship.in' => 'Hubungan pemberi persetujuan tidak dikenal.',
             'consenter_name.required_unless' => 'Nama pemberi persetujuan wajib diisi.',
             'medical_action.required' => 'Tindakan medis yang disetujui wajib diisi.',
-            'documentation_consent.present' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
-            'documentation_consent.boolean' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
-            'publication_consent.boolean' => 'Persetujuan publikasi/promosi harus dipilih YA atau TIDAK.',
+            // Version-neutral: the request does not know which version is signed.
+            'documentation_consent.boolean' => 'Jawaban persetujuan dokumentasi harus dipilih YA atau TIDAK.',
+            'publication_consent.boolean' => 'Jawaban persetujuan publikasi harus dipilih YA atau TIDAK.',
             'consenter_signature.required' => 'Tanda tangan pemberi persetujuan wajib diisi.',
             'consenter_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
             'doctor_signature.prohibited' => RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE,
