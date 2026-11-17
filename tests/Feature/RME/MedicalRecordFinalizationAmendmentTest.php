@@ -52,6 +52,10 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
+// The patient-merge regression borrows the PatientMerge suite's helpers; a parallel
+// worker loads only this file, so require them here (ParallelTestHelperResolutionContractTest).
+require_once __DIR__.'/../PatientMerge/helpers.php';
+
 beforeEach(function () {
     seedAccessControl();
 
@@ -613,8 +617,6 @@ it('refuses a TRUNCATE of the amendment table (PostgreSQL trigger)', function ()
 // ─── Patient merge (M3.3 PR4, merge regression) ──────────────────────────────
 
 it('lets a patient with an amendment be merged; the amendment follows the surviving patient through its visit', function () {
-    require_once base_path('tests/Feature/PatientMerge/helpers.php');
-
     $survivor = pmPatient(['name' => 'M33A Pasien Utama'], $this->branch);
     $duplicate = pmPatient(['name' => 'M33A Pasien Ganda'], $this->branch);
     $this->patient = $duplicate;

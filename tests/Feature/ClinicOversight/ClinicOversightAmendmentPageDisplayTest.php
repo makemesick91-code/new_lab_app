@@ -51,6 +51,9 @@ beforeEach(function () {
     $this->doctorUser = userInRole('Doctor');
     $this->doctor = Doctor::factory()->create(['user_id' => $this->doctorUser->id, 'branch_id' => $this->branch->id, 'is_active' => true]);
     $this->supervisor = userInRole('Supervisor RME');
+    // A fixed name: a Faker name with an apostrophe (O'Hara) renders as &#039; in
+    // HTML and made the exact-label assertions fail at random.
+    $this->supervisor->forceFill(['name' => 'm3po Supervisor RME'])->save();
 
     // A final sheet (the patient's book) with its sealed page 1.
     $this->visit = ClinicVisit::factory()->create([
