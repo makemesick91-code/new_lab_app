@@ -624,14 +624,14 @@ class RmeVisitConsentService
     /**
      * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the doctor's
      * structured record of what was PERFORMED ("Tindakan Dilakukan") states the
-     * treatment itself, so it takes the FULL RME authority — including the signed
-     * consent — and, because a row belongs to ONE visit like an odontogram, the
+     * treatment itself, so it takes the FULL RME authority — including the EXECUTED
+     * consent (patient + treating-doctor countersignature, rule 241 §2) — and, because a row belongs to ONE visit like an odontogram, the
      * exact chart-identity condition too:
      *
      *   1. the patient HAS a single current `in_progress` encounter;
      *   2. the actor may work on that encounter (branch + clinical scope);
      *   3. the visit being written IS that encounter (else it is history);
-     *   4. a valid signed consent exists for THAT encounter.
+     *   4. an EXECUTED consent exists for THAT encounter (rule 241 §2).
      *
      * Anything else fails closed. The treating-doctor identity and the visit row
      * lock are asserted by RmePerformedTreatmentService on top of this. Reads are

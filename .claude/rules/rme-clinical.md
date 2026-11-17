@@ -63,9 +63,8 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   (patient + treating-doctor countersignature) exists for that same encounter, re-decided on the visit row locked first
   inside the write. No encounter, two `in_progress` visits or a null actor fail closed. Covered writers:
   `MedicalRecordService::createDraft/updateDraft/finalize/getOrCreateCanonicalMedicalRecord`,
-  `MedicalRecordDiagnosisService`, `DiagnosisRolloutService::grantOverride`, `MedicalRecordHandwritingController`,
-  `RmePerformedTreatmentService`.
-  Source: rule 109 §2b.
+  `MedicalRecordDiagnosisService`, `DiagnosisRolloutService::grantOverride`, `MedicalRecordHandwritingController`;
+  performed treatments use their own authority (AIR-RMC-36, AIR-RMC-55). Source: rule 109 §2b.
 - **AIR-RMC-08** Never derive authoring authority from `trx_medical_records.clinic_visit_id` (the canonical book
   belongs to an old, finished visit) or from the request (`{clinicVisit}`, `source_visit_id`, `?sheet=`). A cancelled
   or completed encounter never makes the canonical record writable again (cancel-then-author and
@@ -205,7 +204,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   rule 100 §3; `RmeVisitConsentService`.
 
 - **AIR-RMC-36** Performed treatments only through `RmePerformedTreatmentService` (rule 219): the visit's treating
-  doctor, `in_progress`, signed consent, visit row locked first, append-only rows voided with a reason. Empty =
+  doctor, `in_progress`, EXECUTED consent (rule 241 §2), visit row locked first, append-only rows voided with a reason. Empty =
   `NOT_RECORDED`; only "Tidak Ada Tindakan" is operational KONTROL: never rewrites `visit_type`, never creates a
   parent, never makes anything free (rule 217), never transitions the visit. A covering doctor must first be the
   assigned doctor; no post-completion edit. Flag `rme.doctor_performed_treatments` default OFF; ask
@@ -224,7 +223,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   copy let a cancelled visit come back billable). Lock the visit row first, always.
   Source: rule 223 §1.
 - **AIR-RMC-39** Detail Kunjungan "Buat Rekam Medis" (`canCreateRecordHere`), the Rekam Medis page "Selesai
-  Pemeriksaan" (`transition` + `completeExamination` + signed consent), the handwriting editor and the diagnosis forms
+  Pemeriksaan" (`transition` + `completeExamination` + EXECUTED consent), the handwriting editor and the diagnosis forms
   (`canAuthorRme`) follow the capability, never a permission alone. Source: rule 223 §2.
 - **AIR-RMC-40** The front-desk-only tier (`FrontOfficeRole::isVisitFrontDeskOnly()`: Admin Klinik / Front Office
   without a clinical role) never authors the active RME or odontogram; the refusal sits in
