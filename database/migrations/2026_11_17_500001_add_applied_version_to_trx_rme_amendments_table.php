@@ -24,16 +24,20 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table(self::TABLE, function (Blueprint $table) {
-            $table->foreignId('applied_version_id')->nullable()
-                ->constrained('trx_rme_record_versions', 'id', 'trx_rme_amd_applied_version_fk')->restrictOnDelete();
+            $table->unsignedBigInteger('applied_version_id')->nullable();
             $table->unsignedInteger('applied_version')->nullable();
 
             $table->unique('applied_version_id', 'trx_rme_amd_applied_version_uq');
         });
 
+        // The foreign key is added on PostgreSQL only: on SQLite, adding one
+        // rebuilds the table, and the rebuild would turn the partial unique index
+        // `trx_rme_amd_one_pending_uq` (rule 240 §6.1) into a full one.
         if (DB::connection()->getDriverName() !== 'pgsql') {
             return;
         }
+
+        DB::statement('ALTER TABLE '.self::TABLE.' ADD CONSTRAINT trx_rme_amd_applied_version_fk FOREIGN KEY (applied_version_id) REFERENCES trx_rme_record_versions (id) ON DELETE RESTRICT');
 
         DB::statement('ALTER TABLE '.self::TABLE." ADD CONSTRAINT trx_rme_amd_applied_chk CHECK ((status = 'applied') = (applied_version_id IS NOT NULL AND applied_version IS NOT NULL))");
         DB::statement('ALTER TABLE '.self::TABLE.' ADD CONSTRAINT trx_rme_amd_applied_version_chk CHECK (applied_version IS NULL OR applied_version >= 2)');
@@ -48,11 +52,11 @@ return new class extends Migration
         if (DB::connection()->getDriverName() === 'pgsql') {
             DB::statement('ALTER TABLE '.self::TABLE.' DROP CONSTRAINT IF EXISTS trx_rme_amd_applied_version_chk');
             DB::statement('ALTER TABLE '.self::TABLE.' DROP CONSTRAINT IF EXISTS trx_rme_amd_applied_chk');
+            DB::statement('ALTER TABLE '.self::TABLE.' DROP CONSTRAINT IF EXISTS trx_rme_amd_applied_version_fk');
         }
 
         Schema::table(self::TABLE, function (Blueprint $table) {
             $table->dropUnique('trx_rme_amd_applied_version_uq');
-            $table->dropForeign('trx_rme_amd_applied_version_fk');
             $table->dropColumn(['applied_version_id', 'applied_version']);
         });
     }

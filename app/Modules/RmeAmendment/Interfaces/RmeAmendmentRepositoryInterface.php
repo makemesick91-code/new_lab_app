@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\RmeAmendment\Interfaces;
 
+use App\Models\User;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
@@ -67,7 +68,7 @@ interface RmeAmendmentRepositoryInterface
      */
     public function applySheetDiagnoses(MedicalRecord $sheet, array $add, array $remove, int $diagnosedBy, int $createdBy): void;
 
-    /** @return Collection<int, \App\Models\User> accounts holding the permission (directly or by role), by id */
+    /** @return Collection<int, User> accounts holding the permission (directly or by role), by id */
     public function approverCandidates(string $permission): Collection;
 
     /** `mst_doctors.user_id` of a doctor, or null. */

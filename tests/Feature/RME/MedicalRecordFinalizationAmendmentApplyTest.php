@@ -38,6 +38,7 @@ use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
@@ -114,7 +115,7 @@ function m3apRefusal(callable $act): string
     test()->fail('Expected a refusal, the action succeeded.');
 }
 
-/** @return \Illuminate\Support\Collection<int, RmeRecordVersion> */
+/** @return Collection<int, RmeRecordVersion> */
 function m3apVersions(MedicalRecord $sheet)
 {
     return RmeRecordVersion::query()->where('subject_type', RmeRecordVersion::SUBJECT_MEDICAL_RECORD)->where('subject_id', $sheet->id)->orderBy('version')->get();

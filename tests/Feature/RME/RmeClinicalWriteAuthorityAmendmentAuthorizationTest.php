@@ -252,7 +252,8 @@ it('shows a requester their own amendment and answers 404 for anyone else\'s; th
         ->assertOk()
         ->assertSee('data-amendment-reject', false)
         ->assertDontSee('data-amendment-cancel', false)
-        ->assertDontSee('data-amendment-approve', false);
+        // M3.3 PR5 — approve-and-apply is offered to the same checker.
+        ->assertSee('data-amendment-approve', false);
 });
 
 // ─── Record page mirror (rule 135) ───────────────────────────────────────────

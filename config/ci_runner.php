@@ -1701,6 +1701,17 @@ return [
         'tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php',
         'tests/Feature/RME/OdontogramAmendmentTest.php',
         'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php',
+        // Same rule, §7 (M3.3 PR5) — approve AND apply in one transaction: the checker rules re-decided on
+        // the locked rows (binding Super Admin), a stale base refused, the proposal re-validated under
+        // today's rules, the record changed while it stays final and locked, the next version chained
+        // and verifiable (snapshot_schema_version hashed), the amendment applied in one update, audit
+        // ids-only, notifications after commit, "Diamandemen n×" on the prints and the record pages,
+        // the version history read like the record (404 outside its scope, no object key, no-store).
+        // Selected by the existing `MedicalRecordFinalization`, `Odontogram` and
+        // `RmeClinicalWriteAuthority` tokens in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php',
+        'tests/Feature/RME/OdontogramAmendmentApplyTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
