@@ -44,6 +44,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Filesystem\Filesystem as FilesystemContract;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Http\UploadedFile;
@@ -174,6 +175,41 @@ function rcpuPng(int $width = 120, int $height = 90): string
     return $bytes;
 }
 
+/** A busy JPEG (so a truncated copy really lacks scan data), optionally progressive. */
+function rcpuBusyJpeg(int $width = 1000, int $height = 800, bool $progressive = false): string
+{
+    $image = imagecreatetruecolor($width, $height);
+    mt_srand(42);
+    for ($i = 0; $i < 300; $i++) {
+        imagefilledrectangle($image, mt_rand(0, $width - 1), mt_rand(0, $height - 1), mt_rand(0, $width - 1), mt_rand(0, $height - 1),
+            imagecolorallocate($image, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255)));
+    }
+    mt_srand();
+    imageinterlace($image, $progressive);
+    ob_start();
+    imagejpeg($image, null, 90);
+    $bytes = (string) ob_get_clean();
+    imagedestroy($image);
+
+    return $bytes;
+}
+
+/** Review M-1 — a progressive JPEG with $extra more copies of its last scan before the EOI. */
+function rcpuManyScanJpeg(int $extra): string
+{
+    $jpeg = rcpuBusyJpeg(400, 300, true);
+    $sos = strrpos($jpeg, "\xFF\xDA");
+    $eoi = strrpos($jpeg, "\xFF\xD9");
+
+    return substr($jpeg, 0, $eoi).str_repeat(substr($jpeg, $sos, $eoi - $sos), $extra)."\xFF\xD9";
+}
+
+/** The number of SOS markers outside entropy-coded data (a stuffed 0xFF is followed by 0x00, never 0xDA). */
+function rcpuScanCount(string $jpeg): int
+{
+    return substr_count($jpeg, "\xFF\xDA");
+}
+
 /**
  * A JPEG carrying an EXIF APP1 segment: Orientation, an ImageDescription marker
  * and a GPS IFD (latitude S 5° 8'), hand-built little-endian TIFF.
@@ -285,7 +321,8 @@ it('CPU-01 ships the flag high-risk, default OFF, env-captured, and the routes b
 
     $store = app('router')->getRoutes()->getByName('rme.visits.clinical-photos.store');
     expect($store->gatherMiddleware())->toContain('permission:upload_rme_clinical_photos')
-        ->and($store->gatherMiddleware())->toContain('visit.room');
+        // Review L-2 — no room gate: it would redirect a roomless visit ahead of the flag's 404.
+        ->and($store->gatherMiddleware())->not->toContain('visit.room');
 });
 
 it('CPU-01b with the flag OFF the upload route answers 404 to every permission holder and the service refuses; nothing is written', function () {
@@ -307,6 +344,27 @@ it('CPU-01b with the flag OFF the upload route answers 404 to every permission h
     rcpuFlag(RCPU_FLAG, true);
     rcpuPost($this->doctor, $visit, rcpuJpeg())->assertCreated();
     expect(RmeClinicalPhoto::query()->count())->toBe(1);
+});
+
+it('CPU-01c with the flag OFF a roomless waiting visit answers 404 too (no room gate ahead of the flag)', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => Patient::factory()->create(['branch_id' => $this->branch->id])->id,
+        'doctor_id' => $this->doctorRecord->id,
+        'clinic_room_id' => null,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+
+    rcpuFlag(RCPU_FLAG, false);
+    rcpuPost($this->doctor, $visit, rcpuJpeg())->assertNotFound();
+    rcpuPost(userInRole('Super Admin'), $visit, rcpuJpeg())->assertNotFound();
+
+    // With the flag on it is the authority's refusal, never a redirect.
+    rcpuFlag(RCPU_FLAG, true);
+    rcpuPost($this->doctor, $visit, rcpuJpeg())->assertStatus(422)
+        ->assertJsonPath('errors.photo.0', RmeVisitConsentService::MESSAGE_PHOTO_NOT_IN_EXAMINATION);
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(0);
 });
 
 /*
@@ -589,6 +647,70 @@ it('CPU-08c re-encodes a polyglot: a payload appended to a real JPEG never reach
         ->and($photo->sha256)->toBe(hash('sha256', $stored));
 });
 
+it('CPU-08d refuses a JPEG with more than 64 scans before decoding it, and accepts an ordinary progressive JPEG', function () {
+    $visit = rcpuEncounter();
+
+    $progressive = rcpuBusyJpeg(400, 300, true);
+    expect(rcpuScanCount($progressive))->toBeGreaterThan(1)->toBeLessThanOrEqual(ClinicalPhotoNormalizer::MAX_JPEG_SCANS);
+
+    $photo = rcpuServiceUpload($visit, null, $progressive);
+    $stored = ClinicalEvidenceStorage::disk()->get($photo->getRawOriginal('photo_path'));
+    expect([$photo->width, $photo->height])->toBe([400, 300])
+        ->and(rcpuScanCount($stored))->toBe(1);
+
+    $bomb = rcpuManyScanJpeg(100);
+    expect(rcpuScanCount($bomb))->toBeGreaterThan(ClinicalPhotoNormalizer::MAX_JPEG_SCANS)
+        ->and(strlen($bomb))->toBeLessThan(ClinicalPhotoNormalizer::MAX_UPLOAD_BYTES);
+
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $bomb)))
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_JPEG_SCANS]);
+    rcpuPost($this->doctor, $visit, $bomb)->assertStatus(422)
+        ->assertJsonPath('errors.photo.0', ClinicalPhotoNormalizer::MESSAGE_JPEG_SCANS);
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(1)
+        ->and(rcpuObjects())->toHaveCount(1);
+});
+
+it('CPU-08e refuses a truncated image GD would fill with grey, with or without an EOI appended; the whole file is accepted', function () {
+    $visit = rcpuEncounter();
+    $whole = rcpuBusyJpeg();
+    $cut = substr($whole, 0, (int) (strlen($whole) * 0.3));
+
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $cut."\xFF\xD9")))
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_INCOMPLETE])
+        ->and(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $cut)))
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_UNREADABLE]);
+
+    $png = rcpuPng(400, 300);
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, substr($png, 0, (int) (strlen($png) * 0.5))))[0])
+        ->toBe(ValidationException::class);
+
+    // The decoder's warning setting is restored for everything else in the request.
+    expect(ini_get('gd.jpeg_ignore_warning'))->toBeIn(['1', 'On', 'on', 'true']);
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(0)->and(rcpuObjects())->toBe([]);
+
+    // The check is the guard: the whole file is accepted.
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $whole)))->toBe(['none', '']);
+});
+
+it('CPU-08f a read failure is an error, never an empty upload ("wajib diunggah")', function () {
+    $visit = rcpuEncounter();
+    $upload = rcpuUpload(rcpuJpeg());
+    unlink($upload->getPathname());
+
+    $caught = null;
+    try {
+        app(RmeClinicalPhotoService::class)->upload($visit->fresh(), $this->doctor, $upload);
+    } catch (Throwable $e) {
+        $caught = $e;
+    }
+
+    expect($caught)->not->toBeNull()
+        ->and($caught)->not->toBeInstanceOf(ValidationException::class)
+        ->and(RmeClinicalPhoto::query()->count())->toBe(0);
+});
+
 it('CPU-09 strips EXIF and GPS, applies the orientation, bounds the long edge and flattens a PNG into JPEG', function () {
     $visit = rcpuEncounter();
 
@@ -652,6 +774,25 @@ it('CPU-10 a failed row insert or audit leaves neither a row nor an object (only
     expect(fn () => rcpuServiceUpload($visit))->toThrow(RuntimeException::class, 'audit failed');
     expect(RmeClinicalPhoto::query()->count())->toBe(1)
         ->and(rcpuObjects())->toBe([$keptKey]);
+});
+
+it('CPU-10d a write that fails part-way still has its partial object removed', function () {
+    $visit = rcpuEncounter();
+    $real = ClinicalEvidenceStorage::disk();
+
+    $broken = Mockery::mock(FilesystemContract::class);
+    $broken->shouldReceive('put')->andReturnUsing(function (string $key, $contents) use ($real): bool {
+        $real->put($key, substr((string) $contents, 0, 64));
+
+        throw new RuntimeException('disk full');
+    });
+    $broken->shouldReceive('delete')->andReturnUsing(fn ($key) => $real->delete($key));
+    Storage::set(ClinicalEvidenceStorage::diskName(), $broken);
+
+    expect(fn () => rcpuServiceUpload($visit))->toThrow(RuntimeException::class, 'disk full');
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(0)
+        ->and($real->allFiles(RmeClinicalPhotoService::DIRECTORY))->toBe([]);
 });
 
 it('CPU-10b a failure after the body finished keeps the committed object (never delete committed evidence)', function () {

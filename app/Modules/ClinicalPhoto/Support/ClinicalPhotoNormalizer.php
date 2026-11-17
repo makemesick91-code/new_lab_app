@@ -16,9 +16,14 @@ use Throwable;
  *  2. the type is SNIFFED from the bytes (JPEG or PNG magic), never taken from
  *     the file name or the client's MIME claim, and the header must agree;
  *  3. the dimensions are read from the HEADER and bounded (edge and pixel count)
- *     before anything is decoded — the decompression-bomb guard;
+ *     before anything is decoded — the decompression-bomb guard; a JPEG's
+ *     markers are walked too, so a datastream of more than MAX_JPEG_SCANS
+ *     scans (a progressive file of thousands of empty scans costs seconds to
+ *     minutes of CPU while staying small) or with no EOI is refused undecoded;
  *  4. decoded with GD (no GD: refused; the original is never stored instead,
- *     because it may carry GPS), then drawn onto a fresh opaque canvas at most
+ *     because it may carry GPS) — a JPEG whose decoder reports a premature end
+ *     (a truncated scan, which GD would otherwise fill with grey) is refused —
+ *     then drawn onto a fresh opaque canvas at most
  *     OUTPUT_LONG_EDGE on its long edge, the EXIF orientation applied, and
  *     encoded as JPEG. Only pixels cross that boundary, so EXIF, GPS, comments
  *     and any payload appended to a polyglot are gone;
@@ -44,6 +49,13 @@ class ClinicalPhotoNormalizer
 
     public const OUTPUT_MIME = 'image/jpeg';
 
+    /**
+     * Review M-1 — a baseline JPEG has one scan per frame, a progressive one
+     * about ten (libjpeg's default progression); 64 leaves room for any real
+     * encoder and none for a scan bomb.
+     */
+    public const MAX_JPEG_SCANS = 64;
+
     public const MESSAGE_REQUIRED = 'Foto klinis wajib diunggah.';
 
     public const MESSAGE_TOO_LARGE = 'Ukuran foto klinis melebihi batas 15 MB.';
@@ -55,6 +67,10 @@ class ClinicalPhotoNormalizer
     public const MESSAGE_UNREADABLE = 'Foto klinis rusak atau tidak dapat diproses.';
 
     public const MESSAGE_UNAVAILABLE = 'Foto klinis tidak dapat diproses di server ini.';
+
+    public const MESSAGE_JPEG_SCANS = 'Struktur berkas JPEG foto klinis tidak wajar (terlalu banyak scan). Simpan ulang foto sebagai JPEG biasa, lalu unggah.';
+
+    public const MESSAGE_INCOMPLETE = 'Foto klinis tidak lengkap (berkas terpotong). Unggah ulang foto aslinya.';
 
     private const JPEG_MAGIC = "\xFF\xD8\xFF";
 
@@ -96,15 +112,34 @@ class ClinicalPhotoNormalizer
             $this->refuse(self::MESSAGE_DIMENSIONS);
         }
 
-        if (! function_exists('imagecreatefromstring') || ! function_exists('imagejpeg')) {
+        if ($type === IMAGETYPE_JPEG) {
+            $scans = $this->jpegScanCount($binary);
+
+            if ($scans === null) {
+                $this->refuse(self::MESSAGE_UNREADABLE);
+            }
+
+            if ($scans > self::MAX_JPEG_SCANS) {
+                $this->refuse(self::MESSAGE_JPEG_SCANS);
+            }
+        }
+
+        if (! function_exists('imagecreatefromstring') || ! function_exists('imagecreatefromjpeg') || ! function_exists('imagejpeg')) {
             $this->refuse(self::MESSAGE_UNAVAILABLE);
         }
 
         $orientation = $type === IMAGETYPE_JPEG ? $this->exifOrientation($binary) : 1;
-        $source = @imagecreatefromstring($binary);
+        [$source, $warnings] = $this->decode($binary, $type);
 
         if (! $source instanceof GdImage) {
             $this->refuse(self::MESSAGE_UNREADABLE);
+        }
+
+        foreach ($warnings as $warning) {
+            if (stripos($warning, 'premature end') !== false) {
+                imagedestroy($source);
+                $this->refuse(self::MESSAGE_INCOMPLETE);
+            }
         }
 
         if (imagesx($source) !== $width || imagesy($source) !== $height) {
@@ -143,6 +178,145 @@ class ClinicalPhotoNormalizer
             'sha256' => hash('sha256', $bytes),
             'original_sha256' => hash('sha256', $binary),
         ];
+    }
+
+    /**
+     * Review M-1 — the number of scans (SOS markers) of a JPEG datastream, read
+     * from its markers without decoding; null when the walk does not end on an
+     * EOI marker (truncated or not a JPEG). Segment headers are skipped by their
+     * length; entropy-coded data by searching for the next marker (0xFF followed
+     * by anything but a stuffed 0x00, a restart marker or a fill byte). Stops
+     * counting once past the limit. Bytes after the EOI are ignored here and
+     * never reach the stored file.
+     */
+    private function jpegScanCount(string $binary): ?int
+    {
+        $length = strlen($binary);
+        $offset = 2;
+        $scans = 0;
+
+        while ($offset < $length) {
+            if ($binary[$offset] !== "\xFF") {
+                return null;
+            }
+
+            while ($offset < $length && $binary[$offset] === "\xFF") {
+                $offset++;
+            }
+
+            if ($offset >= $length) {
+                return null;
+            }
+
+            $marker = ord($binary[$offset]);
+            $offset++;
+
+            if ($marker === 0xD9) {
+                return $scans;
+            }
+
+            // Standalone markers carry no length.
+            if (($marker >= 0xD0 && $marker <= 0xD7) || $marker === 0x01) {
+                continue;
+            }
+
+            if ($offset + 2 > $length) {
+                return null;
+            }
+
+            $segment = (ord($binary[$offset]) << 8) | ord($binary[$offset + 1]);
+
+            if ($segment < 2) {
+                return null;
+            }
+
+            $offset += $segment;
+
+            if ($marker !== 0xDA) {
+                continue;
+            }
+
+            if (++$scans > self::MAX_JPEG_SCANS) {
+                return $scans;
+            }
+
+            // Entropy-coded data runs to the next real marker.
+            while (true) {
+                $next = strpos($binary, "\xFF", $offset);
+
+                if ($next === false || $next + 1 >= $length) {
+                    return null;
+                }
+
+                $follower = ord($binary[$next + 1]);
+
+                if ($follower === 0x00 || ($follower >= 0xD0 && $follower <= 0xD7)) {
+                    $offset = $next + 2;
+
+                    continue;
+                }
+
+                if ($follower === 0xFF) {
+                    $offset = $next + 1;
+
+                    continue;
+                }
+
+                $offset = $next;
+
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Decode with GD, collecting (never displaying) the decoder's warnings.
+     *
+     * Review L-1 — libjpeg reports a truncated scan ("premature end") only to
+     * GD's FILE-based decoder and only while gd.jpeg_ignore_warning is off;
+     * imagecreatefromstring() always hides it and GD fills the missing rows
+     * with grey. So a JPEG is decoded from a tmpfile() that this method owns
+     * and closes (which removes it), with that setting off for this call only.
+     *
+     * @return array{0: GdImage|false, 1: list<string>}
+     */
+    private function decode(string $binary, int $type): array
+    {
+        $warnings = [];
+        $handle = null;
+        $ignoreWarning = ini_get('gd.jpeg_ignore_warning');
+
+        set_error_handler(static function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
+
+        try {
+            if ($type !== IMAGETYPE_JPEG) {
+                return [imagecreatefromstring($binary), $warnings];
+            }
+
+            $handle = tmpfile();
+
+            if ($handle === false || fwrite($handle, $binary) !== strlen($binary) || ! fflush($handle)) {
+                return [false, $warnings];
+            }
+
+            ini_set('gd.jpeg_ignore_warning', '0');
+            $image = imagecreatefromjpeg((string) stream_get_meta_data($handle)['uri']);
+
+            return [$image, $warnings];
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+
+            ini_set('gd.jpeg_ignore_warning', $ignoreWarning === false ? '1' : (string) $ignoreWarning);
+            restore_error_handler();
+        }
     }
 
     /** EXIF orientation 1–8 of a JPEG (1 when absent, unreadable or out of range). */

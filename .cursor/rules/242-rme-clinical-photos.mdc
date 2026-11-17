@@ -29,8 +29,9 @@ config build, read only through `FeatureFlagService` (`RmeClinicalPhotoService::
 `StoreRmeClinicalPhotoRequest::authorize()` and `RmeClinicalPhotoController::image()` answer 404 before the policy (so
 Super Admin too), `RmeClinicalPhotoPolicy::upload` denies as not found, `upload()` and `imageFor()` throw
 `NotFoundHttpException`, `visibleForVisit()` returns nothing and `uploadRefusal()` names it. An account without the
-route's permission is refused 403 by the route middleware first, as on every flagged route. Rollback: the flag off;
-nothing is deleted.
+route's permission is refused 403 by the route middleware first, as on every flagged route. The upload route carries
+no `visit.room` (review L-2): that gate only redirects a pre-exam visit, an upload needs the `in_progress` encounter
+anyway, and it would answer 302 ahead of the flag's 404. Rollback: the flag off; nothing is deleted.
 
 ## 2. Who uploads (the account side)
 
@@ -77,16 +78,24 @@ finish committed meanwhile refuses and a later one waits. State refusals are `Va
 authorization before validation, rule 237); the byte bound from the upload's size; `ClinicalPhotoNormalizer`; then one
 transaction.
 
-1. **Normalizer** (`app/Modules/ClinicalPhoto/Support/ClinicalPhotoNormalizer.php`), before any write: at most
-   15 MB; the type sniffed from the bytes (JPEG or PNG magic; GIF, SVG, HTML, PHP, anything else refused) and the
-   header must agree; edges 64–8000 px and at most 25 MP read from the HEADER before decoding (decompression-bomb
-   guard); decoded with GD (no GD: refused, the original is never stored instead); drawn onto a fresh opaque canvas,
+1. **Normalizer** (`app/Modules/ClinicalPhoto/Support/ClinicalPhotoNormalizer.php`), before any write: the upload
+   read with `UploadedFile::getContent()` (a read failure throws; it is never folded into "no photo", review H-1, and
+   no `@file_get_contents` enters application code); at most 15 MB; the type sniffed from the bytes (JPEG or PNG
+   magic; GIF, SVG, HTML, PHP, anything else refused) and the header must agree; edges 64–8000 px and at most 25 MP
+   read from the HEADER before decoding (decompression-bomb guard); a JPEG's markers walked without decoding — at most
+   `MAX_JPEG_SCANS` (64) scans, else `MESSAGE_JPEG_SCANS` (review M-1: a small progressive file of thousands of empty
+   scans costs seconds to minutes of CPU per decode, and production has five PHP workers), and the walk must end on
+   an EOI; decoded with GD (no GD: refused, the original is never stored instead) — a JPEG from a `tmpfile()` the
+   normalizer owns and closes, with `gd.jpeg_ignore_warning` off for that call only, because only GD's file decoder
+   reports libjpeg's warnings: a "premature end" (a truncated scan, which GD fills with grey) is
+   `MESSAGE_INCOMPLETE` (review L-1); a truncated PNG fails to decode; drawn onto a fresh opaque canvas,
    long edge at most 2560, EXIF orientation applied, encoded JPEG (quality 85); the output must decode again. Only
    pixels cross, so EXIF, GPS, comments and a polyglot's payload are gone. The request rules (`file`, `max`, `mimes`,
    `mimetypes`) are the outer shape only.
 2. **The unit.** Inside `DB::transaction`: §3 under the lock; the object written through
    `ClinicalEvidenceStorage::disk()` at `rme-clinical-photos/<clinic YYYY/MM>/<32 hex>.jpg` (fresh random key, never
-   request input); the row inserted (`trx_rme_clinical_photos`: visit, patient and branch copied from the LOCKED visit,
+   request input; recorded for compensation BEFORE the write, so a write failing part-way is removed too, review
+   L-4); the row inserted (`trx_rme_clinical_photos`: visit, patient and branch copied from the LOCKED visit,
    the consent that allowed it, uploader, clinic-time `uploaded_at`, key, size, dimensions, SHA-256 of the stored bytes
    and of the original); the audit. A failure before the body finished removes only this call's object; after it the
    object is kept (rule 224 §1a). Never a public disk, never `storeAs`.

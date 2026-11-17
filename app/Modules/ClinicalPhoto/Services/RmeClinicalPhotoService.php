@@ -186,8 +186,9 @@ class RmeClinicalPhotoService
             throw ValidationException::withMessages(['photo' => ClinicalPhotoNormalizer::MESSAGE_TOO_LARGE]);
         }
 
-        $source = $photo->getRealPath();
-        $image = $this->normalizer->normalize(is_string($source) && $source !== '' ? (string) @file_get_contents($source) : '');
+        // Review H-1 — a failed read throws (FileException); it is never folded
+        // into empty content, which would read as "no photo".
+        $image = $this->normalizer->normalize($photo->getContent());
 
         $written = [];
         $bodyDone = false;
@@ -199,8 +200,10 @@ class RmeClinicalPhotoService
 
                 // Never derived from the request: clinic month + 128 random bits.
                 $key = self::DIRECTORY.'/'.$this->clock->now()->format('Y/m').'/'.bin2hex(random_bytes(16)).'.jpg';
-                ClinicalEvidenceStorage::disk()->put($key, $image['bytes']);
+                // Review L-4 — recorded BEFORE the write, so a write that fails
+                // part-way still has its partial object removed.
                 $written[] = $key;
+                ClinicalEvidenceStorage::disk()->put($key, $image['bytes']);
 
                 $row = $this->photos->create([
                     'clinic_visit_id' => (int) $locked->getKey(),

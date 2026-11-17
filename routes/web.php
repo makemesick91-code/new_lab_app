@@ -1431,8 +1431,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
          * here, never from a public URL. `clinicalPhoto` is a generic name, so it
          * is constrained per route (rule 222 §1.6). The gallery UI is PR5.
          */
+        // No `visit.room` (review L-2): the room gate only redirects a pre-exam visit,
+        // an upload needs the in_progress encounter anyway, and the gate would answer
+        // 302 ahead of the flag's 404.
         Route::post('visits/{clinicVisit}/clinical-photos', [RmeClinicalPhotoController::class, 'store'])
-            ->middleware(['permission:upload_rme_clinical_photos', 'visit.room'])
+            ->middleware('permission:upload_rme_clinical_photos')
             ->name('visits.clinical-photos.store');
         Route::get('clinical-photos/{clinicalPhoto}/image', [RmeClinicalPhotoController::class, 'image'])
             ->middleware(['permission:view_rme_clinical_photos', 'cache.headers:private;no_store;max_age=0'])
