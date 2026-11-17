@@ -28,9 +28,11 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientRmSequence;
+use App\Modules\Patient\Repositories\PatientRepository;
 use App\Modules\Patient\Services\LegacyPatientImportService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\PatientMerge\Models\PatientRmAlias;
@@ -39,6 +41,7 @@ use Database\Seeders\BranchSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -441,4 +444,101 @@ it('PC-17 makes the pilot backup importer skip a number held in another spelling
         ->and(Patient::query()->where('name', 'Pilot Bebas')->value('medical_record_number'))->toBe('DG-SPN4-2025-0042')
         ->and(PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2025)->exists())->toBeTrue()
         ->and(implode(' ', $result->messages))->not->toContain('DG-SPN4');
+});
+
+// =============================================================================
+// PR-3 review fixes (independent review of e0d89b5e)
+// =============================================================================
+
+/** A repository whose insert fails with a unique violation on the named constraint. */
+function fppcUniqueViolation(string $constraint): UniqueConstraintViolationException
+{
+    $driver = new PDOException('duplicate key');
+    $driver->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "'.$constraint.'"'];
+
+    return new UniqueConstraintViolationException('pgsql', 'insert into "mst_patients" ...', [], $driver);
+}
+
+it('PC-18 reports only a Nomor RM unique violation as taken; KTP stays its 422 and any other violation is rethrown (review I3)', function (string $constraint, ?string $field): void {
+    $violation = fppcUniqueViolation($constraint);
+    app()->instance(PatientRepositoryInterface::class, new class($violation) extends PatientRepository
+    {
+        public function __construct(private readonly UniqueConstraintViolationException $violation) {}
+
+        public function create(array $data): Patient
+        {
+            throw $this->violation;
+        }
+    });
+
+    $thrown = null;
+    try {
+        fppcService(fppcUser('Supervisor RME'));
+    } catch (Throwable $e) {
+        $thrown = $e;
+    }
+
+    if ($field === null) {
+        expect($thrown)->toBe($violation);
+    } else {
+        expect($thrown)->toBeInstanceOf(ValidationException::class)
+            ->and(array_keys($thrown->errors()))->toBe([$field]);
+    }
+
+    expect(Patient::query()->count())->toBe(0);
+})->with([
+    'Nomor RM' => ['mst_patients_medical_record_number_unique', 'paper_card_sequence'],
+    'KTP' => ['mst_patients_ktp_number_unique', 'ktp_number'],
+    'another constraint' => ['mst_patients_some_other_key_unique', null],
+]);
+
+it('PC-19 refuses a legacy CSV committer holding the paper-card permission but not manage patients (review I6)', function (): void {
+    $batch = fppcStagedBatch();
+    $paperCardOnly = User::factory()->create();
+    $paperCardOnly->givePermissionTo(FPPC_PERMISSION);
+
+    expect($paperCardOnly->can(FPPC_PERMISSION))->toBeTrue()
+        ->and($paperCardOnly->can('manage patients'))->toBeFalse()
+        ->and(fn () => app(LegacyPatientImportService::class)->commit($batch, $paperCardOnly->id))->toThrow(AuthorizationException::class);
+
+    expect(Patient::query()->where('name', 'Pasien Impor Kartu')->exists())->toBeFalse()
+        ->and($batch->refresh()->isCommitted())->toBeFalse()
+        ->and(AuditLog::query()->where('action', LegacyPatientImportService::AUDIT_CONFIRM_BLOCKED)->latest('id')->value('new_values')['reason'] ?? null)
+        ->toBe('paper_card_permission_missing');
+});
+
+it('PC-20 pre-locks the pilot import counters in sorted (branch, year) order before the first patient insert (review L3)', function (): void {
+    Doctor::factory()->create(['code' => 'FPPC-DOC']);
+    $other = Branch::factory()->create(['code' => 'LDK2', 'name' => 'Cabang Landak', 'is_active' => true, 'is_rme_enabled' => true]);
+    [$low, $high] = $this->sunu->id < $other->id ? [$this->sunu, $other] : [$other, $this->sunu];
+
+    // The backup's own order is deliberately unsorted.
+    $extracted = ['tables' => [
+        'mst_doctors' => [['id' => '9', 'code' => 'FPPC-DOC', 'name' => 'Dokter Pilot']],
+        'mst_patients' => [
+            ['medical_record_number' => "DG-{$high->code}-2025-0001", 'name' => 'Pilot Urut Satu', 'doctor_id' => '9'],
+            ['medical_record_number' => "DG-{$low->code}-2025-0002", 'name' => 'Pilot Urut Dua', 'doctor_id' => '9'],
+            ['medical_record_number' => "DG-{$low->code}-2024-0003", 'name' => 'Pilot Urut Tiga', 'doctor_id' => '9'],
+            ['medical_record_number' => "DG-{$high->code}-2023-0004", 'name' => 'Pilot Urut Empat', 'doctor_id' => '9'],
+        ],
+    ], 'skipped_tables' => [], 'whitelisted_row_counts' => []];
+
+    $events = [];
+    DB::listen(function ($query) use (&$events): void {
+        $sql = ltrim(strtolower($query->sql));
+
+        if (str_starts_with($sql, 'select') && str_contains($sql, 'mst_patient_rm_sequences')) {
+            $events[] = [(int) $query->bindings[0], (int) $query->bindings[1]];
+        } elseif (str_starts_with($sql, 'insert into "mst_patients"')) {
+            $events[] = 'insert';
+        }
+    });
+
+    app(PilotBackupImportService::class)->import($extracted, dryRun: false, only: 'patients');
+
+    $beforeFirstInsert = array_slice($events, 0, (int) array_search('insert', $events, true));
+    $lockOrder = array_values(array_unique(array_map(fn (array $pair): string => $pair[0].'|'.$pair[1], $beforeFirstInsert)));
+
+    expect($lockOrder)->toBe([$low->id.'|2024', $low->id.'|2025', $high->id.'|2023', $high->id.'|2025'])
+        ->and(Patient::query()->where('name', 'like', 'Pilot Urut %')->count())->toBe(4);
 });

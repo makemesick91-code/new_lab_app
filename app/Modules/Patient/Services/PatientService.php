@@ -185,8 +185,10 @@ class PatientService
      *    it is stored only after {@see PatientRmNumberAllocator::claimExisting()}
      *    has locked that branch-year's counter and found it free in every
      *    spelling (alias codes, padding, case, soft-deleted, merge aliases); the
-     *    claim raises the counter to it (continue after the highest). The branch
-     *    must be inside the actor's working-branch scope, as on the automatic path.
+     *    claim raises the counter to it (continue after the highest), within the
+     *    claim cap (rule 244 §2.6: a current-year jump past +1000 or 9999 is a
+     *    422 that sends the case to Supervisor RME). The branch must be inside
+     *    the actor's working-branch scope, as on the automatic path.
      *  - Audited without the number and without the reason text: patient id,
      *    branch id, actor id and the reason's length.
      *  - `registered_at` is the clinical day the patient enters the system; the
@@ -244,8 +246,17 @@ class PatientService
                 try {
                     $patient = DB::transaction(fn (): Patient => $this->patients->create($data));
                 } catch (UniqueConstraintViolationException $e) {
-                    if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+                    // Review I3 — as on the automatic path (§2.4): KTP is its own
+                    // 422, only a Nomor RM violation is "taken" (no retry: the
+                    // number is the card's), anything else is rethrown untouched.
+                    $driverMessage = (string) ($e->errorInfo[2] ?? '');
+
+                    if (str_contains($driverMessage, 'ktp_number')) {
                         throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
+                    }
+
+                    if (! str_contains($driverMessage, 'medical_record_number')) {
+                        throw $e;
                     }
 
                     throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);

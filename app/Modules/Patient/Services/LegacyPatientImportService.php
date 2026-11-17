@@ -231,6 +231,17 @@ class LegacyPatientImportService
         } elseif (strlen($manualRm) > PatientMedicalRecordNumberService::MAX_NUMERIC_DIGITS) {
             // Rule 244 §2.6 (PR-2 review F1) — no Nomor RM sequence is wider.
             $errors[] = sprintf('Nomor RM Manual maksimal %d digit.', PatientMedicalRecordNumberService::MAX_NUMERIC_DIGITS);
+        } elseif (ltrim($manualRm, '0') === '') {
+            // Review L1 (PR-3) — zero is no sequence (the allocator starts at 1),
+            // and `0` and `00` would be two spellings no value comparison joins.
+            $errors[] = 'Nomor RM Manual tidak boleh nol.';
+        } elseif (strlen(ltrim($manualRm, '0')) > PatientRmNumberAllocator::MAX_DIGITS) {
+            // Rule 244 §2.6 (claim cap, owner 2026-11-17) — beyond the format
+            // capacity: never accepted, the claim would refuse it at commit.
+            $errors[] = sprintf(
+                'Nomor RM Manual melebihi kapasitas format Nomor RM (maksimal %d digit tanpa nol di depan). Eskalasikan ke Supervisor RME.',
+                PatientRmNumberAllocator::MAX_DIGITS,
+            );
         } elseif (strlen($manualRm) > self::MAX_PADDED_MANUAL_WIDTH
             && strlen(ltrim($manualRm, '0')) <= PatientRmNumberAllocator::MAX_DIGITS) {
             // A number the allocator can issue, hidden behind more than nine
@@ -646,7 +657,7 @@ class LegacyPatientImportService
                     // counter lock, taken in ANY spelling — including by a row
                     // this batch inserted a moment ago — and, when free, the
                     // counter is raised to it (owner default 3).
-                    $rmTaken = ! $this->claimRow($branchesByRow[$row->id], $rm);
+                    $rmTaken = ! $this->claimRow($branchesByRow[$row->id], $rm, (int) $row->row_number);
                     $ktpTaken = $ktp ? Patient::withTrashed()->where('ktp_number', $ktp)->lockForUpdate()->exists() : false;
 
                     /*
@@ -758,7 +769,9 @@ class LegacyPatientImportService
 
     /**
      * Rule 244 §4 — refuse a commit by an account without the paper-card
-     * permission, leaving an audit row of the refusal (ids and counts only).
+     * permission AND `manage patients` (review I6: the same pair
+     * PatientService::createWithPaperCardNumber() re-asserts), leaving an audit
+     * row of the refusal (ids and counts only).
      *
      * @throws AuthorizationException
      */
@@ -766,7 +779,7 @@ class LegacyPatientImportService
     {
         $actor = $committedBy !== null ? User::query()->find($committedBy) : null;
 
-        if ($actor !== null && $actor->can(PatientService::PAPER_CARD_PERMISSION)) {
+        if ($actor !== null && $actor->can(PatientService::PAPER_CARD_PERMISSION) && $actor->can('manage patients')) {
             return;
         }
 
@@ -1267,16 +1280,21 @@ class LegacyPatientImportService
     /**
      * Rule 244 §2.6 — claim one row's Nomor RM through the allocator (the lock is
      * already held, so this re-lock is free); a number the format or the branch
-     * cannot carry refuses the batch.
+     * cannot carry refuses the batch. A claim refused by the claim cap (owner
+     * 2026-11-17: a current-year jump past +1000 or 9999, or a number beyond the
+     * format capacity) names the row and sends the operator to Supervisor RME —
+     * never the number.
      */
-    private function claimRow(Branch $branch, string $rm): bool
+    private function claimRow(Branch $branch, string $rm, int $rowNumber): bool
     {
         try {
             return $this->rmAllocator->claimExisting($branch, $rm);
-        } catch (PatientRmNumberUnavailableException|InvalidArgumentException) {
+        } catch (PatientRmNumberUnavailableException|InvalidArgumentException $e) {
             throw new LegacyPatientImportBlockedException(
                 LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,
-                'Nomor RM salah satu baris tidak dapat diklaim untuk cabangnya. Seluruh batch tidak diimpor.',
+                PatientRmNumberAllocator::isClaimRefusal($e)
+                    ? sprintf('Baris %d: %s Seluruh batch tidak diimpor.', $rowNumber, $e->getMessage())
+                    : 'Nomor RM salah satu baris tidak dapat diklaim untuk cabangnya. Seluruh batch tidak diimpor.',
             );
         }
     }

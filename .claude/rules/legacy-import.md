@@ -221,9 +221,11 @@ code, then the canonical rule, and report the drift. Legacy RME archive internal
   hardcoded; a `NULL` `tooth_map_payload` is an empty placeholder. Source: `171-….mdc`, `111-….mdc`.
 - **AIR-LIM-42** Committing a legacy patient CSV batch stores typed Nomor RM, so it needs
   `register_patient_paper_card_rm` (Supervisor RME; Super Admin via `'*'`) on the route, the request and in
-  `LegacyPatientImportService::commit()` (null or unpermitted committer refused and audited); staging, review and
-  cancel stay with `manage patients`. Duplicate checks are spelling-aware and the commit locks every branch-year
-  counter it writes into. Tests commit through `legacyPatientCommitterId()`. Source: `244-…` §2.6, §4.4; `168-….mdc` 13.
+  `LegacyPatientImportService::commit()` (which also re-asserts `manage patients`; a null or unpermitted committer is
+  refused and audited); staging, review and cancel stay with `manage patients`. Staging refuses a zero or wider than
+  8-digit manual number; duplicate checks are spelling-aware; the commit locks every branch-year counter it writes
+  into, sorted, and a row past the claim cap (+1000 / 9999 in the current year) refuses the whole batch naming the
+  row. Tests commit through `legacyPatientCommitterId()`. Source: `244-…` §2.6, §4.4; `168-….mdc` 13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

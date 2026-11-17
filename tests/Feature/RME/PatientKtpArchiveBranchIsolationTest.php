@@ -27,6 +27,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
 use App\Modules\Patient\Policies\PatientDocumentPolicy;
 use App\Modules\Patient\Services\PatientDocumentAccessService;
+use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -762,4 +763,19 @@ it('revokes the grant and the card closes on the next request', function () {
     expect($report['changed'])->toBeTrue()
         ->and(AuditLog::where('action', 'PATIENT_KTP_CROSS_BRANCH_ACCESS_REVOKED')->count())->toBe(1);
     $this->actingAs($supervisor->fresh())->get(kbiShowUrl($this->patient, $this->document))->assertNotFound();
+});
+
+// --- Rule 244 PR-3 review I1: the Master Data capture branch, resolved directly ---
+
+it('records the operator working branch as capture provenance, never the branch the patient row names (review I1)', function () {
+    $resolver = app(PatientDocumentCaptureBranchResolver::class);
+    // The patient row names branch B; the desk operator is working at branch A.
+    $patientAtB = Patient::factory()->create(['branch_id' => $this->branchB->id]);
+
+    expect($resolver->forMasterDataRegistration(kbiFrontOffice($this->branchA), $patientAtB))->toBe($this->branchA->id)
+        // A context-bound operator whose working context is gone records nothing,
+        // rather than falling back to the patient's branch.
+        ->and($resolver->forMasterDataRegistration(tap(kbiFrontOffice($this->branchA), fn (User $u) => app(UserOnlineContextService::class)->markOffline($u)), $patientAtB))->toBeNull()
+        // A governance account (no working branch) records the patient's branch.
+        ->and($resolver->forMasterDataRegistration(userWith(['manage patients']), $patientAtB))->toBe($this->branchB->id);
 });

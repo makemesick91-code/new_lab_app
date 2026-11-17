@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3). PR-3: a typed number (old paper card at Master Data registration, legacy CSV commit, pilot backup import) only under `register_patient_paper_card_rm` (Supervisor RME; Super Admin via '*'), with a reason, claimed under the counter lock, audited without the number (§4).
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3). PR-3: a number a person enters (old paper card at Master Data registration, legacy CSV commit) only under `register_patient_paper_card_rm` plus `manage patients` (Supervisor RME; Super Admin via '*'), with a reason, claimed under the counter lock, audited without the number; the pilot backup importer (`rme:import-pilot-backup`, a CLI command with no actor or permission) is gated by the claim alone (§4). Claim cap (owner decision 2026-11-17 "refuse jump > +1000"): a claim for the current clinical year (or a later one) raises its counter by at most +1000 and never above 9999, a sequence value of zero or nine digits and up is refused in any year, a refused claim is escalated to Supervisor RME, a past-year claim touches only its own year (§2.6).
 globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/Patient/Requests/ConfirmLegacyPatientImportRequest.php, app/Modules/Patient/Policies/PatientPolicy.php, app/Support/PilotImport/PilotBackupImportService.php
 alwaysApply: false
 ---
@@ -63,7 +63,8 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    correctness never depends on the command.
 5. **Lock order.** Counter row → patient insert → (later PRs) the visit's own locks. Since PR-2 the counter row is
    locked only through `PatientRmNumberAllocator`: `allocate()` (registration), `claimExisting()` (a typed number:
-   the legacy CSV commit, PR-3's paper card and pilot importer) and `lockCounter()` (the CSV commit's sorted pre-lock);
+   the legacy CSV commit, PR-3's paper card and pilot importer) and `lockCounter()` (the sorted pre-lock of the CSV
+   commit and of the pilot importer, §2.7);
    the seed command raises it with `raiseTo()`. No other code locks or writes it.
 6. **Dormant (PR-1 only).** In PR-1 no registration path called the allocator. PR-2 switched NEW registrations to it
    (§2); a typed number survives only for a number that already exists outside the system (§2.6).
@@ -134,22 +135,49 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    patient CSV import now, the Supervisor RME paper-card exception and the pilot backup importer in PR-3 — is stored
    verbatim, never renumbered, and only after `PatientRmNumberAllocator::claimExisting($branch, $number)` has locked
    that number's branch-year counter row (lazily creating it, seeded like the allocator) and found no spelling taken.
-   **A successful claim raises the counter** to the claimed value — GREATEST, never lower, under the same lock — when
-   that value has at most `MAX_DIGITS` (8) digits (the seed's oversized filter; a wider value is only reserved), so the
-   sequence continues after the highest number on record (owner default 3, followed literally). The allocator's
-   skip stays as the safety net and finds the first free value with ONE set-based read of the branch-year
-   (`firstFreeAbove()`), not a per-number loop. `LegacyPatientImportService` refuses at staging a manual sequence
-   longer than 18 digits, or wider than 9 characters whose value fits 8 digits once leading zeros are stripped (a
-   second spelling of an issuable number); stages and revalidates through `isTaken()`/`takenAmong()` and
-   value-aware in-file keys; and its commit locks every branch-year counter the batch touches, sorted by branch then
-   year, before the first insert, then claims each row with `claimExisting()` (review F6: one code path; it sees the
-   batch's own earlier inserts and raises the counter). A claim far above the counter is not flagged at staging
-   (optional review item, not built). Archive branch derivation and alias folding are unchanged.
+   **A successful claim raises the counter** to the claimed value — GREATEST, never lower, under the same lock — so the
+   sequence continues after the highest number on record (owner default 3, followed literally), within the claim cap
+   below. The allocator's skip stays as the safety net and finds the first free value with ONE set-based read of the
+   branch-year (`firstFreeAbove()`), not a per-number loop. `LegacyPatientImportService` refuses at staging a manual
+   sequence longer than 18 digits, all zeros (review L1: `numericValueOf()` has no value for zero, so `…-0` and
+   `…-00` would be two spellings no comparison joins), with a value wider than 8 digits (format capacity), or wider
+   than 9 characters whose value fits 8 digits once leading zeros are stripped (a second spelling of an issuable
+   number); stages and revalidates through `isTaken()`/`takenAmong()` and value-aware in-file keys; and its commit
+   locks every branch-year counter the batch touches, sorted by branch then year, before the first insert, then
+   claims each row with `claimExisting()` (review F6: one code path; it sees the batch's own earlier inserts and
+   raises the counter). Archive branch derivation and alias folding are unchanged.
+
+   **The claim cap (owner decision 2026-11-17, "RM CLAIM CAP: refuse jump > +1000"; closes review M1).**
+   `claimExisting()` refuses — a `PatientRmNumberUnavailableException` with code
+   `PatientRmNumberAllocator::CLAIM_REFUSED` (`isClaimRefusal()`), an Indonesian operator message without any number
+   that tells the operator to escalate the case to Supervisor RME; nothing is accepted automatically and no counter
+   moves:
+   - **format capacity, any year:** an all-digit sequence whose value is zero or wider than `MAX_DIGITS` (8) digits
+     (`isBeyondFormatCapacity()`) — checked before the counter is locked (`CLAIM_CAPACITY_MESSAGE`). This replaces PR-2's "a wider value is only
+     reserved": such a number is no longer accepted at all (existing rows keep whatever they hold);
+   - **current clinical year (`ClinicalClock`) or a later one** (a later year's counter becomes current): a value
+     above the counter by more than `CLAIM_MAX_JUMP` (+1000), or above `CLAIM_MAX_CURRENT_YEAR_VALUE` (9999) —
+     decided under the counter row lock against the committed counter, the unique index as backstop
+     (`CLAIM_JUMP_MESSAGE`). A value at or below the counter moves nothing and is not a jump. The cap is per claim:
+     each claim is judged against the counter as the previous claim left it (two CSV rows `1000`, `2000` after a
+     counter of 10 both pass). Automatic numbering is unaffected (it still widens past 9999);
+   - **a past year** only ever raises that year's counter (an 8-digit value is within capacity); it never moves the
+     current year's.
+   A number is still never reused: a refused claim frees nothing, and the skip and "taken" checks are unchanged. A
+   sequence that is not all digits never reaches a counter and is only checked for "taken". Callers: the paper card
+   answers 422 on `paper_card_sequence`; the CSV commit refuses the whole batch naming the row (`Baris N: …`); the
+   pilot importer skips the row (§4.5). Staging and the pilot dry run read no counter, so they do not predict a jump
+   refusal; both refuse the format capacity (the pilot importer on every path, a code with no branch included). The seed command's `raiseTo()` is not a claim and is not
+   capped (an owner-approved step, §1.4).
 7. **Lock order and namespace.** Counter row (`mst_patient_rm_sequences`, `SELECT … FOR UPDATE`) → patient insert →
    the visit's own locks (`lockVisitSequence`, advisory 92_001, and later ones). The counter is a ROW lock, not an
    advisory lock, so it takes no number in the 91_xxx/92_xxx advisory inventory on
-   `ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE`. The legacy commit takes its batch header and staging-row
-   locks first, then the counters in sorted order, so two imports cannot deadlock on counters. Expression indexes on
+   `ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE`. Every writer that locks MORE than one counter takes them
+   all up front, sorted by branch id then year, before its first patient insert: the legacy commit (after its batch
+   header and staging-row locks) and, since PR-3 review L3, the pilot backup importer (`lockRmCounters()`, before its
+   patient loop). A registration or a paper card holds one counter. So no two writers ever wait on each other's
+   counter rows in opposite orders (no lock-order cycle on counters); the pilot importer runs as ONE long transaction
+   and holds its counters until it commits, so it is run outside clinic hours. Expression indexes on
    `LOWER(medical_record_number) text_pattern_ops` (mst_patients) and `LOWER(alias_medical_record_number)` serve the
    case-insensitive comparisons (additive migration `2026_11_18_100001`, PostgreSQL only, CONCURRENTLY).
 8. **Views.** Both forms show "Nomor RM: otomatis — DG-{KODE}-{TAHUN}-####" with the clinical year (and the selected
@@ -180,14 +208,16 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
 - **Replaced for new registrations:** the sequence is issued by the allocator, padded to four digits, widened past
   9999; the registration date is the server's clinical day; the admin types neither.
 - **Narrowed:** a typed sequence survives only for a number that already exists outside the system (legacy CSV import;
-  PR-3 paper card), claimed under the counter lock.
+  PR-3 paper card; pilot backup import), claimed under the counter lock and within the claim cap (§2.6).
 - Rule 110 §4's list of request-time pre-check sites (`StorePatientRequest`, `UpdatePatientRequest`,
   `StoreClinicVisitRequest`) no longer applies: those pre-checks were removed with the typed number.
 
 ## 4. The paper-card exception and the legacy CSV commit (PR-3)
 
-1. **One permission for every typed number.** `register_patient_paper_card_rm`
-   (`PatientService::PAPER_CARD_PERMISSION`) is the only way to store a Nomor RM a person typed. `PermissionSeeder`
+1. **One permission for every number a person enters.** `register_patient_paper_card_rm`
+   (`PatientService::PAPER_CARD_PERMISSION`), together with `manage patients`, is the only permission under which a
+   person may enter a Nomor RM (Master Data paper card, legacy CSV commit). The pilot backup importer is a CLI command
+   with no actor or permission; it is gated by the claim alone (item 5). `PermissionSeeder`
    declares it; `RoleSeeder` grants it to **Supervisor RME** only (Super Admin through `'*'`; not Admin Klinik, so the
    Front Office = Admin Klinik + Kasir union is unchanged); it is classified under Master Data in
    `PermissionGroupingService`. Everyone else always receives the automatic number (§2).
@@ -204,8 +234,10 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    The number is `DG-{branch canonical code}-{year}-{sequence as printed}` (leading zeros kept). It is stored only
    after `PatientRmNumberAllocator::claimExisting()` locked that branch-year's counter and found no spelling taken
    (alias codes, padding, case, soft-deleted patients, active merge aliases) — otherwise 422 on `paper_card_sequence`,
-   with no number in the message. MAIN, an unknown code and a code the format cannot carry are 422; nothing is
-   written. Like every claim (§2.6), a successful one raises the branch-year counter to the claimed value when it has
+   with no number in the message — and passed the claim cap (§2.6; 422 on `paper_card_sequence`, escalate to
+   Supervisor RME). MAIN, an unknown code and a code the format cannot carry are 422; nothing is written. Only a
+   `medical_record_number` unique violation on the insert is "taken"; a `ktp_number` one is 422 on `ktp_number`; any
+   other unique violation is rethrown untouched (review I3, as §2.4). Like every claim (§2.6), a successful one raises the branch-year counter to the claimed value when it has
    at most 8 digits (continue after the highest). `manual_rm_number` keeps the
    printed sequence; `registered_at` is the clinical day of entry (the card's own date is never invented).
 3. **Audit.** One `PATIENT_RM_PAPER_CARD_REGISTERED` row (`mst_patients`, patient id) per registration, written in the
@@ -217,12 +249,18 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    (`permission:register_patient_paper_card_rm`), `ConfirmLegacyPatientImportRequest::authorize()`, and
    `LegacyPatientImportService::commit()`, which refuses — before anything else, with an `AuthorizationException` and a
    `LEGACY_PATIENT_BATCH_CONFIRM_BLOCKED` audit row (`reason = paper_card_permission_missing`) — a committer id that is
-   null, unknown or unpermitted. The preview shows the commit form only to holders (others see who confirms).
-5. **Pilot backup importer.** `rme:import-pilot-backup` (`PilotBackupImportService`) no longer creates a patient whose
-   number is held in another spelling: a number no live patient holds exactly is claimed with `claimExisting()` under
-   the counter lock (live runs, which are transactional) or checked with `isTaken()` (dry run, or a code with no RME
-   branch); a taken one is skipped with a message that carries no number. An exact live match is still updated as
-   before (its number never changes).
+   null, unknown, or lacks the paper-card permission or `manage patients` (review I6: the same pair the paper card
+   re-asserts). A row past the claim cap refuses the whole batch, naming the row (§2.6). The preview shows the commit form only to holders (others see who confirms).
+5. **Pilot backup importer.** `rme:import-pilot-backup` (`PilotBackupImportService`) is a CLI command run by an
+   operator on the host: it has no actor and checks no permission, so the paper-card permission does not apply to it;
+   it is gated by the claim alone. It no longer creates a patient whose number is held in another spelling: a number
+   no live patient holds exactly is claimed with `claimExisting()` under the counter lock (live runs, which are
+   transactional) or checked with `isTaken()` (dry run, or a code with no RME branch); a taken one, or one refused by
+   the claim cap (§2.6), is skipped with a message that carries no number (the cap message sends the case to
+   Supervisor RME). A live run first locks every counter its rows name, sorted (§2.7, review L3), and holds them until
+   the import commits: run it outside clinic hours. The dry run reads no counter and does not predict a jump refusal
+   (the format capacity is refused on every path).
+   An exact live match is still updated as before (its number never changes).
 6. **Remaining writers.** None that stores a typed number outside the gates above. `StressSeedPatientsCommand` writes
    synthetic `DG-{code}-2026-{8 digits}` rows directly and is refused outside local/stress/testing — a recorded residual,
    never production.
@@ -230,6 +268,11 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    commit to every `manage patients` holder and no path for old cards. After the deploy run `PermissionSeeder`, then
    `RoleSeeder`, then `permission:cache-reset`, as the runtime user. PR-3 adds no migration; PR-2's additive index
    migration (§2.7) runs with the deploy's `php artisan migrate --force`.
-8. **Tests.** `tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php` (PC-01..PC-17) — token
-   `FrontOffice`, declared in `critical_gate_mandatory_suites`. The legacy CSV suites commit through
-   `legacyPatientCommitterId()` (tests/Pest.php), an account holding the permission.
+8. **Tests.** `tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php` (PC-01..PC-20; PC-18..PC-20 are
+   review I3, I6 and L3) and `tests/Feature/Patient/FrontOfficePatientRmClaimCapTest.php` (CC-01..CC-14, the claim
+   cap) — token `FrontOffice`, both declared in `critical_gate_mandatory_suites`; LP-10, LP-13 and LP-14 (format
+   capacity, review L1) in the `LegacyPatient` suite; the two claim-cap races (PostgreSQL, two connections) in the
+   `ClinicVisitRegistrationConcurrency` suite; review I1 (the Master Data KTP capture branch resolved directly, patient
+   branch ≠ working branch) in `PatientKtpArchiveBranchIsolationTest` (token `PatientKtp`). The legacy CSV suites
+   commit through `legacyPatientCommitterId()` (tests/Pest.php), an account holding the permission and
+   `manage patients`.

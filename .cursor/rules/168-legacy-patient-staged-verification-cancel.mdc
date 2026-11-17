@@ -83,8 +83,9 @@ upload -> store privately + sha256 -> stage -> validate the WHOLE batch -> revie
     verbatim.
     **REVISED by rule 244 §4.4 (PR-3, plan default 4):** confirming (committing) a
     batch needs `register_patient_paper_card_rm` (Supervisor RME; Super Admin via
-    '*') on the route, the request and in `commit()`; staging, review, revalidation
-    and cancel stay with `manage patients`.
+    '*') on the route, the request and in `commit()` (which also re-asserts
+    `manage patients`); staging, review, revalidation and cancel stay with
+    `manage patients`. A row past the rule 244 §2.6 claim cap refuses the batch.
 14. Branch authority is **server-resolved from the CSV `Cabang` column** against
     active + RME-enabled branches with MAIN excluded. There is no request-supplied
     branch field; adding one changes nothing. Do not invent a new branch authority

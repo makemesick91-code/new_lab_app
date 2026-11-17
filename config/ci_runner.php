@@ -628,6 +628,10 @@ return [
         // legacy CSV commit gate and the pilot importer claim. Selected by the
         // existing `FrontOffice` token in BOTH critical variants.
         'tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php',
+        // Rule 244 §2.6 — the Nomor RM claim cap (owner decision 2026-11-17,
+        // "refuse jump > +1000"): paper card, legacy CSV commit and pilot import.
+        // Selected by the existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmClaimCapTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

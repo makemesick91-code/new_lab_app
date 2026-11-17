@@ -28,6 +28,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
@@ -272,11 +273,17 @@ it('LP-09 refuses at staging a manual number zero-padded past nine digits, or lo
     '19 digits, value 6' => [str_repeat('0', 18).'6'],
 ]);
 
-it('LP-10 keeps a wide number that can never be issued (value past eight digits) importable', function (): void {
-    $batch = lpacStage([lpacRow(['manual_rm_number' => '1234567890', 'name' => 'Pasien Nomor Panjang'])]);
+it('LP-10 refuses at staging a value past eight digits: beyond the format capacity (claim cap, owner 2026-11-17)', function (string $manual): void {
+    $batch = lpacStage([lpacRow(['manual_rm_number' => $manual, 'name' => 'Pasien Nomor Panjang'])]);
 
-    expect($batch->error_rows)->toBe(0);
-});
+    expect($batch->error_rows)->toBe(1)
+        ->and(implode(' ', lpacErrors($batch)))->toContain('kapasitas format')
+        ->and(implode(' ', lpacErrors($batch)))->not->toContain($manual);
+})->with([
+    'nine digits' => ['123456789'],
+    'ten digits' => ['1234567890'],
+    'eighteen digits' => ['123456789012345678'],
+]);
 
 it('LP-11 agrees with isTaken() for numbers padded past nine digits (F1)', function (string $padding): void {
     Patient::factory()->create(['branch_id' => $this->sunu->id, 'medical_record_number' => 'DG-SUN4-2026-'.$padding.'7']);
@@ -307,15 +314,30 @@ it('LP-12 continues after the highest: a committed import raises the counter (ow
         ->and(lpacRegister($this->sunu, 'Otomatis Setelah Impor Tinggi')->medical_record_number)->toBe('DG-SPN4-2026-0051');
 });
 
-it('LP-13 never raises the counter for a number the allocator could never issue (nine digits and up)', function (): void {
+it('LP-13 never claims or counts a number the allocator could never issue (nine digits and up), even past staging', function (): void {
     PatientRmSequence::query()->create([
         'branch_id' => $this->sunu->id, 'year' => 2026, 'last_number' => 10,
         'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
     ]);
+    $allocator = app(PatientRmNumberAllocator::class);
 
-    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '123456789', 'name' => 'Impor Raksasa'])]), legacyPatientCommitterId());
+    // Rule 244 §2.6 (claim cap, owner 2026-11-17) — formerly reserved without a
+    // counter move; now refused outright, so the counter cannot be exhausted.
+    expect(fn () => DB::transaction(fn () => $allocator->claimExisting($this->sunu, 'DG-SPN4-2026-123456789')))
+        ->toThrow(PatientRmNumberUnavailableException::class);
 
-    expect(Patient::query()->where('name', 'Impor Raksasa')->value('medical_record_number'))->toBe('DG-SPN4-2026-123456789')
-        ->and((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(10)
+    expect((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(10)
         ->and(lpacRegister($this->sunu, 'Otomatis Sesudah Raksasa')->medical_record_number)->toBe('DG-SPN4-2026-0011');
 });
+
+it('LP-14 refuses at staging an all-zero manual number in any width (review L1)', function (string $manual): void {
+    $batch = lpacStage([lpacRow(['manual_rm_number' => $manual, 'name' => 'Pasien Nol'])]);
+
+    expect($batch->error_rows)->toBe(1)
+        ->and(implode(' ', lpacErrors($batch)))->toContain('tidak boleh nol');
+})->with([
+    'one zero' => ['0'],
+    'two zeros' => ['00'],
+    'four zeros' => ['0000'],
+    'nine zeros' => ['000000000'],
+]);
