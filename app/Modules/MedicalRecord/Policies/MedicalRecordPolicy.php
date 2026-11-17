@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
@@ -42,6 +43,33 @@ class MedicalRecordPolicy
         }
 
         return $this->authorizePatientForRecord($user, $medicalRecord);
+    }
+
+    /**
+     * Rule 240 §1 (memo M3.3, owner decision 2026-11-17) — may this user edit the
+     * SHEET's own content: SOAP fields, notes, structured diagnoses, the emergency
+     * diagnosis override? Scope first, so an account outside it is refused for
+     * that reason and learns nothing about the sheet's state; then a final sheet
+     * is refused (corrections go through a supervised amendment).
+     *
+     * Deliberately separate from update(), which the handwriting book still asks
+     * (the canonical book is usually an earlier, final sheet; sealing its pages is
+     * a later part of rule 240). Super Admin passes here through Gate::before, so
+     * the services re-decide the lock on the row they lock (CG-06).
+     */
+    public function editSheet(User $user, MedicalRecord $medicalRecord): Response|bool
+    {
+        $scope = $this->update($user, $medicalRecord);
+
+        if ($scope === false || ($scope instanceof Response && $scope->denied())) {
+            return $scope;
+        }
+
+        if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
+            return Response::deny(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED);
+        }
+
+        return $scope;
     }
 
     public function finalize(User $user, MedicalRecord $medicalRecord): Response|bool

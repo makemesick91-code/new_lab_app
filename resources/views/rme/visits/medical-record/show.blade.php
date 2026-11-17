@@ -9,7 +9,12 @@
         $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
         $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
         $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
-        // Sprint 59 — handwriting and notes remain editable after finalization.
+        // Rule 240 §1 (memo M3.3) — a FINAL sheet's own content (notes, structured
+        // diagnoses, the emergency override) is locked: `editSheet` denies it, and
+        // `! $isFinal` mirrors the service for Super Admin, whom Gate::before lets
+        // past the policy. The handwriting book keeps asking `update` (page seal
+        // is a later part of rule 240).
+        $canEditSheet = ! $isFinal && (auth()->user()?->can('editSheet', $medicalRecord) ?? false);
         // DMS-RME-REVISION-PROGRAM-5 (CW5-04, AIR-RMC-25) — editable means the
         // CAPABILITY, not the `update` permission alone: before the encounter is
         // consented the editor, the "+ Tambah Halaman RM" control and the
@@ -42,7 +47,8 @@
                      handwriting precondition ($hasHandwriting) are all unchanged. --}}
                 @if ($isDraft && $canFinalize)
                     @if ($hasHandwriting && $canAuthorRme)
-                        <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
+                        <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}"
+                              onsubmit="return confirm('Finalkan rekam medis ini? Setelah final, rekam medis terkunci dan hanya dapat dikoreksi melalui amandemen yang disetujui.')">
                             @csrf
                             <x-ui.button type="submit" variant="success">
                                 Finalisasi
@@ -147,8 +153,10 @@
                 RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
             </x-ui.alert>
         @elseif (! $isDraft)
+            {{-- Rule 240 §1 — the wording equals MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED
+                 (pinned by MedicalRecordFinalizationLockTest). --}}
             <x-ui.alert variant="success" title="Rekam Medis ini telah difinalkan.">
-                Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
+                Rekam medis ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
             </x-ui.alert>
         @endif
 
@@ -936,7 +944,7 @@
 
         {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
         @include('rme.visits.medical-record.partials.structured-diagnoses', [
-            'canUpdate' => ($canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false)) && $canAuthorRmeNow,
+            'canUpdate' => $canEditSheet && $canAuthorRmeNow,
         ])
 
         {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — "Tindakan

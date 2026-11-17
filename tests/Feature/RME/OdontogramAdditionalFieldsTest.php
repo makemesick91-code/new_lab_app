@@ -199,9 +199,9 @@ it('finalizing odontogram does not clear odontogram notes', function () {
     expect($odontogram->fresh()->summary_notes)->toBe('Catatan dipertahankan setelah final.');
 });
 
-// --- 10: finalized odontogram stays editable for a manager (Sprint 59) ---
+// --- 10: a finalized odontogram is locked (rule 240 §1; flipped from Sprint 59 "stays editable") ---
 
-it('finalized odontogram still exposes the editable table for a manager (Sprint 59)', function () {
+it('finalized odontogram renders the read-only table, no editor, for a manager (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     Odontogram::factory()->create([
@@ -217,10 +217,12 @@ it('finalized odontogram still exposes the editable table for a manager (Sprint 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        // Sprint 59 — finalized odontograms remain editable, so the table editor renders…
+        // Rule 240 §1 — a finalized chart is locked: the saved table still reads…
         ->assertSee('Hasil Odontogram yang Dipilih')
-        ->assertSee('setAdditional', false)
-        // …Sprint 60.2 — but the removed general Catatan Umum input is gone.
+        // …but the table editor and its save form are gone…
+        ->assertDontSee('setAdditional', false)
+        ->assertDontSee('action="'.route('rme.odontograms.update', Odontogram::query()->where('clinic_visit_id', $visit->id)->firstOrFail()).'"', false)
+        // …and Sprint 60.2's removed general Catatan Umum input stays gone.
         ->assertDontSee('name="additional_conditions"', false);
 });
 

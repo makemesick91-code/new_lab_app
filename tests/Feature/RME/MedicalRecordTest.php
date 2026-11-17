@@ -282,7 +282,9 @@ it('updateDraft ignores unsafe fields', function () {
         ->and($updated->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 
-it('updateDraft still edits a final record (Sprint 59)', function () {
+// Rule 240 §1 (memo M3.3, owner decision 2026-11-17) — flipped from the Sprint 59
+// "updateDraft still edits a final record": a final sheet is locked.
+it('updateDraft refuses a final record (rule 240 §1, supersedes Sprint 59)', function () {
     // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
     $user = rmeClinicalAuthor(['manage_clinic_visits']);
     $this->actingAs($user);
@@ -292,10 +294,11 @@ it('updateDraft still edits a final record (Sprint 59)', function () {
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
     rmeActiveConsentedEncounter($record->clinicVisit);
 
-    $updated = app(MedicalRecordService::class)->updateDraft($record, ['subjective' => 'nyeri']);
+    expect(fn () => app(MedicalRecordService::class)->updateDraft($record, ['subjective' => 'nyeri']))
+        ->toThrow(ValidationException::class, MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED);
 
-    expect($updated->subjective)->toBe('nyeri')
-        ->and($updated->status)->toBe(MedicalRecord::STATUS_FINAL);
+    expect($record->fresh()->subjective)->toBeNull()
+        ->and($record->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
 });
 
 // --- HTTP layer (Sprint 20 Phase 1.2.3) ---
@@ -377,7 +380,8 @@ it('manager can update draft medical record', function () {
     expect($record->fresh()->subjective)->toBe('nyeri diperbarui');
 });
 
-it('manager can update final medical record (Sprint 59)', function () {
+// Rule 240 §1 — flipped from the Sprint 59 "manager can update final medical record".
+it('manager cannot update a final medical record (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     // Use factory's own visit so no visit_number collision within the same test
@@ -390,10 +394,9 @@ it('manager can update final medical record (Sprint 59)', function () {
         ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
             'notes' => 'revisi dokter',
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($record->fresh()->notes)->toBe('revisi dokter');
+    expect($record->fresh()->notes)->toBeNull();
 });
 
 it('manager can finalize draft medical record', function () {
@@ -614,7 +617,9 @@ it('manager can update SOAP fields from show page', function () {
     ]);
 });
 
-it('final record remains editable from UI perspective (Sprint 59)', function () {
+// Rule 240 §1 — flipped from the Sprint 59 "final record remains editable from UI
+// perspective": the PATCH is refused and the stored sheet is untouched.
+it('final record is locked from the UI path (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $record = MedicalRecord::factory()->final()->create([
@@ -628,13 +633,12 @@ it('final record remains editable from UI perspective (Sprint 59)', function () 
         ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
             'notes' => 'catatan revisi dokter',
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    // Notes updated; the field the doctor did not submit (subjective) is preserved.
+    // Nothing written; the stored fields are preserved as they were.
     $this->assertDatabaseHas('trx_medical_records', [
         'id' => $record->id,
-        'notes' => 'catatan revisi dokter',
+        'notes' => null,
         'subjective' => 'original subjective',
         'status' => MedicalRecord::STATUS_FINAL,
     ]);

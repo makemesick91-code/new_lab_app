@@ -1,0 +1,114 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Release constraint — the lock and the amendment path ship in the same release.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php
+alwaysApply: false
+---
+
+# Finalized RME record lock and supervised amendment (rule 240)
+
+Source: the internal memo of 2026-10-17 (M3.3) and the owner's written decision of 2026-11-17, recorded in
+`docs/sprints/dms-rme-comprehensive-closure-1.md` §2c; the plan, impact analysis and compatibility plan (with the six
+defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`
+§M3.3. Delivered in five PRs; each PR adds its section.
+
+## 0. Owner decision and release constraint (CG-22)
+
+1. **Decision (2026-11-17, binding).** A finalized medical record is no longer editable. A correction goes through a
+   supervised amendment: a reason, an approval, a version history and an audit trail. This reverses Sprint 59
+   ("a finalized RME and odontogram can still be edited").
+2. **Release constraint.** The lock (§1, M3.3 PR1) and the amendment path through approve-and-apply (M3.3 PR5) ship
+   in the SAME production release. No release is cut from a base that contains M3.3 PR1 without M3.3 PR5: a lock with
+   no correction path is never deployed. Every M3.3 PR body states this constraint.
+
+## 1. A final sheet and a finalized chart are locked (M3.3 PR1)
+
+1. **What locks.**
+   - A sheet whose `trx_medical_records.status` is `final`: its SOAP fields and notes
+     (`MedicalRecordService::updateDraft()`), its structured diagnoses (`MedicalRecordDiagnosisService::record()`,
+     `makePrimary()`, `remove()`) and the emergency diagnosis override (`DiagnosisRolloutService::grantOverride()`,
+     which exists to unlock a finalization the sheet no longer has).
+   - An odontogram whose `trx_odontograms.status` is `finalized`: the whole chart
+     (`OdontogramService::updatePlaceholder()`, and `saveForVisit()`, which revises an existing chart through it).
+   - Not covered by this section: the handwriting book (its pages are sealed by a later section; until then
+     `MedicalRecordHandwritingController` keeps asking `MedicalRecordPolicy::update` and saves exactly as before),
+     prescriptions (signed-content lock, rule 237 §9), performed treatments (rule 219) and payment.
+2. **Finalizing stays as it was.** A draft sheet or chart is finalized exactly as before, and finalizing never moves
+   the visit (AIR-RMC-05). Finalizing a final sheet or chart again returns it as stored and never rewrites
+   `finalized_at` or `finalized_by`; this is decided on the locked row, so a stale copy cannot rewrite it either.
+3. **Three layers on a locked row.**
+   - Route: `permission:manage_clinic_visits` + `visit.room`, unchanged.
+   - Policy, scope first: `MedicalRecordPolicy::editSheet()` is the `update()` answer (manage permission, active RME
+     branch, doctor-patient scope) and then, for a final sheet, `Response::deny(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED)`.
+     `MedicalRecordController::update`, `MedicalRecordDiagnosisController` (store, destroy, makePrimary) and
+     `DiagnosisRolloutController::override` ask it. `MedicalRecordPolicy::update()` itself is unchanged (the
+     handwriting book and "Tambah Lembar RM" still ask it). `OdontogramPolicy::update()` answers role, branch, room and
+     doctor-patient scope first and then denies a finalized chart with `OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED`.
+     An account outside the scope gets the scope refusal and learns nothing about the record's state; out-of-scope
+     answers are otherwise unchanged (403 from the policy, 404 where a controller already answers 404, e.g. a sheet
+     named on another visit).
+   - Service, binding Super Admin (`Gate::before` skips the policy, CG-06): every write in §1.1 locks the
+     encounter's visit row first, then the sheet or chart row, and re-decides "final ⇒ refuse" on THAT row before
+     anything is written. The refusal is a `ValidationException` keyed `medical_record` or `odontogram` carrying the
+     message constant; nothing is written and no audit row is added. `MedicalRecordService::assertSheetUnlocked()` is
+     the one sheet refusal the three sheet services share.
+4. **Lock order (extends rule 223 §1.6 and §6).** Visit (FOR NO KEY UPDATE) → sheet → odontogram; never a clinical
+   row before the visit. The sheet service takes the visit through `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`
+   inside its transaction, then the sheet row through `MedicalRecordRepositoryInterface::lockForHandwriting()` (FOR NO
+   KEY UPDATE — the same row lock a handwriting save takes, so an edit, a finalize and a page save of one record
+   serialise); the diagnosis and override writes keep their FOR UPDATE on the same sheet row. The chart service takes
+   the visit through `ClinicVisitRepositoryInterface::lockForStatusDecision()`, re-checks that it is still
+   `in_progress` (a finish committed after the authority read is refused with the authority's reason), then the
+   chart row through `findByClinicVisitForUpdate()`.
+5. **Existing rows.** A sheet or chart already final at deploy is locked by its status alone. No backfill, no data
+   change, no migration. Drafts in progress are unaffected.
+6. **The page mirrors the server (rule 135).** A final sheet renders no structured-diagnosis form (record, remove,
+   make primary, override) and states the lock; a finalized chart renders no save form and no editor and states the
+   lock; both finalize confirmations say the record locks. Because Super Admin passes the policy, the Blade adds
+   `! $isFinal` / `! $isFinalized` beside the policy answer, exactly mirroring the service. The page wording equals
+   the two message constants (pinned by the tests in §3).
+7. **History stays as it was.** A previous visit's chart is still refused first by the odontogram authoring authority
+   with its own reason (rule 109 §4, key `consent`); a final sheet and a finalized chart stay readable
+   (AIR-RMC-09) and printable under the existing print rules.
+8. **Refusal order with the PTM gate (rule 241 §2).** The authoring authority decides the encounter, the actor and —
+   for a chart — its identity first (history stays history, §1.7), and the EXECUTED consent last. A final sheet or a
+   finalized chart answers with its lock BEFORE that consent, whatever the PTM state: signing the PTM never unlocks
+   it, so a missing signature is never the reason given. When the authority's only refusal is the PTM (its two
+   awaiting messages), `MedicalRecordService::assertSheetAuthoringAllowed()` (notes, diagnoses, override; also their
+   pre-checks, unlocked) and `OdontogramService::assertChartAuthoringAllowed()` (revision, visit save) lock the
+   encounter's visit row, then the sheet or chart row, and refuse a final record with the lock; a draft keeps the
+   consent refusal. Neither gate is weakened; each decides on the row it locked. Matrix, service and HTTP: final +
+   executed → lock; final + unsigned → lock; draft + unsigned → consent; draft + executed → written. The policies
+   (no consent condition) already answer the lock first. Finalizing again (§1.2) stays behind the whole authority.
+
+## 2. Rules superseded or amended by §1
+
+- **Rule 109** (GO `fix-rme-exam-consent-odontogram-history-3-go`): SUPERSEDED in §1 ("Since Sprint 59 a finalized
+  record is explicitly editable again"), in the last bullet of §2b ("during an authorized consented encounter a
+  finalized record is still editable") and in §4 CORRECTIVE-03 ("the FINALIZATION lock is gone, so a finalized chart
+  on the LIVE encounter is still revisable"; `OdontogramPolicy::update` now also denies a finalized chart, after
+  scope). The rest of rule 109, including positive authoring authority and read-only history, stands.
+- **Rule 134** (GO `revision-rme-consent-odontogram-preconsent-edit-1-go`): §5 "Since Sprint 59 a finalized chart is
+  still revisable" is SUPERSEDED; §4 "OdontogramPolicy is unchanged" is amended as above. The §2 matrix gains a row:
+  finalized chart, any state → DENY (correction by amendment only). Pre-consent charting itself ended with rule 241 §2.
+- **Rule 135** (GO `bugfix-rme-preconsent-first-page-ui-gate-1-go`): extended — a final sheet and a finalized chart
+  render as locked, with no submittable form (§1.6).
+- **Rule 223** §1.6 and §6: extended with the lock order in §1.4.
+- **Rule 241** §2 (PTM double signature): unchanged; on a final record its consent refusal answers after the lock (§1.8).
+- **Unchanged:** rule 219 (performed treatments), rule 237 §9 (signed prescriptions), rule 237 §15 (handwriting page
+  revision).
+
+## 3. Tests and CI selection (§1)
+
+- `tests/Feature/RME/MedicalRecordFinalizationLockTest.php` (selected by the existing `MedicalRecordFinalization`
+  token) and `tests/Feature/RME/OdontogramFinalizedLockTest.php` (existing `Odontogram` token), in BOTH critical-gate
+  variants and declared in `config/ci_runner.php` `critical_gate_mandatory_suites` (CG-19). They pin: drafts still
+  editable and finalizable; the service and HTTP refusals with nothing written and nothing blanked; diagnoses and the
+  override refused; the decision on the locked row (a stale draft copy is refused and never re-finalizes); Super Admin
+  refused by the service; scope-first policy answers; the page renders no submittable form; branch isolation and the
+  history refusal unchanged; the visit row locked before the sheet or chart row (PostgreSQL); the §1.8 refusal
+  order in both directions (`MedicalRecordFinalizationLockTest`, `RmeOdontogramAuthorityMatrixTest`).
+- The Sprint 59 pins were flipped to the lock, never deleted: `MedicalRecordFinalizationTest` (Part C),
+  `MedicalRecordTest`, `OdontogramTest`, `OdontogramAdditionalFieldsTest`, `OdontogramSelectedResultsTableTest`,
+  `RmeOdontogramAuthorityMatrixTest`. Fixtures that wrote diagnoses or an override onto a final sheet now write
+  them while the sheet is a draft, as the clinic does: `ssOpenEncounter()` (SATUSEHAT helpers) returns the sheet to
+  draft and `ssCloseEncounter()` finalizes it again; `RmeVisitConsentSupervisedVoidTest` CV-16 runs on a draft sheet.

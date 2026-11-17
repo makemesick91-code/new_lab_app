@@ -1293,7 +1293,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/handwriting', [MedicalRecordHandwritingController::class, 'store'])
                 ->name('visits.medical-record.handwriting.store');
             // SATUSEHAT-4A — structured diagnosis entry (never auto-created;
-            // reuses MedicalRecordPolicy::update inside the controller).
+            // MedicalRecordPolicy::editSheet inside the controller, rule 240 §1).
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses', [MedicalRecordDiagnosisController::class, 'store'])
                 ->name('visits.medical-record.diagnoses.store');
             Route::delete('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}', [MedicalRecordDiagnosisController::class, 'destroy'])

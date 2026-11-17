@@ -16,8 +16,9 @@ use Illuminate\Http\Request;
 
 /**
  * SATUSEHAT-4A — structured diagnosis entry on the RME page. Authorization
- * reuses MedicalRecordPolicy::update (the same authority that may edit the
- * record); search is a bounded ACTIVE-only master lookup (no PII involved).
+ * reuses MedicalRecordPolicy::editSheet (the same authority that may edit the
+ * sheet; a final sheet is locked, rule 240 §1); search is a bounded ACTIVE-only
+ * master lookup (no PII involved).
  */
 class MedicalRecordDiagnosisController extends Controller
 {
@@ -46,7 +47,7 @@ class MedicalRecordDiagnosisController extends Controller
     public function store(StoreMedicalRecordDiagnosisRequest $request, ClinicVisit $clinicVisit, MedicalRecord $medicalRecord): RedirectResponse
     {
         abort_if((int) $medicalRecord->clinic_visit_id !== (int) $clinicVisit->id, 404);
-        $this->authorize('update', $medicalRecord);
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->service->record($medicalRecord, $request->validated(), $request->user());
 
@@ -57,7 +58,7 @@ class MedicalRecordDiagnosisController extends Controller
     {
         abort_if((int) $medicalRecord->clinic_visit_id !== (int) $clinicVisit->id, 404);
         abort_if((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id, 404);
-        $this->authorize('update', $medicalRecord);
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->service->remove($medicalRecord, $diagnosis, $request->user());
 
@@ -69,7 +70,7 @@ class MedicalRecordDiagnosisController extends Controller
     {
         abort_if((int) $medicalRecord->clinic_visit_id !== (int) $clinicVisit->id, 404);
         abort_if((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id, 404);
-        $this->authorize('update', $medicalRecord);
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->service->makePrimary($medicalRecord, $diagnosis, $request->user());
 

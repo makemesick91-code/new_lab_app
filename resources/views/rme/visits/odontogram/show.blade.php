@@ -7,8 +7,11 @@
         // stays table-only with the official columns GIGI / DIAGNOSA / PERAWATAN /
         // DOKTER. The FDI visual (permanent + primary teeth) and the Jumlah
         // D/M/F/DMF-T tally are generated, read-only outputs derived only from the
-        // saved table data; the doctor never draws on the image. Odontogram remains
-        // editable after finalization (Sprint 59).
+        // saved table data; the doctor never draws on the image.
+        //
+        // Rule 240 §1 (memo M3.3) — a FINALIZED chart is locked (this supersedes
+        // the Sprint 59 "editable after finalization" behaviour): no save form,
+        // and a correction goes through a supervised amendment.
         //
         // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — authoring requires a
         // live, in-scope encounter whose chart this is; it no longer requires a
@@ -27,7 +30,10 @@
         // Ask for the ability the SERVER will actually enforce on submit:
         // `update` for a revision of a saved chart, `author` for the first one.
         // Asking the wrong one could render a save form the server then refuses.
+        // `! $isFinalized` mirrors OdontogramService for Super Admin, whom
+        // Gate::before lets past OdontogramPolicy::update (rule 240 §1).
         $canUpdate = ($odontogramAuthoringAllowed ?? false)
+            && (! $isFinalized)
             && ($odontogramExists
                 ? (auth()->user()?->can('update', $odontogram) ?? false)
                 : (auth()->user()?->can('author', [\App\Modules\Odontogram\Models\Odontogram::class, $clinicVisit]) ?? false));
@@ -117,10 +123,12 @@
 
         {{-- Flash messages render as global toasts (see <x-flash-toasts />) --}}
 
-        {{-- Finalized notice --}}
+        {{-- Finalized notice — rule 240 §1; the wording equals
+             OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED (pinned by
+             OdontogramFinalizedLockTest). --}}
         @if ($isFinalized)
             <x-ui.alert variant="info">
-                Odontogram sudah final namun masih dapat direvisi oleh dokter.
+                Odontogram ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
                 @if ($odontogram->finalized_at)
                     Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
                     @if ($odontogram->finalizer)
@@ -168,7 +176,7 @@
 
                 @if ($canFinalize)
                     <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
-                          onsubmit="return confirm('Finalisasi odontogram ini? Data masih dapat direvisi setelah final.')">
+                          onsubmit="return confirm('Finalisasi odontogram ini? Setelah final, odontogram terkunci dan hanya dapat dikoreksi melalui amandemen yang disetujui.')">
                         @csrf
                         <x-ui.button type="submit" variant="primary">Finalisasi Odontogram</x-ui.button>
                     </form>

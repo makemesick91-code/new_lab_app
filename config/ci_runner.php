@@ -1671,6 +1671,14 @@ return [
         // page refused, historical consents byte for byte, clause 9 gating nothing. Selected by the
         // existing `RmeVisitConsent` token in BOTH critical variants.
         'tests/Feature/RME/RmeVisitConsentTemplateVersionSplitTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR1 (rule 240 §1, owner decision 2026-11-17) — a final
+        // RME sheet (notes, structured diagnoses, the diagnosis override) and a finalized odontogram are
+        // locked: policy scope first then final ⇒ deny, the service re-deciding on the row it locked after
+        // the visit row (binds Super Admin), the page mirroring it. Selected by the existing
+        // `MedicalRecordFinalization` and `Odontogram` tokens in BOTH critical variants; declared so a
+        // rename cannot drop them.
+        'tests/Feature/RME/MedicalRecordFinalizationLockTest.php',
+        'tests/Feature/RME/OdontogramFinalizedLockTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

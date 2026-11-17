@@ -544,7 +544,8 @@ class MedicalRecordController extends Controller
     {
         abort_if($medicalRecord->clinic_visit_id !== $clinicVisit->id, 404);
 
-        $this->authorize('update', $medicalRecord);
+        // Rule 240 §1 — a final sheet is locked (the service re-decides it).
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->service->updateDraft($medicalRecord, $request->validated());
 

@@ -4,18 +4,23 @@ namespace App\Modules\Odontogram\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class OdontogramService
 {
+    /** Rule 240 §1 (memo M3.3) — the refusal for any write on a finalized chart. */
+    public const MESSAGE_FINALIZED_CHART_LOCKED = 'Odontogram ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.';
+
     public function __construct(
         private readonly OdontogramRepositoryInterface $odontograms,
         private readonly BranchService $branches,
@@ -38,6 +43,8 @@ class OdontogramService
         // FIRST inside the write transaction — before this service locks or
         // writes the chart. Pre-consent charting ended; reading is unchanged.
         private readonly RmeVisitConsentService $consents,
+        // Rule 240 §1 / rule 223 §6 — the visit row is locked before the chart row.
+        private readonly ClinicVisitRepositoryInterface $visits,
     ) {}
 
     /**
@@ -47,8 +54,8 @@ class OdontogramService
      * READ-ONLY BY CONSTRUCTION. This returns presentation rows, not models bound
      * to a form: the history card renders them and offers no edit, save, finalize
      * or delete control, and there is no mutation endpoint that accepts a history
-     * row. Correcting a past chart is still done by opening that visit's own
-     * odontogram page, which keeps the Sprint 59 behaviour untouched.
+     * row. A previous visit's chart is read-only (rule 109 §4), and a finalized
+     * chart is corrected only through a supervised amendment (rule 240).
      *
      * Consent is deliberately NOT consulted. Reading clinical history is never
      * gated: the doctor deciding today's treatment must be able to see what was
@@ -238,8 +245,13 @@ class OdontogramService
                 ]);
             }
 
-            // BEFORE the insert. A refused encounter leaves no trace.
-            $this->consents->assertOdontogramAuthoringAllowed($clinicVisit, $user);
+            // BEFORE the insert. A refused encounter leaves no trace. A finalized
+            // chart answers with its lock before a missing PTM (rule 240 §1.8).
+            $this->assertChartAuthoringAllowed($clinicVisit, $user);
+
+            // Rule 223 §6 — the visit row before the chart row, the order
+            // updatePlaceholder() below takes them in.
+            $this->lockOpenVisit((int) $clinicVisit->getKey());
 
             $odontogram = $this->odontograms->findByClinicVisitForUpdate($clinicVisit->id)
                 ?? $this->odontograms->createForClinicVisit($clinicVisit, [
@@ -296,17 +308,25 @@ class OdontogramService
              * CORRECTIVE-03 — POSITIVE authority, resolved from server state.
              *
              * Supersedes the Sprint 59 rule that any odontogram is revisable at
-             * any time. Sprint 59 removed the FINALIZATION lock, and that part
-             * stands: a finalized chart on the LIVE encounter is still revisable.
-             * What it may no longer do is reach back into a previous encounter's
+             * any time: a write may never reach back into a previous encounter's
              * chart. The chart being written must be the live encounter's own
              * chart. Rule 241 §2: charting waits for the EXECUTED consent (both
              * signatures); the authority locks the visit row before the chart.
-             *
-             * The status/finalized_at/finalized_by columns keep their meaning and
-             * are untouched.
              */
-            $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);
+            $this->assertChartAuthoringAllowed($odontogram->clinicVisit, $user);
+
+            /*
+             * Rule 240 §1 (memo M3.3, owner decision 2026-11-17) — a FINALIZED
+             * chart is locked; it is corrected only through a supervised
+             * amendment. This supersedes the Sprint 59 / rule 134 §5 allowance
+             * that a finalized chart on the live encounter stays revisable. The
+             * lock reads `status` alone (a chart finalized before this rule is
+             * locked too) and is decided on the chart row locked after the visit
+             * row, so it binds Super Admin, whom Gate::before lets past
+             * OdontogramPolicy::update.
+             */
+            $locked = $this->lockChart($odontogram);
+            self::refuseFinalizedChart($locked);
 
             $safe = array_intersect_key($payload, array_flip(['summary_notes', 'additional_conditions', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;
@@ -321,7 +341,10 @@ class OdontogramService
                 }
             }
 
-            return $this->odontograms->updatePlaceholder($odontogram, $safe);
+            $updated = $this->odontograms->updatePlaceholder($locked, $safe);
+            $odontogram->refresh();
+
+            return $updated;
         });
     }
 
@@ -340,16 +363,106 @@ class OdontogramService
             // caller cannot use the idempotent path to probe which charts exist.
             $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);
 
-            if ($odontogram->isFinalized()) {
-                return $odontogram;
+            // Rule 240 §1 — re-decided on the locked chart row: a finalize that
+            // committed after the caller loaded its copy is returned as it is,
+            // never rewritten.
+            $locked = $this->lockChart($odontogram);
+
+            if ($locked->isFinalized()) {
+                $odontogram->refresh();
+
+                return $locked;
             }
 
-            return $this->odontograms->finalize($odontogram, [
+            $finalized = $this->odontograms->finalize($locked, [
                 'status' => Odontogram::STATUS_FINALIZED,
                 'finalized_at' => now(),
                 'finalized_by' => $user->id,
                 'updated_by' => $user->id,
             ]);
+            $odontogram->refresh();
+
+            return $finalized;
         });
+    }
+
+    /**
+     * Rule 240 §1.8 — the refusal order of a chart write, the odontogram
+     * authoring authority (rule 134, rule 241 §2) and the final lock together.
+     *
+     * The authority decides, in its own order, the live encounter, the actor, the
+     * chart's identity (a previous visit's chart answers as history) and only
+     * then the EXECUTED consent. A FINALIZED chart answers with its lock BEFORE
+     * that consent: signing the PTM can never unlock it, so a missing signature is
+     * never the reason given for it. When the authority's ONLY refusal is the PTM
+     * (its two awaiting messages), the chart's visit row — the authorized
+     * encounter — is locked and re-checked, then the chart row (rule 223 §1 item
+     * 6), and a finalized chart is refused with the lock; otherwise the consent
+     * refusal stands. Both decisions are made on rows this transaction holds and
+     * nothing is written. Callers re-decide the lock on the chart row after this.
+     */
+    private function assertChartAuthoringAllowed(?ClinicVisit $visit, User $user): void
+    {
+        try {
+            $this->consents->assertOdontogramAuthoringAllowed($visit, $user);
+        } catch (ValidationException $refusal) {
+            $onlyThePtm = in_array($refusal->errors()['consent'][0] ?? null, [
+                RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_PATIENT,
+                RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR,
+            ], true);
+
+            if ($onlyThePtm && $visit !== null) {
+                $this->lockOpenVisit((int) $visit->getKey());
+                self::refuseFinalizedChart($this->odontograms->findByClinicVisitForUpdate((int) $visit->getKey()));
+            }
+
+            throw $refusal;
+        }
+    }
+
+    /** Rule 240 §1 — the one refusal of any write on a finalized chart (pass the LOCKED row). */
+    private static function refuseFinalizedChart(?Odontogram $lockedChart): void
+    {
+        if ($lockedChart !== null && $lockedChart->isFinalized()) {
+            throw ValidationException::withMessages([
+                'odontogram' => self::MESSAGE_FINALIZED_CHART_LOCKED,
+            ]);
+        }
+    }
+
+    /**
+     * Rule 240 §1 / rule 223 §6 — lock the chart's visit row (FOR NO KEY UPDATE,
+     * the lock every RME write takes first), then the chart row, and return the
+     * chart as it is now. Callers assert the authoring authority before this.
+     */
+    private function lockChart(Odontogram $odontogram): Odontogram
+    {
+        $this->lockOpenVisit((int) $odontogram->clinic_visit_id);
+
+        $locked = $this->odontograms->findByClinicVisitForUpdate((int) $odontogram->clinic_visit_id);
+
+        if ($locked === null || (int) $locked->getKey() !== (int) $odontogram->getKey()) {
+            throw (new ModelNotFoundException)->setModel(Odontogram::class, [$odontogram->getKey()]);
+        }
+
+        return $locked;
+    }
+
+    /**
+     * The chart's visit, locked and re-checked: the authority above read it
+     * before the lock, so a finish or cancel committed meanwhile is seen here
+     * (rule 223 §1) instead of a chart being written onto a closed encounter.
+     */
+    private function lockOpenVisit(int $clinicVisitId): ClinicVisit
+    {
+        $visit = $this->visits->lockForStatusDecision($clinicVisitId);
+
+        if ($visit === null || $visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram hanya dapat diubah saat pasien sedang dalam pemeriksaan. Mulai pemeriksaan terlebih dahulu.',
+            ]);
+        }
+
+        return $visit;
     }
 }
