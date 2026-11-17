@@ -931,7 +931,7 @@ final class RmeAmendmentService
      * (`visit_ptm_state`), given only when it differs (e.g. a supervised void in
      * between) and null for an amendment requested before it was recorded.
      *
-     * @return array{state: string, label: string, note: string, at_request: array{state: string, label: string}|null}|null  null when the visit is gone
+     * @return array{state: string, label: string, note: string, at_request: array{state: string, label: string}|null}|null null when the visit is gone
      */
     private function originalPtmFor(RmeAmendment $amendment): ?array
     {

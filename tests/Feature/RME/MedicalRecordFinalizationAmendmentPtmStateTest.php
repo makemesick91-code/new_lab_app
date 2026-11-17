@@ -23,7 +23,6 @@
 | prefix `m33pt`.
 */
 
-use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
