@@ -24,6 +24,11 @@ class PatientDoctorAssignment extends Model
 
     public const TYPE_REASSIGNED = 'reassigned';
 
+    /** Rule 243 §2.12 (PR A4) — `unassigned_reason` codes; never free text. */
+    public const END_REASON_VISIT_DOCTOR_CHANGED = 'visit_doctor_changed';
+
+    public const END_REASON_VISIT_CANCELLED = 'visit_cancelled';
+
     protected $table = 'trx_rme_patient_doctor_assignments';
 
     protected $fillable = [
@@ -35,6 +40,7 @@ class PatientDoctorAssignment extends Model
         'assigned_by',
         'assigned_at',
         'unassigned_at',
+        'unassigned_reason',
         'assignment_type',
         'reason',
         'notes',

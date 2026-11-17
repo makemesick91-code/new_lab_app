@@ -59,6 +59,11 @@ This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
 patient-doctor assignment stay with the doctor who examined. Pre-examination placement still resolves the online
 doctor of the room exactly as before. Terminal visits stay refused.
 
+**REVISED IN PART by rule 243 §2.12 (DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2, PR A4; owner default 2):** with
+`rme.doctor_encounter_scope` ON an `in_progress` visit also moves room only (Super Admin included), and a doctor change
+on a `registered`/`waiting` visit or a cancel ends the former doctor's now-stale `auto_visit` assignment. With the flag
+OFF this section is unchanged.
+
 ## 5. Role allowlists, not denylists (D3-NEW-1, D3-NEW-4)
 
 1. RME / odontogram / performed-treatment authoring requires a role in `FrontOfficeRole::CLINICAL_ROLES` (the same list

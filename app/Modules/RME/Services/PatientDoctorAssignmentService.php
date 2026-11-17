@@ -6,16 +6,43 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Models\PatientDoctorAssignment;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Sprint 66.2 — Patient ↔ doctor assignment history (share/reassign, not exclusive transfer).
+ *
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4) — an
+ * automatic (`auto_visit`) row says "this doctor was placed on a visit of this
+ * patient by the queue". It is STALE once no live visit of the patient (not
+ * cancelled, not soft-deleted) has that doctor any more
+ * ({@see staleAutoVisitRows()}, the one definition): revocation ends it at the
+ * moment it goes stale ({@see revokeStaleAutoVisit()}, flag ON), and
+ * `rme:doctor-assignments-reconcile` ends the ones that went stale before.
+ * Manual, shared and reassigned rows are never ended here.
  */
 class PatientDoctorAssignmentService
 {
+    public const AUDIT_TABLE = 'trx_rme_patient_doctor_assignments';
+
+    /** Rule 243 §2.12 — one auto_visit row ended by a doctor change or a cancel. */
+    public const AUDIT_ACTION_REVOKED = 'PATIENT_DOCTOR_ASSIGNMENT_REVOKED';
+
+    private const END_REASONS = [
+        PatientDoctorAssignment::END_REASON_VISIT_DOCTOR_CHANGED,
+        PatientDoctorAssignment::END_REASON_VISIT_CANCELLED,
+    ];
+
+    public function __construct(
+        private readonly AuditLogService $auditLogs,
+    ) {}
+
     public function ensureAssignedFromVisit(ClinicVisit $visit, ?User $actor): ?PatientDoctorAssignment
     {
         if ($visit->patient_id === null || $visit->doctor_id === null) {
@@ -184,6 +211,82 @@ class PatientDoctorAssignmentService
             return $this->activeAssignment((int) $attributes['patient_id'], (int) $attributes['doctor_id'], lock: true)
                 ?? throw $lostRace;
         }
+    }
+
+    /**
+     * Rule 243 §2.12 — the active `auto_visit` rows no live visit supports any
+     * more: no visit of the row's patient that is neither cancelled nor
+     * soft-deleted has the row's doctor. Revocation and the reconcile command
+     * both start from this builder, so "stale" has one definition. The
+     * correlated probe is served by `trx_clinic_visits (doctor_id, patient_id,
+     * status)` (rule 243 §2.7).
+     *
+     * @return Builder<PatientDoctorAssignment>
+     */
+    public function staleAutoVisitRows(): Builder
+    {
+        return PatientDoctorAssignment::query()
+            ->where('trx_rme_patient_doctor_assignments.assignment_type', PatientDoctorAssignment::TYPE_AUTO_VISIT)
+            ->whereNull('trx_rme_patient_doctor_assignments.unassigned_at')
+            ->whereNotExists(function (QueryBuilder $supporting): void {
+                $supporting->selectRaw('1')
+                    ->from('trx_clinic_visits as supporting_visit')
+                    ->whereColumn('supporting_visit.patient_id', 'trx_rme_patient_doctor_assignments.patient_id')
+                    ->whereColumn('supporting_visit.doctor_id', 'trx_rme_patient_doctor_assignments.doctor_id')
+                    ->where('supporting_visit.status', '!=', ClinicVisit::STATUS_CANCELLED)
+                    ->whereNull('supporting_visit.deleted_at');
+            });
+    }
+
+    /**
+     * Rule 243 §2.12 (PR A4) — end the former doctor's `auto_visit` row for the
+     * visit's patient once it is stale: after the visit's doctor changed away
+     * from $formerDoctorId, or the visit was cancelled. A row the former doctor
+     * still holds through another live visit of the patient is kept (it is
+     * still true). Sets `unassigned_at` and the reason code, and audits ids
+     * only. Must run inside the caller's transaction, after the visit write, so
+     * the move or the cancel and the revocation commit or fail together.
+     */
+    public function revokeStaleAutoVisit(
+        ClinicVisit $visit,
+        int $formerDoctorId,
+        string $reason,
+        User $actor,
+        ?int $replacementDoctorId = null,
+    ): ?PatientDoctorAssignment {
+        if (DB::transactionLevel() < 1) {
+            throw new LogicException('Revocation must run inside the transaction that changes the visit.');
+        }
+
+        if (! in_array($reason, self::END_REASONS, true)) {
+            throw new LogicException('Unknown assignment end reason.');
+        }
+
+        $row = $this->staleAutoVisitRows()
+            ->where('trx_rme_patient_doctor_assignments.patient_id', (int) $visit->patient_id)
+            ->where('trx_rme_patient_doctor_assignments.doctor_id', $formerDoctorId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        $row->forceFill([
+            'unassigned_at' => now(),
+            'unassigned_reason' => $reason,
+        ])->save();
+
+        // Ids and a reason code only: no name, no NIK, no visit number (CG-11).
+        $this->auditLogs->log(self::AUDIT_TABLE, (int) $row->getKey(), self::AUDIT_ACTION_REVOKED, null, [
+            'clinic_visit_id' => (int) $visit->getKey(),
+            'patient_id' => (int) $visit->patient_id,
+            'doctor_id' => $formerDoctorId,
+            'replacement_doctor_id' => $replacementDoctorId,
+            'reason' => $reason,
+        ], $actor);
+
+        return $row;
     }
 
     private function activeAssignment(int $patientId, int $doctorId, bool $lock): ?PatientDoctorAssignment

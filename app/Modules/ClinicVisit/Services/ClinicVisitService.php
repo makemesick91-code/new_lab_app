@@ -14,6 +14,7 @@ use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
+use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
@@ -294,7 +295,11 @@ class ClinicVisitService
 
         $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
 
-        return DB::transaction(function () use ($visit, $room, $doctorId, $account) {
+        // Rule 243 §2.12 (PR A4) — read once, through the single authority that
+        // reads the encounter-scope switch (CG-08).
+        $encounterScope = $this->doctorScope->encounterScopeEnabled();
+
+        return DB::transaction(function () use ($visit, $room, $doctorId, $account, $encounterScope) {
             // CW5-01 — the terminal check above read the caller's copy; a cancel
             // committed in the meantime must not receive a room, a doctor and a
             // patient–doctor assignment. Decide again on the locked row.
@@ -312,14 +317,37 @@ class ClinicVisitService
             // room only moves the room. Rewriting it here moved doctor-performance
             // and income attribution, and the printed identity, to whoever was
             // online in the new room (or to nobody).
-            $examinationFinished = ! in_array($locked->status, ClinicVisit::PRE_EXAM_STATUSES, true);
+            //
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4;
+            // owner default 2, rule 228 §4 extended) — with the doctor encounter
+            // scope ON, an examination already STARTED (in_progress) keeps its
+            // doctor too: only that doctor may write on it, so handing it to
+            // whoever is online in the new room would lock the examining doctor
+            // out of their own consented encounter. Decided here, on the locked
+            // row, so it binds every caller, Super Admin included (CG-06). With
+            // the flag OFF an in_progress visit changes doctor exactly as before.
+            $roomOnly = ! in_array($locked->status, ClinicVisit::PRE_EXAM_STATUSES, true)
+                || ($encounterScope && $locked->status === ClinicVisit::STATUS_IN_PROGRESS);
+            $formerDoctorId = $locked->doctor_id === null ? null : (int) $locked->doctor_id;
 
-            $updated = $this->visits->update($visit, $examinationFinished
+            $updated = $this->visits->update($visit, $roomOnly
                 ? ['clinic_room_id' => $room->id]
                 : ['clinic_room_id' => $room->id, 'doctor_id' => $doctorId]);
 
-            if ($doctorId !== null && ! $examinationFinished) {
+            if ($doctorId !== null && ! $roomOnly) {
                 $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), $account);
+            }
+
+            // Rule 243 §2.12 — the former doctor's automatic assignment is ended
+            // with the doctor change, in this transaction (flag ON only).
+            if ($encounterScope && ! $roomOnly && $formerDoctorId !== null && $formerDoctorId !== $doctorId) {
+                $this->patientDoctorAssignments->revokeStaleAutoVisit(
+                    $locked,
+                    $formerDoctorId,
+                    PatientDoctorAssignment::END_REASON_VISIT_DOCTOR_CHANGED,
+                    $account,
+                    $doctorId,
+                );
             }
 
             return $updated;
@@ -946,6 +974,8 @@ class ClinicVisitService
             ]);
         }
 
+        $account = null;
+
         if ($newStatus !== ClinicVisit::STATUS_COMPLETED) {
             $account = $actor === null ? null : $this->actors->resolveForVisit($actor, 'transition', $visit);
 
@@ -1009,7 +1039,10 @@ class ClinicVisitService
             ]);
         }
 
-        return DB::transaction(function () use ($visit, $newStatus) {
+        // Rule 243 §2.12 (PR A4) — read once, through the single authority (CG-08).
+        $encounterScope = $this->doctorScope->encounterScopeEnabled();
+
+        return DB::transaction(function () use ($visit, $newStatus, $account, $encounterScope) {
             // DMS-RME-REVISION-PROGRAM-5 (CW5-01) — the checks above read the copy
             // the caller loaded, which a concurrent request may already have moved
             // on (a cancel racing "Selesai Pemeriksaan", a start racing a cancel).
@@ -1054,6 +1087,22 @@ class ClinicVisitService
             }
 
             $this->visits->update($locked, array_merge(['status' => $newStatus], $timestamps));
+
+            // Rule 243 §2.12 (PR A4) — a cancelled visit no longer places its
+            // doctor on the patient: the doctor's automatic assignment is ended
+            // in this transaction unless another live visit still supports it
+            // (flag ON only). A cancel always has an explicit actor (above).
+            if ($encounterScope
+                && $newStatus === ClinicVisit::STATUS_CANCELLED
+                && $locked->doctor_id !== null
+                && $account !== null) {
+                $this->patientDoctorAssignments->revokeStaleAutoVisit(
+                    $locked,
+                    (int) $locked->doctor_id,
+                    PatientDoctorAssignment::END_REASON_VISIT_CANCELLED,
+                    $account,
+                );
+            }
 
             // Callers keep using the instance they passed in (the payment service
             // reads it after completing the visit), so it reflects the write.

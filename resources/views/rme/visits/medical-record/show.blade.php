@@ -200,10 +200,15 @@
             </x-ui.alert>
         @endif
 
-        @include('rme.visits.partials.visit-workflow-nav', [
-            'clinicVisit' => $clinicVisit,
-            'active' => 'medical-record',
-        ])
+        {{-- Rule 243 §2.12 — the tabs' visit is decided in the controller: the
+             active sheet's visit, or on an unreadable anchor the source visit
+             (no tabs without one), so they never show that anchor's room state. --}}
+        @if ($workflowNavVisit ?? null)
+            @include('rme.visits.partials.visit-workflow-nav', [
+                'clinicVisit' => $workflowNavVisit,
+                'active' => 'medical-record',
+            ])
+        @endif
 
         {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
         @if (! empty($notice))

@@ -942,6 +942,17 @@ return [
         // requester included), the PTM banner never describing another doctor's
         // encounter; flag OFF parity. Same `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php',
+        // PR A4 (rule 243 §2.13) — with the flag ON a doctor change on a queued
+        // visit or a cancel ends the former doctor's auto_visit row (reason,
+        // audited ids only) and an in_progress move keeps its doctor (Super
+        // Admin bound); the A3 re-review preconditions (a)(b)(c) at the room gate
+        // and the workflow tabs; flag OFF parity. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeReassignmentTest.php',
+        // PR A4 (rule 243 §2.13) — `rme:doctor-assignments-reconcile`: dry run
+        // (counts and visit ids only, the stale open visits and roomless pre-exam
+        // anchors reported), digest-confirmed apply setting unassigned_at only,
+        // idempotent, sharing its stale predicate with revocation. Same token.
+        'tests/Feature/RME/DoctorPatientScopeReconcileCommandTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and

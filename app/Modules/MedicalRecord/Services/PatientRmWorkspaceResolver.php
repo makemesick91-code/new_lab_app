@@ -5,6 +5,7 @@ namespace App\Modules\MedicalRecord\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use Closure;
 use Illuminate\Support\Collection;
@@ -225,6 +226,37 @@ class PatientRmWorkspaceResolver
      * visit only when it belongs to the same patient AND an accessible RME
      * branch; otherwise null (forged / cross-patient / cross-branch ignored).
      */
+    /**
+     * Rule 243 §2.12 (PR A4, closes §2.8 item 8 (a)) — the visit a doctor works
+     * from at the patient's workspace address, chosen on the server: the
+     * patient's live encounter when it is the doctor's own
+     * ({@see ActiveEncounterResolver::currentFor()}), else one of the doctor's
+     * own pre-exam (registered, waiting, in_progress — always in service) RME
+     * visits of the patient: the one `$sourceVisitId` names when it is one of
+     * them, else the latest (visit_date, id). A source id naming any other visit
+     * (another doctor's, the doctor's own past visit) chooses nothing. Null when
+     * the doctor has no such visit.
+     */
+    public function doctorWorkingVisit(int $patientId, int $doctorId, ?int $sourceVisitId): ?ClinicVisit
+    {
+        $live = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        if ($live !== null && (int) $live->doctor_id === $doctorId) {
+            return $live;
+        }
+
+        $own = ClinicVisit::query()
+            ->whereIn('branch_id', $this->rmeBranchIds())
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId)
+            ->whereIn('status', ClinicVisit::PRE_EXAM_STATUSES)
+            ->orderByDesc('visit_date')
+            ->orderByDesc('id')
+            ->get();
+
+        return ($sourceVisitId === null ? null : $own->firstWhere('id', $sourceVisitId)) ?? $own->first();
+    }
+
     public function resolveSourceVisit(int $patientId, ?int $sourceVisitId): ?ClinicVisit
     {
         if ($sourceVisitId === null) {
