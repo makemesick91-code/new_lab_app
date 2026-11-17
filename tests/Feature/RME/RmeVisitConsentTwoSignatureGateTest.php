@@ -612,3 +612,61 @@ it('TSG-19 treats an in-progress visit with only a patient consent as awaiting t
     expect(rtsgRefused(fn () => app(MedicalRecordService::class)->updateDraft($record->fresh(), ['notes' => 'tambahan']), 'belum ditandatangani dokter'))->toBeTrue()
         ->and($record->fresh()->notes)->toBe('ditulis sebelum gerbang');
 });
+
+/*
+| The PTM refusal is typed by gate (rule 240 §1.8; M3.3 review LOW-3)
+*/
+
+it('TSG-21 recognises each gate\'s PTM refusal from the one list it is raised from, and nothing else', function () {
+    $consents = app(RmeVisitConsentService::class);
+    $visit = rtsgVisit();
+    $refusalOf = function (callable $gate): ValidationException {
+        try {
+            $gate();
+        } catch (ValidationException $e) {
+            return $e;
+        }
+
+        test()->fail('Expected a refusal, the gate allowed it.');
+    };
+    $gates = [
+        RmeVisitConsentService::PTM_GATE_RME => fn () => $consents->assertRmeAuthoringAllowedForPatient($visit->patient_id, $this->doctor),
+        RmeVisitConsentService::PTM_GATE_ODONTOGRAM => fn () => $consents->assertOdontogramAuthoringAllowed($visit->fresh(), $this->doctor),
+        RmeVisitConsentService::PTM_GATE_FINISH => fn () => $consents->assertExecutedConsentForFinish($visit->fresh()),
+    ];
+
+    // Awaiting the patient, then awaiting the doctor: each gate's refusal is its
+    // own PTM refusal, and never another gate's.
+    foreach (['awaiting the patient' => null, 'awaiting the doctor' => fn () => rtsgPatientSigns($visit)] as $state => $arrange) {
+        if ($arrange !== null) {
+            $arrange();
+        }
+
+        foreach ($gates as $raised => $gate) {
+            $refusal = $refusalOf($gate);
+
+            foreach (array_keys($gates) as $asked) {
+                expect(RmeVisitConsentService::isPtmRefusal($refusal, $asked))->toBe($asked === $raised, "$state: $raised asked as $asked");
+            }
+        }
+    }
+
+    // The same authority's other refusals are not the PTM: no live encounter, an
+    // account that may not work on it.
+    $noEncounter = $refusalOf(fn () => $consents->assertRmeAuthoringAllowedForPatient(Patient::factory()->create(['branch_id' => $this->branch->id])->id, $this->doctor));
+    $notAuthorised = $refusalOf(fn () => $consents->assertRmeAuthoringAllowedForPatient($visit->patient_id, $this->frontOffice));
+
+    expect(RmeVisitConsentService::isPtmRefusal($noEncounter, RmeVisitConsentService::PTM_GATE_RME))->toBeFalse()
+        ->and(RmeVisitConsentService::isPtmRefusal($notAuthorised, RmeVisitConsentService::PTM_GATE_RME))->toBeFalse()
+        // Only a refusal that carries the PTM refusal and NOTHING else is the PTM's.
+        ->and(RmeVisitConsentService::isPtmRefusal(ValidationException::withMessages([
+            'consent' => [RmeVisitConsentService::MESSAGE_RME_AWAITING_DOCTOR, 'lain'],
+        ]), RmeVisitConsentService::PTM_GATE_RME))->toBeFalse()
+        ->and(RmeVisitConsentService::isPtmRefusal(ValidationException::withMessages([
+            'consent' => RmeVisitConsentService::MESSAGE_RME_AWAITING_DOCTOR,
+            'notes' => 'lain',
+        ]), RmeVisitConsentService::PTM_GATE_RME))->toBeFalse()
+        ->and(RmeVisitConsentService::isPtmRefusal(ValidationException::withMessages([
+            'consent' => RmeVisitConsentService::MESSAGE_RME_AWAITING_DOCTOR,
+        ]), 'unknown-gate'))->toBeFalse();
+});

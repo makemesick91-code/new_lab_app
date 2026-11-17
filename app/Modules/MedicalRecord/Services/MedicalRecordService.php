@@ -498,10 +498,11 @@ class MedicalRecordService
      * The authority decides the encounter and the actor first and the EXECUTED
      * consent last. A FINAL sheet answers with its lock BEFORE that consent:
      * signing the PTM can never unlock it, so a missing signature is never the
-     * reason given for it. When the authority's ONLY refusal is the PTM (its two
-     * awaiting messages), the encounter's visit row is locked and then the sheet
-     * row through $lockSheet (rule 223 §1 item 6), and a final sheet is refused
-     * with the lock; otherwise the refusal stands and nothing is written.
+     * reason given for it. When the authority's ONLY refusal is the PTM
+     * (RmeVisitConsentService::isPtmRefusal(), gate PTM_GATE_RME), the
+     * encounter's visit row is locked and then the sheet row through $lockSheet
+     * (rule 223 §1 item 6), and a final sheet is refused with the lock;
+     * otherwise the refusal stands and nothing is written.
      *
      * Inside the write transaction it returns the sheet row locked after the
      * visit row and found draft. Outside one (a service's pre-check before
@@ -527,12 +528,8 @@ class MedicalRecordService
         try {
             $this->consents->assertRmeAuthoringAllowedForPatient($sheet->patient_id, $actor);
         } catch (ValidationException $refusal) {
-            $onlyThePtm = in_array($refusal->errors()['consent'][0] ?? null, [
-                RmeVisitConsentService::MESSAGE_RME_AWAITING_PATIENT,
-                RmeVisitConsentService::MESSAGE_RME_AWAITING_DOCTOR,
-            ], true);
-
-            if ($onlyThePtm) {
+            // Typed by gate (review LOW-3): the list the authority raises from.
+            if (RmeVisitConsentService::isPtmRefusal($refusal, RmeVisitConsentService::PTM_GATE_RME)) {
                 $encounter = $inWrite ? app(ActiveEncounterResolver::class)->currentFor($sheet->patient_id) : null;
 
                 if ($encounter !== null) {
