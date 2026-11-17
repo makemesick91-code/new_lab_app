@@ -3,9 +3,11 @@
 namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
@@ -44,7 +46,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('viewHandwritingPage', [$record, self::authorOf($handwriting)]);
+        $this->authorizePage($record, self::authorOf($handwriting));
 
         return $this->stream($handwriting->handwriting_path);
     }
@@ -55,7 +57,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('viewHandwritingPage', [$record, self::authorOf($handwritingPage)]);
+        $this->authorizePage($record, self::authorOf($handwritingPage));
 
         if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
             $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
@@ -75,6 +77,22 @@ class MedicalRecordHandwritingImageController extends Controller
         }
 
         return $this->stream($handwritingPage->handwriting_path);
+    }
+
+    /**
+     * `viewHandwritingPage` only while the doctor encounter scope applies to the
+     * user; otherwise exactly the `view` of the record asked before (flag-OFF
+     * parity: the same ability and arguments for every Gate hook).
+     */
+    private function authorizePage(MedicalRecord $record, ?int $authoredVisitId): void
+    {
+        if (app(DoctorPatientScopeService::class)->encounterScopeAppliesTo(auth()->user())) {
+            $this->authorize('viewHandwritingPage', [$record, $authoredVisitId]);
+
+            return;
+        }
+
+        $this->authorize('view', $record);
     }
 
     /** Rule 240 §4.4 — the encounter that wrote the row, null before rule 240. */

@@ -10,6 +10,7 @@ use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
@@ -91,16 +92,20 @@ final class RmeRecordVersionService
      * while the encounter scope applies to a Doctor the BOOK anchored to a visit
      * the doctor may not read keeps only its handwriting pages (404 here). A
      * chart asks OdontogramPolicy::view, which already follows its visit.
+     * `viewAnchorContent` is asked only while the encounter scope applies to
+     * $user; otherwise exactly the `view` asked before (flag-OFF parity).
      */
-    public static function readAbility(MedicalRecord|Odontogram $subject): string
+    public static function readAbility(MedicalRecord|Odontogram $subject, ?User $user): string
     {
-        return $subject instanceof MedicalRecord ? 'viewAnchorContent' : 'view';
+        return $subject instanceof MedicalRecord
+            ? app(DoctorPatientScopeService::class)->abilityFor($user, 'viewAnchorContent', 'view')
+            : 'view';
     }
 
     /** @return Collection<int, RmeRecordVersion> */
     public function versionsFor(User $actor, MedicalRecord|Odontogram $subject): Collection
     {
-        Gate::forUser($actor)->authorize(self::readAbility($subject), $subject);
+        Gate::forUser($actor)->authorize(self::readAbility($subject, $actor), $subject);
         [$type, $id] = $this->subjectKey($subject);
 
         return $this->versions->listFor($type, $id);
@@ -108,7 +113,7 @@ final class RmeRecordVersionService
 
     public function version(User $actor, MedicalRecord|Odontogram $subject, int $version): ?RmeRecordVersion
     {
-        Gate::forUser($actor)->authorize(self::readAbility($subject), $subject);
+        Gate::forUser($actor)->authorize(self::readAbility($subject, $actor), $subject);
         [$type, $id] = $this->subjectKey($subject);
 
         return $this->versions->findVersion($type, $id, $version);

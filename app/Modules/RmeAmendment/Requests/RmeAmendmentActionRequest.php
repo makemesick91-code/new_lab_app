@@ -40,7 +40,7 @@ class RmeAmendmentActionRequest extends FormRequest
         // Rule 243 §2.11 — a record is asked for its CONTENT (exactly `view`
         // unless the doctor encounter scope applies).
         $ability = $target instanceof MedicalRecord || $target instanceof Odontogram
-            ? RmeRecordVersionService::readAbility($target)
+            ? RmeRecordVersionService::readAbility($target, $user)
             : 'view';
         abort_unless(is_object($target) && Gate::forUser($user)->allows($ability, $target), 404);
 

@@ -136,6 +136,19 @@ class DoctorPatientScopeService
     }
 
     /**
+     * Rule 243 (flag-OFF parity) — the ability a call site asks: `$scoped` while
+     * the encounter scope applies to $user, otherwise `$base`, the ability that
+     * call site asked before the encounter scope existed. A scope-only ability
+     * whose policy falls back to `$base` by calling it directly would skip every
+     * Gate hook and event registered for `$base`; asking `$base` itself keeps the
+     * flag-OFF (and exempt-role) authorization exactly as it was.
+     */
+    public function abilityFor(?User $user, string $scoped, string $base): string
+    {
+        return $this->encounterScopeAppliesTo($user) ? $scoped : $base;
+    }
+
+    /**
      * Rule 243 §2.11 (PR A3) — may a list shown to $viewer name $visit (its
      * number, date, doctor, a link to it)? With the encounter scope deciding,
      * exactly when the viewer may read the visit ({@see doctorCanAccessVisit()}),

@@ -13,6 +13,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -193,7 +194,12 @@ class MedicalRecordHandwritingController extends Controller
         // (`appendPage`: inside an own in-service encounter when the encounter
         // scope is ON); an in-place page of a per-visit sheet follows that
         // sheet's own visit (`update`). With the flag OFF both are `update`.
-        $this->authorize($bookPage ? 'appendPage' : 'update', $medicalRecord);
+        // Flag-OFF parity: `appendPage` only while the encounter scope applies
+        // to the user, otherwise exactly the `update` asked before.
+        $this->authorize(
+            $bookPage ? app(DoctorPatientScopeService::class)->abilityFor(Auth::user(), 'appendPage', 'update') : 'update',
+            $medicalRecord,
+        );
 
         /*
          * FIX-02 — handwriting is RME content, so it is gated exactly like the

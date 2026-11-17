@@ -12,6 +12,7 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Support\Clinical\ClinicalClock;
 use Closure;
@@ -453,10 +454,14 @@ class MedicalRecordService
 
             $target = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
 
-            // Rule 243 §2.11 (PR A3) — `startBook`: exactly `create` on the
-            // anchor with the encounter scope OFF; for a scoped Doctor with it ON
-            // the patient-level `appendPage` rule the handwriting door asks too.
-            Gate::forUser($actor)->authorize('startBook', [MedicalRecord::class, $target]);
+            // Rule 243 §2.11 (PR A3) — `startBook` (the patient-level `appendPage`
+            // rule the handwriting door asks too) only while the encounter scope
+            // applies to the actor; otherwise exactly the `create` it asked
+            // before, through the Gate, so every `create` hook still applies.
+            Gate::forUser($actor)->authorize(
+                app(DoctorPatientScopeService::class)->abilityFor($actor, 'startBook', 'create'),
+                [MedicalRecord::class, $target],
+            );
 
             $book = $this->workspace->bookOn($patientId, $target, $this->recordOnVisit(...));
 

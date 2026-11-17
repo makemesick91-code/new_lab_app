@@ -668,7 +668,7 @@ final class RmeAmendmentService
      */
     public function maySeeSubject(User $user, MedicalRecord|Odontogram $subject): bool
     {
-        return $subject->exists && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject), $subject);
+        return $subject->exists && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**
@@ -718,7 +718,7 @@ final class RmeAmendmentService
 
         // Rule 243 §2.11 — a doctor requester sees only the amendments of a
         // record whose visit they may read (exactly `view` with the flag OFF).
-        return ($isRequester || $isApprover) && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject), $subject);
+        return ($isRequester || $isApprover) && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**
@@ -994,7 +994,7 @@ final class RmeAmendmentService
     {
         $this->assertVisibleSubject($subject, $user);
 
-        Gate::forUser($user)->authorize(RmeRecordVersionService::readAbility($subject), $subject);
+        Gate::forUser($user)->authorize(RmeRecordVersionService::readAbility($subject, $user), $subject);
         [$type, $id] = $this->subjectKey($subject);
 
         // The list needs no snapshot: number, kind, author and time only, the
@@ -1575,7 +1575,7 @@ final class RmeAmendmentService
     private function inApproverScope(User $user, RmeAmendment $amendment, MedicalRecord|Odontogram $subject): bool
     {
         return $this->branchScope->allows($user, (int) $amendment->branch_id)
-            && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject), $subject);
+            && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**

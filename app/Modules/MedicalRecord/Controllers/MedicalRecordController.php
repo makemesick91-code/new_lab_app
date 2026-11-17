@@ -268,10 +268,10 @@ class MedicalRecordController extends Controller
                 'patient' => $addSheetVisit->patient,
                 // Who may manage RME here at all: permission, branch, clinical
                 // scope. NOT "may they write right now" — that is the next key.
-                // Rule 243 §2.11 — starting the book asks `startBook` (`create`
-                // on the anchor unless the encounter scope applies).
+                // Rule 243 §2.11 — starting the book asks `startBook` while the
+                // encounter scope applies, otherwise exactly `create` on the anchor.
                 'canEdit' => ! $patientHasSheets
-                    && ($viewer?->can('startBook', [MedicalRecord::class, $workspaceVisit]) ?? false),
+                    && ($viewer?->can($this->doctorScope->abilityFor($viewer, 'startBook', 'create'), [MedicalRecord::class, $workspaceVisit]) ?? false),
                 // Rule 243 §2.11 — the anchor is named only to a viewer who may
                 // read it (always with the encounter scope OFF).
                 'workspaceVisitNamed' => $this->doctorScope->listsVisitFor($viewer, $workspaceVisit),
@@ -669,9 +669,13 @@ class MedicalRecordController extends Controller
         $targetVisit = $patientHasSheets ? $clinicVisit : $canonicalVisit;
 
         // Rule 243 §2.11 (PR A3) — the first sheet STARTS the book on the anchor
-        // (`startBook`: `create` unless the encounter scope applies, then the
-        // patient-level `appendPage` rule); a later sheet is `create` on its visit.
-        $this->authorize($patientHasSheets ? 'create' : 'startBook', [MedicalRecord::class, $targetVisit]);
+        // (`startBook`, the patient-level `appendPage` rule, only while the
+        // encounter scope applies to the user; otherwise exactly `create`, as
+        // before); a later sheet is `create` on its visit.
+        $this->authorize(
+            $patientHasSheets ? 'create' : $this->doctorScope->abilityFor($request->user(), 'startBook', 'create'),
+            [MedicalRecord::class, $targetVisit],
+        );
 
         $data = array_merge($request->validated(), ['source_visit_id' => $sourceVisitId]);
 

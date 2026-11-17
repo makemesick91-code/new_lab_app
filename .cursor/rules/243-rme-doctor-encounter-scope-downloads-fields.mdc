@@ -461,6 +461,15 @@ added by their own PRs.
       lock before a missing PTM; `finalize()` asks gate → `assertWritable()` → the sheet lock. No-ops with the flag
       OFF. The Doctor no longer holds `manage_rme_consents` (rule 241 §4), so `RmeVisitConsentPolicy::create` under
       the scope binds only an account that still captures signatures (a dual role).
+    - **Flag-OFF parity at the call sites (integration review).** A scope-only ability whose policy falls back to
+      the base ability by calling it directly skips every Gate hook and event registered for the base ability
+      (A3a's `startBook` did: `RmeConcurrentFirstWriteBookConvergenceTest` R71-H/R71-H2 deny `create` through
+      `Gate::before`). So `startBook` (`MedicalRecordService::startBook()`, `MedicalRecordController::store`, the
+      empty state's offer), `appendPage` (the handwriting save), `viewHandwritingPage` (the page image routes) and
+      `viewAnchorContent` (`RmeRecordVersionService::readAbility()`) are asked only while the encounter scope applies
+      to the account (`DoctorPatientScopeService::abilityFor()`); otherwise each call site asks exactly the ability
+      and arguments it asked before (`create`, `update`, `view`). The workspace's presentation abilities
+      (`canEditHandwritingTarget`, `canAppendBookPage`, `anchorContentReadable`) are unchanged.
     - **Follow-ups, not preconditions.** (a) Own mode still lists no book page: the page routes ask the book's
       `view`, which needs `history`; listing the doctor's own book pages there needs the routes to admit an
       own-authored page in own mode. (b) The cashier's clinical summary (`RmeInvoiceController`) and the oversight
