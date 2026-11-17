@@ -130,6 +130,12 @@ class MedicalRecord extends Model
         return $this->hasMany(MedicalRecordDiagnosis::class)->orderBy('diagnosis_role')->orderBy('id');
     }
 
+    /** SATUSEHAT-4B emergency overrides of the structured-diagnosis requirement (append-only). */
+    public function diagnosisRequirementOverrides(): HasMany
+    {
+        return $this->hasMany(DiagnosisRequirementOverride::class);
+    }
+
     /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of a page that has no stored drawing. */
     public const HANDWRITING_REVISION_NONE = 'none';
 

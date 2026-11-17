@@ -23,7 +23,9 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
+use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
@@ -150,7 +152,7 @@ it('writes version 1 of a sheet on finalize: the fields, the diagnoses and the s
     expect($snapshot['medical_record_id'])->toBe($sheet->id)
         ->and($snapshot['status'])->toBe(MedicalRecord::STATUS_FINAL)
         ->and($snapshot['finalized_at'])->toBe($final->finalized_at->toIso8601String())
-        // jsonb keeps no key order; the hash is over the canonical (sorted) form.
+        // Stored as the canonical (key-sorted) text; compared without order here.
         ->and($snapshot['fields'])->toEqual([
             'assessment' => 'm33v pulpitis',
             'notes' => 'm33v catatan dokter',
@@ -233,6 +235,91 @@ it('detects a broken hash chain', function () {
     expect($service->verifyChain($sheet->fresh()))->toBeFalse();
 });
 
+// Review MEDIUM-C — the stored snapshot is the canonical text, verbatim, and the
+// hash is SHA-256 of the canonical JSON of the whole version (rule 240 §5.6),
+// recomputed here independently of the service.
+it('stores the snapshot as its canonical text and hashes the canonical JSON of the whole version', function () {
+    [, $sheet] = m33vSheet();
+    m33vFinalize($sheet);
+    $v1 = m33vVersions($sheet)->sole();
+
+    $sorted = function (mixed $value) use (&$sorted): mixed {
+        if (! is_array($value)) {
+            return $value;
+        }
+        $value = array_map($sorted, $value);
+        if (! array_is_list($value)) {
+            ksort($value, SORT_STRING);
+        }
+
+        return $value;
+    };
+    $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR;
+    $stored = DB::table('trx_rme_record_versions')->where('id', $v1->id)->value('snapshot');
+
+    expect($stored)->toBe(json_encode($sorted($v1->snapshot), $flags))
+        ->and($v1->snapshotJson())->toBe($stored)
+        ->and($v1->hash)->toBe(hash('sha256', json_encode($sorted([
+            'subject_type' => $v1->subject_type,
+            'subject_id' => $v1->subject_id,
+            'version' => $v1->version,
+            'kind' => $v1->kind,
+            'previous_hash' => $v1->previous_hash,
+            'snapshot' => $v1->snapshot,
+        ]), $flags)));
+});
+
+// Review LOW — negative cases of verifyChain(), on rows inserted raw (the
+// immutability trigger does not refuse an INSERT). Each forged row is valid in
+// every respect but the one under test.
+function m33vInsertVersion(MedicalRecord $sheet, int $version, ?string $previousHash, array $snapshot, ?array $hashedSnapshot = null): string
+{
+    $service = app(RmeRecordVersionService::class);
+    $hash = $service->hashFor(RmeRecordVersion::SUBJECT_MEDICAL_RECORD, $sheet->id, $version, RmeRecordVersion::KIND_AMENDMENT, $previousHash, $hashedSnapshot ?? $snapshot);
+
+    DB::table('trx_rme_record_versions')->insert([
+        'subject_type' => RmeRecordVersion::SUBJECT_MEDICAL_RECORD,
+        'subject_id' => $sheet->id,
+        'version' => $version,
+        'kind' => RmeRecordVersion::KIND_AMENDMENT,
+        'snapshot_schema_version' => 1,
+        'snapshot' => json_encode($snapshot),
+        'previous_hash' => $previousHash,
+        'hash' => $hash,
+        'created_at' => now(),
+    ]);
+
+    return $hash;
+}
+
+it('detects a version whose content does not match its hash, although its link is correct', function () {
+    [, $sheet] = m33vSheet();
+    m33vFinalize($sheet);
+    $service = app(RmeRecordVersionService::class);
+    $v1 = m33vVersions($sheet)->first();
+
+    // Positive control: a correctly linked, correctly hashed version 2 verifies.
+    $v2 = m33vInsertVersion($sheet, 2, $v1->hash, ['note' => 'm33v amandemen']);
+    expect($service->verifyChain($sheet->fresh()))->toBeTrue();
+
+    // Version 3 links to version 2 correctly, but its stored content is not what
+    // its hash was computed over.
+    m33vInsertVersion($sheet, 3, $v2, ['note' => 'm33v isi diubah'], ['note' => 'm33v isi asli']);
+
+    expect($service->verifyChain($sheet->fresh()))->toBeFalse();
+});
+
+it('detects a gap in the version numbering, although the link and hash are correct', function () {
+    [, $sheet] = m33vSheet();
+    m33vFinalize($sheet);
+    $v1 = m33vVersions($sheet)->first();
+
+    m33vInsertVersion($sheet, 3, $v1->hash, ['note' => 'm33v amandemen']);
+
+    expect(m33vVersions($sheet)->pluck('version')->all())->toBe([1, 3])
+        ->and(app(RmeRecordVersionService::class)->verifyChain($sheet->fresh()))->toBeFalse();
+});
+
 // ─── Immutability ────────────────────────────────────────────────────────────
 
 it('refuses to update or delete a version through the model', function () {
@@ -260,6 +347,21 @@ it('refuses a raw UPDATE and a raw DELETE of a version in PostgreSQL', function 
         ->toThrow(QueryException::class);
 
     expect(DB::table('trx_rme_record_versions')->where('id', $id)->value('kind'))->toBe('final');
+});
+
+// Review LOW — the TRUNCATE path around the row trigger.
+it('refuses a TRUNCATE of the version table in PostgreSQL', function () {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('The immutability trigger exists on PostgreSQL only; SQLite has no TRUNCATE.');
+    }
+
+    [, $sheet] = m33vSheet();
+    m33vFinalize($sheet);
+
+    expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_record_versions')))
+        ->toThrow(QueryException::class, 'immutable');
+
+    expect(m33vVersions($sheet))->toHaveCount(1);
 });
 
 // ─── Baseline for a record finalized before rule 240 ─────────────────────────
@@ -354,6 +456,79 @@ it('records in a baseline the pages another encounter wrote, and not the amendin
         ->ensureBaseline($sheet->fresh(), $this->author->id, $visit->id));
 
     expect(collect($baseline->snapshot['pages'])->pluck('page_number')->all())->toBe([1]);
+});
+
+// Review MEDIUM-A carried into §5 — lockedBookPages() and pageSlotLock() share one
+// lock definition: a page is in the snapshot exactly when the live encounter may
+// not overwrite it. An unstamped page that no finalize covers (written after the
+// sheet was finalized, before rule 240) is locked, so it is recorded.
+it('records exactly the pages pageSlotLock() locks for the amending encounter, an uncovered pre-rule page included', function () {
+    $earlier = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+    ]);
+    $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'patient_id' => $this->patient->id]);
+    rmeActiveConsentedEncounter($visit);
+    $sheet = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $earlier->id,
+        'branch_id' => $earlier->branch_id,
+        'patient_id' => $this->patient->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+        'finalized_at' => now()->subDay(),
+    ]);
+    $on = ['medical_record_id' => $sheet->id, 'clinic_visit_id' => $earlier->id, 'branch_id' => $earlier->branch_id];
+
+    // 1: unstamped, written before the finalize (covered: sealed by the derived rule).
+    MedicalRecordHandwriting::factory()->create($on + ['created_at' => now()->subDays(2)]);
+    // 2: unstamped, written after the finalize (not covered: still locked, MEDIUM-A).
+    MedicalRecordHandwritingPage::factory()->create($on + ['page_number' => 2, 'created_at' => now()->subHour()]);
+    // 3: stamped by the earlier encounter.
+    MedicalRecordHandwritingPage::factory()->create($on + ['page_number' => 3, 'authored_clinic_visit_id' => $earlier->id]);
+    // 4: stamped by the live (amending) encounter, unsealed: writable, not recorded.
+    MedicalRecordHandwritingPage::factory()->create($on + ['page_number' => 4, 'authored_clinic_visit_id' => $visit->id]);
+    // 5: stamped by the live encounter but sealed.
+    $sealed = MedicalRecordHandwritingPage::factory()->create($on + ['page_number' => 5, 'authored_clinic_visit_id' => $visit->id]);
+    DB::table('trx_medical_record_handwriting_pages')->where('id', $sealed->id)->update(['sealed_at' => now(), 'sealed_by_medical_record_id' => $sheet->id]);
+
+    $baseline = DB::transaction(fn () => app(RmeRecordVersionService::class)
+        ->ensureBaseline($sheet->fresh(), $this->author->id, $visit->id));
+    $recorded = collect($baseline->snapshot['pages'])->pluck('page_number')->all();
+
+    expect($recorded)->toBe([1, 2, 3, 5]);
+
+    $repository = app(MedicalRecordHandwritingRepositoryInterface::class);
+    foreach ([1, 2, 3, 4, 5] as $page) {
+        expect(in_array($page, $recorded, true))
+            ->toBe($repository->pageSlotLock($sheet->id, $page, $this->patient->id, $visit->id) !== null);
+    }
+});
+
+// Review LOW — the emergency diagnosis override is part of the locked sheet
+// (rule 240 §1) and finalize can depend on it, so version 1 records it.
+it('records the emergency diagnosis override in the sheet snapshot, without patient identity', function () {
+    [$visit, $sheet] = m33vSheet();
+    $override = DiagnosisRequirementOverride::create([
+        'medical_record_id' => $sheet->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'used_by' => $this->author->id,
+        'reason' => 'm33v alasan override darurat',
+        'expires_at' => now()->addDay(),
+    ]);
+
+    m33vFinalize($sheet);
+    $snapshot = m33vVersions($sheet)->sole()->snapshot;
+
+    expect($snapshot['diagnosis_overrides'])->toHaveCount(1);
+    $recorded = $snapshot['diagnosis_overrides'][0];
+
+    expect(array_keys($recorded))->toEqualCanonicalizing(['id', 'reason', 'used_by', 'expires_at', 'created_at'])
+        ->and($recorded['id'])->toBe($override->id)
+        ->and($recorded['reason'])->toBe('m33v alasan override darurat')
+        ->and($recorded['used_by'])->toBe($this->author->id)
+        ->and($recorded['expires_at'])->toBe($override->fresh()->expires_at->toIso8601String())
+        ->and(app(RmeRecordVersionService::class)->verifyChain($sheet->fresh()))->toBeTrue();
 });
 
 it('refuses a baseline for a sheet that is not final', function () {

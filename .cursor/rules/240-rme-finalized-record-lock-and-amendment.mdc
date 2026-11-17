@@ -154,8 +154,13 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   declared in `critical_gate_mandatory_suites`. They pin: version 1 on finalize for a sheet (fields, diagnoses in
   order, the sealed pages with object key and the SHA-256 of the stored bytes) and for a chart (the payload);
   nothing new on re-finalize, also from a stale copy; no version when the finalize is refused; the hash chain
-  verified and a forged link detected; immutability through the model and, on PostgreSQL, a raw UPDATE and DELETE
-  refused by the trigger; the baseline written once, only inside a transaction, only for a final subject; reads
+  verified and a forged link detected, a correctly linked version whose content does not match its hash detected,
+  and a numbering gap (v1, v3) detected; the snapshot stored as its canonical text and the hash recomputed
+  independently from §5.6; a chart payload with a zero-fraction float, a negative zero and floats in a list (written
+  by raw SQL, then finalized) verifying; the emergency diagnosis override recorded without patient identity;
+  immutability through the model and, on PostgreSQL, a raw UPDATE, DELETE and TRUNCATE refused by the triggers; the
+  baseline written once, only inside a transaction, only for a final subject; the baseline recording exactly the
+  pages `pageSlotLock()` locks for the amending encounter, an unstamped page no finalize covers included; reads
   authorized like the record; no snapshot content in any log message or `sys_audit_logs` row; visit → subject lock
   → version insert (PostgreSQL).
 
@@ -227,11 +232,13 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 1. **The table.** `trx_rme_record_versions` (migration `2026_11_17_300001_create_trx_rme_record_versions_table`,
    additive): one row per version of a subject — `subject_type` (`medical_record` | `odontogram`) and `subject_id`,
    `version` (UNIQUE per subject, ≥ 1), `kind` (`final` | `baseline` | `amendment`), `snapshot_schema_version`,
-   `snapshot` (jsonb), `previous_hash`, `hash`, `created_by`, `created_at` (technical instant, UTC; no
-   `updated_at`). PostgreSQL CHECK constraints pin the subject types, kinds and version ≥ 1.
-2. **Immutable.** `RmeRecordVersion` throws on update and delete; on PostgreSQL the trigger
-   `trx_rme_record_versions_immutable` refuses a raw UPDATE or DELETE (SQLite has no trigger; the model guard
-   stands). The repository has no update or delete. `down()` refuses to drop the table while a version exists.
+   `snapshot` (`json`, never `jsonb` — §5.6), `previous_hash`, `hash`, `created_by`, `created_at` (technical instant,
+   UTC; no `updated_at`). PostgreSQL CHECK constraints pin the subject types, kinds and version ≥ 1.
+2. **Immutable.** `RmeRecordVersion` throws on update and delete; on PostgreSQL the row trigger
+   `trx_rme_record_versions_immutable` refuses a raw UPDATE or DELETE, and the statement trigger
+   `trx_rme_record_versions_no_truncate` (same function) refuses a TRUNCATE, which no row trigger sees (SQLite has
+   no trigger and no TRUNCATE; the model guard stands). The repository has no update or delete. `down()` refuses to
+   drop the table while a version exists.
 3. **Version 1.** `MedicalRecordService::finalize()` and `OdontogramService::finalize()` call
    `RmeRecordVersionService::recordFinal()` inside their transaction, after the visit and subject locks (and, for a
    sheet, after the page seal of §4), so the version commits with the finalize or not at all. The already-final
@@ -243,19 +250,29 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    transaction, under the same locks, before the record changes, naming the amending (live) encounter so that
    encounter's own unsealed pages — still writable under §4.4 — are not recorded as locked.
 5. **The snapshot.** A sheet: `fields` (subjective, objective, assessment, plan, notes), `diagnoses` (code system,
-   code, display, role, statuses, notes, diagnosed at; by id) and `pages` — every LOCKED page of the patient's
-   handwriting book by the rule of §4.3-§4.4 (sealed; written before rule 240 and covered by a finalize; or written
-   by an encounter other than the live one — `MedicalRecordHandwritingRepositoryInterface::lockedBookPages()`, the
-   same cases as `pageSlotLock()`; at a finalize every page has just been sealed, so it is the whole book), with its
+   code, display, role, statuses, notes, diagnosed at; by id), `diagnosis_overrides` — the emergency overrides of
+   the structured-diagnosis requirement (`trx_diagnosis_requirement_overrides`: id, reason, `used_by` as an account
+   id, `expires_at`, `created_at`; by id), part of the locked sheet (§1.1) and possibly what let it finalize — and
+   `pages` — every LOCKED page of the patient's handwriting book by the rule of §4.3-§4.4 (sealed; written before
+   rule 240 with no authoring stamp, covered by a finalize or not; or written by an encounter other than the live
+   one — `MedicalRecordHandwritingRepositoryInterface::lockedBookPages()` lists a row exactly when `pageSlotLock()`
+   answers a lock for it; at a finalize every page has just been sealed, so it is the whole book), with its
    record, page number, object key and SHA-256 (never bytes; an inline data-URI page reports no key), authoring
    encounter and seal stamps. A chart: summary notes, additional conditions and `tooth_map_payload`. Both carry the
    subject's ids, status, `finalized_at` and `finalized_by`. No patient identity field is copied; nothing is
    logged and no audit row carries a snapshot.
 6. **The hash chain.** `hash` = SHA-256 of the canonical JSON (object keys sorted recursively, lists in order, the
    flags of `RmeInvoiceSnapshot`) of subject type, subject id, version, kind, `previous_hash` and snapshot; version
-   1 has no previous hash, version n+1 carries version n's hash. The snapshot is stored as it decodes from that
-   encoding, so a jsonb round trip changes nothing hashed. `verifyChain()` checks numbering 1..n, each link and each
-   stored hash.
+   1 has no previous hash, version n+1 carries version n's hash. The snapshot column holds the snapshot's canonical
+   JSON text verbatim — a `json` column, whose text PostgreSQL returns exactly as written (SQLite: text) — and the
+   model stores only that text (no `array` cast). The hash is computed over the envelope with that exact stored text
+   spliced in as the snapshot (`RmeRecordVersion::snapshotJson()`), never over a re-encoding of its decoded value, so
+   nothing between write and verify can change what is hashed. Why not `jsonb` and a decode/re-encode (review
+   MEDIUM-C): `jsonb` re-encodes the text and PHP's decode/encode does not round-trip every number — a chart payload
+   `5.0` was hashed as `5.0` and stored by the `array` cast as `5`, so `verifyChain()` failed for a legitimate row
+   (and `-0.0` reads back as `0` or `0.0`); normalising numbers on both sides would have to anticipate every such
+   difference, while hashing the stored bytes needs none. `verifyChain()` checks numbering 1..n, each link and each
+   stored hash against the stored text.
 7. **Reading.** `versionsFor()` and `version()` authorize the subject's `view` ability for the given account
    (MedicalRecordPolicy / OdontogramPolicy) before reading; there are no routes or views yet (M3.3 PR4/PR5).
 8. **The "Diamandemen n×" marker.** `amendmentCount()` counts the subject's `amendment` versions. No marker column

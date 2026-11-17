@@ -119,38 +119,17 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
     public function lockedBookPages(int $patientId, ?int $liveEncounterId = null): array
     {
         $book = MedicalRecord::withTrashed()->where('patient_id', $patientId)->select('id');
-        $columns = ['id', 'medical_record_id', 'handwriting_path', 'handwriting_hash', 'authored_clinic_visit_id', 'sealed_at', 'sealed_by_medical_record_id', 'created_at'];
+        $columns = ['id', 'medical_record_id', 'handwriting_path', 'handwriting_hash', 'authored_clinic_visit_id', 'sealed_at', 'sealed_by_medical_record_id'];
 
-        // The derived rule of finalizedSince(), read once for the whole book: a
-        // final sheet finalized at or after the page (max(finalized_at) >= its
-        // creation), and any final sheet without `finalized_at`, covers it.
-        $finals = MedicalRecord::withTrashed()
-            ->where('patient_id', $patientId)
-            ->where('status', MedicalRecord::STATUS_FINAL);
-        $anyFinal = (clone $finals)->exists();
-        $undatedFinal = (clone $finals)->whereNull('finalized_at')->exists();
-        $latestFinalizedAt = (clone $finals)->max('finalized_at');
-        $latestFinalizedAt = $latestFinalizedAt !== null ? Carbon::parse($latestFinalizedAt) : null;
-
-        // The same three cases as pageSlotLock(): sealed; written by another
-        // encounter than the live one; or a pre-rule page a finalize covers.
-        $locked = function (MedicalRecordHandwriting|MedicalRecordHandwritingPage $row) use ($anyFinal, $undatedFinal, $latestFinalizedAt, $liveEncounterId): bool {
-            if ($row->sealed_at !== null) {
-                return true;
-            }
-
-            if ($row->authored_clinic_visit_id !== null) {
-                return $liveEncounterId === null || (int) $row->authored_clinic_visit_id !== $liveEncounterId;
-            }
-
-            if (! $anyFinal) {
-                return false;
-            }
-
-            return $undatedFinal
-                || $row->created_at === null
-                || ($latestFinalizedAt !== null && $latestFinalizedAt->greaterThanOrEqualTo($row->created_at));
-        };
+        // Exactly when pageSlotLock() answers a lock for the row: sealed; written
+        // by another encounter than the live one; or unstamped (written before
+        // rule 240), which pageSlotLock() locks whether or not a finalize covers it
+        // (sealed when one does, LOCK_EARLIER_ENCOUNTER otherwise — review
+        // MEDIUM-A). Which of the two reasons applies does not change "locked".
+        $locked = fn (MedicalRecordHandwriting|MedicalRecordHandwritingPage $row): bool => $row->sealed_at !== null
+            || $row->authored_clinic_visit_id === null
+            || $liveEncounterId === null
+            || (int) $row->authored_clinic_visit_id !== $liveEncounterId;
 
         $describe = fn (MedicalRecordHandwriting|MedicalRecordHandwritingPage $row, int $pageNumber): array => [
             'medical_record_id' => (int) $row->medical_record_id,

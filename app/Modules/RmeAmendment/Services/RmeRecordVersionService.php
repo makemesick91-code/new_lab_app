@@ -6,6 +6,7 @@ namespace App\Modules\RmeAmendment\Services;
 
 use App\Models\User;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
+use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Odontogram\Models\Odontogram;
@@ -26,19 +27,25 @@ use LogicException;
  *   (ensureBaseline(), called by M3.3 PR5 under the same locks). Both are
  *   idempotent: a subject that already has version 1 gets it back.
  * - A snapshot is the clinical record as it stands: for a sheet, its SOAP fields
- *   and notes, its structured diagnoses and the LOCKED pages of the patient's
- *   handwriting book (object key and SHA-256, never bytes); for a chart, its
- *   payload. Nothing is logged and no audit row carries a snapshot.
+ *   and notes, its structured diagnoses, its emergency diagnosis overrides and
+ *   the LOCKED pages of the patient's handwriting book (object key and SHA-256,
+ *   never bytes); for a chart, its payload. Nothing is logged and no audit row
+ *   carries a snapshot.
  * - Each version's hash is SHA-256 over a canonical JSON encoding of its subject,
- *   number, kind, previous hash and snapshot, so the versions form a chain
- *   (verifyChain()). PostgreSQL `jsonb` does not keep key order, so the encoding
- *   sorts object keys recursively.
+ *   number, kind, previous hash and snapshot (object keys sorted recursively), so
+ *   the versions form a chain (verifyChain()). The snapshot is stored as that
+ *   canonical text, verbatim (a `json` column), and the hash is always computed
+ *   over the stored text itself, never over a re-encoding of its decoded value:
+ *   a decode/re-encode does not round-trip every number (5.0, -0.0).
  * - Reading is authorized like reading the record itself (the subject's `view`
  *   ability), asked here so every caller inherits it.
  */
 final class RmeRecordVersionService
 {
     public const SNAPSHOT_SCHEMA_VERSION = 1;
+
+    /** The flags of RmeInvoiceSnapshot. */
+    private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR;
 
     public function __construct(
         private readonly RmeRecordVersionRepositoryInterface $versions,
@@ -103,7 +110,8 @@ final class RmeRecordVersionService
     /**
      * True when the subject's versions are numbered 1..n without a gap, each
      * previous hash is the hash of the version before it (none for version 1),
-     * and each stored hash matches its stored content.
+     * and each stored hash matches its stored content — the snapshot text exactly
+     * as stored (RmeRecordVersion::snapshotJson()).
      */
     public function verifyChain(MedicalRecord|Odontogram $subject): bool
     {
@@ -114,7 +122,7 @@ final class RmeRecordVersionService
         foreach ($this->versions->listFor($type, $id) as $version) {
             if ($version->version !== $expected
                 || $version->previous_hash !== $previous
-                || ! hash_equals($this->hashFor($type, $id, $version->version, $version->kind, $version->previous_hash, $version->snapshot), $version->hash)) {
+                || ! hash_equals($this->hashFor($type, $id, $version->version, $version->kind, $version->previous_hash, $version->snapshotJson()), $version->hash)) {
                 return false;
             }
 
@@ -125,17 +133,29 @@ final class RmeRecordVersionService
         return true;
     }
 
-    /** @param array<string, mixed> $snapshot */
-    public function hashFor(string $subjectType, int $subjectId, int $version, string $kind, ?string $previousHash, array $snapshot): string
+    /**
+     * SHA-256 of the canonical JSON of the version: its subject, number, kind,
+     * previous hash and snapshot. `$snapshot` is either the snapshot's stored text
+     * (hashed byte for byte) or an array (hashed as its canonical text, which is
+     * what a version stores).
+     *
+     * @param  array<string, mixed>|string  $snapshot
+     */
+    public function hashFor(string $subjectType, int $subjectId, int $version, string $kind, ?string $previousHash, array|string $snapshot): string
     {
-        return hash('sha256', self::canonicalJson([
-            'subject_type' => $subjectType,
-            'subject_id' => $subjectId,
-            'version' => $version,
-            'kind' => $kind,
-            'previous_hash' => $previousHash,
-            'snapshot' => $snapshot,
-        ]));
+        $snapshotJson = is_string($snapshot) ? $snapshot : self::canonicalJson($snapshot);
+        $encode = static fn (mixed $value): string => json_encode($value, self::JSON_FLAGS);
+
+        // The canonical (key-sorted) envelope, with the snapshot spliced in as its
+        // exact text: equal to canonicalJson() of the whole envelope whenever the
+        // text is the snapshot's canonical encoding, and never a re-encoding of it.
+        return hash('sha256', '{"kind":'.$encode($kind)
+            .',"previous_hash":'.$encode($previousHash)
+            .',"snapshot":'.$snapshotJson
+            .',"subject_id":'.$encode($subjectId)
+            .',"subject_type":'.$encode($subjectType)
+            .',"version":'.$encode($version)
+            .'}');
     }
 
     /**
@@ -194,6 +214,21 @@ final class RmeRecordVersionService
                 'notes' => $subject->notes,
             ],
             'diagnoses' => $diagnoses,
+            // Rule 240 §1 — the emergency override is part of the locked sheet and
+            // can be what let it finalize. The granting account by id; no patient
+            // identity.
+            'diagnosis_overrides' => $subject->diagnosisRequirementOverrides()
+                ->reorder('id')
+                ->get(['id', 'used_by', 'reason', 'expires_at', 'created_at'])
+                ->map(fn (DiagnosisRequirementOverride $override): array => [
+                    'id' => (int) $override->getKey(),
+                    'reason' => $override->reason,
+                    'used_by' => $override->used_by !== null ? (int) $override->used_by : null,
+                    'expires_at' => $override->expires_at?->toIso8601String(),
+                    'created_at' => $override->created_at?->toIso8601String(),
+                ])
+                ->values()
+                ->all(),
             'pages' => $this->handwritings->lockedBookPages((int) $subject->patient_id, $liveEncounterId),
         ];
     }
@@ -221,9 +256,9 @@ final class RmeRecordVersionService
             return $existing;
         }
 
-        $snapshot = $this->snapshotOf($subject, $liveEncounterId);
-        // Stored as it will be read back, so the hash is over what jsonb returns.
-        $snapshot = json_decode(self::canonicalJson($snapshot), true, flags: JSON_THROW_ON_ERROR);
+        // Review MEDIUM-C — the canonical text is what is stored, verbatim, and
+        // what the hash covers; nothing re-encodes it on the way in or out.
+        $snapshot = self::canonicalJson($this->snapshotOf($subject, $liveEncounterId));
 
         return $this->versions->create([
             'subject_type' => $type,
@@ -249,12 +284,12 @@ final class RmeRecordVersionService
     }
 
     /**
-     * Canonical JSON: object keys sorted recursively, lists in order, the same
-     * flags as RmeInvoiceSnapshot so the encoding is stable across PHP and jsonb.
+     * Canonical JSON: object keys sorted recursively, lists in order. Produced
+     * once, when a version is written; verifying hashes the stored text.
      */
     private static function canonicalJson(mixed $value): string
     {
-        return json_encode(self::canonical($value), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        return json_encode(self::canonical($value), self::JSON_FLAGS);
     }
 
     private static function canonical(mixed $value): mixed

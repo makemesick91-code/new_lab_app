@@ -112,6 +112,30 @@ it('writes a baseline version 1, once, for a chart finalized before this rule', 
     expect(fn () => DB::transaction(fn () => $service->ensureBaseline($draft, $this->author->id)))->toThrow(LogicException::class);
 });
 
+// Review MEDIUM-C — the hash must be over exactly what is stored and read back.
+// A chart payload number with a zero fraction (5.0) or a negative zero was hashed
+// as `5.0` but stored by the array cast as `5`, so verifyChain() failed for a
+// legitimate row. The payload is written by raw SQL, as any earlier writer may
+// have stored it, then the chart is finalized through the real service.
+it('verifies the chain of a chart whose payload holds zero-fraction and negative-zero floats', function (string $payload, string $path, float $value) {
+    $chart = m33voChart();
+    DB::table('trx_odontograms')->where('id', $chart->id)->update(['tooth_map_payload' => $payload]);
+
+    app(OdontogramService::class)->finalize($chart->fresh(), $this->author);
+    $v1 = m33voVersions($chart)->sole();
+
+    expect(app(RmeRecordVersionService::class)->verifyChain($chart->fresh()))->toBeTrue()
+        ->and((float) data_get($v1->snapshot['tooth_map_payload'], $path))->toEqual($value)
+        // The version reads back with the hash it was written with.
+        ->and(app(RmeRecordVersionService::class)->hashFor(
+            $v1->subject_type, $v1->subject_id, $v1->version, $v1->kind, $v1->previous_hash, $v1->snapshotJson(),
+        ))->toBe($v1->hash);
+})->with([
+    'a zero-fraction float' => ['{"teeth": {}, "depth_mm": 5.0}', 'depth_mm', 5.0],
+    'a negative zero' => ['{"teeth": {}, "offset_mm": -0.0}', 'offset_mm', 0.0],
+    'floats in a list' => ['{"teeth": {}, "readings": [1.0, 2.50, -0.0, 3]}', 'readings.1', 2.5],
+]);
+
 it('reads versions only for an account that may read the chart', function () {
     $chart = m33voChart();
     app(OdontogramService::class)->finalize($chart, $this->author);

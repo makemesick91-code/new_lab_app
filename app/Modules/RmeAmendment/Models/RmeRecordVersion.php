@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\RmeAmendment\Models;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
@@ -17,7 +18,12 @@ use LogicException;
  * rule 240, by the first amendment (`baseline`); later versions are amendments.
  * The snapshot is hash-chained to the previous version (RmeRecordVersionService).
  * A version is never updated or deleted: this model refuses, and on PostgreSQL a
- * trigger refuses a raw UPDATE or DELETE.
+ * trigger refuses a raw UPDATE, DELETE or TRUNCATE.
+ *
+ * `snapshot` is stored as the canonical JSON text the hash covers, verbatim
+ * (review MEDIUM-C): it is set only from that text (snapshotJson() reads it back
+ * unchanged, for the hash) and reads as its decoded array. It has no `array`
+ * cast, which would re-encode it with other flags (5.0 stored as 5).
  *
  * @property int $id
  * @property string $subject_type
@@ -79,10 +85,33 @@ class RmeRecordVersion extends Model
             'subject_id' => 'integer',
             'version' => 'integer',
             'snapshot_schema_version' => 'integer',
-            'snapshot' => 'array',
             'created_by' => 'integer',
             'created_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The decoded snapshot on read; on write only the canonical JSON text the
+     * hash was computed over (RmeRecordVersionService), stored as given.
+     */
+    protected function snapshot(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): ?array => $value === null ? null : json_decode($value, true, 512, JSON_THROW_ON_ERROR),
+            set: function (mixed $value): string {
+                if (! is_string($value)) {
+                    throw new LogicException('A record version snapshot is stored only as the canonical JSON text its hash covers.');
+                }
+
+                return $value;
+            },
+        );
+    }
+
+    /** The snapshot exactly as stored: the text the hash covers. */
+    public function snapshotJson(): string
+    {
+        return (string) $this->getAttributes()['snapshot'];
     }
 
     public function creator(): BelongsTo

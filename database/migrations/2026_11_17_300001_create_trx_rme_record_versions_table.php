@@ -16,8 +16,14 @@ use Illuminate\Support\Facades\Schema;
  * snapshot and a SHA-256 hash chained to the previous version's hash over a
  * canonical JSON encoding, so any edit of a stored row is detectable.
  *
- * Rows are never updated or deleted: the model refuses, and on PostgreSQL a
- * trigger refuses a raw UPDATE or DELETE. No `updated_at`. The "Diamandemen n×"
+ * `snapshot` is `json`, not `jsonb` (review MEDIUM-C): PostgreSQL keeps a `json`
+ * value's input text exactly, so the canonical text the hash covers is the text
+ * read back. `jsonb` re-encodes it (key order, numbers such as 5.0 or -0.0), and
+ * a hash over a decoded-and-re-encoded value did not survive the round trip.
+ *
+ * Rows are never updated, deleted or truncated: the model refuses, and on
+ * PostgreSQL a row trigger refuses a raw UPDATE or DELETE and a statement trigger
+ * refuses a TRUNCATE. No `updated_at`. The "Diamandemen n×"
  * print marker is the count of `amendment` rows of the subject, so no marker
  * column is added (rule 240 §5). Additive only (CG-09).
  */
@@ -32,7 +38,8 @@ return new class extends Migration
             $table->unsignedInteger('version');
             $table->string('kind', 16);
             $table->unsignedSmallInteger('snapshot_schema_version');
-            $table->jsonb('snapshot');
+            // Never jsonb: the hash covers this exact text (see above).
+            $table->json('snapshot');
             $table->char('previous_hash', 64)->nullable();
             $table->char('hash', 64);
             $table->foreignId('created_by')->nullable()->constrained('users')->restrictOnDelete();
@@ -57,6 +64,8 @@ return new class extends Migration
             $$ LANGUAGE plpgsql
             SQL);
         DB::statement('CREATE TRIGGER trx_rme_record_versions_immutable BEFORE UPDATE OR DELETE ON trx_rme_record_versions FOR EACH ROW EXECUTE FUNCTION trx_rme_record_versions_immutable()');
+        // A row trigger never fires for TRUNCATE; this statement trigger does.
+        DB::statement('CREATE TRIGGER trx_rme_record_versions_no_truncate BEFORE TRUNCATE ON trx_rme_record_versions FOR EACH STATEMENT EXECUTE FUNCTION trx_rme_record_versions_immutable()');
     }
 
     public function down(): void
@@ -66,6 +75,7 @@ return new class extends Migration
         }
 
         if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('DROP TRIGGER IF EXISTS trx_rme_record_versions_no_truncate ON trx_rme_record_versions');
             DB::statement('DROP TRIGGER IF EXISTS trx_rme_record_versions_immutable ON trx_rme_record_versions');
             DB::statement('DROP FUNCTION IF EXISTS trx_rme_record_versions_immutable()');
         }

@@ -65,9 +65,10 @@ interface MedicalRecordHandwritingRepositoryInterface
     /**
      * Rule 240 §5 (memo M3.3 PR3) — every LOCKED page of the patient's handwriting
      * book as it stands, for a record version's snapshot, by the rule of
-     * pageSlotLock() for `$liveEncounterId`: sealed; written before rule 240 and
-     * covered by a final sheet finalized at or after it; or written by an
-     * encounter other than `$liveEncounterId` (null: every stamped page). Object
+     * pageSlotLock() for `$liveEncounterId` (a row is listed exactly when that
+     * answers a lock for it): sealed; written before rule 240 (no authoring
+     * stamp), whether or not a finalize covers it; or written by an encounter
+     * other than `$liveEncounterId` (null: every stamped page). Object
      * keys and SHA-256 only, never bytes; an inline data-URI page reports no key.
      * Ordered by record, page, row.
      *
