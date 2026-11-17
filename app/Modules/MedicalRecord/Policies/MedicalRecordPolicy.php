@@ -37,7 +37,7 @@ class MedicalRecordPolicy
 
             return $visit !== null
                 ? app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit)
-                : Response::denyAsNotFound(DoctorPatientScopeService::OUT_OF_SCOPE_MESSAGE);
+                : Response::denyAsNotFound();
         }
 
         return $this->authorizePatientForRecord($user, $medicalRecord);
@@ -133,7 +133,7 @@ class MedicalRecordPolicy
         $visit = $medicalRecord->clinicVisit;
 
         if ($visit === null) {
-            return Response::denyAsNotFound(DoctorPatientScopeService::OUT_OF_SCOPE_MESSAGE);
+            return Response::denyAsNotFound();
         }
 
         // The book is read patient-level, so its typed fields must not answer

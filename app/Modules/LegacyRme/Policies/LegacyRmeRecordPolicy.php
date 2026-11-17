@@ -96,7 +96,11 @@ class LegacyRmeRecordPolicy
     {
         $view = $this->view($user, $record);
 
-        return $view === true ? $record->isPublished() : $view;
+        // A2 review INFO-3 — decide on whether `view` allowed, so a future
+        // Response::allow() never passes a VOIDed record through.
+        $allowed = $view instanceof Response ? $view->allowed() : $view === true;
+
+        return $allowed ? $record->isPublished() : $view;
     }
 
     /**

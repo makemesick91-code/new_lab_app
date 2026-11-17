@@ -313,7 +313,9 @@ class DoctorPatientScopeService
             return true;
         }
 
-        return Response::denyAsNotFound(self::OUT_OF_SCOPE_MESSAGE);
+        // A2 review LOW-1 — no message: a 404 out of scope must read exactly like
+        // a 404 for an id that does not exist (the JSON body carries the message).
+        return Response::denyAsNotFound();
     }
 
     /**
@@ -524,8 +526,10 @@ class DoctorPatientScopeService
      */
     private function outOfScope(): Response
     {
+        // The 404 carries no message, so it reads exactly like a missing id
+        // (A2 review LOW-1: the JSON body would otherwise tell them apart).
         return $this->encounterScopeEnabled()
-            ? Response::denyAsNotFound(self::OUT_OF_SCOPE_MESSAGE)
+            ? Response::denyAsNotFound()
             : Response::deny(self::OUT_OF_SCOPE_MESSAGE);
     }
 

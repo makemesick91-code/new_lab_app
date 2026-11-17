@@ -463,3 +463,23 @@ it('keeps branch isolation: an in-scope doctor still gets 404 for an archive fro
         ->and(lrdesStatus($this->userA, 'rme.legacy-records.pages.show', $foreign))->toBe(404)
         ->and(lrdesStatus($this->userA, 'rme.legacy-records.show', $this->archive))->toBe(200);
 })->with(['flag ON' => true, 'flag OFF' => false]);
+
+it('answers an out-of-scope archive exactly like a missing one, in HTML and JSON (A2 review LOW-1, flag ON)', function () {
+    lrdesFlag(true);
+    lrdesArrange('no relationship');
+
+    $missingId = (int) LegacyRmeRecord::query()->max('id') + 1000;
+
+    foreach (['rme.legacy-records.show', 'rme.legacy-records.pages.show'] as $route) {
+        $params = fn (int $id): array => $route === 'rme.legacy-records.pages.show' ? [$id, 1] : [$id];
+
+        foreach ([['Accept' => 'application/json'], []] as $headers) {
+            $outOfScope = $this->actingAs($this->userA)->withHeaders($headers)->get(route($route, $params($this->archive->id)));
+            $missing = $this->actingAs($this->userA)->withHeaders($headers)->get(route($route, $params($missingId)));
+
+            $outOfScope->assertNotFound();
+            $missing->assertNotFound();
+            expect($outOfScope->getContent())->toBe($missing->getContent(), $route.' '.json_encode($headers));
+        }
+    }
+});

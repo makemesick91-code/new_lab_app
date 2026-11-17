@@ -259,10 +259,21 @@ added by their own PRs.
     - **Unchanged.** The archive branch gate (origin branch from the Nomor RM, `DoctorClinicalBranchResolver`,
       AIR-LRM-07/AIR-DAC-04), Front Office, Admin Klinik and the other non-doctor readers, the exempt roles, VOID
       handling and §1. **Not covered, recorded:** the staging import screens (`settings.rme.legacy-imports.*`,
-      `settings.rme.legacy-odontograms.*`) and the oversight legacy screens (`oversight.legacy.*`) never applied the
-      doctor patient scope; a Doctor reaches them only through a second role's permission (intake or oversight), as
-      with the native oversight screens in A1. Whether a dual-role Doctor is encounter-scoped there is an owner
-      question (follow-up OD-MEMO-A2-1, alongside OD-MEMO-B-1).
+      `settings.rme.legacy-odontograms.*`), the oversight legacy screens (`oversight.legacy.*`) and the archive void
+      routes (their `void` policies apply no doctor scope; no seeded role holds the void permissions) never applied
+      the doctor patient scope; a Doctor reaches them only through a second role's or a directly granted permission
+      (intake, oversight, void), as with the native oversight screens in A1. Whether a dual-role Doctor is
+      encounter-scoped there is an owner question (follow-up OD-MEMO-A2-1, alongside OD-MEMO-B-1).
+    - **Existence (A2 review).** Every flag-ON scope refusal is `Response::denyAsNotFound()` WITHOUT a message
+      (`readModeFor`-based legacy read, `outOfScope()`, `MedicalRecordPolicy`), so a JSON 404 out of scope is
+      byte-identical to a 404 for an archive id that does not exist (both archive controllers' `resolve()` answer
+      `abort(404, 'Not Found')`, the text `denyAsNotFound()` renders); the flag-OFF 403 keeps its message. `viewFile`
+      decides on whether `view` allowed (`Response::allowed()`), never on `=== true`. Known limit, a precondition for
+      ON: a native visit/sheet missing from route-model binding still answers JSON "No query results for model …",
+      unlike the scope's "Not Found" (doctors use the Blade pages, whose 404 bodies are identical).
+    - **Precondition for ON (A4).** The window of item 2 counts a stale open visit (an old `registered`, `waiting`,
+      `in_progress` or `cashier_pending` visit) as in service, and A2 extends that reach to every legacy archive of
+      the patient; the A4 reconcile dry run must report such visits before the flag is turned ON.
     - **Tests.** `tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php` (token `LegacyRme`) and
       `tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php` (token `LegacyOdontogram`), both
       declared in `critical_gate_mandatory_suites`.

@@ -324,7 +324,10 @@ class LegacyRmeRecordController extends Controller
             $this->scope->includesUnscopedRowsFor($user),
         );
 
-        abort_if($record === null, 404);
+        // Rule 243 §2.10 (A2 review LOW-1) — the same body as the encounter
+        // scope's 404 (`Response::denyAsNotFound()` renders "Not Found"), so a
+        // doctor cannot tell a missing archive from an out-of-scope one.
+        abort_if($record === null, 404, 'Not Found');
 
         return $record;
     }
