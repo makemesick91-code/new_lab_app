@@ -99,8 +99,9 @@ Release 2 owner decisions (2026-11-17, structured question tool and written deci
 
 The fallback is PR #661 (rule 237 §14.5a).
 
-| After #661 merged (post-merge push run 44023053296 on `0f3c3bb3`: critical gate 10,664 passed / 0 failed, PostgreSQL) | Written approval of the NEW release-2 SHA `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` | **Approve 0f3c3bb3** |
+| When | Question | Owner answer |
 |---|---|---|
+| After #661 merged (post-merge push run 44023053296 on `0f3c3bb3`: critical gate 10,664 passed / 0 failed, PostgreSQL) | Written approval of the NEW release-2 SHA `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` | **Approve 0f3c3bb3** |
 
 ### 2b. Owner decision NO-GO (2026-11-16) and the closure wave
 
