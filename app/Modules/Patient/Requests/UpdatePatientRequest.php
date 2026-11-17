@@ -31,6 +31,13 @@ class UpdatePatientRequest extends FormRequest
         $ktpChanged = $this->filled('ktp_number')
             && (string) $this->input('ktp_number') !== (string) $patient?->ktp_number;
 
+        // Rule 244 §5.3 (RM PR-4b) — every text an edit writes is text PostgreSQL
+        // can store (valid UTF-8, no NUL): a crafted value is a 422, never a
+        // failed update (500, an ERROR line). A stored value always passes:
+        // the database never held anything else. (A changed NIK is already held
+        // to 16 digits; the place of birth has its own single-line pattern.)
+        $text = 'regex:'.PatientCoreFields::TEXT_PATTERN;
+
         return [
             'clinic_id' => ['required', 'integer', 'exists:mst_clinics,id'],
             'doctor_id' => ['required', 'integer', 'exists:mst_doctors,id'],
@@ -39,15 +46,15 @@ class UpdatePatientRequest extends FormRequest
             // registration date are frozen on edit: not accepted here, dropped by
             // PatientService::update(), shown read-only on the form.
             'ktp_number' => ['nullable', 'string', 'max:16', ...($ktpChanged ? PatientCoreFields::NIK_RULES : []), Rule::unique('mst_patients', 'ktp_number')->ignore($patientId)],
-            'name' => ['required', 'string', 'max:150'],
+            'name' => ['required', 'string', 'max:150', $text],
             'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'place_of_birth' => PatientCoreFields::placeOfBirthRules(required: false),
             'date_of_birth' => ['nullable', 'date', ...($dateOfBirthChanged ? PatientCoreFields::birthDateBounds() : [])],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'whatsapp_number' => ['nullable', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'max:150'],
-            'address' => ['nullable', 'string', 'max:1000'],
-            'occupation' => ['nullable', 'string', 'max:150'],
+            'phone' => ['nullable', 'string', 'max:50', $text],
+            'whatsapp_number' => ['nullable', 'string', 'max:50', $text],
+            'email' => ['nullable', 'string', $text, 'email', 'max:150'],
+            'address' => ['nullable', 'string', 'max:1000', $text],
+            'occupation' => ['nullable', 'string', 'max:150', $text],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
@@ -64,6 +71,8 @@ class UpdatePatientRequest extends FormRequest
     {
         return [
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            'name.regex' => 'Nama berisi karakter yang tidak valid.',
+            'email.regex' => 'E-mail berisi karakter yang tidak valid.',
             ...PatientCoreFields::messages(),
         ];
     }

@@ -34,7 +34,8 @@ declare(strict_types=1);
 | (invalid UTF-8, NUL) is a 422 on both forms, and a database failure on the
 | patient insert or update is value-free in the log (CF-33..CF-36); the readers
 | reach open exceptions from the restricted index (CF-37); the page shows and
-| audits a note only for an open exception (CF-38).
+| audits a note only for an open exception (CF-38); an edit refuses the same
+| text with a 422 (CF-39).
 |
 | Selected by the existing `FrontOffice` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper prefix
@@ -1442,4 +1443,58 @@ it('CF-38 shows and audits a note only with an open exception: a stray note with
         ->assertDontSee('xq9z');
 
     expect(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_REASON_VIEWED)->exists())->toBeFalse();
+});
+
+it('CF-39 refuses invalid UTF-8 and the NUL byte in every text field an edit writes (422, never a 500), while an unchanged legacy value still saves', function (): void {
+    // Legacy text PostgreSQL stores: a short NIK, a tab, a line feed and a BEL.
+    $legacy = Patient::factory()->create([
+        'branch_id' => $this->branch->id,
+        'medical_record_number' => 'DG-FCF1-2026-0077',
+        'name' => "Pasien Lama\tTab",
+        'address' => "Jl. Lama\nBaris Dua",
+        'occupation' => "Petani\x07",
+        'phone' => '0812 3456',
+        'whatsapp_number' => null,
+        'email' => null,
+        'place_of_birth' => null,
+        'ktp_number' => '7371011705',
+    ]);
+    $registrar = fncfMasterRegistrar();
+    $unchanged = [
+        'clinic_id' => $this->clinic->id,
+        'doctor_id' => $this->doctor->id,
+        'name' => $legacy->name,
+        'address' => $legacy->address,
+        'occupation' => $legacy->occupation,
+        'phone' => $legacy->phone,
+        'ktp_number' => $legacy->ktp_number,
+        'is_active' => 1,
+    ];
+
+    // In the middle of the value: a request trims a NUL at either end.
+    $spoil = fn (string $field, string $bad): string => match ($field) {
+        'email' => 'pasien'.$bad.'@contoh.test',
+        'ktp_number' => substr(FNCF_NIK, 0, 8).$bad.substr(FNCF_NIK, 8),
+        default => 'Isi'.$bad.'Teks',
+    };
+
+    foreach ([FNCF_BAD_UTF8, "\x00"] as $bad) {
+        foreach (['name', 'email', 'phone', 'whatsapp_number', 'address', 'occupation', 'place_of_birth', 'ktp_number'] as $field) {
+            $this->actingAs($registrar)
+                ->put(route('settings.patients.update', $legacy), array_merge($unchanged, [$field => $spoil($field, $bad)]))
+                ->assertStatus(302)
+                ->assertSessionHasErrors($field);
+        }
+    }
+
+    expect($legacy->fresh()->only(['name', 'address', 'occupation', 'phone', 'ktp_number']))
+        ->toBe(['name' => "Pasien Lama\tTab", 'address' => "Jl. Lama\nBaris Dua", 'occupation' => "Petani\x07", 'phone' => '0812 3456', 'ktp_number' => '7371011705']);
+
+    // The unchanged legacy values themselves still save.
+    $this->actingAs($registrar)
+        ->put(route('settings.patients.update', $legacy), $unchanged)
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('settings.patients.index'));
+
+    expect($legacy->fresh()->occupation)->toBe("Petani\x07");
 });
