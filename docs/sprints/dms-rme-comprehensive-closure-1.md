@@ -468,6 +468,31 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 
 Pending owner steps after release 2: §10.3b (log read: backup + migrations), §10.4 (PermissionSeeder → RoleSeeder → permission:cache-reset), §10.5 (consent-signature copy **dry run only**, counts reported; `--apply` needs a separate approval; the fallback stays), and a visual check of one pre-release consent's signatures (rule 237 §14.5a).
 
+### 9.7 Program status after release 2 — OPEN (no GO tag)
+
+Release 2 is **DEPLOYED and PRODUCTION VERIFIED (read-only)**. The memo wave is **PENDING**. The program
+DMS-RME-COMPREHENSIVE-CLOSURE-1 stays **OPEN**; the final GO tag `dms-rme-comprehensive-closure-1-go` is **not
+allowed** until every mandatory item below is done, released and production verified (owner directive, §2a).
+
+| Pending item | Owner | Acceptance criteria | Evidence required |
+|---|---|---|---|
+| Release 2 follow-ups (§9.6) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
+| Consent signature copy `--apply` | Owner (separate approval after the dry run) | `CONSENT_SIGNATURE_MIGRATION=APPLIED`, `CONFLICT=0`, `VERIFY_FAILED=0`, nothing deleted | command output; re-run dry run shows `ALREADY_COPIED` = total |
+| Removing the read fallback (rule 237 §14.5a) | Owner (separate approval after the copy is verified) | all needed copies verified; fallback removed by a reviewed PR | PR + CI + release evidence |
+| Memo M3.3 (rule 240) PR1–PR7 | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
+| Memo PTM (rules 241/242) PR1–PR3 (+ PR4/PR5 clinical photos) | Engineering; Owner supplies the clause 8/9 wording | PR1–PR3 ship together; v2026.2 stays **inactive** in production until the owner approves the final wording; photos flag `rme.clinical_photos` stays OFF until an owner decision | review records, CI, deploy; owner's written wording approval before any activation |
+| Memo RM number (rule 244) PR-2, PR-3, PR-3b, PR-4 (+ PR-5 OCR suggestion, PR-6 records) | Engineering; owner approves merges/release | auto number, claim cap per batch, paper-card reason (restricted), core fields + no-phone; existing numbers never changed | review records, CI, deploy, production smoke of registration |
+| Memo doctor scope (rule 243) B (#660), A1, A1b, A2, A3, A4, C1, C2 | Engineering; Owner decides turning the flag ON | B effective on release; encounter scope flag `rme.doctor_encounter_scope` stays OFF until A2–A4 (incl. the A3 list surfaces), C1–C2, M3.3 released, a dry run, doctor UAT and an owner decision | review records, CI, deploy; dry-run + UAT records; owner decision |
+| CC1-ADJ-1 adjacent-visit arrows (#662) | Engineering; owner approves merge/release | arrows offer only visits the viewer may open | review, CI, deploy, production smoke |
+| PR6 SATUSEHAT submission guard | Owner grants the `workflow` gh scope | the local PR6 pushed, reviewed, CI green | PR + CI |
+| CC1-CI-1 docs-only push run after a cancelled code run | Owner decision on a workflow fix (needs the `workflow` scope) | either a workflow fix or a recorded operating rule (dispatch run on release SHAs) | decision record |
+| D4 readiness ceremony | BLOCKED_EXTERNAL | §10.7 | ceremony record |
+| D5 branch confirmations; OPS-KTP timer | Owner (human operation) | §10.8, §10.1 | signed confirmations; timer status |
+| R7-F, P8-FIX1, P8-SEED, R8A-3, RA-4, D3-NEW-3, D3-NEW-5, RA-3, RA-5 | Owner (definition / decision) | owner definition recorded | decision record |
+| M5.1/M5.2 lab fees, post-payment correction, rollout | Owner (discussion) | owner decision | decision record |
+| M6.2 storage cost | Owner (verified rate) | report + rate | `storage:usage-report` output + rate source |
+| M6.1 / C4 organizational approvals | Owner / management | approvals exist before any all-branch rollout (no BUSINESS ROLLOUT APPROVED claim without evidence) | approval records |
+
 ## 10. Owner actions prepared by this program
 
 ### 10.1 OPS-KTP — install the KTP temporary-scan prune timer (root, owner's admin password)
