@@ -105,8 +105,9 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   `RepositoryArtifactHygieneTest`). Branch on `$odontogram->exists` before `route()` with the model. Source:
   rule 110 §1.
 - **AIR-RMC-16** Keep a previous visit's chart permanently read-only — no consent or pre-consent permission reopens
-  it — while a finalized chart on the live encounter stays revisable. Enforce in `OdontogramService`, not by hiding
-  controls; `OdontogramPolicy::update` keeps answering only role/branch/patient scope. Source: rule 109 §4, rule 134 §2.
+  it — and a finalized chart is locked on any encounter (AIR-RMC-57). Enforce in `OdontogramService`, not by hiding
+  controls; `OdontogramPolicy::update` answers role/branch/patient scope, then denies only a finalized chart. Source:
+  rule 109 §4, rule 134 §2, rule 240 §1.
 - **AIR-RMC-17** Serve "Riwayat Odontogram Pasien" via `OdontogramService::patientHistoryForVisit()`: patient-centric,
   scoped to the RME branch set plus `DoctorPatientScopeService`, excluding the current visit and empty drafts
   (`Odontogram::hasRecordedTeeth()`), with no mutation control, rendered outside the
@@ -143,8 +144,8 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 
 - **AIR-RMC-22** Handwriting RM is the primary clinical input; SOAP stays hidden from the doctor UI (old values show
   only as the read-only "Data SOAP (Legacy)" card) — never re-open SOAP input. Finalization requires handwriting
-  (`MedicalRecordService::hasRequiredHandwriting()`); a finalized record stays editable inside an authorized,
-  consented encounter. Source: archive Sprint 20 closure; rule 109 §2b.
+  (`MedicalRecordService::hasRequiredHandwriting()`); a final sheet is locked (AIR-RMC-57). Source: archive Sprint 20
+  closure; rule 109 §2b; rule 240 §1.
 - **AIR-RMC-23** Resolve the patient-centric book with `PatientRmWorkspaceResolver`: one sheet per visit
   (`UNIQUE(clinic_visit_id)`), canonical anchor = earliest non-cancelled RME visit, any other visit redirects to the
   canonical URL with an IDOR-validated `?source_visit_id=`; the handwriting book is the earliest self-anchored sheet
@@ -278,6 +279,10 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-56** Sign a NEW consent on template v2026.2 (clause 8 documentation, clause 9 publication: two explicit
   YA/TIDAK) only with flag `rme.consent_template_v2026_2` on AND wording `approved` without the draft marker; clause 9
   gates nothing; history unchanged. Source: rule 241 §6.
+- **AIR-RMC-57** A final sheet (notes, diagnoses, override) and a finalized odontogram are locked:
+  `MedicalRecordPolicy::editSheet` / `OdontogramPolicy::update` (scope first), and the service decides on the row it
+  locked after the visit (binds Super Admin), answering before a missing PTM (AIR-RMC-55); correction only by
+  supervised amendment, which ships in the same release. Rule 240 §1, §1.8.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
@@ -322,6 +327,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Read scope; printed Rx identity; authoring allowlist; numbers |
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
+| `.cursor/rules/240-rme-finalized-record-lock-and-amendment.mdc` | Final sheet and finalized odontogram locked; supervised amendment |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
 | `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM double signature: countersignature (§1); both signatures gate writing, UI states, capture roles (§2–§5); consent template v2026.2, inactive until approved wording (§6) |
 
