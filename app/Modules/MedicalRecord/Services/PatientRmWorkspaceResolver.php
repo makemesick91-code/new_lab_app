@@ -222,20 +222,15 @@ class PatientRmWorkspaceResolver
     }
 
     /**
-     * Validate a client-supplied source_visit_id (IDOR boundary). Returns the
-     * visit only when it belongs to the same patient AND an accessible RME
-     * branch; otherwise null (forged / cross-patient / cross-branch ignored).
-     */
-    /**
-     * Rule 243 §2.12 (PR A4, closes §2.8 item 8 (a)) — the visit a doctor works
-     * from at the patient's workspace address, chosen on the server: the
-     * patient's live encounter when it is the doctor's own
-     * ({@see ActiveEncounterResolver::currentFor()}), else one of the doctor's
-     * own pre-exam (registered, waiting, in_progress — always in service) RME
-     * visits of the patient: the one `$sourceVisitId` names when it is one of
-     * them, else the latest (visit_date, id). A source id naming any other visit
-     * (another doctor's, the doctor's own past visit) chooses nothing. Null when
-     * the doctor has no such visit.
+     * Rule 243 §2.12 (PR A4, closes §2.8 item 8 (a); review LOW-1) — the visit a
+     * doctor works from at the patient's workspace address, chosen on the
+     * server, in this order: the patient's live encounter when it is the
+     * doctor's own ({@see ActiveEncounterResolver::currentFor()}); else the visit
+     * `$sourceVisitId` names when it is ANY RME visit of the doctor's own with
+     * the patient (a cashier_pending or past one needs no room, so the gate lets
+     * it through); else the doctor's latest own pre-exam visit (visit_date, id).
+     * A source id naming another doctor's visit chooses nothing. Null when the
+     * doctor has none of these.
      */
     public function doctorWorkingVisit(int $patientId, int $doctorId, ?int $sourceVisitId): ?ClinicVisit
     {
@@ -245,18 +240,25 @@ class PatientRmWorkspaceResolver
             return $live;
         }
 
-        $own = ClinicVisit::query()
+        $own = fn () => ClinicVisit::query()
             ->whereIn('branch_id', $this->rmeBranchIds())
             ->where('patient_id', $patientId)
-            ->where('doctor_id', $doctorId)
+            ->where('doctor_id', $doctorId);
+
+        $source = $sourceVisitId === null ? null : $own()->whereKey($sourceVisitId)->first();
+
+        return $source ?? $own()
             ->whereIn('status', ClinicVisit::PRE_EXAM_STATUSES)
             ->orderByDesc('visit_date')
             ->orderByDesc('id')
-            ->get();
-
-        return ($sourceVisitId === null ? null : $own->firstWhere('id', $sourceVisitId)) ?? $own->first();
+            ->first();
     }
 
+    /**
+     * Validate a client-supplied source_visit_id (IDOR boundary). Returns the
+     * visit only when it belongs to the same patient AND an accessible RME
+     * branch; otherwise null (forged / cross-patient / cross-branch ignored).
+     */
     public function resolveSourceVisit(int $patientId, ?int $sourceVisitId): ?ClinicVisit
     {
         if ($sourceVisitId === null) {

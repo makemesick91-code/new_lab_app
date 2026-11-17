@@ -10,8 +10,10 @@ declare(strict_types=1);
 | under `rme.doctor_encounter_scope`:
 |  - with the flag ON, `ClinicVisitService::assignRoom()` changes the visit's
 |    doctor only while it is `registered` or `waiting`; an `in_progress` visit
-|    moves room only (rule 228 §4 extended, owner default 2), Super Admin
-|    included (the rule lives in the service, past `Gate::before`);
+|    keeps its doctor and moves only into the room that doctor is online in,
+|    any other move refused (rule 228 §4 extended, owner default 2; review
+|    MEDIUM-1), Super Admin included (the rule lives in the service, past
+|    `Gate::before`);
 |  - with the flag ON, a doctor change or a cancel ends the former doctor's
 |    `auto_visit` assignment for that patient (unassigned_at + reason code)
 |    inside the same transaction, unless that doctor is still the doctor of
@@ -45,12 +47,16 @@ use App\Support\Storage\ClinicalEvidenceStorage;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 const DPSR_FLAG = 'rme.doctor_encounter_scope';
 
 const DPSR_REVOKED = 'PATIENT_DOCTOR_ASSIGNMENT_REVOKED';
+
+/** Review MEDIUM-1 — the refusal of an in_progress move away from its doctor (flag ON). */
+const DPSR_DOCTOR_MOVES_FIRST = 'Dokter pemeriksa harus pindah ruangan terlebih dahulu';
 
 /** The tooltip of the locked workflow tabs of a roomless visit. */
 const DPSR_ROOMLESS_TABS = 'Pasien belum ditempatkan ke ruangan perawatan';
@@ -144,6 +150,18 @@ function dpsrMove(User $actor, ClinicVisit $visit, ClinicRoom $room): void
         ->assertSessionHasNoErrors();
 }
 
+/** PATCH the room and expect a refusal; returns the clinic_room_id message. */
+function dpsrMoveRefused(User $actor, ClinicVisit $visit, ClinicRoom $room): string
+{
+    test()->actingAs($actor)
+        ->from(route('rme.patient-queue.index'))
+        ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
+        ->assertRedirect()
+        ->assertSessionHasErrors('clinic_room_id');
+
+    return (string) session('errors')->first('clinic_room_id');
+}
+
 function dpsrRevocations(): Collection
 {
     return AuditLog::query()->where('action', DPSR_REVOKED)->orderBy('id')->get();
@@ -187,20 +205,56 @@ it('R-02 changes the doctor and keeps the former doctor\'s row exactly as today 
         ->and(dpsrRevocations())->toHaveCount(0);
 })->with(['registered' => [ClinicVisit::STATUS_REGISTERED], 'waiting' => [ClinicVisit::STATUS_WAITING]]);
 
-it('R-03 moves an in_progress visit\'s room only with the flag ON, and changes its doctor as today with it OFF', function (bool $on) {
+it('R-03 refuses to move an in_progress visit into another doctor\'s room with the flag ON, and changes its doctor as today with it OFF', function (bool $on) {
     dpsrFlag($on);
     $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
     $row = dpsrPlaced($visit);
 
-    dpsrMove(test()->dpsrAdmin, $visit, test()->dpsrRoomB);
+    if ($on) {
+        // Review MEDIUM-1: moved there, the visit would sit in B's room as A's
+        // encounter — A refused by rule 138, B by the encounter scope.
+        expect(dpsrMoveRefused(test()->dpsrAdmin, $visit, test()->dpsrRoomB))->toContain(DPSR_DOCTOR_MOVES_FIRST);
+    } else {
+        dpsrMove(test()->dpsrAdmin, $visit, test()->dpsrRoomB);
+    }
 
     $fresh = $visit->fresh();
 
-    expect((int) $fresh->clinic_room_id)->toBe((int) test()->dpsrRoomB->id)
+    expect((int) $fresh->clinic_room_id)->toBe((int) ($on ? test()->dpsrRoomA->id : test()->dpsrRoomB->id))
         ->and((int) $fresh->doctor_id)->toBe((int) ($on ? test()->dpsrDoctorA->id : test()->dpsrDoctorB->id))
         ->and($row->fresh()->unassigned_at)->toBeNull()
         ->and(dpsrActiveRow(test()->dpsrDoctorB) === null)->toBe($on)
         ->and(dpsrRevocations())->toHaveCount(0);
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
+
+it('R-03b refuses an in_progress move into an empty room: the in-progress message with the flag ON, today\'s with it OFF', function (bool $on) {
+    dpsrFlag($on);
+    $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+
+    $message = dpsrMoveRefused(test()->dpsrAdmin, $visit, test()->dpsrRoomC);
+
+    expect($message)->toContain($on ? DPSR_DOCTOR_MOVES_FIRST : 'Belum ada dokter online di ruangan ini.')
+        ->and((int) $visit->fresh()->clinic_room_id)->toBe((int) test()->dpsrRoomA->id)
+        ->and((int) $visit->fresh()->doctor_id)->toBe((int) test()->dpsrDoctorA->id);
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
+
+it('R-03c moves an in_progress visit into the room its own doctor moved to first, and the doctor keeps authoring', function (bool $on) {
+    dpsrFlag($on);
+    $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    $row = dpsrPlaced($visit);
+    // The examining doctor goes to the empty room C first.
+    rmeMakeDoctorOnline(test()->dpsrDoctorA, test()->dpsrBranch, test()->dpsrRoomC, test()->dpsrUserA);
+
+    dpsrMove(test()->dpsrAdmin, $visit, test()->dpsrRoomC);
+
+    $fresh = $visit->fresh();
+
+    expect((int) $fresh->clinic_room_id)->toBe((int) test()->dpsrRoomC->id)
+        ->and((int) $fresh->doctor_id)->toBe((int) test()->dpsrDoctorA->id)
+        ->and($row->fresh()->unassigned_at)->toBeNull()
+        ->and(dpsrRevocations())->toHaveCount(0)
+        // Rule 138 and the write scope both admit the doctor in the new room.
+        ->and(Gate::forUser(test()->dpsrUserA->fresh())->allows('update', $fresh))->toBeTrue();
 })->with(['flag ON' => [true], 'flag OFF' => [false]]);
 
 it('R-04 keeps a cashier_pending visit\'s doctor whatever the flag (rule 228 §4 unchanged)', function (bool $on) {
@@ -234,8 +288,8 @@ it('R-05 ends the doctor\'s auto_visit row when the visit is cancelled (flag ON)
 })->with(['flag ON' => [true], 'flag OFF' => [false]])
     ->with(['registered' => [ClinicVisit::STATUS_REGISTERED], 'waiting' => [ClinicVisit::STATUS_WAITING]]);
 
-it('R-06 keeps the former doctor\'s row while that doctor is still the doctor of another visit of the patient', function () {
-    dpsrFlag(true);
+it('R-06 keeps the former doctor\'s row while that doctor is still the doctor of another visit of the patient', function (bool $on) {
+    dpsrFlag($on);
     // A examined the patient last month; today's queue visit moves to B.
     dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_COMPLETED, ['visit_date' => '2026-10-01', 'completed_at' => '2026-10-01 03:00:00']);
     $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_WAITING);
@@ -246,10 +300,10 @@ it('R-06 keeps the former doctor\'s row while that doctor is still the doctor of
     expect((int) $visit->fresh()->doctor_id)->toBe((int) test()->dpsrDoctorB->id)
         ->and($row->fresh()->unassigned_at)->toBeNull()
         ->and(dpsrRevocations())->toHaveCount(0);
-});
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
 
-it('R-07 never ends a manual or shared row, nor a row of another patient', function () {
-    dpsrFlag(true);
+it('R-07 never ends a manual or shared row, nor a row of another patient', function (bool $on) {
+    dpsrFlag($on);
     $service = app(PatientDoctorAssignmentService::class);
     $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_WAITING);
     // A's only row for this patient is MANUAL (plan default 1: it grants nothing
@@ -264,18 +318,24 @@ it('R-07 never ends a manual or shared row, nor a row of another patient', funct
     expect($manual->fresh()->unassigned_at)->toBeNull()
         ->and($otherRow->fresh()->unassigned_at)->toBeNull()
         ->and(dpsrRevocations())->toHaveCount(0);
-});
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
 
-it('R-08 binds Super Admin in the service: in_progress moves room only, a doctor change revokes', function () {
-    dpsrFlag(true);
+it('R-08 binds Super Admin in the service: an in_progress move away from its doctor is refused, a doctor change revokes (flag ON)', function (bool $on) {
+    dpsrFlag($on);
     $root = superAdmin();
     $service = app(ClinicVisitService::class);
 
     $live = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
-    $service->assignRoom($live, (int) test()->dpsrRoomB->id, $root);
 
-    expect((int) $live->fresh()->doctor_id)->toBe((int) test()->dpsrDoctorA->id)
-        ->and((int) $live->fresh()->clinic_room_id)->toBe((int) test()->dpsrRoomB->id);
+    if ($on) {
+        expect(fn () => $service->assignRoom($live, (int) test()->dpsrRoomB->id, $root))
+            ->toThrow(ValidationException::class, DPSR_DOCTOR_MOVES_FIRST);
+    } else {
+        $service->assignRoom($live, (int) test()->dpsrRoomB->id, $root);
+    }
+
+    expect((int) $live->fresh()->doctor_id)->toBe((int) ($on ? test()->dpsrDoctorA->id : test()->dpsrDoctorB->id))
+        ->and((int) $live->fresh()->clinic_room_id)->toBe((int) ($on ? test()->dpsrRoomA->id : test()->dpsrRoomB->id));
 
     $other = Patient::factory()->create(['branch_id' => test()->dpsrBranch->id]);
     $queued = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_WAITING, ['patient_id' => $other->id]);
@@ -283,9 +343,9 @@ it('R-08 binds Super Admin in the service: in_progress moves room only, a doctor
     $service->assignRoom($queued, (int) test()->dpsrRoomB->id, $root);
 
     expect((int) $queued->fresh()->doctor_id)->toBe((int) test()->dpsrDoctorB->id)
-        ->and($row->fresh()->unassigned_reason)->toBe('visit_doctor_changed')
-        ->and((int) dpsrRevocations()->first()->performed_by)->toBe((int) $root->id);
-});
+        ->and($row->fresh()->unassigned_reason)->toBe($on ? 'visit_doctor_changed' : null)
+        ->and(dpsrRevocations()->pluck('performed_by')->map(fn ($id) => (int) $id)->all())->toBe($on ? [(int) $root->id] : []);
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
 
 it('R-09 audits a revocation with ids and a reason code only', function () {
     dpsrFlag(true);
@@ -314,8 +374,8 @@ it('R-09 audits a revocation with ids and a reason code only', function () {
         ->and($payload)->not->toContain((string) $visit->visit_number);
 });
 
-it('R-10 keeps the visit move and the revocation one unit: a refused move ends nothing', function () {
-    dpsrFlag(true);
+it('R-10 keeps the visit move and the revocation one unit: a refused move ends nothing', function (bool $on) {
+    dpsrFlag($on);
     $visit = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_WAITING);
     $row = dpsrPlaced($visit);
     // Cancelled behind the caller's back: the locked re-check refuses the move.
@@ -326,7 +386,7 @@ it('R-10 keeps the visit move and the revocation one unit: a refused move ends n
 
     expect($row->fresh()->unassigned_at)->toBeNull()
         ->and(dpsrRevocations())->toHaveCount(0);
-});
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
 
 /*
 |--------------------------------------------------------------------------
@@ -412,6 +472,24 @@ it('(a)-04 lets source_visit_id choose only among the doctor\'s own pre-exam vis
     test()->actingAs(test()->dpsrUserA)
         ->get(route('rme.visits.medical-record.show', [$anchor, 'source_visit_id' => $olderRoomless->id]))
         ->assertRedirect(route('rme.visits.show', $olderRoomless));
+});
+
+it('(a)-06 lets the doctor\'s own source visit of any status choose, before the latest own pre-exam visit (flag ON)', function () {
+    dpsrFlag(true);
+    $anchor = dpsrRoomlessAnchor();
+    // Review LOW-1: the doctor works from their own cashier_pending visit V3; an
+    // unrelated stale roomless registered visit V4 of theirs must not take over.
+    $v3 = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_CASHIER_PENDING);
+    $v4 = dpsrVisit(test()->dpsrDoctorA, ClinicVisit::STATUS_REGISTERED, ['visit_date' => '2026-11-12', 'clinic_room_id' => null]);
+
+    test()->actingAs(test()->dpsrUserA)
+        ->get(route('rme.visits.medical-record.show', [$anchor, 'source_visit_id' => $v3->id]))
+        ->assertOk();
+
+    // Without a source visit the server falls back to the latest own pre-exam visit.
+    test()->actingAs(test()->dpsrUserA)
+        ->get(route('rme.visits.medical-record.show', $anchor))
+        ->assertRedirect(route('rme.visits.show', $v4));
 });
 
 it('(a)-05 keeps bouncing on the roomless anchor itself with the flag OFF', function () {

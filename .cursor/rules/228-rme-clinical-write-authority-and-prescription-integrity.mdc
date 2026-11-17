@@ -60,7 +60,8 @@ patient-doctor assignment stay with the doctor who examined. Pre-examination pla
 doctor of the room exactly as before. Terminal visits stay refused.
 
 **REVISED IN PART by rule 243 §2.12 (DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2, PR A4; owner default 2):** with
-`rme.doctor_encounter_scope` ON an `in_progress` visit also moves room only (Super Admin included), and a doctor change
+`rme.doctor_encounter_scope` ON an `in_progress` visit also keeps its doctor and moves only into the room its own
+doctor is online in (any other move is refused, Super Admin included), and a doctor change
 on a `registered`/`waiting` visit or a cancel ends the former doctor's now-stale `auto_visit` assignment. With the flag
 OFF this section is unchanged.
 

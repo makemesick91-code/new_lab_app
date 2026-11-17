@@ -221,8 +221,8 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   (`RmeRecordVersionService::readAbility()`; the requester too), the PTM banner describes only a readable
   encounter. ON needs A4 and M3.3 released first. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
-- **AIR-DAC-44** A4, flag ON only (OFF = today): `assignRoom` keeps an `in_progress` visit's doctor (room only, as
-  `cashier_pending`; Super Admin bound in the service); a doctor change on a queued visit or a cancel ends the former
+- **AIR-DAC-44** A4, flag ON only (OFF = today): `assignRoom` moves an `in_progress` visit only into the room its own
+  doctor is online in, keeping the doctor (else refused; Super Admin bound in the service); a doctor change on a queued visit or a cancel ends the former
   doctor's `auto_visit` row when no live visit of the patient still has that doctor
   (`PatientDoctorAssignmentService::staleAutoVisitRows()`, one definition): `unassigned_at` + `unassigned_reason`, in
   the visit's transaction, audited ids only; manual/shared rows never. `rme:doctor-assignments-reconcile`: dry run

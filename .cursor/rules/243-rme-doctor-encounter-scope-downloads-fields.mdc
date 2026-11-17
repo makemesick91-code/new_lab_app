@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way. §2.12 (integration onto M3.3 + PTM) filters the book's pages by rule 240's author stamp, keeps a book on an unreadable anchor's versions and amendments from the doctor and the PTM banner from describing another doctor's encounter. §2.13 (PR A4), flag ON only: an in_progress visit moved to another room keeps its doctor (rule 228 §4 extended, Super Admin bound); a doctor change on a queued visit or a cancel ends the former doctor's now-stale auto_visit assignment (unassigned_at + reason code, audited ids only); `rme:doctor-assignments-reconcile` (dry run counts and visit ids; `--apply --confirm-plan=<digest>` sets unassigned_at only) also reports stale open visits and roomless pre-exam anchors; the room gate picks the doctor's working visit on the server, the workflow tabs never show an unreadable anchor, and another doctor's roomless pre-exam visit answers 404.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way. §2.12 (integration onto M3.3 + PTM) filters the book's pages by rule 240's author stamp, keeps a book on an unreadable anchor's versions and amendments from the doctor and the PTM banner from describing another doctor's encounter. §2.13 (PR A4), flag ON only: an in_progress visit moves only into the room its own doctor is online in, keeping its doctor, and any other move is refused (rule 228 §4 extended, Super Admin bound); a doctor change on a queued visit or a cancel ends the former doctor's now-stale auto_visit assignment (unassigned_at + reason code, audited ids only); `rme:doctor-assignments-reconcile` (dry run counts and visit ids; `--apply --confirm-plan=<digest>` sets unassigned_at only) also reports stale open visits and roomless pre-exam anchors; the room gate picks the doctor's working visit on the server, the workflow tabs never show an unreadable anchor, and another doctor's roomless pre-exam visit answers 404.
 globs:
   - "app/Modules/RME/Services/DoctorRoomScopeService.php"
   - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
@@ -232,7 +232,8 @@ added by their own PRs.
    book's pages follow their author stamp (`authored_clinic_visit_id`, `listsVisitFor()` on the authoring visit).
    Own mode still lists no book page (item 12, follow-up).
    Recorded by the A3 re-review, each to be closed in A4 before the flag is turned ON (flag-ON only, reads only, no
-   write path) — **all three done, A4** (item 13): (a) at the anchor address `EnsureVisitRoomAssigned::gatedVisit()` gates the doctor's own roomless
+   write path) — **all three done, A4** (item 13; (a) as built: the doctor's own live encounter, then the source
+   visit when it is any visit of the doctor's own, then the latest own pre-exam visit): (a) at the anchor address `EnsureVisitRoomAssigned::gatedVisit()` gates the doctor's own roomless
    visit only when the request's `source_visit_id` names it — choose the gated visit on the server (the doctor's own
    live encounter, then an own in-service pre-exam visit of the patient) and use `source_visit_id` only to choose
    among the doctor's own visits; until then the room gate there is a redirect only and the RME authoring gate is
@@ -392,7 +393,7 @@ added by their own PRs.
       anchor of another doctor bounced the workspace to that visit's page and the first-page POST created nothing.
       While the encounter scope applies and the URL visit is the canonical anchor the doctor may not read, the gate
       asks instead the visit the doctor works from, chosen on the server since A4 (item 13 (a): the doctor's own
-      live encounter, else an own pre-exam visit of the patient, `source_visit_id` choosing only among those), else
+      live encounter, else the source visit when it is the doctor's own, else the latest own pre-exam visit), else
       nothing (writes still need the doctor's own consented in-progress encounter). A readable anchor (a new
       patient's first visit is the doctor's own encounter) and every other route stay gated as before; with the
       flag OFF the bounce is unchanged (pre-existing, not a regression). The A4 dry run reports these anchors
@@ -498,14 +499,21 @@ added by their own PRs.
 13. **Revocation, the reconcile command and the A3 preconditions (PR A4).** Everything here applies with the flag ON
     only; with it OFF `assignRoom`, the cancel, the room gate and the workspace are exactly as before. Revises rule
     228 §4 (OD-5-3) for the flag ON (REVISED IN PART marker there).
-    - **Room-only move.** `ClinicVisitService::assignRoom()` decides on the LOCKED row: `cashier_pending` moves the
-      room only whatever the flag (rule 228 §4), and with the flag ON so does `in_progress` (owner default 2, the
-      plan's "room-only move extended to in_progress"); only `registered` and `waiting` take the online doctor of
-      the new room. It lives in the service, so it binds every caller, Super Admin included (CG-06). Decided flag
-      ON only: the plan ships A behind its flag ("flag OFF = today's behaviour exactly") and nothing in it lifts this
-      item; with the flag OFF same-room co-authoring (OD-5-1) still lets the new room's doctor continue an
-      encounter, while with it ON only the visit's own doctor may write, so a doctor change mid-examination would
-      lock the examining doctor out of their own consented encounter.
+    - **An examination in progress follows its doctor.** `ClinicVisitService::assignRoom()` decides on the LOCKED
+      row: `cashier_pending` moves the room only whatever the flag (rule 228 §4); `registered` and `waiting` take the
+      online doctor of the new room; and with the flag ON an `in_progress` visit keeps its doctor (owner default 2,
+      the plan's "room-only move extended to in_progress") and moves ONLY into a room whose online doctor is the
+      visit's own doctor — the doctor goes online there first, then the patient is moved. Any other destination
+      (another doctor's room, an empty room, a room with two doctors) is refused with
+      `ClinicVisitService::IN_PROGRESS_MOVE_REFUSED` ("Dokter pemeriksa harus pindah ruangan terlebih dahulu…");
+      the empty-room refusal waits for the locked row so it carries that message. Why (review MEDIUM-1): only the
+      visit's own doctor may write on it (item 5), and rule 138 binds an ACTIVE visit to the room its reader is
+      online in. A room-only move into doctor B's room left doctor A's consented encounter in room B: A refused by
+      rule 138 (403), B by the encounter scope (404), and A unable to follow ("sedang digunakan oleh dokter lain").
+      It lives in the service, so it binds every caller, Super Admin included (CG-06). Decided flag ON only: the
+      plan ships A behind its flag ("flag OFF = today's behaviour exactly") and nothing in it lifts this item; with
+      the flag OFF the in-progress visit takes the new room's doctor as before, and same-room co-authoring (OD-5-1)
+      lets that doctor continue the encounter.
     - **Revocation.** One definition of a stale row, `PatientDoctorAssignmentService::staleAutoVisitRows()`: an
       active `auto_visit` row such that no visit of its patient that is neither cancelled nor soft-deleted has its
       doctor. When `assignRoom` changes a queued visit's doctor, and when `transitionStatus` cancels a visit that has
@@ -513,7 +521,9 @@ added by their own PRs.
       `unassigned_at` and `unassigned_reason` (`visit_doctor_changed` / `visit_cancelled`; additive column,
       migration `2026_11_18_300001`; the existing `reason` is why a row was CREATED and is not reused), under the
       row lock, inside the transaction that writes the visit (after the visit row lock, the order
-      `ensureAssignedFromVisit` already uses), so the move or cancel and the revocation commit or fail together. It
+      `ensureAssignedFromVisit` already uses; on a doctor swap both doctors' active rows are locked first, in
+      doctor_id order, `lockActiveRowsInDoctorOrder()`, so two swaps in opposite directions cannot deadlock), so
+      the move or cancel and the revocation commit or fail together. It
       audits `PATIENT_DOCTOR_ASSIGNMENT_REVOKED` on the row with ids and the reason code only (`clinic_visit_id`,
       `patient_id`, `doctor_id`, `replacement_doctor_id`, `reason`) and the explicit actor. A row the former doctor
       still holds through another live visit of the patient (an earlier completed visit, a second queued one) is
@@ -550,11 +560,13 @@ added by their own PRs.
       no runbook for them.
     - **(a) The room gate picks the working visit on the server.** At the anchor address
       (`EnsureVisitRoomAssigned::gatedVisit()`, anchor unreadable) the gate asks
-      `PatientRmWorkspaceResolver::doctorWorkingVisit()`: the patient's live encounter
-      (`ActiveEncounterResolver::currentFor()`) when it is the doctor's own, else the doctor's own pre-exam RME
-      visit of the patient that `source_visit_id` names, else the latest of them (visit_date, id); a
-      `source_visit_id` naming any other visit chooses nothing. So the doctor's own roomless queued visit is gated
-      whatever the URL says.
+      `PatientRmWorkspaceResolver::doctorWorkingVisit()`, in this order: the patient's live encounter
+      (`ActiveEncounterResolver::currentFor()`) when it is the doctor's own; else the visit `source_visit_id` names
+      when it is any RME visit of the doctor's own with the patient (review LOW-1: a cashier_pending or past one
+      needs no room, so the workspace opens and an unrelated own stale queued visit does not take the gate over);
+      else the doctor's latest own pre-exam visit (visit_date, id). A `source_visit_id` naming another doctor's
+      visit chooses nothing, so it can never steer the gate away from the doctor's own visits. The CHOSEN visit is
+      the one gated; another roomless queued visit of the doctor's is gated only when it is the one chosen.
     - **(b) The workflow tabs.** `MedicalRecordController::show` passes `workflowNavVisit` = the active sheet's
       visit when `anchorContentReadable`, else the source visit (readable by construction), else null; the
       workspace renders `visit-workflow-nav` only for it, so the tabs never show an unreadable anchor's room state
@@ -565,9 +577,12 @@ added by their own PRs.
       doctor's own roomless visit keeps the redirect; rule 138's 403 for an active visit of another room is
       unchanged (a roomless visit is of no room).
     - **Tests.** `tests/Feature/RME/DoctorPatientScopeReassignmentTest.php` (registered/waiting doctor change with
-      revocation, in_progress room only, cashier_pending unchanged, cancel, a row kept by another live visit,
+      revocation; an in_progress move refused into another doctor's room or an empty room and allowed into the room
+      its own doctor moved to; cashier_pending unchanged; cancel, a row kept by another live visit,
       manual rows and other patients untouched, Super Admin bound, audit ids only, a refused move ends nothing,
-      (a)(b)(c), flag OFF parity for each) and `tests/Feature/RME/DoctorPatientScopeReconcileCommandTest.php` (dry
+      (a)(b)(c); flag OFF parity for every behaviour that exists with the flag OFF — R-09's ids-only audit and
+      (b)-02's omitted tabs exist only with it ON: with it OFF no revocation audit is written (R-02, R-05) and the
+      roomless anchor bounces before any tabs render ((a)-05)) and `tests/Feature/RME/DoctorPatientScopeReconcileCommandTest.php` (dry
       run counts and ids, no patient data, the anchor report against the resolver, digest missing/mismatch/drift
       refused, unassigned_at only, idempotent, the predicate shared with revocation, the WITA date boundary);
       token `DoctorPatientScope`, both declared in `critical_gate_mandatory_suites`.

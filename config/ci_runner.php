@@ -944,8 +944,8 @@ return [
         'tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php',
         // PR A4 (rule 243 §2.13) — with the flag ON a doctor change on a queued
         // visit or a cancel ends the former doctor's auto_visit row (reason,
-        // audited ids only) and an in_progress move keeps its doctor (Super
-        // Admin bound); the A3 re-review preconditions (a)(b)(c) at the room gate
+        // audited ids only) and an in_progress move only follows its own doctor
+        // (refused otherwise, Super Admin bound); the A3 re-review preconditions (a)(b)(c) at the room gate
         // and the workflow tabs; flag OFF parity. Same `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeReassignmentTest.php',
         // PR A4 (rule 243 §2.13) — `rme:doctor-assignments-reconcile`: dry run

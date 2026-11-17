@@ -44,6 +44,12 @@ class ClinicVisitService
 
     public const ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED = 'DOCTOR_EFFECTIVE_BRANCH_WRITE_REFUSED';
 
+    /**
+     * Rule 243 §2.12 (PR A4, review MEDIUM-1) — with the doctor encounter scope
+     * ON an examination in progress only follows its own doctor.
+     */
+    public const IN_PROGRESS_MOVE_REFUSED = 'Pemeriksaan sedang berlangsung. Dokter pemeriksa harus pindah ruangan terlebih dahulu (online di ruangan tujuan), baru pasien dapat dipindahkan.';
+
     /*
      * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 (rule 199) — THE ACTOR CONTRACT.
      *
@@ -293,13 +299,28 @@ class ClinicVisitService
             ]);
         }
 
-        $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
-
         // Rule 243 §2.12 (PR A4) — read once, through the single authority that
         // reads the encounter-scope switch (CG-08).
         $encounterScope = $this->doctorScope->encounterScopeEnabled();
 
-        return DB::transaction(function () use ($visit, $room, $doctorId, $account, $encounterScope) {
+        // With the flag ON the refusal of an empty (or ambiguous) destination
+        // waits for the locked row: an in-progress visit is then refused with
+        // the in-progress message below (review MEDIUM-1), any other status with
+        // exactly this refusal. With the flag OFF it is raised here, as before.
+        $noDoctorInRoom = null;
+
+        try {
+            $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
+        } catch (ValidationException $refused) {
+            if (! $encounterScope) {
+                throw $refused;
+            }
+
+            $doctorId = null;
+            $noDoctorInRoom = $refused;
+        }
+
+        return DB::transaction(function () use ($visit, $room, $doctorId, $account, $encounterScope, $noDoctorInRoom) {
             // CW5-01 — the terminal check above read the caller's copy; a cancel
             // committed in the meantime must not receive a room, a doctor and a
             // patient–doctor assignment. Decide again on the locked row.
@@ -319,16 +340,41 @@ class ClinicVisitService
             // online in the new room (or to nobody).
             //
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4;
-            // owner default 2, rule 228 §4 extended) — with the doctor encounter
-            // scope ON, an examination already STARTED (in_progress) keeps its
-            // doctor too: only that doctor may write on it, so handing it to
-            // whoever is online in the new room would lock the examining doctor
-            // out of their own consented encounter. Decided here, on the locked
-            // row, so it binds every caller, Super Admin included (CG-06). With
-            // the flag OFF an in_progress visit changes doctor exactly as before.
+            // owner default 2, rule 228 §4 extended; review MEDIUM-1) — with the
+            // doctor encounter scope ON, an examination already STARTED
+            // (in_progress) keeps its doctor, and the visit can only FOLLOW that
+            // doctor: only the visit's own doctor may write on it, and rule 138
+            // binds an active visit to the room the doctor is online in. Moved
+            // into another doctor's room (or an empty one) it would sit there as
+            // the first doctor's encounter that neither doctor may author. So the
+            // move is refused unless the destination's online doctor IS the
+            // visit's doctor (the doctor moves first, then the patient). Decided
+            // here, on the locked row, so it binds every caller, Super Admin
+            // included (CG-06). With the flag OFF an in_progress visit changes
+            // doctor exactly as before.
+            if ($encounterScope
+                && $locked->status === ClinicVisit::STATUS_IN_PROGRESS
+                && ($locked->doctor_id === null || $doctorId !== (int) $locked->doctor_id)) {
+                throw ValidationException::withMessages([
+                    'clinic_room_id' => self::IN_PROGRESS_MOVE_REFUSED,
+                ]);
+            }
+
+            if ($noDoctorInRoom !== null) {
+                throw $noDoctorInRoom;
+            }
+
             $roomOnly = ! in_array($locked->status, ClinicVisit::PRE_EXAM_STATUSES, true)
                 || ($encounterScope && $locked->status === ClinicVisit::STATUS_IN_PROGRESS);
             $formerDoctorId = $locked->doctor_id === null ? null : (int) $locked->doctor_id;
+            $doctorSwap = ! $roomOnly && $formerDoctorId !== null && $formerDoctorId !== $doctorId;
+
+            // Review INFO-1 — two moves swapping doctors between two visits of one
+            // patient would each lock one doctor's row and wait for the other's
+            // (40P01). Both rows are locked first, in doctor_id order.
+            if ($encounterScope && $doctorSwap) {
+                $this->patientDoctorAssignments->lockActiveRowsInDoctorOrder((int) $locked->patient_id, [$formerDoctorId, (int) $doctorId]);
+            }
 
             $updated = $this->visits->update($visit, $roomOnly
                 ? ['clinic_room_id' => $room->id]
@@ -340,7 +386,7 @@ class ClinicVisitService
 
             // Rule 243 §2.12 — the former doctor's automatic assignment is ended
             // with the doctor change, in this transaction (flag ON only).
-            if ($encounterScope && ! $roomOnly && $formerDoctorId !== null && $formerDoctorId !== $doctorId) {
+            if ($encounterScope && $doctorSwap) {
                 $this->patientDoctorAssignments->revokeStaleAutoVisit(
                     $locked,
                     $formerDoctorId,

@@ -239,6 +239,26 @@ class PatientDoctorAssignmentService
     }
 
     /**
+     * Rule 243 §2.12 (PR A4, review INFO-1) — lock the patient's active rows of
+     * these doctors in doctor_id order, before a doctor swap creates one and
+     * ends the other, so two swaps in opposite directions never deadlock. A
+     * missing row locks nothing (its insert is guarded by the partial unique
+     * index, see createOrAdoptActive()).
+     *
+     * @param  list<int>  $doctorIds
+     */
+    public function lockActiveRowsInDoctorOrder(int $patientId, array $doctorIds): void
+    {
+        PatientDoctorAssignment::query()
+            ->where('patient_id', $patientId)
+            ->whereIn('doctor_id', array_values(array_unique($doctorIds)))
+            ->whereNull('unassigned_at')
+            ->orderBy('doctor_id')
+            ->lockForUpdate()
+            ->get(['id']);
+    }
+
+    /**
      * Rule 243 §2.12 (PR A4) — end the former doctor's `auto_visit` row for the
      * visit's patient once it is stale: after the visit's doctor changed away
      * from $formerDoctorId, or the visit was cancelled. A row the former doctor
