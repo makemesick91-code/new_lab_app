@@ -23,6 +23,12 @@
             </x-slot:actions>
         </x-ui.page-header>
 
+        @if ($actions['chain_broken'])
+            <div class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800" role="alert" data-version-chain-broken>
+                Riwayat versi rekam medis ini tidak utuh: rantai hash tidak cocok. Isi "sebelum" di bawah ini tidak dapat dipastikan keasliannya dan amandemen ini tidak dapat diterapkan; laporkan kepada Supervisor RME.
+            </div>
+        @endif
+
         <x-ui.card title="Permintaan">
             <dl class="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                 <div><dt class="text-ink-soft">Pasien</dt><dd>{{ $amendment->clinicVisit?->patient?->name }} <span class="font-mono text-ink-soft">{{ $amendment->clinicVisit?->patient?->medical_record_number }}</span></dd></div>

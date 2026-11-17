@@ -290,7 +290,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    account (MedicalRecordPolicy / OdontogramPolicy) before reading; the version history pages are §7. The chain is
    verified where it matters: `approve()` refuses (`MESSAGE_CHAIN_BROKEN`, nothing written) to chain a new version
    onto a history that does not verify, and the version page shows a warning (`data-version-chain-broken`) when it
-   does not. The list page reads no snapshot and does not verify.
+   does not. The amendment detail page mirrors `approve()` (rule 135): for a pending amendment on a chain that does
+   not verify it withholds "Setujui dan Terapkan" (`actionsFor()` `can_approve` false, `chain_broken` true) and shows
+   the same warning above the unverified "before"; rejecting stays possible. The list page reads no snapshot and does
+   not verify.
 8. **The "Diamandemen n×" marker.** `amendmentCount()` counts the subject's `amendment` versions. No marker column
    is added: a counter would have to be written beside every amendment and could drift from the immutable rows it
    summarises; the count reads one indexed set (`subject_type`, `subject_id`, `kind`) per printed record.

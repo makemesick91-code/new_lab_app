@@ -542,3 +542,23 @@ it('shows on the version page whether the chain verifies (re-review)', function 
         ->assertOk()
         ->assertSee('data-version-chain-broken', false);
 });
+
+it('withholds "Setujui dan Terapkan" and warns on the detail page when the chain is broken (re-review 2)', function () {
+    $sheet = m3apSheet();
+    $amendment = m3apRequest($sheet);
+
+    $page = fn () => $this->actingAs($this->supervisor)->get(route('rme.amendments.show', $amendment))->assertOk();
+
+    expect(m3apService()->detailFor($amendment, $this->supervisor)['actions'])
+        ->toMatchArray(['can_approve' => true, 'chain_broken' => false]);
+    $page()->assertSee('data-amendment-approve', false)
+        ->assertDontSee('data-version-chain-broken', false);
+
+    m3apTamperVersionOne($sheet);
+
+    expect(m3apService()->detailFor($amendment->fresh(), $this->supervisor)['actions'])
+        ->toMatchArray(['can_approve' => false, 'can_reject' => true, 'chain_broken' => true]);
+    $page()->assertDontSee('data-amendment-approve', false)
+        ->assertSee('data-version-chain-broken', false)
+        ->assertSee('data-amendment-reject', false);
+});

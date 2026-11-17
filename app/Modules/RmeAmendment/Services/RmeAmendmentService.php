@@ -555,9 +555,12 @@ final class RmeAmendmentService
 
     /**
      * What this account may do with the amendment now — the controls the detail
-     * page renders (rule 135): approve also needs the base to be the latest version.
+     * page renders (rule 135): approve also needs the base to be the latest version
+     * and the record's version chain to verify — the same two refusals approve()
+     * makes (re-review: the page offered "Setujui dan Terapkan" on a broken chain
+     * and showed its unverified base as "before" without a warning).
      *
-     * @return array{can_cancel: bool, can_reject: bool, can_approve: bool, stale: bool}
+     * @return array{can_cancel: bool, can_reject: bool, can_approve: bool, stale: bool, chain_broken: bool}
      */
     public function actionsFor(RmeAmendment $amendment, User $user, MedicalRecord|Odontogram $subject): array
     {
@@ -566,12 +569,15 @@ final class RmeAmendmentService
             && $this->decisionRefusal($amendment, $subject, $user) === null;
         $latest = $this->versions->latestFor(...$this->subjectKey($subject));
         $stale = $amendment->isPending() && (int) ($latest?->getKey() ?? 0) !== (int) $amendment->base_version_id;
+        // Only a pending amendment is compared with the chain it would extend.
+        $chainBroken = $amendment->isPending() && ! $this->versionService->verifyChain($subject);
 
         return [
             'can_cancel' => $amendment->isPending() && (int) $amendment->requested_by === (int) $user->getKey(),
             'can_reject' => $canDecide,
-            'can_approve' => $canDecide && ! $stale,
+            'can_approve' => $canDecide && ! $stale && ! $chainBroken,
             'stale' => $stale,
+            'chain_broken' => $chainBroken,
         ];
     }
 
@@ -684,7 +690,7 @@ final class RmeAmendmentService
             'amendment' => $amendment,
             'subject' => $subject,
             'latest_version' => $latest?->version,
-            'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false, 'can_approve' => false, 'stale' => false],
+            'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false, 'can_approve' => false, 'stale' => false, 'chain_broken' => false],
         ];
 
         if ($amendment->subject_type === RmeRecordVersion::SUBJECT_ODONTOGRAM) {
