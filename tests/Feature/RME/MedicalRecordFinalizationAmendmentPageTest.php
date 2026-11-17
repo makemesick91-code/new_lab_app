@@ -288,6 +288,126 @@ it('admits only the chunks a canvas export carries, IDAT consecutive and a 13-by
     expect(m3pgRequest($sheet, m3pgUri($browser))->correction_page_sha256)->toBe(hash('sha256', $browser));
 });
 
+it('refuses a payload riding inside an allowed chunk or after the image data\'s zlib stream (re-review LOW-1)', function () {
+    $sheet = m3pgSheet();
+    $objects = m3pgObjects();
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $payload = '<html><script>'.str_repeat('a', 2000).'</script></html>';
+    $raw = '';
+    for ($y = 0; $y < 10; $y++) {
+        $raw .= "\0".str_repeat(pack('C4', (90 + $y) % 256, 20, 20, 255), 10);
+    }
+    $idat = gzcompress($raw);
+    $png = static fn (string $before, string $data = '', string $end = '') => "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NNCCCCC', 10, 10, 8, 6, 0, 0, 0))
+        .$before.$chunk('IDAT', $data === '' ? $idat : $data).$chunk('IEND', $end);
+
+    $refused = [
+        'payload in IEND' => $png('', '', $payload),
+        'payload in pHYs' => $png($chunk('pHYs', $payload)),
+        'payload in sRGB' => $png($chunk('sRGB', $payload)),
+        'payload in gAMA' => $png($chunk('gAMA', $payload)),
+        'payload in cHRM' => $png($chunk('cHRM', $payload)),
+        'payload in tRNS' => $png($chunk('tRNS', $payload)),
+        'tRNS beside an alpha channel' => $png($chunk('tRNS', "\0\0")),
+        'a palette beside an alpha channel' => $png($chunk('PLTE', str_pad('<script>alert(1)</script>', 27))),
+        'an oversized palette' => $png($chunk('PLTE', str_repeat("\0", 771))),
+        'raw payload as a colour profile' => $png($chunk('iCCP', $payload)),
+        'payload after the colour profile stream' => $png($chunk('iCCP', "icc\0\0".gzcompress('p').$payload)),
+        'payload after the image data stream' => $png('', $idat.$payload),
+        'a density chunk twice' => $png($chunk('pHYs', pack('NNC', 2835, 2835, 1)).$chunk('pHYs', pack('NNC', 2835, 2835, 1))),
+        'a density chunk after the image data' => "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NNCCCCC', 10, 10, 8, 6, 0, 0, 0))
+            .$chunk('IDAT', $idat).$chunk('pHYs', pack('NNC', 2835, 2835, 1)).$chunk('IEND', ''),
+    ];
+    foreach ($refused as $label => $bytes) {
+        $errors = m3pgErrors(fn () => m3pgRequest($sheet, m3pgUri($bytes)));
+        expect(in_array(HandwritingPayloadGuard::MESSAGE_INVALID, $errors['handwriting_data'] ?? [], true))->toBeTrue($label);
+    }
+
+    expect(RmeAmendment::query()->count())->toBe(0)
+        ->and(m3pgObjects())->toBe($objects);
+});
+
+it('refuses a correction page whose image cannot be decoded, so a broken page is never sealed (re-review LOW-2)', function () {
+    $sheet = m3pgSheet();
+    $objects = m3pgObjects();
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $raw = '';
+    for ($y = 0; $y < 10; $y++) {
+        $raw .= "\0".str_repeat(pack('C4', (130 + $y) % 256, 20, 20, 255), 10);
+    }
+    $ihdr = static fn (int $depth = 8, int $colour = 6, int $interlace = 0): string => $chunk('IHDR', pack('NNCCCCC', 10, 10, $depth, $colour, 0, 0, $interlace));
+    $png = static fn (string $header, ?string $data): string => "\x89PNG\r\n\x1a\n".$header.($data === null ? '' : $chunk('IDAT', $data)).$chunk('IEND', '');
+
+    $refused = [
+        'no image data' => $png($ihdr(), null),
+        'image data that is not a zlib stream' => $png($ihdr(), str_repeat("\x5A\xA5\x3C\xC3", 50)),
+        // Every scanline is there; the stream's end (its checksum) is not.
+        'a zlib stream cut before its end' => $png($ihdr(), substr(gzcompress($raw), 0, -4)),
+        'one row short' => $png($ihdr(), gzcompress(substr($raw, 0, -41))),
+        'one row too many' => $png($ihdr(), gzcompress($raw."\0".str_repeat('x', 40))),
+        'an unknown scanline filter' => $png($ihdr(), gzcompress("\x07".substr($raw, 1))),
+        'interlaced' => $png($ihdr(interlace: 1), gzcompress($raw)),
+        // Sized for 4-bit RGBA, which PNG does not define.
+        'an impossible bit depth' => $png($ihdr(depth: 4), gzcompress(str_repeat("\0".str_repeat("\x11", 20), 10))),
+        'a palette image without a palette' => $png($ihdr(colour: 3), gzcompress(str_repeat("\0".str_repeat("\1", 10), 10))),
+    ];
+    foreach ($refused as $label => $bytes) {
+        $errors = m3pgErrors(fn () => m3pgRequest($sheet, m3pgUri($bytes)));
+        expect(in_array(HandwritingPayloadGuard::MESSAGE_INVALID, $errors['handwriting_data'] ?? [], true))->toBeTrue($label);
+    }
+
+    expect(RmeAmendment::query()->count())->toBe(0)
+        ->and(m3pgObjects())->toBe($objects);
+});
+
+it('accepts what a real PNG encoder writes for the page canvas: RGBA, RGB and a palette with transparency, IDAT split as Chromium splits it', function () {
+    $encode = static function (bool $trueColour, bool $alpha): string {
+        $image = $trueColour ? imagecreatetruecolor(900, 1273) : imagecreate(300, 200);
+        if ($trueColour) {
+            imagealphablending($image, false);
+            imagesavealpha($image, $alpha);
+            imagefill($image, 0, 0, imagecolorallocatealpha($image, 255, 255, 255, $alpha ? 127 : 0));
+        } else {
+            imagecolortransparent($image, imagecolorallocate($image, 255, 255, 255));
+        }
+        imagesetthickness($image, 3);
+        for ($i = 0; $i < 40; $i++) {
+            imageline($image, 10 + $i * 7, 20, 250 - $i * 3, 180 + $i * 2, imagecolorallocate($image, 17, 24, 39));
+        }
+        ob_start();
+        imagepng($image, null, 6, PNG_ALL_FILTERS);
+
+        return (string) ob_get_clean();
+    };
+    $guard = app(HandwritingPayloadGuard::class);
+
+    // libpng through GD: 8-bit RGBA, RGB, and a palette with tRNS (each with pHYs).
+    foreach (['rgba' => $encode(true, true), 'rgb' => $encode(true, false), 'palette' => $encode(false, true)] as $label => $bytes) {
+        try {
+            $guard->assertCleanPng($guard->decodeCanvas(m3pgUri($bytes)));
+            $accepted = true;
+        } catch (ValidationException) {
+            $accepted = false;
+        }
+        expect($accepted)->toBeTrue($label);
+    }
+
+    // Chromium writes the 900 x 1273 canvas as 4096-byte IDAT chunks and a last,
+    // 6-byte one holding the stream's end: the same stream re-chunked that way.
+    $rgba = $encode(true, true);
+    $stream = '';
+    for ($offset = 8; $offset < strlen($rgba); $offset += 12 + $length) {
+        $length = unpack('N', substr($rgba, $offset, 4))[1];
+        $stream .= substr($rgba, $offset + 4, 4) === 'IDAT' ? substr($rgba, $offset + 8, $length) : '';
+    }
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $chromium = "\x89PNG\r\n\x1a\n".substr($rgba, 8, 25)
+        .implode('', array_map(fn (string $piece) => $chunk('IDAT', $piece), [...str_split(substr($stream, 0, -6), 4096), substr($stream, -6)]))
+        .$chunk('IEND', '');
+
+    expect(m3pgRequest(m3pgSheet(), m3pgUri($chromium))->correction_page_sha256)->toBe(hash('sha256', $chromium));
+});
+
 it('validates the corrected page against the book and refuses a correction page on a chart', function () {
     $sheet = m3pgSheet();
     m3pgSealedPage($sheet, 1, 1);

@@ -578,9 +578,20 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    declared-size and inflate bounds, the Sprint 59.1 blank guard) — then held to `assertCleanPng()` (review L1): the
    signature, the 13-byte IHDR first, every chunk complete with a valid CRC and on an ALLOWLIST — `IHDR`, `PLTE`,
    `IDAT`, `IEND` and only the colour-space, density and transparency chunks a canvas export can carry (`sRGB`,
-   `gAMA`, `cHRM`, `pHYs`, `iCCP` ≤ 64 KiB, `tRNS`) — the IDAT chunks consecutive, nothing after IEND; any other
-   chunk, whatever its case bits (`tEXt`, `tEXT`, `htMl`, …), is refused, so no payload rides along with the drawing
-   (it is served as `image/png` with `nosniff` too). Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`,
+   `gAMA`, `cHRM`, `pHYs`, `iCCP`, `tRNS`); any other chunk, whatever its case bits (`tEXt`, `tEXT`, `htMl`, …), is
+   refused. Every chunk but IDAT appears at most once and holds exactly what its type defines (re-review LOW-1):
+   `IEND` 0 bytes, `sRGB` 1, `gAMA` 4, `cHRM` 32, `pHYs` 9; `PLTE` a multiple of 3 up to 768 and only in a palette
+   image; `tRNS` 2 bytes for grey, 6 for RGB, 1–256 for a palette, never beside an alpha channel; `iCCP` ≤ 64 KiB, a
+   1–79-byte printable profile name, compression method 0 and ONE zlib stream ending at the chunk's end (≤ 1 MiB
+   inflated). The IHDR declares a valid colour type and bit depth, compression and filter method 0 and NO interlacing
+   (a canvas export never is). The IDAT chunks are consecutive and followed only by IEND, nothing after IEND; and
+   their concatenated data is ONE zlib stream that ends exactly at its last byte (nothing after the stream end) and
+   inflates to exactly height × (1 + row bytes), every scanline opening with a filter type 0–4 (re-review LOW-2: a page
+   with no image data, data that is not a zlib stream or does not decode to the declared image is refused, never
+   sealed — the blank guard alone counts undecodable data as content). So nothing rides along OUTSIDE the image. What
+   remains is image content — the pixels and a palette, where any byte value is a colour — so the page is also served
+   only as `image/png` with `nosniff`, never as markup. These checks run on the amendment path only (request and
+   approval), never on the ordinary handwriting save. Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`,
    `MESSAGE_TOO_LARGE`, `MESSAGE_BLANK`). A named page without a drawing is refused
    (`MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE`). Inside the transaction, after visit → sheet locks, the requester
    re-decision and the one-pending check: the proposal may be empty when a page rides with it (a page-only
@@ -664,7 +675,14 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    refused in the savepoint with this call's object removed; rule 224 compensation keeping the earlier evidence.
    Canvas (review L1, INFO): `tEXT` and `htMl` chunks, an oversized `iCCP` and IDAT split around another chunk
    refused; a short IHDR refused as a validation answer by `decodeCanvas()` (every canvas path), never a 500; a canvas
-   carrying `sRGB`, `gAMA`, `pHYs`, a small `iCCP` and split consecutive IDATs accepted. Display: the label (encounter,
+   carrying `sRGB`, `gAMA`, `pHYs`, a small `iCCP` and split consecutive IDATs accepted. Canvas (re-review LOW-1,
+   LOW-2): a payload in `IEND`, `pHYs`, `sRGB`, `gAMA`, `cHRM` or `tRNS`, a `tRNS` beside an alpha channel, a palette
+   beside an alpha channel, an oversized palette, a raw `iCCP` payload or one after its zlib stream, bytes after the
+   IDAT zlib stream, a chunk twice and a chunk after the image data refused; no image data, data that is not a zlib
+   stream, a stream cut before its end, a row short or too many, an unknown filter type, interlacing, an impossible
+   bit depth and a palette image without `PLTE` refused; what libpng (through GD) writes — 900 × 1273 RGBA and RGB,
+   a palette with `tRNS`, `pHYs` beside each — and the RGBA stream in Chromium's IDAT layout (4096-byte chunks and
+   a last 6-byte one) accepted. The book page route answers 503 on a storage read fault (review L2). Display: the label (encounter,
    corrected page, approval) and the pointer, verified print bytes, a tampered page printed as unavailable. Constraints: the model guard
    on the three columns, one page per amendment; on PostgreSQL the trigger refusing raw changes, the CHECKs and the
    constraint names, and the lock order visit → sheet → amendment → book → page → version. HTTP: front desk 403, a
@@ -683,4 +701,11 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
     (`oversight.rme.handwriting-pages.image`, `OversightClinicalRecordService`) shows an amendment page without its
     label and streams it without the SHA-256 check. (c) The RME print of a visit prints that visit's own sheet's
     pages (unchanged): a correction appended to a book held by an EARLIER sheet (R7-1) prints with that sheet.
+    (d) A page written before rule 240 has no visit stamp (`authored_clinic_visit_id` null), so §8.3 reads its owner
+    from `sealed_by_medical_record_id`. `MedicalRecordHandwritingRepository::sealBookPages()` stamps EVERY unsealed
+    page of the patient's book at the first finalize after the migration, so a pre-rule page whose encounter was
+    finalized before the migration (and so was never sealed) carries the sealed-by value of that later, unrelated
+    sheet: that later visit can name it as the corrected page and the encounter that really wrote it cannot. The
+    original page is never changed (§8.1), so the effect is a wrong pointer (`mengoreksi halaman buku RM N`) only,
+    never a lost or altered page.
 

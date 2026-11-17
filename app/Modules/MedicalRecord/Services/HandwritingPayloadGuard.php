@@ -30,8 +30,10 @@ use Throwable;
  * Rule 240 §8 (memo M3.3 PR6) — decodeCanvas() is the one canvas decoder: the
  * handwriting save and the amendment correction page both call it (it moved here
  * from MedicalRecordHandwritingController unchanged). The correction page is also
- * held to assertCleanPng() (a chunk allowlist, IDAT consecutive, nothing after
- * IEND — so no payload rides along with the drawing) and, once stored, read back
+ * held to assertCleanPng() (a chunk allowlist, every chunk at its exact size,
+ * IDAT consecutive, the image data decoding to exactly the declared image with
+ * nothing after its zlib stream, nothing after IEND — so nothing rides along
+ * outside the image) and, once stored, read back
  * only through storedPng() / intactPng() (its SHA-256 verified; a read fault told
  * apart from tampering). The IHDR must be 13 bytes on every path (review INFO).
  */
@@ -62,6 +64,24 @@ class HandwritingPayloadGuard
 
     /** An embedded colour profile, bounded (a canvas profile is a few hundred bytes). */
     private const ICCP_MAX_BYTES = 65536;
+
+    /** What that profile may inflate to. */
+    private const ICCP_MAX_INFLATED_BYTES = 1_048_576;
+
+    /**
+     * Re-review LOW-1 — the exact data length of each fixed-size chunk (PNG
+     * §11.2–11.3); PLTE, tRNS and iCCP are bounded by their own rules below.
+     */
+    private const FIXED_CHUNK_LENGTHS = ['IHDR' => 13, 'IEND' => 0, 'sRGB' => 1, 'gAMA' => 4, 'cHRM' => 32, 'pHYs' => 9];
+
+    /** Re-review LOW-2 — samples per pixel and the bit depths PNG allows, per colour type (PNG §11.2.2). */
+    private const COLOUR_TYPES = [
+        0 => [1, [1, 2, 4, 8, 16]],
+        2 => [3, [8, 16]],
+        3 => [1, [1, 2, 4, 8]],
+        4 => [2, [8, 16]],
+        6 => [4, [8, 16]],
+    ];
 
     /** Review L2 — what reading a stored amendment page found. */
     public const STORED_OK = 'ok';
@@ -108,10 +128,23 @@ class HandwritingPayloadGuard
 
     /**
      * Rule 240 §8 — the structure of a PNG that will be kept as an amendment page,
-     * so nothing but the drawing rides along: the signature, a 13-byte IHDR first,
-     * every chunk complete with a valid CRC and on the ALLOWLIST (review L1), the
-     * IDAT chunks consecutive, and nothing after IEND. A canvas export passes.
-     * Served as `image/png` with `nosniff`, a stored page is never read as markup.
+     * so nothing rides along outside the image: the signature; a 13-byte IHDR
+     * first, declaring a valid colour type and bit depth, compression and filter
+     * method 0 and NO interlacing (a canvas export is never interlaced); every
+     * chunk complete with a valid CRC and on the ALLOWLIST (review L1); every
+     * chunk but IDAT at most once and at its exact size (re-review LOW-1: IEND 0,
+     * sRGB 1, gAMA 4, cHRM 32, pHYs 9, PLTE a multiple of 3 up to 768 and only
+     * in a palette image, tRNS the size its colour type defines, an iCCP a
+     * profile name and ONE zlib stream ending at the chunk's end); the IDAT
+     * chunks consecutive, then only IEND,
+     * then nothing; and the image data ONE zlib stream that ends exactly where
+     * the IDAT data ends and inflates to exactly the declared image, every
+     * scanline starting with a filter type 0–4 (re-review LOW-2 — so a page that
+     * cannot be decoded is refused, never sealed). A canvas export passes.
+     *
+     * The palette and the pixels are image content — any byte value there is a
+     * colour — so the page is also served as `image/png` with `nosniff`, never
+     * read as markup. Runs on the amendment path only, never the ordinary save.
      */
     public function assertCleanPng(string $png): void
     {
@@ -122,9 +155,9 @@ class HandwritingPayloadGuard
         }
 
         $offset = 8;
-        $first = true;
-        $idatSeen = false;
-        $idatEnded = false;
+        $seen = [];
+        $header = null;
+        $idat = '';
 
         while ($offset + 12 <= $length) {
             $chunkLength = unpack('N', substr($png, $offset, 4))[1];
@@ -132,27 +165,37 @@ class HandwritingPayloadGuard
 
             if ($chunkLength > $length - $offset - 12
                 || ! in_array($type, self::ALLOWED_CHUNKS, true)
-                || ($first !== ($type === 'IHDR'))
-                || ($type === 'IHDR' && $chunkLength !== 13)
-                || ($type === 'iCCP' && $chunkLength > self::ICCP_MAX_BYTES)
-                // IDAT chunks follow one another (PNG §5.6); data split around
-                // another chunk is not what an encoder writes.
-                || ($type === 'IDAT' && $idatEnded)
+                || (($seen === []) !== ($type === 'IHDR'))
+                || ($type !== 'IDAT' && isset($seen[$type]))
+                // IDAT chunks follow one another (PNG §5.6) and every allowed
+                // ancillary chunk precedes them: after the image data, only IEND.
+                || (isset($seen['IDAT']) && $type !== 'IDAT' && $type !== 'IEND')
                 || unpack('N', substr($png, $offset + 8 + $chunkLength, 4))[1] !== crc32($type.substr($png, $offset + 8, $chunkLength))) {
                 throw ValidationException::withMessages(['handwriting_data' => self::MESSAGE_INVALID]);
             }
 
-            if ($type === 'IDAT') {
-                $idatSeen = true;
-            } elseif ($idatSeen) {
-                $idatEnded = true;
+            $data = substr($png, $offset + 8, $chunkLength);
+
+            if ($type === 'IHDR') {
+                $header = $this->imageHeader($data);
             }
 
-            $first = false;
+            if ($header === null || ! $this->chunkDataFits($type, $data, $header)) {
+                throw ValidationException::withMessages(['handwriting_data' => self::MESSAGE_INVALID]);
+            }
+
+            if ($type === 'IDAT') {
+                $idat .= $data;
+            }
+
+            $seen[$type] = true;
             $offset += 12 + $chunkLength;
 
             if ($type === 'IEND') {
-                if ($offset !== $length) {
+                if ($offset !== $length
+                    || $idat === ''
+                    || ($header['colour_type'] === 3 && ! isset($seen['PLTE']))
+                    || $this->inflatedLength($idat, $header['image_bytes'], $header['scanline_bytes']) !== $header['image_bytes']) {
                     break;
                 }
 
@@ -161,6 +204,124 @@ class HandwritingPayloadGuard
         }
 
         throw ValidationException::withMessages(['handwriting_data' => self::MESSAGE_INVALID]);
+    }
+
+    /**
+     * Re-review LOW-2 — an IHDR this path can decode: the declared colour type and
+     * bit depth a valid pair, compression and filter method 0, not interlaced;
+     * then what the image data must inflate to. Null when it is not.
+     *
+     * @return array{colour_type: int, scanline_bytes: int, image_bytes: int}|null
+     */
+    private function imageHeader(string $data): ?array
+    {
+        if (strlen($data) !== 13) {
+            return null;
+        }
+
+        ['width' => $width, 'height' => $height, 'depth' => $depth, 'colour' => $colour, 'compression' => $compression, 'filter' => $filter, 'interlace' => $interlace]
+            = unpack('Nwidth/Nheight/Cdepth/Ccolour/Ccompression/Cfilter/Cinterlace', $data);
+
+        if ($width < 1 || $height < 1 || ! isset(self::COLOUR_TYPES[$colour]) || ! in_array($depth, self::COLOUR_TYPES[$colour][1], true)
+            || $compression !== 0 || $filter !== 0 || $interlace !== 0) {
+            return null;
+        }
+
+        $scanline = 1 + intdiv($width * self::COLOUR_TYPES[$colour][0] * $depth + 7, 8);
+
+        return ['colour_type' => $colour, 'scanline_bytes' => $scanline, 'image_bytes' => $height * $scanline];
+    }
+
+    /**
+     * Re-review LOW-1 — a chunk's data holds exactly what its type defines, so no
+     * payload rides inside an allowed chunk.
+     *
+     * @param  array{colour_type: int, scanline_bytes: int, image_bytes: int}  $header
+     */
+    private function chunkDataFits(string $type, string $data, array $header): bool
+    {
+        $length = strlen($data);
+
+        if (isset(self::FIXED_CHUNK_LENGTHS[$type])) {
+            return $length === self::FIXED_CHUNK_LENGTHS[$type];
+        }
+
+        return match ($type) {
+            // PNG §11.2.3: 1–256 entries; only where the image needs it (a palette
+            // image) — beside RGB(A) samples it is a hint no decoder needs.
+            'PLTE' => $length >= 3 && $length <= 768 && $length % 3 === 0 && $header['colour_type'] === 3,
+            // PNG §11.3.2.1: one grey or RGB sample, or an alpha per palette entry;
+            // never with an alpha channel.
+            'tRNS' => match ($header['colour_type']) {
+                0 => $length === 2,
+                2 => $length === 6,
+                3 => $length >= 1 && $length <= 256,
+                default => false,
+            },
+            'iCCP' => $length <= self::ICCP_MAX_BYTES && $this->colourProfileFits($data),
+            default => true,
+        };
+    }
+
+    /**
+     * PNG §11.3.3.3: a profile name of 1–79 printable Latin-1 bytes, a NUL,
+     * compression method 0, then one zlib stream ending at the chunk's end.
+     */
+    private function colourProfileFits(string $data): bool
+    {
+        $nul = strpos($data, "\0");
+
+        return $nul !== false && $nul >= 1 && $nul <= 79
+            && preg_match('/^[\x20-\x7E\xA1-\xFF]+$/', substr($data, 0, $nul)) === 1
+            && substr($data, $nul + 1, 1) === "\0"
+            && $this->inflatedLength(substr($data, $nul + 2), self::ICCP_MAX_INFLATED_BYTES) !== null;
+    }
+
+    /**
+     * The length $compressed inflates to when it is ONE complete zlib stream that
+     * ends exactly at its last byte (nothing after it) and inflates to at most
+     * $limit bytes; with $scanline > 0, every scanline must also start with a PNG
+     * filter type 0–4. Null otherwise. Measured piece by piece, so a stream is
+     * never held past $limit.
+     */
+    private function inflatedLength(string $compressed, int $limit, int $scanline = 0): ?int
+    {
+        $context = $compressed === '' ? false : @inflate_init(ZLIB_ENCODING_DEFLATE);
+
+        if ($context === false) {
+            return null;
+        }
+
+        $total = strlen($compressed);
+        $fed = 0;
+        $inflated = 0;
+
+        foreach (str_split($compressed, 8192) as $piece) {
+            $output = @inflate_add($context, $piece, ZLIB_SYNC_FLUSH);
+
+            if ($output === false || $inflated + strlen($output) > $limit) {
+                return null;
+            }
+
+            if ($scanline > 0) {
+                for ($row = intdiv($inflated + $scanline - 1, $scanline) * $scanline; $row < $inflated + strlen($output); $row += $scanline) {
+                    if (ord($output[$row - $inflated]) > 4) {
+                        return null;
+                    }
+                }
+            }
+
+            $inflated += strlen($output);
+            $fed += strlen($piece);
+
+            if (inflate_get_status($context) === ZLIB_STREAM_END) {
+                // The stream ends here: any byte after its end is a payload.
+                return $fed === $total && inflate_get_read_len($context) === $total ? $inflated : null;
+            }
+        }
+
+        // The stream never ended: truncated image data.
+        return null;
     }
 
     /**

@@ -360,6 +360,24 @@ it('tells a storage read error apart from tampering on the pending image and the
         ->assertDontSee('data-amendment-approve', false);
 });
 
+it('answers 503, never 404, on the book page route when the applied page cannot be read (review L2)', function () {
+    $sheet = m3phSheet();
+    m3phPageOne($sheet);
+    $amendment = m3phPending($sheet, m3phPng(23), 1);
+    $this->actingAs($this->supervisor)->post(route('rme.amendments.approve', $amendment))
+        ->assertRedirect(route('rme.amendments.show', $amendment));
+    $page = MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendment->id)->sole();
+
+    $this->actingAs($this->supervisor)->get(route('rme.handwriting-pages.image', $page))->assertOk();
+
+    $broken = Mockery::mock(Filesystem::class);
+    $broken->shouldReceive('exists')->andReturn(true);
+    $broken->shouldReceive('get')->andThrow(new RuntimeException('m3ph clinical disk offline'));
+    Storage::set(ClinicalEvidenceStorage::diskName(), $broken);
+
+    $this->actingAs($this->supervisor)->get(route('rme.handwriting-pages.image', $page))->assertStatus(503);
+});
+
 it('never shows a rejected correction as a book page and keeps its object', function () {
     $sheet = m3phSheet();
     m3phPageOne($sheet);
