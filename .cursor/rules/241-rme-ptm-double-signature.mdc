@@ -120,6 +120,12 @@ supervised void, signatures on the clinical evidence disk).
    (rule 109 §2c, rule 226); payment never consults consent (AIR-RMC-11); the supervised void (rule 237 §14.2) is
    unchanged and REOPENS the gate: after a void both signatures are needed again on the new consent. Super Admin is
    bound: the gate is the consent, not a permission.
+   **Supervised amendment (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it").** Outside the
+   gate: a rule 240 amendment corrects a record that already exists, so its request and approve-and-apply never
+   consult the PTM; append-only versions, the immutable original, the doctor requester, a separate Supervisor RME
+   approver, the written reason and the audit trail stay. Its detail page shows the amended visit's recorded PTM
+   (executed / patient signature only / none / voided) read-only, for information (rule 240 §6.11). No consent is
+   ever created or faked for it; a NEW medical act takes the examination workflow and this gate.
 
 ## 3. The UI names the PTM state (PR2; rule 135 mirror; MEMO-F5)
 

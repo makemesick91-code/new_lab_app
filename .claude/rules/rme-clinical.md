@@ -276,6 +276,8 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   "Selesai Pemeriksaan" — on an EXECUTED consent (`hasExecutedConsent()`: live consent + treating-doctor
   countersignature) inside the single authorities, re-decided on the visit row locked first; reads, payment,
   prescriptions stay outside; a void reopens it. The Doctor no longer captures the patient signature. Rule 241 §2–§4.
+  A supervised amendment stays outside (it corrects an existing record; its page shows the visit's PTM read-only;
+  never fake a consent); a new act takes exam + PTM. Rule 240 §6.11.
 - **AIR-RMC-56** Sign a NEW consent on template v2026.2 (clause 8 documentation, clause 9 publication: two explicit
   YA/TIDAK) only with flag `rme.consent_template_v2026_2` on AND wording `approved` without the draft marker; clause 9
   gates nothing; history unchanged. Source: rule 241 §6.

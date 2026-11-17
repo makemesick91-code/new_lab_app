@@ -176,6 +176,8 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 - §8: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php` (existing `MedicalRecordFinalization` token)
   and `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php` (existing
   `RmeClinicalWriteAuthority` token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §8.9.
+- §6.11: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php` (existing `MedicalRecordFinalization`
+  token), BOTH variants, declared in `critical_gate_mandatory_suites`.
 - §6: `tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php` (existing `MedicalRecordFinalization` token),
   `tests/Feature/RME/OdontogramAmendmentTest.php` (existing `Odontogram` token) and
   `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php` (existing `RmeClinicalWriteAuthority`
@@ -447,6 +449,20 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 10. **Deploy.** The two permissions are new: run `PermissionSeeder`, then `RoleSeeder`, then
     `permission:cache-reset` (CG-15). Doctor gains `request_rme_amendments`; Supervisor RME gains
     `approve_rme_amendments`; Super Admin through '*'.
+11. **Outside the PTM gate (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it", CG-22).** A
+    supervised amendment corrects a record that already exists, so it stays OUTSIDE the PTM gate (rule 241 §2.3):
+    `request()`, `cancel()`, `reject()`, `approve()` and `actionsFor()` never consult the consent. What stays: the
+    append-only versions and the immutable original (§5), the doctor as requester (§6.3), a separate Supervisor RME
+    as approver (§6.6, §7), the written reason and the audit trail (§6.8). The original PTM state is recorded for
+    information: the detail page shows the amended visit's PTM as its persisted consent evidence records it —
+    `executed`, `patient_only` (the patient's signature, no doctor countersignature), `none`, or `voided` (no live
+    consent, a voided one in its history) — read-only. `RmeAmendmentService::detailFor()` decides it
+    (`original_ptm`, from `RmeVisitConsentService::ptmStateFor()` and `historyFor()`); the Blade only renders it
+    (`data-amendment-original-ptm`). No consent row is created, changed or back-dated for an amendment, and a
+    historical consent is never made up. A NEW medical act is not an amendment: it takes the examination workflow
+    and the PTM. Tests: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php` — a sheet and a chart
+    amendment requested, shown and applied in each of the four states with every consent row of the visit
+    unchanged; a re-signed visit names its live consent, not the voided one.
 
 ## 7. Approve and apply (M3.3 PR5)
 

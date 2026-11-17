@@ -45,6 +45,18 @@
                     </dd>
                 </div>
                 <div class="md:col-span-2"><dt class="text-ink-soft">Alasan</dt><dd class="whitespace-pre-line">{{ $amendment->reason }}</dd></div>
+                @if (($original_ptm ?? null) !== null)
+                    {{-- Rule 240 §6.11 (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate,
+                         record it") — the amended visit's recorded PTM, read-only and for
+                         information: decided by RmeAmendmentService::detailFor(); it gates nothing. --}}
+                    <div class="md:col-span-2" data-amendment-original-ptm="{{ $original_ptm['state'] }}">
+                        <dt class="text-ink-soft">PTM kunjungan yang diamandemen (informasi)</dt>
+                        <dd>
+                            {{ $original_ptm['label'] }}
+                            <span class="mt-1 block text-xs text-ink-soft">{{ $original_ptm['note'] }}</span>
+                        </dd>
+                    </div>
+                @endif
                 @if ($amendment->decided_at !== null)
                     <div><dt class="text-ink-soft">Diputuskan</dt><dd>{{ OversightFormat::clinicalTime($amendment->decided_at, 'd/m/Y H:i') }} WITA — {{ $amendment->decider?->name }}</dd></div>
                     <div class="md:col-span-2"><dt class="text-ink-soft">Alasan keputusan</dt><dd class="whitespace-pre-line">{{ $amendment->decision_reason }}</dd></div>

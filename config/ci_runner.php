@@ -1728,6 +1728,11 @@ return [
         // when its SHA-256 verifies (404 tampered, 503 read fault). Selected by the existing `ClinicOversight`
         // token in BOTH critical variants.
         'tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php',
+        // Same rule, §6.11 (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it") — the
+        // supervised amendment stays outside the PTM gate: requested and applied in every PTM state, the amended
+        // visit's recorded PTM shown for information only, no consent row created or changed. Selected by the
+        // existing `MedicalRecordFinalization` token in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

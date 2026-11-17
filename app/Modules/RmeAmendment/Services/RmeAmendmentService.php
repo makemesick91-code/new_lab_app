@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -210,6 +211,28 @@ final class RmeAmendmentService
         'dokter' => 'Dokter',
     ];
 
+    /*
+     * Rule 240 §6.11 (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate,
+     * record it") — the amended visit's PTM as its persisted consent evidence
+     * records it, shown on the detail page for INFORMATION only.
+     */
+    public const ORIGINAL_PTM_EXECUTED = 'executed';
+
+    public const ORIGINAL_PTM_PATIENT_ONLY = 'patient_only';
+
+    public const ORIGINAL_PTM_NONE = 'none';
+
+    public const ORIGINAL_PTM_VOIDED = 'voided';
+
+    private const ORIGINAL_PTM_LABELS = [
+        self::ORIGINAL_PTM_EXECUTED => 'Lengkap — ditandatangani pasien dan dokter yang menangani.',
+        self::ORIGINAL_PTM_PATIENT_ONLY => 'Hanya tanda tangan pasien — belum ditandatangani dokter.',
+        self::ORIGINAL_PTM_NONE => 'Tidak ada PTM tercatat untuk kunjungan ini.',
+        self::ORIGINAL_PTM_VOIDED => 'PTM tercatat telah dibatalkan (void); tidak ada PTM yang berlaku.',
+    ];
+
+    private const ORIGINAL_PTM_NOTE = 'Hanya informasi: amandemen mengoreksi rekam medis yang sudah ada, sehingga tidak memerlukan PTM dan status ini tidak menghalangi keputusan. Tindakan medis baru dicatat melalui pemeriksaan dan PTM.';
+
     public function __construct(
         private readonly RmeAmendmentRepositoryInterface $amendments,
         private readonly RmeRecordVersionRepositoryInterface $versions,
@@ -225,6 +248,7 @@ final class RmeAmendmentService
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly HandwritingPayloadGuard $canvasGuard,
         private readonly PatientRmWorkspaceResolver $workspace,
+        private readonly RmeVisitConsentService $consents,
     ) {}
 
     // ─── Writes ─────────────────────────────────────────────────────────────
@@ -854,6 +878,8 @@ final class RmeAmendmentService
             'latest_version' => $latest?->version,
             'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false, 'can_approve' => false, 'stale' => false, 'chain_broken' => false],
             'correction_page' => $this->correctionPageDetail($amendment),
+            // Rule 240 §6.11 — information only; no action above consults it.
+            'original_ptm' => $this->originalPtmFor($amendment),
         ];
 
         // Rule 135 — a correction page that fails its integrity check would be
@@ -886,6 +912,36 @@ final class RmeAmendmentService
                 .' ('.$this->roleLabel((string) $row['diagnosis_role']).')'
                 .(($row['notes'] ?? null) !== null ? ' — '.$row['notes'] : ''), $added),
         ];
+    }
+
+    /**
+     * Rule 240 §6.11 (owner decision 2026-11-17) — the amended visit's recorded
+     * PTM, for INFORMATION only. An amendment corrects a record that already
+     * exists, so it stays outside the PTM gate (rule 241 §2.3): request(),
+     * cancel(), reject(), approve() and actionsFor() never consult it, and
+     * nothing here creates or changes a consent row. `executed` and
+     * `patient_only` (the patient's signature, no doctor countersignature) are the
+     * live consent's (RmeVisitConsentService::ptmStateFor()); with no live
+     * consent, a voided one in the visit's history is `voided`, none at all
+     * `none`.
+     *
+     * @return array{state: string, label: string, note: string}|null  null when the visit is gone
+     */
+    private function originalPtmFor(RmeAmendment $amendment): ?array
+    {
+        $visit = $amendment->clinicVisit;
+
+        if ($visit === null) {
+            return null;
+        }
+
+        $state = match ($this->consents->ptmStateFor($visit)) {
+            RmeVisitConsentService::PTM_EXECUTED => self::ORIGINAL_PTM_EXECUTED,
+            RmeVisitConsentService::PTM_AWAITING_DOCTOR => self::ORIGINAL_PTM_PATIENT_ONLY,
+            default => $this->consents->historyFor($visit)->isEmpty() ? self::ORIGINAL_PTM_NONE : self::ORIGINAL_PTM_VOIDED,
+        };
+
+        return ['state' => $state, 'label' => self::ORIGINAL_PTM_LABELS[$state], 'note' => self::ORIGINAL_PTM_NOTE];
     }
 
     /**
