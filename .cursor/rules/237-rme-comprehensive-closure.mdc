@@ -259,13 +259,34 @@ still disabled until consent.
    its 403/404 whatever its payload.
 5. **Storage (OD-5-9, rule 121).** New consent signatures are written to and read from `ClinicalEvidenceStorage`
    (`RmeVisitConsentService::disk()` delegates to it; `config('rme_consent.legacy_signature_disk')` names only the
-   pre-change disk for the copy command). No reader falls back to the old disk (rule 121 §5). Objects written before
+   pre-change disk for the copy command). Readers: see §14.5a (temporary read-only fallback). Objects written before
    the change are copied key-for-key, SHA-256 verified, by `rme:consent-signatures-migrate` (dry run, then `--apply`;
    never deletes — purge is a separate, owner-approved phase, rule 121 §6). The copy runs as the runtime user
    `daengtisiams` and refuses root (private disk: 0700/0600 objects owned by another user are unreadable to PHP-FPM);
    an unreadable object is never copied as empty and never overwritten; a failed write is counted, never printed. A late
    failure inside `sign()` removes the objects that call wrote (rule 224 pattern); a failure after the body finished
    keeps them.
+5a. **Temporary read-only fallback (release 2; owner decision 2026-11-17; a temporary exception to rule 121 §5).**
+   The owner ordered that the old read path is not disabled before the copy is migrated and verified, and that
+   `--apply` waits for the owner's approval of the dry run. Until then every READER of a consent signature
+   (`RmeVisitConsentService::signatureDataUri()` for the consent page/print, and the policy-gated
+   `rme.consents.signature` stream) asks `signatureReadDisk()`:
+   1. the clinical evidence disk whenever it holds the object — a damaged (unreadable / non-PNG) copy there answers
+      "not available" (404 / no image), never the old copy;
+   2. only when the clinical disk does not hold the object yet, and only while `config('rme_consent.legacy_read_fallback')`
+      is true (set in config, no environment read; a missing key is false), the disk named by `legacy_signature_disk`,
+      which must be on the allowlist `RmeVisitConsentService::LEGACY_SIGNATURE_READ_DISKS` (`local`) — never the public
+      disk and never the clinical disk again;
+   3. otherwise nothing.
+   Security review (2026-11-17): only the key shape `sign()` has always written is looked up on either disk —
+   `<signature_directory>/<one segment>/<one segment>.png`, relative, no `.`/`..` segment, no backslash or control
+   character — so a row can never be pointed at another object of the same disk. Bytes must start with the PNG prefix
+   (`\x89PNG`, as `ClinicalEvidenceStorage`) on either disk, else 404 / no image (logged without the key). The read is
+   read-only: nothing is written, copied, moved or deleted; the key comes from the consent row; authorization, branch
+   scope and the 404/403 contract are decided before the read, unchanged. Writers are unchanged (clinical disk only).
+   Removing the fallback (`legacy_read_fallback` false, then deleting the code path) is a separate owner-approved change
+   after `rme:consent-signatures-migrate --apply` has run and its SHA-256 verification is reviewed. Tests:
+   `RmeVisitConsentSignatureReadFallbackTest` (FB-01…FB-18; token `RmeVisitConsent`, declared mandatory).
 6. **Review round (2026-11-17).** `sign()` and `void()` re-assert the policy's branch and patient scope on the locked
    visit (CG-06 third layer, `MESSAGE_OUT_OF_SCOPE`), before any object is written; `void()` takes the same
    `lockForStatusDecision` as signing. The void form also requires a valid consent on an `in_progress` visit, because

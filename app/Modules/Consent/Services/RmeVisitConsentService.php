@@ -19,10 +19,12 @@ use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -847,16 +849,20 @@ class RmeVisitConsentService
     /**
      * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9, rule 121 §1) — consent signatures
      * are clinical evidence: they live where ClinicalEvidenceStorage says, never
-     * on a disk named here. Objects written before this change are copied there,
-     * key for key, by `rme:consent-signatures-migrate` (dry run, then --apply);
-     * there is no read fallback to the old disk (rule 121 §5).
+     * on a disk named here, and every new signature is written there. Objects
+     * written before this change are copied there, key for key, by
+     * `rme:consent-signatures-migrate` (dry run, then --apply).
+     *
+     * Release 2 (owner decision 2026-11-17, rule 237 §14.5a) — until that copy is
+     * applied and verified, the READERS keep a temporary, read-only fallback to
+     * the pre-change disk; see signatureReadDisk(). Writers never use it.
      */
     public function diskName(): string
     {
         return ClinicalEvidenceStorage::diskName();
     }
 
-    public function disk()
+    public function disk(): Filesystem
     {
         return ClinicalEvidenceStorage::disk();
     }
@@ -868,7 +874,150 @@ class RmeVisitConsentService
      */
     public function signatureDataUri(?string $path): ?string
     {
-        return ClinicalEvidenceStorage::dataUri($path);
+        if ($path === null || $path === '') {
+            return null;
+        }
+
+        if (ClinicalEvidenceStorage::isInlineDataUri($path)) {
+            return $path;
+        }
+
+        $disk = $this->signatureReadDisk($path);
+        $bytes = $disk === null ? null : $this->readSignaturePng($disk, $path);
+
+        return $bytes === null ? null : 'data:image/png;base64,'.base64_encode($bytes);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 release 2 (owner decision 2026-11-17,
+     * rule 237 §14.5a) — the disk a stored consent signature is READ from.
+     *
+     * 1. The clinical evidence disk, whenever it holds the object — even when that
+     *    object turns out unreadable or not a PNG: a damaged copy is reported as
+     *    "not available", never silently replaced by the old one.
+     * 2. Only when the clinical evidence disk does not hold the object yet, and
+     *    only while `rme_consent.legacy_read_fallback` is on, the pre-change disk
+     *    (`rme_consent.legacy_signature_disk`) — never the public disk, never the
+     *    clinical evidence disk again.
+     * 3. Otherwise null.
+     *
+     * Read-only: nothing is written, copied, moved or deleted here. The key comes
+     * from the consent row, never from the request; authorization is the
+     * caller's and happens before this is asked. Removing the fallback is a
+     * separate, owner-approved step after the copy is applied and verified.
+     */
+    public function signatureReadDisk(?string $path): ?Filesystem
+    {
+        if ($path === null || $path === '' || ClinicalEvidenceStorage::isInlineDataUri($path)) {
+            return null;
+        }
+
+        // Security review (2026-11-17) — defence in depth: only the shape sign()
+        // has always written (`<signature_directory>/<consent number>/<name>.png`)
+        // is ever looked up, on either disk. A row can never be pointed at some
+        // other object of the same disk.
+        if (! $this->isSignatureKeyShape($path)) {
+            Log::warning('A consent signature key has an unexpected shape.');
+
+            return null;
+        }
+
+        try {
+            $primary = ClinicalEvidenceStorage::disk();
+
+            if ($primary->exists($path)) {
+                return $primary;
+            }
+
+            $legacy = $this->legacySignatureReadDisk();
+
+            if ($legacy !== null && $legacy->exists($path)) {
+                return $legacy;
+            }
+        } catch (Throwable $e) {
+            Log::warning('A consent signature object could not be located.', [
+                'type' => $e::class,
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * The signature's bytes when they are a PNG; null (logged without the key)
+     * when they cannot be read or are not a PNG, as ClinicalEvidenceStorage does.
+     */
+    public function readSignaturePng(Filesystem $disk, string $path): ?string
+    {
+        try {
+            $bytes = (string) $disk->get($path);
+        } catch (Throwable $e) {
+            Log::warning('A stored consent signature could not be read.', [
+                'type' => $e::class,
+            ]);
+
+            return null;
+        }
+
+        if (! str_starts_with($bytes, "\x89PNG")) {
+            Log::warning('A stored consent signature is not a PNG image.');
+
+            return null;
+        }
+
+        return $bytes;
+    }
+
+    /**
+     * The only disks the temporary read fallback may ever open (an allowlist:
+     * the private disk consent signatures were written to before OD-5-9).
+     *
+     * @var list<string>
+     */
+    public const LEGACY_SIGNATURE_READ_DISKS = ['local'];
+
+    private function legacySignatureReadDisk(): ?Filesystem
+    {
+        if (! (bool) config('rme_consent.legacy_read_fallback', false)) {
+            return null;
+        }
+
+        $name = (string) config('rme_consent.legacy_signature_disk', '');
+
+        if (! in_array($name, self::LEGACY_SIGNATURE_READ_DISKS, true)
+            || $name === ClinicalEvidenceStorage::diskName()
+            || in_array($name, ClinicalEvidenceStorage::FORBIDDEN_DISKS, true)) {
+            return null;
+        }
+
+        return Storage::disk($name);
+    }
+
+    /**
+     * `<signature_directory>/<one segment>/<one segment>.png`, relative, with no
+     * `.`/`..` segment, no backslash and no control character.
+     */
+    private function isSignatureKeyShape(string $path): bool
+    {
+        $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
+
+        if ($directory === '' || preg_match('/[\\\\\x00-\x1F\x7F]/', $path) === 1) {
+            return false;
+        }
+
+        $segments = explode('/', $path);
+
+        if (count($segments) !== 3 || $segments[0] !== $directory || ! str_ends_with($segments[2], '.png')) {
+            return false;
+        }
+
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

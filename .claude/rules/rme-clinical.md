@@ -272,8 +272,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   room gate, doctor room isolation, doctor RME/odontogram print denial; performed treatments ARMED for SPN4 only
   (rule 219 §14).
 - In code since 2026-11-17 (check the deployed SHA): one valid consent per visit and a supervised void
-  (`rme.consents.void`, `void_rme_consents`); consent signatures on `ClinicalEvidenceStorage` with no fallback, older
-  objects copied by `rme:consent-signatures-migrate` (rule 237 §14).
+  (`rme.consents.void`, `void_rme_consents`); consent signatures on `ClinicalEvidenceStorage`; readers keep a temporary
+  read-only fallback to the old disk until `rme:consent-signatures-migrate` is applied and verified (rule 237 §14.5a).
 - WhatsApp prescription delivery OFF (`DisabledWhatsAppGateway`); `doctor.branch_lock` OFF, so doctor reach is patient
   and room scope (`.claude/rules/doctor-access.md`).
 - Cross-branch, cross-doctor Kontrol approved (OD-1, rule 200); receivable carry-over branch-local (OD-1a,
