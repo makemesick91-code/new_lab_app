@@ -493,6 +493,14 @@ class PilotBackupImportService
 
         foreach ($rows as $row) {
             $mrn = trim((string) ($row['medical_record_number'] ?? ''));
+
+            // Re-review F3 — a number the format check refuses (a later year, a
+            // non-digit current-year sequence, beyond the capacity) is skipped
+            // row by row anyway, so it must never create or seed its counter here.
+            if ($mrn === '' || $this->rmAllocator->formatRefusal($mrn) !== null) {
+                continue;
+            }
+
             $parts = $this->rmNumbers->parse(strtoupper($mrn));
             $branch = $parts !== null ? $this->rmBranch($mrn) : null;
 

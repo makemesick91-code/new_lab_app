@@ -351,6 +351,25 @@ it('CC-16 caps the WHOLE pilot run at +1000 from its starting counter, skipping 
         ->and(frccCounterValue(2026))->toBe(1010);
 });
 
+it('CC-16b never creates a counter row for a refused later year during a live pilot run (re-review F3)', function (): void {
+    frccCounter(2026, 10);
+    Doctor::factory()->create(['code' => 'FRCC-DOC']);
+
+    $result = app(PilotBackupImportService::class)->import(['tables' => [
+        'mst_doctors' => [['id' => '9', 'code' => 'FRCC-DOC', 'name' => 'Dokter Pilot']],
+        'mst_patients' => [
+            ['medical_record_number' => 'DG-SPN4-2027-0005', 'name' => 'Pilot Tahun Depan', 'doctor_id' => '9'],
+            ['medical_record_number' => 'DG-SPN4-2026-0020', 'name' => 'Pilot Tahun Ini', 'doctor_id' => '9'],
+        ],
+    ], 'skipped_tables' => [], 'whitelisted_row_counts' => []], dryRun: false, only: 'patients');
+
+    expect(Patient::query()->where('name', 'Pilot Tahun Depan')->exists())->toBeFalse()
+        ->and(Patient::query()->where('name', 'Pilot Tahun Ini')->exists())->toBeTrue()
+        ->and($result->skipped['mst_patients'] ?? 0)->toBe(1)
+        ->and(frccCounterValue(2027))->toBeNull()
+        ->and(frccCounterValue(2026))->toBe(20);
+});
+
 it('CC-17 refuses a current-year sequence that is not all digits, and stays lenient for a past year (review A3)', function (): void {
     $current = frccClaimRefusal('DG-SPN4-2026-12A');
 
