@@ -81,8 +81,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 8. **Refusal order with the PTM gate (rule 241 §2).** The authoring authority decides the encounter, the actor and —
    for a chart — its identity first (history stays history, §1.7), and the EXECUTED consent last. A final sheet or a
    finalized chart answers with its lock BEFORE that consent, whatever the PTM state: signing the PTM never unlocks
-   it, so a missing signature is never the reason given. When the authority's only refusal is the PTM (its two
-   awaiting messages), `MedicalRecordService::assertSheetAuthoringAllowed()` (notes, diagnoses, override; also their
+   it, so a missing signature is never the reason given. When the authority's only refusal is the PTM — typed by gate:
+   `RmeVisitConsentService::isPtmRefusal($refusal, PTM_GATE_RME | PTM_GATE_ODONTOGRAM)` reads the one list
+   (`PTM_REFUSALS`) that `assertExecutedConsent()` raises from, so no caller restates a message (review LOW-3) —
+   `MedicalRecordService::assertSheetAuthoringAllowed()` (notes, diagnoses, override; also their
    pre-checks, unlocked) and `OdontogramService::assertChartAuthoringAllowed()` (revision, visit save) lock the
    encounter's visit row, then the sheet or chart row, and refuse a final record with the lock; a draft keeps the
    consent refusal. Neither gate is weakened; each decides on the row it locked. Matrix, service and HTTP: final +

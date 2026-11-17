@@ -402,23 +402,20 @@ class OdontogramService
      * then the EXECUTED consent. A FINALIZED chart answers with its lock BEFORE
      * that consent: signing the PTM can never unlock it, so a missing signature is
      * never the reason given for it. When the authority's ONLY refusal is the PTM
-     * (its two awaiting messages), the chart's visit row — the authorized
-     * encounter — is locked and re-checked, then the chart row (rule 223 §1 item
-     * 6), and a finalized chart is refused with the lock; otherwise the consent
-     * refusal stands. Both decisions are made on rows this transaction holds and
-     * nothing is written. Callers re-decide the lock on the chart row after this.
+     * (RmeVisitConsentService::isPtmRefusal(), gate PTM_GATE_ODONTOGRAM), the
+     * chart's visit row — the authorized encounter — is locked and re-checked,
+     * then the chart row (rule 223 §1 item 6), and a finalized chart is refused
+     * with the lock; otherwise the consent refusal stands. Both decisions are
+     * made on rows this transaction holds and nothing is written. Callers
+     * re-decide the lock on the chart row after this.
      */
     private function assertChartAuthoringAllowed(?ClinicVisit $visit, User $user): void
     {
         try {
             $this->consents->assertOdontogramAuthoringAllowed($visit, $user);
         } catch (ValidationException $refusal) {
-            $onlyThePtm = in_array($refusal->errors()['consent'][0] ?? null, [
-                RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_PATIENT,
-                RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR,
-            ], true);
-
-            if ($onlyThePtm && $visit !== null) {
+            // Typed by gate (review LOW-3): the list the authority raises from.
+            if ($visit !== null && RmeVisitConsentService::isPtmRefusal($refusal, RmeVisitConsentService::PTM_GATE_ODONTOGRAM)) {
                 $this->lockOpenVisit((int) $visit->getKey());
                 self::refuseFinalizedChart($this->odontograms->findByClinicVisitForUpdate((int) $visit->getKey()));
             }
