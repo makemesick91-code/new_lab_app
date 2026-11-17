@@ -925,8 +925,10 @@ return [
         // sheet navigation, document rail and book page sequence mirroring the
         // sheet read rule, the consent banner never naming another doctor's
         // encounter, the book started on an anchor the doctor may not read
-        // (`startBook` = the `appendPage` rule) without naming it, flag OFF
-        // parity and the query budget. Same `DoctorPatientScope` token.
+        // (`startBook` = the `appendPage` rule) without naming it or showing its
+        // anchor-bound content, a roomless anchor, the working-branch scope at
+        // the address, flag OFF parity and the query budget. Same
+        // `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopePostServiceWorkspaceTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service

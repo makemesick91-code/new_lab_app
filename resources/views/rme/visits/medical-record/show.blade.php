@@ -1,5 +1,12 @@
 <x-settings-shell title="Rekam Medis">
     @php
+        // Rule 243 §2.11 (PR A3, review HIGH-1) — decided on the server
+        // (MedicalRecordPolicy::viewAnchorContent): false only when the active
+        // sheet is the book and its own (anchor) visit is one this viewer may not
+        // read. Then that visit is never named and nothing typed onto the sheet
+        // (SOAP, diagnoses, status, recorded/finalized metadata) is shown; only
+        // the handwriting pages remain.
+        $anchorContentReadable = $anchorContentReadable ?? true;
         $isFinal = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL;
 
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — hoisted from the middle of
@@ -29,34 +36,33 @@
         $canAppendHandwritingPage = ($canAppendBookPage ?? $canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
         $savedHandwriting = $medicalRecord->latestHandwriting();
         $hasHandwriting = $hasRequiredHandwriting ?? false;
-        $hasLegacySoap = filled($medicalRecord->subjective)
+        $hasLegacySoap = $anchorContentReadable && (filled($medicalRecord->subjective)
             || filled($medicalRecord->objective)
             || filled($medicalRecord->assessment)
-            || filled($medicalRecord->plan);
+            || filled($medicalRecord->plan));
     @endphp
 
     <div class="space-y-6">
-        {{-- Rule 243 §2.11 (PR A3) — `$activeVisitNamed` is false only when the
-             active sheet is the book and its own (anchor) visit is one this viewer
-             may not read; that visit is then never named on this page. --}}
         <x-ui.page-header
             title="Rekam Medis"
-            :subtitle="($activeVisitNamed ?? true)
+            :subtitle="$anchorContentReadable
                 ? $clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')
                 : 'Buku RM pasien'"
         >
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
-                <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
-                    {{ $isFinal ? 'Final' : 'Draft' }}
-                </x-ui.badge>
+                @if ($anchorContentReadable)
+                    <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
+                        {{ $isFinal ? 'Final' : 'Draft' }}
+                    </x-ui.badge>
+                @endif
 
                 {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — "Finalisasi" moved
                      here from the very bottom of the page. MOVED, NOT DUPLICATED:
                      there is no second Finalisasi control further down. The action,
                      its route, its policy gate ($canFinalize) and the mandatory
                      handwriting precondition ($hasHandwriting) are all unchanged. --}}
-                @if ($isDraft && $canFinalize)
+                @if ($anchorContentReadable && $isDraft && $canFinalize)
                     @if ($hasHandwriting && $canAuthorRme)
                         <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}"
                               onsubmit="return confirm('Finalkan rekam medis ini? Setelah final, rekam medis terkunci dan hanya dapat dikoreksi melalui amandemen yang disetujui.')">
@@ -137,7 +143,7 @@
                 {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
                      top of the page, matching the Odontogram page placement/style so
                      the doctor reaches the handwriting area faster. --}}
-                @if ($activeVisitNamed ?? true)
+                @if ($anchorContentReadable)
                     <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
                         &larr; Kembali ke Kunjungan
                     </x-ui.button>
@@ -165,7 +171,9 @@
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE
              messages travel with the relocated button so the doctor learns why it is
              unavailable without scrolling to the bottom of the record. --}}
-        @if ($isDraft && $canFinalize && ! $hasHandwriting)
+        @if (! $anchorContentReadable)
+            {{-- Rule 243 §2.11 — the anchor's status is not this viewer's to read. --}}
+        @elseif ($isDraft && $canFinalize && ! $hasHandwriting)
             <x-ui.alert variant="warning">
                 RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
             </x-ui.alert>
@@ -182,7 +190,7 @@
 
         {{-- Rule 243 §2.11 — the parent visit is named only when the viewer may
              open it (`$activeFollowUpOf`, decided in the controller). --}}
-        @if (($activeVisitNamed ?? true) && $clinicVisit->isFollowUpVisit())
+        @if ($anchorContentReadable && $clinicVisit->isFollowUpVisit())
             <x-ui.alert variant="info">
                 <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
                 @if ($activeFollowUpOf ?? null)
@@ -272,7 +280,7 @@
 
             {{-- Visit-level context retained below the patient biodata table.
                  Rule 243 §2.11 — omitted for an anchor visit the viewer may not read. --}}
-            @if ($activeVisitNamed ?? true)
+            @if ($anchorContentReadable)
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
@@ -996,10 +1004,13 @@
             @include('rme.visits.medical-record.partials.rm-page-swipe-script')
         </x-ui.card>
 
-        {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
-        @include('rme.visits.medical-record.partials.structured-diagnoses', [
-            'canUpdate' => $canEditSheet && $canAuthorRmeNow,
-        ])
+        {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only).
+             Rule 243 §2.11 — the diagnoses belong to the sheet's own visit. --}}
+        @if ($anchorContentReadable)
+            @include('rme.visits.medical-record.partials.structured-diagnoses', [
+                'canUpdate' => $canEditSheet && $canAuthorRmeNow,
+            ])
+        @endif
 
         {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — "Tindakan
              Dilakukan", after the diagnosis. Absent while the capability is OFF. --}}
@@ -1024,33 +1035,36 @@
             'clinicalHistory' => $clinicalHistory ?? collect(),
         ])
 
-        {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card. --}}
-        <x-ui.card title="Riwayat Pencatatan">
-            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
+        {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card.
+             Rule 243 §2.11 — the sheet's record metadata follows its own visit. --}}
+        @if ($anchorContentReadable)
+            <x-ui.card title="Riwayat Pencatatan">
+                <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
                     </div>
-                @endif
-            </dl>
-        </x-ui.card>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                    @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            </x-ui.card>
+        @endif
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-02 — "Dokumen RME Pasien"
              relocated here, to the FOOT of the page. The information hierarchy is

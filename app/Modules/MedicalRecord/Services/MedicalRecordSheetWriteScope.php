@@ -48,8 +48,12 @@ class MedicalRecordSheetWriteScope
             return false;
         }
 
-        $bookId = $this->bookIdFor((int) $sheet->patient_id);
+        return $this->isNotTheBook($sheet, $this->bookIdFor((int) $sheet->patient_id));
+    }
 
+    /** The one definition of "not the book", given the patient's book id. */
+    private function isNotTheBook(MedicalRecord $sheet, ?int $bookId): bool
+    {
         return $bookId === null || $bookId !== (int) $sheet->getKey();
     }
 
@@ -61,8 +65,10 @@ class MedicalRecordSheetWriteScope
      * patient-level (read mode HISTORY) — so in OWN mode only the doctor's own
      * sheets, never the book. Unchanged without a viewer, with the flag OFF and
      * for the exempt roles. Expects `clinicVisit` loaded
-     * (PatientRmWorkspaceResolver::sheetsForPatient() eager-loads it), so a
-     * sheet costs no query once the read mode and the book are memoised.
+     * (PatientRmWorkspaceResolver::sheetsForPatient() eager-loads it). The
+     * book is resolved ONCE per patient per call — also when the patient has
+     * none, which bookIdFor() never memoises (A3a review LOW-2) — so a sheet
+     * costs no query once the read mode is memoised.
      *
      * @param  Collection<int, MedicalRecord>  $sheets
      * @return Collection<int, MedicalRecord>
@@ -73,10 +79,24 @@ class MedicalRecordSheetWriteScope
             return $sheets;
         }
 
+        /** @var array<int, int|null> $bookIds patient id => book id (null: no book) */
+        $bookIds = [];
+
         return $sheets
-            ->filter(fn (MedicalRecord $sheet): bool => $this->followsItsVisit($sheet)
-                ? $sheet->clinicVisit !== null && $this->doctorScope->doctorCanAccessVisit($viewer, $sheet->clinicVisit)
-                : $this->doctorScope->readModeFor($viewer, (int) $sheet->patient_id) === DoctorPatientScopeService::READ_HISTORY)
+            ->filter(function (MedicalRecord $sheet) use ($viewer, &$bookIds): bool {
+                $patientId = (int) $sheet->patient_id;
+
+                if (! array_key_exists($patientId, $bookIds)) {
+                    $bookIds[$patientId] = $this->bookIdFor($patientId);
+                }
+
+                // followsItsVisit(), with the book resolved above.
+                $followsItsVisit = $sheet->clinic_visit_id !== null && $this->isNotTheBook($sheet, $bookIds[$patientId]);
+
+                return $followsItsVisit
+                    ? $sheet->clinicVisit !== null && $this->doctorScope->doctorCanAccessVisit($viewer, $sheet->clinicVisit)
+                    : $this->doctorScope->readModeFor($viewer, $patientId) === DoctorPatientScopeService::READ_HISTORY;
+            })
             ->values();
     }
 

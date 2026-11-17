@@ -479,24 +479,28 @@ class MedicalRecordController extends Controller
 
         // Rule 243 §2.11 (PR A3) — the book is read patient-level, but its own
         // (anchor) visit may be one the viewer may not read: another doctor's
-        // pre-exam visit. Such a visit is never named — not in the header, the
-        // visit details, the sheet tabs or the rail — and its per-visit data
-        // (performed treatments) is not shown. Only ever the book; empty with
-        // the encounter scope OFF.
+        // pre-exam visit. Such a visit is never named in the sheet tabs or the
+        // rail. Only ever the book; empty with the encounter scope OFF.
         $unnamedSheetIds = $sheets
             ->filter(fn (MedicalRecord $sheet): bool => $sheet->clinicVisit !== null
                 && ! $this->doctorScope->listsVisitFor($viewer, $sheet->clinicVisit))
             ->map(fn (MedicalRecord $sheet): int => (int) $sheet->getKey())
             ->values()
             ->all();
-        $activeVisitNamed = ! in_array((int) $activeSheet->getKey(), $unnamedSheetIds, true);
+        // Review HIGH-1 — and for the ACTIVE sheet the server decides, through
+        // the policy, whether its anchor-bound content is readable: the visit
+        // (header, details, follow-up alert, performed treatments) and
+        // everything typed onto the sheet (SOAP, diagnoses and their rollout
+        // state, status, recorded/finalized metadata). When it is not, only the
+        // handwriting pages remain. Always true with the encounter scope OFF.
+        $anchorContentReadable = $viewer?->can('viewAnchorContent', $activeSheet) ?? false;
         $activeFollowUpOf = $activeVisit->followUpOf !== null
             && $this->doctorScope->listsVisitFor($viewer, $activeVisit->followUpOf)
                 ? $activeVisit->followUpOf
                 : null;
 
         return view('rme.visits.medical-record.show', [
-            'activeVisitNamed' => $activeVisitNamed,
+            'anchorContentReadable' => $anchorContentReadable,
             'activeFollowUpOf' => $activeFollowUpOf,
             'unnamedSheetIds' => $unnamedSheetIds,
             'clinicVisit' => $activeVisit,
@@ -558,7 +562,7 @@ class MedicalRecordController extends Controller
                 ->canAuthorRmeForPatient($patientId, $request->user()),
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
-            'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
+            'diagnosisEnforcement' => $anchorContentReadable ? $this->diagnosisRollout->enforcementStateFor($activeSheet) : null,
             // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a final sheet
             // (null on a draft); the request offer is the service's own answer.
             'amendmentPanel' => app(RmeAmendmentService::class)->panelFor($activeSheet, $request->user()),
@@ -566,7 +570,7 @@ class MedicalRecordController extends Controller
             // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
             // while the capability is OFF, so the page renders exactly as before.
             // Authoring controls mirror the service authority (never a permission).
-            'performedTreatments' => $activeVisitNamed
+            'performedTreatments' => $anchorContentReadable
                 ? app(RmePerformedTreatmentService::class)->workspaceFor($activeVisit, $request->user())
                 : null,
             // LEGACY-RME-PDF-HISTORY-1 — native RME history + published legacy

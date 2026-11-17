@@ -65,11 +65,48 @@ class MedicalRecordPolicy
             return Gate::forUser($user)->inspect('view', $anchor);
         }
 
-        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $anchor->branch_id)) {
+        // Review LOW-1 — the anchor's branch stays inside the working-branch
+        // scope the anchor visit's own `view` asked (RmeWorkingBranchScope::allows():
+        // a context-bound dual-role Doctor reads only their working branch), on
+        // top of the clinical-document read scope.
+        if (! $this->canView($user)
+            || ! app(RmeWorkingBranchScope::class)->allows($user, $anchor->branch_id)
+            || ! $this->mayReadDocumentAt($user, $anchor->branch_id)) {
             return false;
         }
 
         return $scope->authorizeWorkspaceRead($user, (int) $anchor->patient_id);
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3, review HIGH-1) — the ANCHOR-BOUND content of a
+     * readable sheet: its typed SOAP fields, its diagnoses and their rollout
+     * state, its status and recorded/finalized metadata, and its own visit
+     * (number, doctor, notes, performed treatments). All of it belongs to the
+     * sheet's own visit (item 5's anchor rule), so with the encounter scope ON a
+     * scoped Doctor reads it only when that visit is readable
+     * (DoctorPatientScopeService::listsVisitFor()). This only ever differs from
+     * `view` for the BOOK, which is read patient-level: on an anchor the doctor
+     * may not read (another doctor's pre-exam visit) only its handwriting pages
+     * remain. With the flag OFF, and for every other account: exactly `view`.
+     */
+    public function viewAnchorContent(User $user, MedicalRecord $medicalRecord): Response|bool
+    {
+        $view = $this->view($user, $medicalRecord);
+
+        if ($view instanceof Response ? $view->denied() : ! $view) {
+            return $view;
+        }
+
+        $scope = app(DoctorPatientScopeService::class);
+
+        if (! $scope->encounterScopeAppliesTo($user)) {
+            return $view;
+        }
+
+        $visit = $medicalRecord->clinicVisit;
+
+        return $visit !== null && $scope->listsVisitFor($user, $visit) ? true : Response::denyAsNotFound();
     }
 
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool

@@ -33,7 +33,9 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
@@ -699,4 +701,204 @@ it('resolves identity, read mode and the book a bounded number of times, whateve
         ->and($large['readMode'])->toBe($small['readMode'])
         ->and($large['book'])->toBe($small['book'])
         ->and($large['identity'])->toBeLessThanOrEqual(3);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 7 — A3a review: anchor-bound content, roomless anchors, working branch,
+|     bookless budget
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * HIGH-1 probe: the patient's anchor is doctor B's LIVE (in_progress) visit,
+ * holding the book with B's typed SOAP, a diagnosis and B as recorder and
+ * finalizer; A is in history mode through an own registered visit today.
+ */
+function dpswLiveAnchorBook(bool $otherRoom): array
+{
+    $roomB = ClinicRoom::query()->whereKeyNot(test()->dpswRoom->id)->where('branch_id', test()->dpswBranch->id)->firstOrFail();
+    $anchor = dpswVisit(test()->dpswDoctorB, ClinicVisit::STATUS_IN_PROGRESS, $otherRoom ? ['clinic_room_id' => $roomB->id] : []);
+    $book = dpswSheet($anchor);
+    $book->forceFill([
+        'subjective' => 'Keluhan rahasia milik dokter B',
+        'status' => MedicalRecord::STATUS_FINAL,
+        'recorded_by' => test()->dpswUserB->id,
+        'finalized_by' => test()->dpswUserB->id,
+        'finalized_at' => now(),
+    ])->save();
+    $diagnosis = ClinicalDiagnosis::factory()->create(['display' => 'Diagnosis rahasia dokter B']);
+    MedicalRecordDiagnosis::query()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $anchor->id,
+        'branch_id' => $anchor->branch_id,
+        'clinical_diagnosis_id' => $diagnosis->id,
+        'diagnosis_role' => MedicalRecordDiagnosis::ROLE_PRIMARY,
+        'diagnosed_by' => test()->dpswUserB->id,
+        'diagnosed_at' => now(),
+        'created_by' => test()->dpswUserB->id,
+    ]);
+    dpswPage($book, 2);
+    $aVisit = dpswVisit(test()->dpswDoctorA, ClinicVisit::STATUS_REGISTERED);
+
+    return compact('anchor', 'book', 'aVisit');
+}
+
+it('withholds the book\'s anchor-bound content when the doctor may not read the anchor (flag ON)', function (bool $otherRoom) {
+    dpswFlag(true);
+    $f = dpswLiveAnchorBook($otherRoom);
+    $a = test()->dpswUserA;
+
+    expect(Gate::forUser($a)->allows('viewAnchorContent', $f['book']))->toBeFalse();
+
+    $response = dpswOpen($a, $f['aVisit'])->assertOk()->assertViewIs('rme.visits.medical-record.show');
+    $html = $response->getContent();
+
+    // Only the patient-level handwriting pages remain.
+    expect(dpswPageRecordIds($response))->toBe([(int) $f['book']->id])
+        ->and($response->viewData('diagnosisEnforcement'))->toBeNull()
+        ->and($html)->not->toContain('Keluhan rahasia milik dokter B')
+        ->and($html)->not->toContain('Data SOAP (Legacy)')
+        ->and($html)->not->toContain('Diagnosis rahasia dokter B')
+        ->and($html)->not->toContain('Rekam Medis ini telah difinalkan')
+        ->and($html)->not->toContain('Difinalisasi oleh')
+        ->and($html)->not->toContain('Dicatat oleh')
+        ->and($html)->not->toContain(test()->dpswUserB->name)
+        ->and($html)->not->toContain($f['anchor']->visit_number)
+        ->and(preg_match('/>\s*Final\s*</', $html))->toBe(0); // the status badge
+})->with(['same room' => [false], 'other room' => [true]]);
+
+it('keeps the book\'s anchor-bound content exactly as before with the flag OFF', function (bool $otherRoom) {
+    dpswFlag(false);
+    $f = dpswLiveAnchorBook($otherRoom);
+    $a = test()->dpswUserA;
+
+    $response = dpswOpen($a, $f['aVisit']);
+
+    if ($otherRoom) {
+        // Rule 138: another room's active visit, as the workspace address.
+        $response->assertForbidden();
+
+        return;
+    }
+
+    $html = $response->assertOk()->getContent();
+
+    expect($html)->toContain('Keluhan rahasia milik dokter B')
+        ->and($html)->toContain('Diagnosis rahasia dokter B')
+        ->and($html)->toContain('Rekam Medis ini telah difinalkan')
+        ->and($html)->toContain('Difinalisasi oleh')
+        ->and(preg_match('/>\s*Final\s*</', $html))->toBe(1);
+})->with(['same room' => [false], 'other room' => [true]]);
+
+it('shows the anchor-bound content of a book whose anchor the doctor may read', function () {
+    dpswFlag(true);
+    $f = dpswFixture(); // the book on B's COMPLETED first visit; A in history mode
+    $f['book']->forceFill(['subjective' => 'Catatan buku yang boleh dibaca'])->save();
+
+    $book = dpswOpen(test()->dpswUserA, $f['bookVisit'], ['sheet' => $f['book']->id])->assertOk();
+
+    expect(Gate::forUser(test()->dpswUserA)->allows('viewAnchorContent', $f['book']))->toBeTrue()
+        ->and((int) $book->viewData('activeSheet')->id)->toBe((int) $f['book']->id)
+        ->and($book->getContent())->toContain('Catatan buku yang boleh dibaca')
+        ->and($book->getContent())->toContain($f['bookVisit']->visit_number);
+});
+
+it('lets a roomless pre-exam anchor of another doctor neither bounce the workspace nor block the book (flag ON)', function (bool $on) {
+    dpswFlag($on);
+    $a = test()->dpswUserA;
+    $anchor = dpswVisit(test()->dpswDoctorB, ClinicVisit::STATUS_REGISTERED, ['visit_date' => '2026-11-10', 'clinic_room_id' => null]);
+    $aVisit = dpswVisit(test()->dpswDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    rmeSignedConsentFor($aVisit);
+    $address = route('rme.visits.medical-record.show', [$anchor, 'source_visit_id' => $aVisit->id]);
+
+    $show = $this->actingAs($a)->get($address);
+    $store = $this->actingAs($a)->post(route('rme.visits.medical-record.store', $anchor), ['source_visit_id' => $aVisit->id]);
+    $created = MedicalRecord::query()->where('patient_id', test()->dpswPatient->id)->first();
+
+    if (! $on) {
+        // Unchanged (and not a regression): the room gate bounces on the anchor.
+        $show->assertRedirect(route('rme.visits.show', $anchor));
+        $store->assertRedirect(route('rme.visits.show', $anchor));
+        expect($created)->toBeNull();
+
+        return;
+    }
+
+    $show->assertOk()->assertViewIs('rme.visits.medical-record.empty');
+    $store->assertRedirect($address)->assertSessionHasNoErrors();
+
+    expect($show->getContent())->not->toContain($anchor->visit_number)
+        ->and($created)->not->toBeNull()
+        ->and((int) $created->clinic_visit_id)->toBe((int) $anchor->id);
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
+
+it('keeps the room gate on the doctor\'s own roomless visit at the workspace address', function () {
+    dpswFlag(true);
+    $a = test()->dpswUserA;
+    $anchor = dpswVisit(test()->dpswDoctorB, ClinicVisit::STATUS_REGISTERED, ['visit_date' => '2026-11-10', 'clinic_room_id' => null]);
+    $own = dpswVisit(test()->dpswDoctorA, ClinicVisit::STATUS_REGISTERED, ['clinic_room_id' => null]);
+
+    $this->actingAs($a)
+        ->get(route('rme.visits.medical-record.show', [$anchor, 'source_visit_id' => $own->id]))
+        ->assertRedirect(route('rme.visits.show', $own));
+
+    // A new patient's first visit IS the doctor's own encounter: gated as before.
+    $this->actingAs($a)
+        ->get(route('rme.visits.medical-record.show', $own))
+        ->assertRedirect(route('rme.visits.show', $own));
+});
+
+it('keeps a context-bound dual-role doctor to the working branch at the workspace address', function (bool $on) {
+    dpswFlag($on);
+    $other = Branch::factory()->create(['code' => 'SW02', 'is_rme_enabled' => true]);
+    $anchor = dpswVisit(test()->dpswDoctorB, ClinicVisit::STATUS_COMPLETED, [
+        'branch_id' => $other->id,
+        'completed_at' => '2025-01-01 03:00:00',
+        'visit_date' => '2025-01-01',
+    ]);
+    dpswSheet($anchor);
+    $aVisit = dpswVisit(test()->dpswDoctorA, ClinicVisit::STATUS_CASHIER_PENDING);
+    $a = test()->dpswUserA;
+
+    // A doctor alone reads the patient's book across RME branches (history).
+    dpswOpen($a, $aVisit)->assertOk();
+
+    // A Doctor who is also Perawat works in one branch (context-bound).
+    $a->assignRole('Perawat');
+    $a = $a->fresh();
+    dpswOpen($a, $aVisit)->assertForbidden();
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
+
+it('resolves the book a bounded number of times for a patient without a book', function () {
+    dpswFlag(true);
+    $a = test()->dpswUserA;
+    // No book: every sheet is anchored to B's first visit, which holds no sheet.
+    $first = dpswCompleted(test()->dpswDoctorB, '2025-01-01 03:00:00');
+    $bookless = function (ClinicVisit $visit) use ($first): void {
+        MedicalRecord::factory()->create([
+            'clinic_visit_id' => $visit->id,
+            'branch_id' => $visit->branch_id,
+            'patient_id' => $visit->patient_id,
+            'doctor_id' => $visit->doctor_id,
+            'canonical_visit_id' => $first->id,
+        ]);
+    };
+    $aVisit = dpswVisit(test()->dpswDoctorA, ClinicVisit::STATUS_CASHIER_PENDING);
+    $bookless($aVisit);
+    $bookless(dpswCompleted(test()->dpswDoctorB, '2026-01-01 03:00:00'));
+
+    expect(app(PatientRmWorkspaceResolver::class)->canonicalMedicalRecord((int) test()->dpswPatient->id))->toBeNull();
+
+    $small = dpswMeasure($a, $aVisit);
+
+    foreach (range(2, 7) as $month) {
+        $bookless(dpswCompleted(test()->dpswDoctorB, sprintf('2026-%02d-01 03:00:00', $month)));
+    }
+    app()->forgetScopedInstances();
+
+    $large = dpswMeasure($a, $aVisit);
+
+    expect($large['book'])->toBe($small['book'])
+        ->and($large['readMode'])->toBe($small['readMode']);
 });
