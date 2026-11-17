@@ -100,6 +100,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\Process\Process;
 use Tests\Support\AccessControlSeedSnapshot;
@@ -307,6 +308,55 @@ function userWith(array $permissions): User
     $user->givePermissionTo($permissions);
 
     return $user;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan default 4) —
+ * committing a legacy patient CSV batch needs the paper-card permission; the
+ * service refuses an anonymous or unpermitted committer. This is the id of a
+ * fresh account holding `manage patients` and that permission (created when a
+ * suite did not seed access control).
+ */
+function legacyPatientCommitterId(): int
+{
+    $permissions = ['manage patients', 'register_patient_paper_card_rm'];
+
+    foreach ($permissions as $name) {
+        Permission::findOrCreate($name, 'web');
+    }
+
+    return (int) userWith($permissions)->id;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.2 (rule 244 §5, PR-4) — the core
+ * fields a NEW patient registration requires on both forms (Master Data →
+ * Tambah Pasien and Kunjungan → Pasien Baru): gender, place and date of birth,
+ * phone (or WhatsApp), address and occupation. Suites that register a patient
+ * merge these into their payload; a suite's own values win (`$overrides`, or
+ * keys the suite sets after the merge).
+ *
+ * Synthetic values only. Each call gets its own phone number and birth date,
+ * so two fixtures registered in one test are never a "strong duplicate" of
+ * each other (PatientRegistrationDuplicateCheck matches a similar name with
+ * the same phone or birth date).
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function newPatientCoreFields(array $overrides = []): array
+{
+    static $sequence = 0;
+    $sequence++;
+
+    return array_merge([
+        'gender' => 'Female',
+        'place_of_birth' => 'Makassar',
+        'date_of_birth' => Carbon::create(1950, 1, 1)->addDays($sequence % 20000)->toDateString(),
+        'phone' => '0819'.str_pad((string) $sequence, 8, '0', STR_PAD_LEFT),
+        'address' => 'Jl. Uji Coba No. '.$sequence,
+        'occupation' => 'Karyawan',
+    ], $overrides);
 }
 
 /**

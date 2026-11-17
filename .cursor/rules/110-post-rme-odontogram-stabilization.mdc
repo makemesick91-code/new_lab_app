@@ -121,6 +121,13 @@ Sites that must stay on `ClinicalClock`:
   (the RM uniqueness pre-checks — they must compose the same value the service
   will persist)
 
+> **REVISED by rule 244 §2–§3 (PR-2).** The three request pre-checks were removed
+> with the typed Nomor RM. A new patient's `registered_at` and RM year are
+> stamped by `PatientService::create()` from `ClinicalClock::today()` and the
+> number comes from `PatientRmNumberAllocator`; `PatientService::resolveRegisteredAt()`
+> is gone. `composeForRegistration()` stays on `ClinicalClock` for the legacy
+> CSV import. Everything else in this section stands.
+
 Constraints:
 
 - A **supplied** date is a calendar date and is used verbatim. Never

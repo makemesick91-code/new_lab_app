@@ -57,7 +57,10 @@ it('does not strip the legacy permission grants', function (string $legacy, int 
     // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195, owner D1) added
     // `approve_rme_invoice_correction` to Admin Klinik (24 -> 25) and
     // `request_rme_invoice_correction` to Kasir (6 -> 7); Front Office holds both.
-    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 25],
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.2 (rule 244 §5.3, plan default 2)
+    // added `register_patient_without_phone` to Admin Klinik and Front Office
+    // (25 -> 26). Kasir is unchanged.
+    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 26],
     [FrontOfficeRole::LEGACY_KASIR, 7],
 ]);
 

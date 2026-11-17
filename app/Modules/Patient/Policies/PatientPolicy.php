@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Policies;
 
 use App\Models\User;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\PatientService;
 
 class PatientPolicy
 {
@@ -20,6 +21,34 @@ class PatientPolicy
     public function create(User $user): bool
     {
         return $user->can('manage patients');
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4) — register a
+     * patient under an old paper-card Nomor RM instead of the automatic one.
+     * PatientService::createWithPaperCardNumber() re-asserts it, plus the
+     * reason and the number checks that also bind Super Admin.
+     */
+    public function registerWithPaperCardNumber(User $user): bool
+    {
+        return $user->can('manage patients') && $user->can(PatientService::PAPER_CARD_PERMISSION);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b) — read
+     * the stored paper-card reasons (Supervisor RME, Owner; Super Admin through
+     * Gate::before). PatientService re-asserts it and adds the branch scope
+     * (out of scope: 404).
+     */
+    public function viewAnyPaperCardRegistrations(User $user): bool
+    {
+        return $user->can(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
+    }
+
+    /** Rule 244 §4.3 — one patient's paper-card reasons; same permission, branch scope in the service. */
+    public function viewPaperCardRegistrations(User $user, Patient $patient): bool
+    {
+        return $user->can(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
     }
 
     public function update(User $user, Patient $patient): bool

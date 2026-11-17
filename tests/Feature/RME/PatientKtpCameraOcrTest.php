@@ -33,6 +33,17 @@ beforeEach(function () {
 
 afterEach(fn () => Carbon::setTestNow());
 
+/**
+ * Rule 244 §2 — Master Data registration needs the RME branch the automatic
+ * Nomor RM is issued under; no number is posted any more. The OCR operator is a
+ * pilot operator working that pilot branch, and (PR-2 review F2, CG-05) a
+ * context-bound account registers only into its working branch.
+ */
+function ktpOcrRmBranch(): Branch
+{
+    return ktpPilotBranch();
+}
+
 /** The flag key contains a dot, so the whole registry array is rewritten. */
 function ktpOcrFlag(bool $on): void
 {
@@ -390,13 +401,13 @@ it('cannot discard or attach another operator\'s temp image', function () {
     expect(Storage::disk('local')->allFiles('tmp/patient-ktp-scans/'.$owner->id))->toHaveCount(2);
 
     // Nor can it be attached to a patient registered by somebody else.
-    $this->actingAs($intruder)->post(route('settings.patients.store'), [
+    $this->actingAs($intruder)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-OCR-X',
+        'branch_id' => ktpOcrRmBranch()->id,
         'name' => 'Pasien Fiktif Intrusi',
         'ktp_scan_token' => $token,
-    ])->assertRedirect(route('settings.patients.index'));
+    ]))->assertRedirect(route('settings.patients.index'));
 
     expect(Patient::firstWhere('name', 'Pasien Fiktif Intrusi')->documents()->count())->toBe(0)
         ->and(Storage::disk('local')->allFiles('tmp/patient-ktp-scans/'.$owner->id))->toHaveCount(2);
@@ -420,12 +431,12 @@ it('requires explicit confirmation once OCR values were applied', function () {
     $payload = [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-OCR-1',
+        'branch_id' => ktpOcrRmBranch()->id,
         'name' => 'SITI CONTOH RAHMAWATI',
         'ktp_number' => '7371015708900003',
         'ktp_scan_token' => $token,
         'ktp_ocr_applied' => '1',
-    ];
+    ] + newPatientCoreFields();
 
     $this->actingAs($actor)
         ->from(route('settings.patients.create'))
@@ -451,14 +462,14 @@ it('requires explicit confirmation once OCR values were applied', function () {
 
 it('saves the operator-corrected value, not the OCR suggestion', function () {
     $this->actingAs(ktpOcrActor())
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => Clinic::factory()->create()->id,
             'doctor_id' => Doctor::factory()->create()->id,
-            'medical_record_number' => 'MRN-OCR-2',
+            'branch_id' => ktpOcrRmBranch()->id,
             'name' => 'Siti Contoh Rahmawati', // corrected from "SITICONTOH RAHMAWATI"
             'ktp_ocr_applied' => '1',
             'ktp_ocr_verified' => '1',
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 
     expect(Patient::where('name', 'Siti Contoh Rahmawati')->exists())->toBeTrue();
@@ -468,15 +479,15 @@ it('still blocks a duplicate NIK even when it came from OCR', function () {
     Patient::factory()->create(['ktp_number' => '7371015708900003']);
 
     $this->actingAs(ktpOcrActor())
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => Clinic::factory()->create()->id,
             'doctor_id' => Doctor::factory()->create()->id,
-            'medical_record_number' => 'MRN-OCR-3',
+            'branch_id' => ktpOcrRmBranch()->id,
             'name' => 'Pasien Fiktif Duplikat',
             'ktp_number' => '7371015708900003',
             'ktp_ocr_applied' => '1',
             'ktp_ocr_verified' => '1',
-        ])
+        ]))
         ->assertSessionHasErrors('ktp_number');
 
     expect(Patient::where('name', 'Pasien Fiktif Duplikat')->exists())->toBeFalse();
@@ -484,13 +495,13 @@ it('still blocks a duplicate NIK even when it came from OCR', function () {
 
 it('does not require OCR confirmation when OCR was not used', function () {
     $this->actingAs(ktpOcrActor())
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => Clinic::factory()->create()->id,
             'doctor_id' => Doctor::factory()->create()->id,
-            'medical_record_number' => 'MRN-OCR-4',
+            'branch_id' => ktpOcrRmBranch()->id,
             'name' => 'Pasien Manual Fiktif',
             'ktp_ocr_applied' => '0',
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 });
 
@@ -500,8 +511,8 @@ describe('RME visit "Pasien Baru" flow', function () {
         $this->clinic = Clinic::factory()->create();
         $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
         $this->treatment = Treatment::factory()->create(['is_active' => true]);
-        $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-        $this->branch->update(['is_rme_enabled' => true]);
+        // Rule 244 §2 — MAIN is never an RME branch for a new patient.
+        $this->branch = Branch::factory()->create(['code' => 'KOC2', 'is_active' => true, 'is_rme_enabled' => true]);
         rmeMakeDoctorOnline($this->doctor, $this->branch);
         $this->actor = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
     });
@@ -511,13 +522,13 @@ describe('RME visit "Pasien Baru" flow', function () {
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'initial_treatment_id' => test()->treatment->id,
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Pasien Kunjungan OCR Fiktif',
             'branch_id' => test()->branch->id,
             'registered_at' => '2026-10-09',
             'manual_rm_number' => '0777',
             'ktp_number' => '7371015708900003',
-        ],
+        ]),
     ] + $extra;
 
     it('requires confirmation for applied OCR values', function () use ($visit) {

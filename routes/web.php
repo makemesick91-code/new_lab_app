@@ -282,7 +282,10 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::post('/', [LegacyPatientImportController::class, 'store'])->name('store');
             Route::get('{batch}', [LegacyPatientImportController::class, 'show'])->name('show');
             Route::get('{batch}/errors', [LegacyPatientImportController::class, 'errors'])->name('errors');
-            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit');
+            // Rule 244 §4 (plan default 4) — the commit stores typed Nomor RM:
+            // paper-card permission only (Supervisor RME; Super Admin via '*').
+            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit')
+                ->middleware('permission:register_patient_paper_card_rm');
             Route::post('{batch}/rollback', [LegacyPatientImportController::class, 'rollback'])->name('rollback');
             Route::delete('{batch}', [LegacyPatientImportController::class, 'destroy'])->name('destroy');
         });
@@ -335,6 +338,28 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->where(['patient' => DatabaseRouteKey::PATTERN, 'document' => DatabaseRouteKey::PATTERN])
             ->middleware('throttle:patient-document')
             ->name('patients.documents.destroy');
+    });
+
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b; owner
+    // decision 2026-11-17, "PAPER-CARD REASON: store text, restricted") — the
+    // stored paper-card reasons. Deliberately OUTSIDE `manage patients`: the
+    // Owner reads them without managing patients. The read permission is on the
+    // route, the policy and the service (CG-06); `private, no-store` because the
+    // note may carry personal data; the per-patient page answers 404 outside the
+    // reader's working-branch scope (CG-05). `{patient}` is mst_patients.id
+    // (rule 222: DatabaseRouteKey::PATTERN per route). Rule 244 §5.3 (owner
+    // decision 2026-11-17) — the per-patient page also shows the open no-phone
+    // exception note, under the same three layers.
+    Route::middleware(['permission:view_patient_rm_paper_card_reasons', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('patients/paper-card-registrations', [PatientController::class, 'paperCardRegistrations'])
+            ->name('patients.paper-card-registrations.index');
+        // PR-3b review B3 — a soft-deleted patient keeps its reason (and the
+        // list links to it), so the binding includes trashed rows; the branch
+        // scope is unchanged.
+        Route::get('patients/{patient}/paper-card-registrations', [PatientController::class, 'paperCardRegistrationsForPatient'])
+            ->where('patient', DatabaseRouteKey::PATTERN)
+            ->withTrashed()
+            ->name('patients.paper-card-registrations.show');
     });
 
     // FEATURE-LEGACY-IMPORT-HUB-1 — Import Data Legacy (the landing page).

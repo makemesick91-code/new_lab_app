@@ -149,13 +149,14 @@ it('lets a non-pilot operator still register a patient manually', function () {
     $outsider = User::factory()->create();
     rmeMakeAdminClinicActive($outsider, $branch);
 
-    $this->actingAs($outsider)->post(route('settings.patients.store'), [
+    $this->actingAs($outsider)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-PILOT-OUT-1',
+        // Rule 244 §2 — the automatic Nomor RM needs the branch; none is typed.
+        'branch_id' => $branch->id,
         'name' => 'Pasien Manual Fiktif',
         'ktp_ocr_applied' => '0',
-    ])->assertSessionHasNoErrors();
+    ]))->assertSessionHasNoErrors();
 
     expect(Patient::where('name', 'Pasien Manual Fiktif')->exists())->toBeTrue();
 });

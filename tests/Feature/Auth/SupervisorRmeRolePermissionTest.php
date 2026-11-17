@@ -20,6 +20,11 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'view_patient_duplicate_resolution',
     'request_patient_merge',
     'approve_patient_merge',
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan defaults 1
+    // and 4) — old paper-card Nomor RM and the legacy patient CSV commit.
+    'register_patient_paper_card_rm',
+    // Rule 244 §4.3 (PR-3b) — read the stored paper-card reason and note.
+    'view_patient_rm_paper_card_reasons',
     'view_clinic_visits',
     'manage_clinic_visits',
     'complete_rme_examination',

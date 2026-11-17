@@ -2,30 +2,128 @@
 
 namespace App\Modules\Patient\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
+use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Support\BranchCodeAlias;
+use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
+use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
-use Carbon\Carbon;
-use Carbon\CarbonInterface;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class PatientService
 {
+    /**
+     * Rule 244 §2.4 — how many times a registration RETRIES with the next
+     * automatic number after the unique index refused a Nomor RM collision: one
+     * attempt plus three retries (owner wording "retried up to 3 times"), then 422.
+     */
+    public const UNIQUE_RETRIES = 3;
+
+    /**
+     * Rule 244 §2.1/§2.3 — identity fields only the server writes: dropped from a
+     * registration payload and from an edit. An edit also keeps `branch_id`.
+     */
+    private const SERVER_OWNED_IDENTITY_FIELDS = ['medical_record_number', 'manual_rm_number', 'registered_at'];
+
+    /**
+     * Rule 244 §4 (plan defaults 1 and 4) — the one permission that may store a
+     * typed Nomor RM: an old paper-card number at registration, and the legacy
+     * patient CSV commit. Supervisor RME; Super Admin through '*'.
+     */
+    public const PAPER_CARD_PERMISSION = 'register_patient_paper_card_rm';
+
+    /** Rule 244 §4 — the paper-card request fields; never read on the automatic path. */
+    public const PAPER_CARD_FIELDS = ['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code', 'paper_card_reason_note'];
+
+    /** Rule 244 §4.3 (PR-3b) — a note's bounds when one is given, enforced here for every actor. */
+    public const PAPER_CARD_REASON_MIN = 10;
+
+    public const PAPER_CARD_REASON_MAX = 500;
+
+    /** Rule 244 §4.3 — the reason code whose note is required. */
+    public const PAPER_CARD_REASON_OTHER = 'LAINNYA';
+
+    /**
+     * Rule 244 §4.3 (PR-3b review B1) — a note is valid UTF-8 without control
+     * characters (tab, line feed and carriage return allowed). With `u`, invalid
+     * UTF-8 fails the match too.
+     */
+    public const PAPER_CARD_NOTE_PATTERN = '/^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]*$/u';
+
+    /** Rule 244 §4.3 (PR-3b review B8) — a read of the stored notes; ids only. */
+    public const AUDIT_PAPER_CARD_REASON_VIEWED = 'PATIENT_RM_PAPER_CARD_REASON_VIEWED';
+
+    /**
+     * Rule 244 §4.3 (owner decision 2026-11-17, "PAPER-CARD REASON: store text,
+     * restricted") — the one permission that READS a stored paper-card reason:
+     * Supervisor RME and Owner; Super Admin through Gate::before.
+     */
+    public const PAPER_CARD_REASON_READ_PERMISSION = 'view_patient_rm_paper_card_reasons';
+
+    /** Rule 244 §4 — the oldest year a paper card may carry. */
+    public const PAPER_CARD_MIN_YEAR = 1900;
+
+    /** Rule 244 §4 — the audit action; its payload carries ids and the reason length only. */
+    public const AUDIT_PAPER_CARD_REGISTERED = 'PATIENT_RM_PAPER_CARD_REGISTERED';
+
+    /**
+     * Rule 244 §5.3 (memo M4.2, plan default 2) — a new patient registered
+     * without a phone or WhatsApp number; the payload carries ids and the
+     * reason code only, never the note or any patient value.
+     */
+    public const AUDIT_NO_PHONE_RECORDED = 'PATIENT_NO_PHONE_EXCEPTION_RECORDED';
+
+    /** Rule 244 §5.3 — the open exception closed by an edit that recorded a number; ids and the closed code only. */
+    public const AUDIT_NO_PHONE_CLEARED = 'PATIENT_NO_PHONE_EXCEPTION_CLEARED';
+
+    /**
+     * Rule 244 §5.3 (owner decision 2026-11-17: the no-phone note is restricted
+     * like the paper-card reason note) — a read of an open exception's note on
+     * the restricted reasons page; ids only.
+     */
+    public const AUDIT_NO_PHONE_REASON_VIEWED = 'PATIENT_NO_PHONE_EXCEPTION_NOTE_VIEWED';
+
+    /** Rule 244 §2.4 — a NIK another patient holds: the same 422 on registration and on an edit. */
+    private const KTP_TAKEN_MESSAGE = 'Nomor KTP sudah terdaftar pada pasien lain.';
+
+    /** Rule 244 §4 — no number in the message: the operator typed it, nobody else needs it. */
+    private const PAPER_CARD_TAKEN_MESSAGE = 'Nomor RM kartu lama ini sudah terdaftar (termasuk penulisan lain, pasien terhapus, atau alias penggabungan).';
+
     public function __construct(
         private readonly PatientRepositoryInterface $patients,
-        private readonly PatientCodeGenerator $codeGenerator,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the only
+        // issuer of a new patient's Nomor RM.
+        private readonly PatientRmNumberAllocator $rmAllocator,
+        // Rule 244 §4 — composes the paper-card number from its parts.
         private readonly PatientMedicalRecordNumberService $rmNumbers,
+        private readonly AuditLogService $audit,
         private readonly BranchRepositoryInterface $branches,
         // FIX-03 — the clinical calendar authority for the registration day.
         private readonly ClinicalClock $clock,
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient is
         // read-only; identity edits go to the canonical patient.
         private readonly PatientMergeGuard $mergeGuard,
+        // PR-2 review F2 (CG-05) — a new patient's branch must be one the actor
+        // is working: a request branch may only narrow.
+        private readonly RmeWorkingBranchScope $workingBranchScope,
+        // Rule 244 §4.3 (PR-3b) — the immutable paper-card reason rows.
+        private readonly PatientRmPaperCardRegistrationRepositoryInterface $paperCardRegistrations,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -55,102 +153,537 @@ class PatientService
         return $this->patients->legacyWithoutBranch();
     }
 
-    public function create(array $data): Patient
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (owner decision 2026-11-17,
+     * "Auto, read-only"; rule 244 §2) — register a new patient with an AUTOMATIC
+     * Nomor RM. Both registration forms (Master Data → Tambah Pasien and Kunjungan
+     * → Pasien Baru, through ClinicVisitService) end here.
+     *
+     *  - The number, the manual sequence and the registration date are never
+     *    taken from `$data`: `registered_at` is the clinic's calendar day
+     *    ({@see ClinicalClock}, so 00:30 WITA on 1 January is the new year while
+     *    UTC is still 31 December) and the number comes from
+     *    {@see PatientRmNumberAllocator::allocate()} for that branch and year.
+     *  - A branch is required (active, RME-enabled; the allocator refuses MAIN)
+     *    and must be inside `$actor`'s working-branch scope
+     *    ({@see RmeWorkingBranchScope::allows()}; CG-05, 403 otherwise). The
+     *    master form passes its actor. Kunjungan → Pasien Baru passes none: its
+     *    branch was already pinned by StoreClinicVisitRequest and re-asserted by
+     *    ClinicVisitService::resolveBranchId() for the registrar, and a null
+     *    actor here means "every active RME branch" (the scope's own answer).
+     *    The Sprint 23.3 UTC fallback generator and the free override are retired.
+     *  - The allocator locks the branch-year counter row in THIS transaction; the
+     *    insert runs in a savepoint, so a unique violation (a writer that bypassed
+     *    the lock) rolls back the insert only and the next number is tried under
+     *    the same held lock, up to {@see self::UNIQUE_RETRIES} retries; then 422.
+     *    Only a Nomor RM collision is retried; a KTP collision is a 422 at once;
+     *    any other unique violation, and any other database failure, is an
+     *    error carrying only the SQLSTATE (RM PR-4b: never the row's values).
+     *    Any refusal is a ValidationException (422), and the whole
+     *    transaction — counter included — rolls back.
+     *  - Memo M4.2 (rule 244 §5.3) — a patient without a phone or WhatsApp
+     *    number may carry the no-phone exception (`no_phone_reason_code`, and
+     *    `no_phone_reason_note` for LAINNYA). It is re-asserted here against
+     *    `$exceptionActor` (default `$actor`; Kunjungan → Pasien Baru passes its
+     *    registrar there while `$actor` stays null for the branch scope), with
+     *    every bound, so it binds Super Admin and any non-HTTP caller; recorded
+     *    on the row and audited (ids and the code only) in this transaction.
+     *    The core fields themselves are validated by the forms' shared builder
+     *    ({@see PatientCoreFields::rules()}).
+     *  - `$data` carries patient values and the no-phone note: never in a
+     *    logged stack trace (`#[\SensitiveParameter]`, rule 244 §5.3).
+     */
+    public function create(#[\SensitiveParameter] array $data, ?User $actor = null, ?User $exceptionActor = null): Patient
     {
-        return DB::transaction(function () use ($data) {
-            $data = $this->applyMedicalRecordNumber($data);
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
+            unset($data[$field]);
+        }
 
-            return $this->patients->create($data);
-        });
+        $exceptionActor ??= $actor;
+        $noPhoneCode = $this->pullNoPhoneException($data, $exceptionActor);
+
+        $branch = $this->registrationBranch($data['branch_id'] ?? null);
+        $data['branch_id'] = (int) $branch->getKey();
+
+        if (! $this->workingBranchScope->allows($actor, (int) $branch->getKey())) {
+            throw new AuthorizationException('Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.');
+        }
+
+        try {
+            return DB::transaction(function () use ($data, $branch, $noPhoneCode, $exceptionActor): Patient {
+                $today = $this->clock->today();
+                $year = (int) $today->format('Y');
+                $data['registered_at'] = $today->toDateString();
+
+                for ($attempt = 1; ; $attempt++) {
+                    $data['medical_record_number'] = $this->rmAllocator->allocate($branch, $year);
+
+                    try {
+                        $patient = DB::transaction(fn (): Patient => $this->patients->create($data));
+                    } catch (UniqueConstraintViolationException $e) {
+                        $this->refuseUniqueViolation($e, $attempt);
+
+                        continue;
+                    }
+
+                    $this->auditNoPhoneException($patient, $noPhoneCode, $exceptionActor);
+
+                    return $patient;
+                }
+            });
+        } catch (PatientRmNumberUnavailableException $e) {
+            throw ValidationException::withMessages(['medical_record_number' => $e->getMessage()]);
+        }
     }
 
-    public function update(Patient $patient, array $data): Patient
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan default 1,
+     * owner 2026-11-17) — register a patient under the Nomor RM printed on an
+     * old paper card, the only exception to the automatic number.
+     *
+     *  - Only an actor holding {@see self::PAPER_CARD_PERMISSION} (Supervisor
+     *    RME; Super Admin through '*') and `manage patients`, re-asserted here
+     *    whatever the route or form said (CG-06).
+     *  - A structured reason code from config `patient.paper_card_reasons` and
+     *    an optional note of {@see self::PAPER_CARD_REASON_MIN}..
+     *    {@see self::PAPER_CARD_REASON_MAX} characters, required for
+     *    {@see self::PAPER_CARD_REASON_OTHER} (rule 244 §4.3), a year from
+     *    {@see self::PAPER_CARD_MIN_YEAR} to the clinical year, a sequence of one
+     *    to eight digits that is not zero — enforced HERE, so they bind Super
+     *    Admin too (Gate::before only answers the permission question).
+     *  - The number is DG-{branch's canonical code}-{year}-{sequence as printed};
+     *    it is stored only after {@see PatientRmNumberAllocator::claimExisting()}
+     *    has locked that branch-year's counter and found it free in every
+     *    spelling (alias codes, padding, case, soft-deleted, merge aliases); the
+     *    claim raises the counter to it (continue after the highest), within the
+     *    claim cap (rule 244 §2.6: a current-year jump past +1000 or 9999 is a
+     *    422 that sends the case to Supervisor RME). The branch must be inside
+     *    the actor's working-branch scope, as on the automatic path.
+     *  - The code and the note are stored in their own immutable row
+     *    ({@see PatientRmPaperCardRegistrationRepositoryInterface}) in the SAME
+     *    transaction as the claim, so a refused claim stores no reason.
+     *  - Audited without the number and without the note: patient id, branch
+     *    id, actor id, the registration id and the reason code.
+     *  - `registered_at` is the clinical day the patient enters the system; the
+     *    card's own date is not invented.
+     */
+    public function createWithPaperCardNumber(
+        // Rule 244 §5.3 — patient values and any no-phone note: never in a logged stack trace.
+        #[\SensitiveParameter] array $data,
+        User $actor,
+        #[\SensitiveParameter] int $year,
+        #[\SensitiveParameter] string $sequence,
+        string $reasonCode,
+        // Re-review F1 — never in a logged stack trace, whatever zend.exception_ignore_args says.
+        #[\SensitiveParameter] ?string $reasonNote,
+    ): Patient {
+        if (! $actor->can(self::PAPER_CARD_PERMISSION) || ! $actor->can('manage patients')) {
+            throw new AuthorizationException('Nomor RM kartu lama hanya dapat didaftarkan oleh Supervisor RME.');
+        }
+
+        $reasonCode = trim($reasonCode);
+        $reasonNote = trim((string) $reasonNote);
+        $reasonNote = $reasonNote === '' ? null : $reasonNote;
+        $sequence = trim($sequence);
+        $today = $this->clock->today();
+
+        if (! array_key_exists($reasonCode, $this->paperCardReasons())) {
+            throw ValidationException::withMessages(['paper_card_reason_code' => 'Pilih alasan memakai Nomor RM kartu lama dari daftar.']);
+        }
+
+        if ($reasonNote === null && $reasonCode === self::PAPER_CARD_REASON_OTHER) {
+            throw ValidationException::withMessages(['paper_card_reason_note' => 'Catatan wajib diisi untuk alasan Lainnya.']);
+        }
+
+        // PR-3b review B1 — checked here too, so it binds Super Admin and any
+        // caller: invalid UTF-8 or a control character would make the database
+        // refuse the insert with an error that carries the note.
+        if ($reasonNote !== null && (! mb_check_encoding($reasonNote, 'UTF-8') || preg_match(self::PAPER_CARD_NOTE_PATTERN, $reasonNote) !== 1)) {
+            throw ValidationException::withMessages(['paper_card_reason_note' => 'Catatan berisi karakter yang tidak valid.']);
+        }
+
+        if ($reasonNote !== null && (mb_strlen($reasonNote) < self::PAPER_CARD_REASON_MIN || mb_strlen($reasonNote) > self::PAPER_CARD_REASON_MAX)) {
+            throw ValidationException::withMessages([
+                'paper_card_reason_note' => sprintf('Catatan %d sampai %d karakter.', self::PAPER_CARD_REASON_MIN, self::PAPER_CARD_REASON_MAX),
+            ]);
+        }
+
+        if ($year < self::PAPER_CARD_MIN_YEAR || $year > (int) $today->format('Y')) {
+            throw ValidationException::withMessages(['paper_card_year' => 'Tahun pada kartu lama tidak valid.']);
+        }
+
+        if (preg_match('/^[0-9]{1,'.PatientRmNumberAllocator::MAX_DIGITS.'}$/', $sequence) !== 1 || (int) $sequence < 1) {
+            throw ValidationException::withMessages(['paper_card_sequence' => 'Nomor urut kartu lama hanya angka (1–8 digit) dan bukan nol.']);
+        }
+
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
+            unset($data[$field]);
+        }
+
+        // Rule 244 §5.3 — a paper-card patient without a number takes the same
+        // exception, re-asserted against the same actor.
+        $noPhoneCode = $this->pullNoPhoneException($data, $actor);
+
+        $branch = $this->registrationBranch($data['branch_id'] ?? null);
+        $data['branch_id'] = (int) $branch->getKey();
+
+        // Rule 244 §2.1 (CG-05) — the same working-branch scope as the automatic path.
+        if (! $this->workingBranchScope->allows($actor, (int) $branch->getKey())) {
+            throw new AuthorizationException('Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.');
+        }
+
+        try {
+            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonCode, $reasonNote, $today, $noPhoneCode): Patient {
+                $number = $this->rmNumbers->compose((string) BranchCodeAlias::canonicalize($branch->code), $year, $sequence);
+
+                if (! $this->rmAllocator->claimExisting($branch, $number)) {
+                    throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
+                }
+
+                $data['registered_at'] = $today->toDateString();
+                $data['manual_rm_number'] = $sequence;
+                $data['medical_record_number'] = $number;
+
+                try {
+                    $patient = DB::transaction(fn (): Patient => $this->patients->create($data));
+                } catch (UniqueConstraintViolationException $e) {
+                    // Review I3 — as on the automatic path (§2.4): KTP is its own
+                    // 422, only a Nomor RM violation is "taken" (no retry: the
+                    // number is the card's), anything else is refused without a
+                    // value (RM PR-4b, re-review M1).
+                    $driverMessage = (string) ($e->errorInfo[2] ?? '');
+
+                    if (str_contains($driverMessage, 'ktp_number')) {
+                        throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
+                    }
+
+                    if (! str_contains($driverMessage, 'medical_record_number')) {
+                        throw $this->valueFreeUniqueViolation($e);
+                    }
+
+                    throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
+                }
+
+                // Rule 244 §4.3 (PR-3b) — the reason, immutable, in this transaction.
+                $registration = $this->paperCardRegistrations->record([
+                    'patient_id' => (int) $patient->getKey(),
+                    'branch_id' => (int) $branch->getKey(),
+                    'year' => $year,
+                    'reason_code' => $reasonCode,
+                    'reason_note' => $reasonNote,
+                    'actor_user_id' => (int) $actor->getKey(),
+                ]);
+
+                // Ids and the code only: never the note, never the number.
+                $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_PAPER_CARD_REGISTERED, null, [
+                    'patient_id' => (int) $patient->getKey(),
+                    'branch_id' => (int) $branch->getKey(),
+                    'actor_user_id' => (int) $actor->getKey(),
+                    'registration_id' => (int) $registration->getKey(),
+                    'reason_code' => $reasonCode,
+                ], $actor);
+
+                $this->auditNoPhoneException($patient, $noPhoneCode, $actor);
+
+                return $patient;
+            });
+        } catch (PatientRmNumberUnavailableException $e) {
+            throw ValidationException::withMessages(['paper_card_sequence' => $e->getMessage()]);
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                'paper_card_sequence' => 'Nomor RM kartu lama tidak dapat dibentuk untuk cabang ini. Hubungi Super Admin.',
+            ]);
+        }
+    }
+
+    /**
+     * Rule 244 §4.3 — the configured paper-card reasons, code => Indonesian label.
+     *
+     * @return array<string, string>
+     */
+    public function paperCardReasons(): array
+    {
+        $reasons = config('patient.paper_card_reasons', []);
+
+        return is_array($reasons) ? array_map('strval', $reasons) : [];
+    }
+
+    /**
+     * Rule 244 §4.3 (owner decision 2026-11-17, "PAPER-CARD REASON: store text,
+     * restricted") — a patient's stored paper-card reasons, notes included.
+     * Re-asserts {@see self::PAPER_CARD_REASON_READ_PERMISSION} (403; Super Admin
+     * passes through Gate::before) and the actor's working-branch scope (CG-05):
+     * a patient outside it is 404, so the reader does not even learn a reason
+     * exists. Only rows inside the scope are returned: the patient's own and,
+     * read only, those of patients merged INTO it (PR-3b review B4). A read that
+     * returns rows is audited with ids only (review B8).
+     *
+     * Rule 244 §5.3 (owner decision 2026-11-17, "the no-phone note is restricted
+     * like the paper-card reason note") — this call also admits the restricted
+     * page that shows the patient's OPEN no-phone exception note: the same
+     * permission (Supervisor RME, Owner), the same branch scope, and a read of a
+     * stored note is audited with ids only. Everyone else sees the reason code
+     * alone, on the patient's edit page.
+     *
+     * @return Collection<int, PatientRmPaperCardRegistration>
+     */
+    public function paperCardRegistrationsFor(Patient $patient, User $actor): Collection
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        if (! $this->workingBranchScope->allows($actor, $patient->branch_id !== null ? (int) $patient->branch_id : null)) {
+            throw new NotFoundHttpException;
+        }
+
+        $registrations = $this->paperCardRegistrations->forPatient((int) $patient->getKey(), $this->workingBranchScope->branchIdsFor($actor));
+
+        // PR-3b review B8 — who read the notes, and which rows: ids only.
+        if ($registrations->isNotEmpty()) {
+            $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_PAPER_CARD_REASON_VIEWED, null, [
+                'patient_id' => (int) $patient->getKey(),
+                'actor_user_id' => (int) $actor->getKey(),
+                'registration_ids' => $registrations->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            ], $actor);
+        }
+
+        // Rule 244 §5.3 — who read an open no-phone note: ids only. Keyed on
+        // exactly what the page shows: a note beside an OPEN exception (code set).
+        if ($patient->no_phone_reason_code !== null && $patient->no_phone_reason_note !== null) {
+            $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_NO_PHONE_REASON_VIEWED, null, [
+                'patient_id' => (int) $patient->getKey(),
+                'actor_user_id' => (int) $actor->getKey(),
+            ], $actor);
+        }
+
+        return $registrations;
+    }
+
+    /**
+     * Rule 244 §4.3 — every stored paper-card registration in the actor's
+     * working-branch scope, newest first, WITHOUT the note (it is shown only on
+     * the patient's own page). Same permission re-assertion.
+     */
+    public function paperCardRegistrationList(User $actor, int $perPage = 25): LengthAwarePaginator
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        return $this->paperCardRegistrations->paginateForBranches($this->workingBranchScope->branchIdsFor($actor), $perPage);
+    }
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review L2) — the OPEN no-phone exceptions in
+     * the actor's working-branch scope, newest first, WITHOUT the note: the
+     * readers' way to the restricted per-patient page, where the note is shown
+     * and its read audited. Same permission re-assertion as the paper-card list.
+     */
+    public function openNoPhoneExceptionList(User $actor, int $perPage = 25): LengthAwarePaginator
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        return $this->patients->paginateOpenNoPhoneExceptions($this->workingBranchScope->branchIdsFor($actor), $perPage, 'no_phone_page');
+    }
+
+    private function assertMayReadPaperCardReasons(User $actor): void
+    {
+        if (! $actor->can(self::PAPER_CARD_REASON_READ_PERMISSION)) {
+            throw new AuthorizationException('Alasan Nomor RM kartu lama hanya dapat dibaca Supervisor RME dan Owner.');
+        }
+    }
+
+    /**
+     * Rule 244 §2.3 (owner default 5) — an edit never changes the Nomor RM, the
+     * branch it was issued under or the registration date; there is no
+     * correction tool for existing numbers.
+     *
+     * Memo M4.2 (rule 244 §5.4) — an edit never writes the no-phone exception
+     * columns; once the patient has a phone or WhatsApp number after the edit,
+     * an OPEN exception is closed under the row lock and audited exactly once
+     * (ids and the closed code only). `$actor` defaults to the signed-in user.
+     */
+    public function update(Patient $patient, array $data, ?User $actor = null): Patient
     {
         $this->mergeGuard->assertNotMerged($patient, 'name');
 
-        return DB::transaction(function () use ($patient, $data) {
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, 'branch_id', ...PatientCoreFields::NO_PHONE_COLUMNS] as $field) {
+            unset($data[$field]);
+        }
+
+        return DB::transaction(function () use ($patient, $data, $actor) {
             // Re-checked under the row lock: the model above may predate a
             // merge that committed while this request was in flight.
             $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'name');
-            $data = $this->applyMedicalRecordNumber($data, $patient);
 
-            return $this->patients->update($patient, $data);
+            try {
+                $updated = $this->patients->update($patient, $data);
+            } catch (UniqueConstraintViolationException $e) {
+                // RM PR-4b re-review L1 — a NIK another patient took after the
+                // form's unique rule (or a caller without the form) is the same
+                // 422 as on registration; anything else is refused without a
+                // value. The failed statement rolls this transaction back.
+                if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+                    throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
+                }
+
+                throw $this->valueFreeUniqueViolation($e, 'updated');
+            }
+
+            // Only a patient with an open exception that now has a number: the
+            // repository re-reads it FOR UPDATE, so a concurrent edit closes
+            // (and audits) it once.
+            if ($updated->no_phone_reason_code !== null && PatientCoreFields::hasNumber($updated->only(['phone', 'whatsapp_number']))) {
+                $closedCode = $this->patients->closeNoPhoneException($updated);
+
+                if ($closedCode !== null) {
+                    $actor ??= auth()->user();
+                    $actor = $actor instanceof User ? $actor : null;
+
+                    $this->audit->log('mst_patients', (int) $updated->getKey(), self::AUDIT_NO_PHONE_CLEARED, null, [
+                        'patient_id' => (int) $updated->getKey(),
+                        'branch_id' => $updated->branch_id !== null ? (int) $updated->branch_id : null,
+                        'actor_user_id' => $actor !== null ? (int) $actor->getKey() : null,
+                        'reason_code' => $closedCode,
+                    ], $actor);
+                }
+            }
+
+            return $updated;
         });
     }
 
     /**
-     * Resolve the patient's medical_record_number from the supplied data.
+     * Rule 244 §5.3 — take the no-phone exception out of a registration
+     * payload and decide it. The exception columns are never taken from the
+     * caller: they are cleared from `$data` and set here only for an accepted
+     * exception. Returns the reason code to audit once the row exists, or null
+     * when no exception was asked for (a stray note alone is dropped).
      *
-     * Precedence:
-     *   1. An explicit, non-empty medical_record_number is always respected
-     *      (legacy patients and manual overrides keep working unchanged).
-     *   2. When a branch + manual RM number are supplied, compose the finalized
-     *      format DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}. The
-     *      registration year comes from registered_at (defaulting to today).
-     *   3. Otherwise fall back to the legacy auto-sequence generator (config).
-     *
-     * Existing patients are never rewritten unless their identity components
-     * are explicitly changed on update.
+     * Bound for every actor (Super Admin included: Gate::before only answers the
+     * permission question): the permission, no phone or WhatsApp number beside
+     * it, a configured code, and a note of 10–500 characters without control
+     * characters, required for LAINNYA.
      *
      * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
      */
-    private function applyMedicalRecordNumber(array $data, ?Patient $patient = null): array
+    private function pullNoPhoneException(#[\SensitiveParameter] array &$data, ?User $actor): ?string
     {
-        $explicitCode = trim((string) ($data['medical_record_number'] ?? ''));
+        $code = trim((string) ($data['no_phone_reason_code'] ?? ''));
+        $note = trim((string) ($data['no_phone_reason_note'] ?? ''));
+        $note = $note === '' ? null : $note;
 
-        if ($explicitCode !== '') {
-            $data['medical_record_number'] = $explicitCode;
-
-            return $data;
+        foreach (PatientCoreFields::NO_PHONE_COLUMNS as $column) {
+            unset($data[$column]);
         }
 
-        $branchId = $data['branch_id'] ?? $patient?->branch_id;
-        $manualRmNumber = trim((string) ($data['manual_rm_number'] ?? $patient?->manual_rm_number ?? ''));
-
-        if ($branchId && $manualRmNumber !== '') {
-            $registeredAt = $this->resolveRegisteredAt($data, $patient);
-            $data['registered_at'] = $registeredAt->toDateString();
-            $data['manual_rm_number'] = $manualRmNumber;
-
-            $branch = $this->branches->findById((int) $branchId);
-
-            if (! $branch) {
-                throw new RuntimeException('Cabang RME yang dipilih tidak ditemukan.');
-            }
-
-            $data['medical_record_number'] = $this->rmNumbers->composeForRegistration(
-                $branch->code,
-                $registeredAt,
-                $manualRmNumber,
-            );
-
-            return $data;
+        if ($code === '') {
+            return null;
         }
 
-        // No explicit code and no branch/manual components: keep legacy behavior
-        // for backward compatibility (auto-sequence pilot codes) on create only.
-        if ($patient === null && config('patient.code.auto_generate', true)) {
-            $data['medical_record_number'] = $this->codeGenerator->generate();
+        if ($actor === null || ! $actor->can(PatientCoreFields::WITHOUT_PHONE_PERMISSION)) {
+            throw new AuthorizationException('Pasien tanpa nomor telepon hanya dapat didaftarkan oleh akun yang berwenang (Front Office).');
         }
 
-        return $data;
+        if (PatientCoreFields::hasNumber($data)) {
+            throw ValidationException::withMessages(['no_phone_reason_code' => 'Pengecualian tanpa nomor telepon tidak berlaku: nomor ponsel atau WhatsApp sudah diisi.']);
+        }
+
+        if (! array_key_exists($code, PatientCoreFields::noPhoneReasons())) {
+            throw ValidationException::withMessages(['no_phone_reason_code' => 'Pilih alasan pasien tanpa nomor telepon dari daftar.']);
+        }
+
+        if ($note === null && $code === PatientCoreFields::NO_PHONE_REASON_OTHER) {
+            throw ValidationException::withMessages(['no_phone_reason_note' => 'Catatan wajib diisi untuk alasan Lainnya.']);
+        }
+
+        if ($note !== null && (! mb_check_encoding($note, 'UTF-8') || preg_match(PatientCoreFields::NOTE_PATTERN, $note) !== 1)) {
+            throw ValidationException::withMessages(['no_phone_reason_note' => 'Catatan berisi karakter yang tidak valid.']);
+        }
+
+        if ($note !== null && (mb_strlen($note) < PatientCoreFields::NO_PHONE_NOTE_MIN || mb_strlen($note) > PatientCoreFields::NO_PHONE_NOTE_MAX)) {
+            throw ValidationException::withMessages([
+                'no_phone_reason_note' => sprintf('Catatan %d sampai %d karakter.', PatientCoreFields::NO_PHONE_NOTE_MIN, PatientCoreFields::NO_PHONE_NOTE_MAX),
+            ]);
+        }
+
+        $data['no_phone_reason_code'] = $code;
+        $data['no_phone_reason_note'] = $note;
+        $data['no_phone_recorded_at'] = now();
+
+        return $code;
+    }
+
+    /** Rule 244 §5.3 — the exception's audit row: ids and the code, never the note or a patient value. */
+    private function auditNoPhoneException(Patient $patient, ?string $reasonCode, ?User $actor): void
+    {
+        if ($reasonCode === null) {
+            return;
+        }
+
+        $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_NO_PHONE_RECORDED, null, [
+            'patient_id' => (int) $patient->getKey(),
+            'branch_id' => (int) $patient->branch_id,
+            'actor_user_id' => $actor !== null ? (int) $actor->getKey() : null,
+            'reason_code' => $reasonCode,
+        ], $actor);
+    }
+
+    /** The active, RME-enabled branch a new patient is registered under. */
+    private function registrationBranch(mixed $branchId): Branch
+    {
+        $branch = filled($branchId) ? $this->branches->findById((int) $branchId) : null;
+
+        if ($branch === null || ! $branch->is_active || ! $branch->is_rme_enabled) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Pilih cabang RME yang aktif. Nomor RM pasien baru dibuat otomatis untuk cabang tersebut.',
+            ]);
+        }
+
+        return $branch;
     }
 
     /**
-     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-03 — the PERSISTING site.
-     *
-     * This value becomes both `mst_patients.registered_at` and the year inside
-     * the patient's permanent Nomor RM, so "today" must be the clinic's
-     * calendar day ({@see ClinicalClock}, Asia/Makassar) and not the UTC one.
-     * A supplied date is parsed verbatim: it is a calendar date, not an
-     * instant, and must never be shifted.
+     * Rule 244 §2.4 — a refused insert. A KTP/NIK collision is reported at once
+     * (another number would not help); a Nomor RM collision lets the caller try
+     * the next number until the retries run out; any other unique violation is
+     * not ours to interpret (review F4) and is refused at once WITHOUT a value
+     * (rule 244 §5.3, RM PR-4b re-review M1: rethrown, its message would carry
+     * the SQL bindings — NIK, note — into the log). Only the driver's own
+     * message is read, for the column name; it is never shown or logged here.
      */
-    private function resolveRegisteredAt(array $data, ?Patient $patient): CarbonInterface
+    private function refuseUniqueViolation(#[\SensitiveParameter] UniqueConstraintViolationException $e, int $attempt): void
     {
-        $value = $data['registered_at'] ?? $patient?->registered_at;
+        $driverMessage = (string) ($e->errorInfo[2] ?? '');
 
-        return $value ? Carbon::parse($value) : $this->clock->today();
+        if (str_contains($driverMessage, 'ktp_number')) {
+            throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
+        }
+
+        if (! str_contains($driverMessage, 'medical_record_number')) {
+            throw $this->valueFreeUniqueViolation($e);
+        }
+
+        if ($attempt > self::UNIQUE_RETRIES) {
+            throw ValidationException::withMessages([
+                'medical_record_number' => 'Nomor RM otomatis bentrok dengan pendaftaran lain. Muat ulang halaman lalu simpan kembali.',
+            ]);
+        }
+    }
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review M1) — a unique violation nobody here
+     * interprets, as an error with no value and no previous exception: only the
+     * five-character SQLSTATE and the constraint name (an identifier read from
+     * the driver's message; its DETAIL, which echoes the row, is dropped).
+     */
+    private function valueFreeUniqueViolation(#[\SensitiveParameter] UniqueConstraintViolationException $e, string $action = 'stored'): RuntimeException
+    {
+        $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
+            ? $e->errorInfo[0]
+            : 'unknown';
+        $constraint = preg_match('/unique constraint "([a-z0-9_]{1,63})"/', (string) ($e->errorInfo[2] ?? ''), $match) === 1
+            ? $match[1]
+            : 'unknown';
+
+        return new RuntimeException('The patient could not be '.$action.': unique constraint '.$constraint.' refused it (SQLSTATE '.$state.').');
     }
 
     public function delete(Patient $patient): bool

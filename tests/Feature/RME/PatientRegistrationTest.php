@@ -19,7 +19,7 @@ afterEach(fn () => Carbon::setTestNow());
 
 function registrationPayload(array $overrides = []): array
 {
-    return array_merge([
+    return array_merge(newPatientCoreFields(), [
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'branch_id' => test()->branch->id,
@@ -31,7 +31,12 @@ function registrationPayload(array $overrides = []): array
     ], $overrides);
 }
 
-it('creates a patient with branch + manual RM number and composes the final RM', function () {
+// DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the Sprint 23.8
+// manual number is retired for new registrations: the Nomor RM is automatic and
+// read-only, a posted manual number or full override is ignored, and a branch is
+// required. These cases replace the manual-number cases they used to assert.
+
+it('creates a patient with a branch and issues the automatic RM in the clinical year', function () {
     $this->actingAs(userWith(['manage patients']))
         ->post(route('settings.patients.store'), registrationPayload())
         ->assertRedirect(route('settings.patients.index'));
@@ -40,19 +45,22 @@ it('creates a patient with branch + manual RM number and composes the final RM',
 
     expect($patient->medical_record_number)->toBe('DG-TLK1-2026-0001')
         ->and($patient->branch_id)->toBe($this->branch->id)
-        ->and($patient->manual_rm_number)->toBe('0001')
+        ->and($patient->manual_rm_number)->toBeNull()
         ->and(optional($patient->registered_at)->format('Y-m-d'))->toBe('2026-06-13');
 });
 
-it('rejects a duplicate final medical record number', function () {
+it('never issues a number that is already held: it takes the next one', function () {
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2026-0001']);
 
     $this->actingAs(userWith(['manage patients']))
         ->post(route('settings.patients.store'), registrationPayload())
-        ->assertSessionHasErrors('manual_rm_number');
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('settings.patients.index'));
+
+    expect(Patient::firstWhere('name', 'Nur Aisyah')->medical_record_number)->toBe('DG-TLK1-2026-0002');
 });
 
-it('allows the same manual number on a different branch (final value differs)', function () {
+it('numbers each branch separately (the final value differs by branch)', function () {
     $other = Branch::factory()->create(['code' => 'LDK2', 'is_active' => true, 'is_rme_enabled' => true]);
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2026-0001']);
 
@@ -63,10 +71,13 @@ it('allows the same manual number on a different branch (final value differs)', 
     expect(Patient::firstWhere('name', 'Ahmad')->medical_record_number)->toBe('DG-LDK2-2026-0001');
 });
 
-it('rejects a non-numeric manual RM number', function () {
+it('ignores a posted manual RM number, even a malformed one', function () {
     $this->actingAs(userWith(['manage patients']))
         ->post(route('settings.patients.store'), registrationPayload(['manual_rm_number' => '00A1']))
-        ->assertSessionHasErrors('manual_rm_number');
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('settings.patients.index'));
+
+    expect(Patient::firstWhere('name', 'Nur Aisyah')->medical_record_number)->toBe('DG-TLK1-2026-0001');
 });
 
 it('requires the branch to be active and RME-enabled', function () {
@@ -77,20 +88,18 @@ it('requires the branch to be active and RME-enabled', function () {
         ->assertSessionHasErrors('branch_id');
 });
 
-it('keeps the legacy explicit code path working without the new fields', function () {
+it('retires the free override: a full number without a branch is refused, not stored', function () {
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'medical_record_number' => 'LEGACY-RM-001',
             'name' => 'Pasien Lama',
-        ])
-        ->assertRedirect(route('settings.patients.index'));
+        ]))
+        ->assertSessionHasErrors('branch_id');
 
-    $patient = Patient::firstWhere('name', 'Pasien Lama');
-
-    expect($patient->medical_record_number)->toBe('LEGACY-RM-001')
-        ->and($patient->branch_id)->toBeNull();
+    expect(Patient::firstWhere('name', 'Pasien Lama'))->toBeNull()
+        ->and(Patient::query()->where('medical_record_number', 'LEGACY-RM-001')->exists())->toBeFalse();
 });
 
 it('displays a legacy patient without a medical record number safely', function () {

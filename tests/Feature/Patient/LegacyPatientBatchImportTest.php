@@ -182,7 +182,7 @@ it('warns on an unresolved doctor but keeps the row committable with doctor_id n
     expect($row->status)->toBe('warning')
         ->and($row->matched_doctor_id)->toBeNull();
 
-    $this->service->commit($batch->refresh(), null);
+    $this->service->commit($batch->refresh(), legacyPatientCommitterId());
     expect(Patient::first()->doctor_id)->toBeNull();
 });
 
@@ -259,7 +259,8 @@ it('labels advisory columns as staged only in preview', function () {
 it('commit creates patients only, with import_batch_id and composed RM, and no visit/RM', function () {
     $batch = stage(legacyCsv([validRow()]));
 
-    $this->actingAs(userWith(['manage patients']))
+    // Rule 244 §4 (plan default 4) — the commit needs the paper-card permission.
+    $this->actingAs(userWith(['manage patients', 'register_patient_paper_card_rm']))
         ->post(route('settings.patients.import.commit', $batch), ['acknowledged' => '1'])
         ->assertRedirect();
 
@@ -285,7 +286,7 @@ it('refuses the whole batch when any row carries an error, importing nothing', f
         validRow(['name' => '', 'manual_rm_number' => '0071']),
     ]));
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(0)
@@ -304,7 +305,7 @@ it('refuses the batch when a row became a duplicate between preview and commit',
     // Simulate a concurrent registration of the same RM after preview.
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     // Only the concurrently registered patient exists: the sibling row did NOT import.
@@ -316,8 +317,8 @@ it('refuses the batch when a row became a duplicate between preview and commit',
 it('is idempotent: re-committing a committed batch does not duplicate patients', function () {
     $batch = stage(legacyCsv([validRow()]));
 
-    $this->service->commit($batch, null);
-    $this->service->commit($batch->refresh(), null);
+    $this->service->commit($batch, legacyPatientCommitterId());
+    $this->service->commit($batch->refresh(), legacyPatientCommitterId());
 
     expect(Patient::count())->toBe(1);
 });
@@ -326,7 +327,7 @@ it('is idempotent: re-committing a committed batch does not duplicate patients',
 
 it('rollback soft-deletes the batch patients and frees the RM as trashed', function () {
     $batch = stage(legacyCsv([validRow()]));
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     $this->service->rollback($batch->refresh(), null);
 
@@ -338,7 +339,7 @@ it('rollback soft-deletes the batch patients and frees the RM as trashed', funct
 
 it('refuses rollback when an imported patient already has a downstream visit', function () {
     $batch = stage(legacyCsv([validRow()]));
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
     $patient = Patient::first();
 
     ClinicVisit::factory()->create(['patient_id' => $patient->id]);

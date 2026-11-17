@@ -5,12 +5,16 @@ namespace App\Support\PilotImport;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\Patient\Services\PatientRmNumberAllocator;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Treatment\Models\Treatment;
 use App\Modules\TreatmentCategory\Models\TreatmentCategory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class PilotBackupImportService
 {
@@ -30,6 +34,12 @@ class PilotBackupImportService
         'lab',
     ];
 
+    /** Rule 244 §4.5 — a new number held in another spelling; no number in the message. */
+    private const SKIP_RM_TAKEN = 'Skipped a patient row: its Nomor RM is already held in another spelling (rule 244).';
+
+    /** Rule 244 §2.6 — a claim refused by the claim cap or the format capacity; no number in the message. */
+    private const SKIP_RM_CLAIM_REFUSED = 'Skipped a patient row: its Nomor RM would raise the counter past the claim cap for this run, is beyond the format capacity, or names a year that has not started (rule 244 §2.6); escalate the case to Supervisor RME.';
+
     /** @var array<string, string> */
     private const GROUP_MAP = [
         'branches' => 'mst_branches',
@@ -41,6 +51,10 @@ class PilotBackupImportService
 
     public function __construct(
         private readonly PostgresCopyDumpReader $reader,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4) — a number
+        // the backup brings in is claimed like any other typed Nomor RM.
+        private readonly PatientRmNumberAllocator $rmAllocator,
+        private readonly PatientMedicalRecordNumberService $rmNumbers,
     ) {}
 
     /**
@@ -121,8 +135,15 @@ class PilotBackupImportService
             }
 
             if ($this->shouldImport('mst_patients', $allowedTables)) {
-                foreach ($this->limitRows($tables['mst_patients'] ?? [], $limit) as $row) {
-                    $result = $this->importPatient($row, $pilotClinic, $backupDoctorCodes, $dryRun);
+                $patientRows = $this->limitRows($tables['mst_patients'] ?? [], $limit);
+
+                // Rule 244 §2.7 (PR-3 review L3) — every counter the rows name is
+                // locked up front, sorted, never in the backup's own order; the
+                // counters as locked are the run's baselines (owner "Per batch").
+                $rmBaselines = $dryRun ? [] : $this->lockRmCounters($patientRows);
+
+                foreach ($patientRows as $row) {
+                    $result = $this->importPatient($row, $pilotClinic, $backupDoctorCodes, $dryRun, $rmBaselines);
                     $this->tally($imported, $updated, $skipped, 'mst_patients', $result);
                     if ($result['message'] !== null) {
                         $messages[] = $result['message'];
@@ -320,6 +341,7 @@ class PilotBackupImportService
 
     /**
      * @param  array<string, string>  $backupDoctorCodes
+     * @param  array<string, int>  $rmBaselines  the run's counter baselines, "branch id|year" => counter
      * @return array{action: string, message: ?string}
      */
     private function importPatient(
@@ -327,6 +349,7 @@ class PilotBackupImportService
         ?Clinic $pilotClinic,
         array $backupDoctorCodes,
         bool $dryRun,
+        array $rmBaselines = [],
     ): array {
         $mrn = trim((string) ($row['medical_record_number'] ?? ''));
         $name = trim((string) ($row['name'] ?? ''));
@@ -372,6 +395,16 @@ class PilotBackupImportService
                 'date_of_birth' => $dob,
             ];
 
+        // Rule 244 §4 — a NEW number (no live patient holds exactly it) must not
+        // be held in another spelling (alias code, padding, case, a soft-deleted
+        // patient, a merge alias), and on a live run it is claimed under its
+        // branch-year counter lock, held until this import's transaction ends.
+        // An exact live match is still updated as before; its number never moves.
+        if ($mrn !== '' && ! Patient::query()->where('medical_record_number', $mrn)->exists()
+            && ($refusal = $this->claimRefusal($mrn, $dryRun, $rmBaselines)) !== null) {
+            return ['action' => 'skipped', 'message' => $refusal];
+        }
+
         if ($dryRun) {
             $existing = Patient::query()->where($unique)->first();
 
@@ -392,6 +425,112 @@ class PilotBackupImportService
             'action' => $patient->wasRecentlyCreated ? 'imported' : 'updated',
             'message' => null,
         ];
+    }
+
+    /**
+     * Rule 244 §4.5 — why a typed number may NOT be stored, or null when it may:
+     * claimed under its branch-year counter lock (already held, taken by
+     * {@see self::lockRmCounters()}) when it names a known RME branch and this is
+     * a live (transactional) run, otherwise checked in every spelling. A claim
+     * refused by the claim cap or the format capacity (§2.6) is skipped and sent
+     * to Supervisor RME. Owner decision "Per batch" (2026-11-17): each claim is
+     * capped against the run's baseline for its branch-year, so the run as a
+     * whole raises a counter by at most +1000; a row past it is SKIPPED (the
+     * importer's per-row semantics) and later rows within it still import. The
+     * format refusal needs no counter, so it applies on every path (dry run, a
+     * code with no branch); the dry run reads no counter, so it does not predict
+     * a jump refusal. Messages carry no number.
+     *
+     * @param  array<string, int>  $rmBaselines
+     */
+    private function claimRefusal(string $mrn, bool $dryRun, array $rmBaselines = []): ?string
+    {
+        if ($this->rmAllocator->formatRefusal($mrn) !== null) {
+            return self::SKIP_RM_CLAIM_REFUSED;
+        }
+
+        $branch = $this->rmBranch($mrn);
+
+        if ($branch !== null && ! $dryRun) {
+            $year = $this->rmNumbers->parse(strtoupper($mrn))?->year;
+            $baseline = $rmBaselines[sprintf('%010d|%s', (int) $branch->getKey(), $year)] ?? null;
+
+            try {
+                return $this->rmAllocator->claimExisting($branch, $mrn, $baseline) ? null : self::SKIP_RM_TAKEN;
+            } catch (InvalidArgumentException|PatientRmNumberUnavailableException $e) {
+                if (PatientRmNumberAllocator::isClaimRefusal($e)) {
+                    return self::SKIP_RM_CLAIM_REFUSED;
+                }
+                // Not a number the allocator could ever issue: the spelling check below decides.
+            }
+        }
+
+        return $this->rmAllocator->isTaken($mrn) ? self::SKIP_RM_TAKEN : null;
+    }
+
+    /**
+     * Rule 244 §2.7 (PR-3 review L3) — lock, before the first patient row is
+     * written, the Nomor RM counter of every branch-year the backup's numbers
+     * name, sorted by branch id then year (as the legacy CSV commit's
+     * lockRmCounters() does). The import is ONE long transaction; taking the
+     * counters in the backup's own row order could invert the lock order of
+     * another multi-counter writer. A number with no known RME branch, or one
+     * the allocator refuses to lock, is left to the per-row check. Live runs
+     * only (the dry run has no transaction and writes nothing). The locks are
+     * held until the whole import commits, so a registration in those
+     * branch-years waits for it: run `rme:import-pilot-backup` outside clinic
+     * hours.
+     *
+     * Returns the counters as locked — the run's baselines, "branch id|year" =>
+     * counter (owner decision "Per batch").
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, int>
+     */
+    private function lockRmCounters(array $rows): array
+    {
+        $pairs = [];
+
+        foreach ($rows as $row) {
+            $mrn = trim((string) ($row['medical_record_number'] ?? ''));
+
+            // Re-review F3 — a number the format check refuses (a later year, a
+            // non-digit current-year sequence, beyond the capacity) is skipped
+            // row by row anyway, so it must never create or seed its counter here.
+            if ($mrn === '' || $this->rmAllocator->formatRefusal($mrn) !== null) {
+                continue;
+            }
+
+            $parts = $this->rmNumbers->parse(strtoupper($mrn));
+            $branch = $parts !== null ? $this->rmBranch($mrn) : null;
+
+            if ($branch !== null) {
+                $pairs[sprintf('%010d|%s', (int) $branch->getKey(), $parts->year)] = [$branch, (int) $parts->year];
+            }
+        }
+
+        ksort($pairs);
+        $baselines = [];
+
+        foreach ($pairs as $key => [$branch, $year]) {
+            try {
+                $baselines[$key] = $this->rmAllocator->lockCounter($branch, $year);
+            } catch (InvalidArgumentException|PatientRmNumberUnavailableException) {
+                // Not a branch-year the allocator can lock: the per-row check decides.
+            }
+        }
+
+        return $baselines;
+    }
+
+    /** The RME branch a typed number names (canonical code, MAIN excluded), or null. */
+    private function rmBranch(string $mrn): ?Branch
+    {
+        $code = $this->rmNumbers->branchCodeFrom(strtoupper($mrn));
+
+        return $code !== null && $code !== Branch::MAIN_CODE
+            ? Branch::query()->where('code', $code)->first()
+            : null;
     }
 
     /**

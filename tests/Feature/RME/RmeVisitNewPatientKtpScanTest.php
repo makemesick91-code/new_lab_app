@@ -31,8 +31,9 @@ beforeEach(function () {
     $this->clinic = Clinic::factory()->create();
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
-    $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->branch->update(['is_rme_enabled' => true]);
+    // Rule 244 §2 — MAIN is never an RME branch for a new patient (the
+    // automatic Nomor RM allocator refuses it), so the flow runs under RVK1.
+    $this->branch = Branch::factory()->create(['code' => 'RVK1', 'is_active' => true, 'is_rme_enabled' => true]);
     rmeMakeDoctorOnline($this->doctor, $this->branch);
 
     // Visit creation + new-patient creation require both rights (see controller).
@@ -89,12 +90,12 @@ it('attaches the scanned KTP to a new patient created in the visit flow', functi
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Scan KTP',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => '0123',
-            ],
+            ]),
             'ktp_scan_token' => $token,
         ])
         ->assertRedirect();
@@ -122,12 +123,12 @@ it('creates a new patient with no KTP scan token', function () {
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Tanpa Scan',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => '0124',
-            ],
+            ]),
         ])
         ->assertRedirect();
 

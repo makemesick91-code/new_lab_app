@@ -72,16 +72,22 @@ function kapTempPath(int $userId, string $token): string
     return $meta['file_path'];
 }
 
-/** Register through Master Data → Tambah Pasien. */
+/**
+ * Register through Master Data → Tambah Pasien. Rule 244 §2: a new patient needs
+ * the RME branch its automatic Nomor RM is issued under; no number is posted.
+ */
 function kapRegisterMasterData($actor, string $name, ?string $token)
 {
-    return test()->actingAs($actor)->post(route('settings.patients.store'), [
+    $branch = Branch::query()->where('code', 'KAP1')->first()
+        ?? Branch::factory()->create(['code' => 'KAP1', 'is_active' => true, 'is_rme_enabled' => true]);
+
+    return test()->actingAs($actor)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-'.Str::upper(Str::random(8)),
+        'branch_id' => $branch->id,
         'name' => $name,
         'ktp_scan_token' => $token,
-    ]);
+    ]));
 }
 
 function kapPatientFiles(Patient $patient): array
@@ -154,7 +160,7 @@ it('keeps a photo across a failed submit, withdrawable before saving', function 
     // notice the browser can withdraw ("Hapus Preview" detaches it).
     $this->actingAs($actor)
         ->from(route('settings.patients.create'))
-        ->post(route('settings.patients.store'), ['ktp_scan_token' => $token])
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), ['ktp_scan_token' => $token]))
         ->assertRedirect(route('settings.patients.create'))
         ->assertSessionHasErrors();
 
@@ -347,8 +353,9 @@ describe('visit registration', function () {
         $this->clinic = Clinic::factory()->create();
         $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
         $this->treatment = Treatment::factory()->create(['is_active' => true]);
-        $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-        $this->branch->update(['is_rme_enabled' => true]);
+        // Rule 244 §2 — MAIN is never an RME branch for a new patient (the
+        // allocator refuses it), so the visit flow registers under KAP2.
+        $this->branch = Branch::factory()->create(['code' => 'KAP2', 'is_active' => true, 'is_rme_enabled' => true]);
         rmeMakeDoctorOnline($this->doctor, $this->branch);
         $this->actor = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
     });
@@ -359,12 +366,12 @@ describe('visit registration', function () {
             'clinic_id' => test()->clinic->id,
             'doctor_id' => test()->doctor->id,
             'initial_treatment_id' => test()->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => $name,
                 'branch_id' => test()->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => (string) random_int(1000, 9999),
-            ],
+            ]),
             'ktp_scan_token' => $token,
         ]);
     };

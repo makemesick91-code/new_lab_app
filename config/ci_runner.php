@@ -617,6 +617,32 @@ return [
         'tests/Feature/RME/FrontOfficePatientRmNumberAllocatorTest.php',
         'tests/Feature/Patient/FrontOfficePatientRmSequenceSeedCommandTest.php',
         'tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php',
+        // Rule 244 §2 (PR-2) — the automatic number at registration (both forms,
+        // clinical year, 9999 → 10000, unique violation → 422) and the legacy
+        // CSV import beside it (every spelling, claimed under the counter lock).
+        // Selected by the existing `FrontOffice` and `LegacyPatient` tokens in
+        // BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmAutoNumberTest.php',
+        'tests/Feature/Patient/LegacyPatientRmAutoNumberCompatibilityTest.php',
+        // Rule 244 §4 (PR-3) — the Supervisor RME paper-card exception, the
+        // legacy CSV commit gate and the pilot importer claim. Selected by the
+        // existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php',
+        // Rule 244 §2.6 — the Nomor RM claim cap (owner decision 2026-11-17,
+        // "refuse jump > +1000"): paper card, legacy CSV commit and pilot import.
+        // Selected by the existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmClaimCapTest.php',
+        // Rule 244 §4.3 (PR-3b) — the paper-card reason: structured code and
+        // note stored immutably, read only by Supervisor RME and Owner (branch
+        // scoped, no-store), never in logs, audit payloads or exports.
+        // Selected by the existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmPaperCardReasonTest.php',
+        // Rule 244 §5 (PR-4, memo M4.2) — the required core fields of a NEW
+        // patient on both forms (one shared builder), NIK optional, and the
+        // no-phone exception (permission, reason, audit without values, closed
+        // on a later number); legacy edits never forced. Selected by the
+        // existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
