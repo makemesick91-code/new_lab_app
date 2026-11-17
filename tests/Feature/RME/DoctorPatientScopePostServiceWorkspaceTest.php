@@ -269,6 +269,12 @@ it('focuses the saved page in the doctor\'s own page sequence', function () {
     $f = dpswFixture(ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS);
     rmeSignedConsentFor($f['aVisit']);
     $a = test()->dpswUserA;
+    // Rule 240 §4.4 — only the live encounter overwrites a page, and only one it
+    // wrote itself: A's page 2 carries A's encounter as its author stamp.
+    MedicalRecordHandwritingPage::query()
+        ->where('medical_record_id', $f['aSheet']->id)
+        ->where('page_number', 2)
+        ->update(['authored_clinic_visit_id' => $f['aVisit']->id]);
 
     $this->actingAs($a)
         ->post(route('rme.visits.medical-record.handwriting.store', [$f['aVisit'], $f['aSheet']]), [

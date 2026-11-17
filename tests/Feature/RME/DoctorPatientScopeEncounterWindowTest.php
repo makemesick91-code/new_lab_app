@@ -46,6 +46,7 @@ use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
+use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Models\RmePrescription;
@@ -363,6 +364,10 @@ it('never opens a window from a cancelled visit or from an assignment row', func
 it('lets a doctor write on their own in-service encounter', function () {
     dpewFlag(true);
     $a = test()->dpewUserA;
+    // Rule 241 §4 — the Doctor role no longer captures the patient's PTM
+    // signature (`manage_rme_consents`); an account that does (a dual role) is
+    // still held to the encounter scope, which is what this pins.
+    $a->givePermissionTo('manage_rme_consents');
     $own = dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
 
     expect(dpewStatus($a, 'update', $own))->toBe(200)
@@ -377,6 +382,9 @@ it('lets a doctor write on their own in-service encounter', function () {
 it('refuses writes on another doctor\'s encounter the doctor may read, with 403 "ditangani dokter lain"', function () {
     dpewFlag(true);
     $a = test()->dpewUserA;
+    // Rule 241 §4 — see above: the consent capture is asked of an account that
+    // holds it, so the refusal is the encounter scope's own.
+    $a->givePermissionTo('manage_rme_consents');
     dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_CASHIER_PENDING); // opens the history window
     $bAtCashier = dpewVisit(test()->dpewDoctorB, ClinicVisit::STATUS_CASHIER_PENDING);
     $odontogram = Odontogram::factory()->create(['clinic_visit_id' => $bAtCashier->id, 'branch_id' => test()->dpewBranch->id]);
@@ -433,7 +441,7 @@ it('re-asserts the own-encounter rule in the RME authoring third layer even past
     $b = test()->dpewUserB;
     dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_CASHIER_PENDING); // A: history window only
     $bLive = dpewVisit(test()->dpewDoctorB, ClinicVisit::STATUS_IN_PROGRESS);
-    RmeVisitConsent::factory()->create(['clinic_visit_id' => $bLive->id]);
+    rmeSignedConsentFor($bLive); // rule 241 §2 — an EXECUTED PTM
 
     // The policy layer is bypassed for everyone: the service still decides.
     Gate::before(fn () => true);
@@ -452,7 +460,7 @@ it('keeps co-authoring in the RME third layer with the flag OFF (OD-5-1 unchange
     $a = test()->dpewUserA;
     dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_CASHIER_PENDING);
     $bLive = dpewVisit(test()->dpewDoctorB, ClinicVisit::STATUS_IN_PROGRESS);
-    RmeVisitConsent::factory()->create(['clinic_visit_id' => $bLive->id]);
+    rmeSignedConsentFor($bLive); // rule 241 §2 — an EXECUTED PTM
 
     expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient((int) test()->dpewPatient->id, $a))->toBeTrue()
         ->and(app(PrescriptionAuthoringAuthority::class)->permits($a, $bLive))->toBeTrue();
@@ -687,8 +695,8 @@ it('refuses a doctor the typed fields of a book anchored to another doctor\'s vi
     expect(MedicalRecordHandwritingPage::query()->where('medical_record_id', $f['book']->id)->where('page_number', 2)->exists())->toBeTrue();
 });
 
-it('pins today\'s book page re-save across encounters until M3.3 seals pages (rule 240 §4)', function () {
-    dpewFlag(true);
+it('refuses a book page re-save across encounters: M3.3\'s author stamp closes it (rule 240 §4.4)', function (bool $on) {
+    dpewFlag($on);
     $f = dpewSheetFixture();
     $a = test()->dpewUserA;
     Storage::fake('public');
@@ -705,19 +713,21 @@ it('pins today\'s book page re-save across encounters until M3.3 seals pages (ru
         'saved_at' => now(),
     ]);
 
-    // TODAY: the book is patient-level, so the re-save is accepted. M3.3 PR2's
-    // page seal / author stamp closes it; the flag must not be turned ON before.
+    // Rule 243 §2.8 — the book is patient-level, so this re-save passed the
+    // scope before M3.3; the page rule (rule 240 §4.4: only the live encounter
+    // overwrites its OWN pages, an unstamped page never) now refuses it, with
+    // the flag ON and OFF alike. Nothing is written.
     $this->actingAs($a)
         ->post(route('rme.visits.medical-record.handwriting.store', [$f['bookVisit'], $f['book']]), [
             'handwriting_data' => validPodSignatureData(),
             'page_number' => 2,
         ])
         ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE]);
 
     expect(MedicalRecordHandwritingPage::query()->where('medical_record_id', $f['book']->id)->where('page_number', 2)->value('handwriting_path'))
-        ->not->toBe('rme/handwriting/dpew-b-page-2.png');
-});
+        ->toBe('rme/handwriting/dpew-b-page-2.png');
+})->with(['flag ON' => true, 'flag OFF' => false]);
 
 it('lets a doctor write their own in-service sheet and refuses their own sheet out of service', function () {
     dpewFlag(true);
