@@ -79,9 +79,10 @@ class EnsureVisitRoomAssigned
      * doctor may not read — another doctor's pre-exam visit, possibly roomless —
      * is never the visit this gate guards: it asks instead the visit the doctor
      * works from, chosen on the server (rule 243 §2.12, PR A4, closes §2.8 item
-     * 8 (a)): the doctor's own live encounter, else one of the doctor's own
-     * pre-exam visits of the patient, `source_visit_id` choosing only among
-     * those ({@see PatientRmWorkspaceResolver::doctorWorkingVisit()}); else
+     * 8 (a)): the doctor's own live encounter, else the `source_visit_id` visit
+     * when it is any RME visit of the doctor's own, else the doctor's latest own
+     * pre-exam visit of the patient
+     * ({@see PatientRmWorkspaceResolver::doctorWorkingVisit()}); else
      * nothing (no visit of theirs is queued or under examination; every write
      * still needs the doctor's own consented in-progress encounter,
      * RmeVisitConsentService). Unchanged with the flag
