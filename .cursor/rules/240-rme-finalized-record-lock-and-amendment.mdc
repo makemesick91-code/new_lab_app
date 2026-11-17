@@ -588,7 +588,8 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    failure after the body (COMMIT, after-commit callbacks) keeps it, because the row may be committed. A second
    pending request is refused before its object is written.
 4. **Approve and apply.** Inside §7's single transaction, after the visit → sheet → amendment locks, the checker
-   rules, the stale-base check and the proposal re-validation: the object is read back by
+   rules, the stale-base check, the chain verification (§5.7, `MESSAGE_CHAIN_BROKEN` — so a broken history is never
+   extended by a page or a version) and the proposal re-validation: the object is read back by
    `HandwritingPayloadGuard::intactPng()` (present, a PNG, SHA-256 equal) — otherwise
    `MESSAGE_CORRECTION_PAGE_INTEGRITY` and nothing is written — and re-run through today's canvas rules
    (`MESSAGE_PROPOSAL_CHANGED`); then the patient's book (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`,
@@ -635,7 +636,8 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    and linked, the original rows and bytes unchanged, an overwrite through `MedicalRecordHandwritingService::save()`
    refused as sealed, version 2 listing it with key and SHA-256 (the baseline not), `verifyChain()` true, the
    audit; a page-only amendment; a later sheet appending to the patient's book stamped with its own encounter; a
-   tampered or missing object refused with nothing written; the checker matrix (requester, finalizer, Super Admin on
+   tampered or missing object refused with nothing written; a broken version chain refused before any page or
+   version is written (`MESSAGE_CHAIN_BROKEN`); the checker matrix (requester, finalizer, Super Admin on
    their own request) appending nothing. Concurrency: two approvals append one page; an approval after a cancel or a
    reject appends none and keeps the object; a second request refused before writing; the raced one-pending index
    refused in the savepoint with this call's object removed; rule 224 compensation keeping the earlier evidence.

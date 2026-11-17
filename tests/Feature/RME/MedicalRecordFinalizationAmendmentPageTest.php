@@ -430,6 +430,32 @@ it('refuses to apply a tampered or missing correction object, writing nothing', 
         ->and(m3pgAmendmentPages())->toBe(0);
 });
 
+it('refuses to append a page onto a broken version chain, writing nothing (rule 240 §5.7)', function () {
+    $sheet = m3pgSheet();
+    $amendment = m3pgRequest($sheet, m3pgUri(m3pgPng(55)));
+
+    // Tamper with version 1's stored text, bypassing the model and, on PostgreSQL, the trigger.
+    $pg = DB::connection()->getDriverName() === 'pgsql';
+    if ($pg) {
+        DB::statement('ALTER TABLE trx_rme_record_versions DISABLE TRIGGER USER');
+    }
+    try {
+        DB::table('trx_rme_record_versions')->where('subject_type', RmeRecordVersion::SUBJECT_MEDICAL_RECORD)
+            ->where('subject_id', $sheet->id)->where('version', 1)
+            ->update(['snapshot' => json_encode(['tampered' => 'm3pg isi diubah diam-diam'])]);
+    } finally {
+        if ($pg) {
+            DB::statement('ALTER TABLE trx_rme_record_versions ENABLE TRIGGER USER');
+        }
+    }
+
+    $errors = m3pgErrors(fn () => m3pgService()->approve($amendment, $this->supervisor));
+    expect($errors['amendment'] ?? [])->toContain(RmeAmendmentService::MESSAGE_CHAIN_BROKEN)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING)
+        ->and(m3pgAmendmentPages())->toBe(0)
+        ->and(RmeRecordVersion::query()->where('subject_id', $sheet->id)->count())->toBe(1);
+});
+
 it('refuses the requester, the doctor of record, the finalizer and Super Admin on their own request as checkers, appending nothing', function () {
     $sheet = m3pgSheet();
     $amendment = m3pgRequest($sheet, m3pgUri(m3pgPng(61)));
