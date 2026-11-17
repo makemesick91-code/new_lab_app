@@ -486,3 +486,59 @@ it('still refreshes the candidate after a field apply when the sheet observer is
     expect($candidate->fresh()->readiness_status)->toBe(SatusehatCandidate::READINESS_SOURCE_CHANGED)
         ->and($candidate->fresh()->revoked_at)->not->toBeNull();
 });
+
+// ─── Re-review: the hash chain is verified where it matters ─────────────────
+
+/** Tamper with the stored text of version 1 (bypassing the model and, on PostgreSQL, the immutability trigger). */
+function m3apTamperVersionOne(MedicalRecord $sheet): void
+{
+    $pg = DB::connection()->getDriverName() === 'pgsql';
+    if ($pg) {
+        DB::statement('ALTER TABLE trx_rme_record_versions DISABLE TRIGGER USER');
+    }
+
+    try {
+        DB::table('trx_rme_record_versions')
+            ->where('subject_type', RmeRecordVersion::SUBJECT_MEDICAL_RECORD)
+            ->where('subject_id', $sheet->id)
+            ->where('version', 1)
+            ->update(['snapshot' => json_encode(['tampered' => 'm3ap isi diubah diam-diam'])]);
+    } finally {
+        if ($pg) {
+            DB::statement('ALTER TABLE trx_rme_record_versions ENABLE TRIGGER USER');
+        }
+    }
+}
+
+it('refuses to apply onto a broken version chain and writes nothing (re-review)', function () {
+    $sheet = m3apSheet();
+    $amendment = m3apRequest($sheet);
+    $before = $sheet->fresh()->assessment;
+    m3apTamperVersionOne($sheet);
+
+    expect(m3apRefusal(fn () => m3apService()->approve($amendment, $this->supervisor)))->toContain(RmeAmendmentService::MESSAGE_CHAIN_BROKEN)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING)
+        ->and($sheet->fresh()->assessment)->toBe($before)
+        ->and(m3apVersions($sheet)->count())->toBe(1);
+});
+
+it('shows on the version page whether the chain verifies (re-review)', function () {
+    $sheet = m3apSheet();
+    m3apService()->approve(m3apRequest($sheet), $this->supervisor);
+
+    $ok = m3apService()->versionDetailFor($this->supervisor, $sheet->fresh(), 2);
+    expect($ok['chainVerified'])->toBeTrue();
+
+    $this->actingAs($this->supervisor)
+        ->get(route('rme.amendments.versions.sheet.show', [$sheet->id, 2]))
+        ->assertOk()
+        ->assertDontSee('data-version-chain-broken', false);
+
+    m3apTamperVersionOne($sheet);
+
+    expect(m3apService()->versionDetailFor($this->supervisor, $sheet->fresh(), 2)['chainVerified'])->toBeFalse();
+    $this->actingAs($this->supervisor)
+        ->get(route('rme.amendments.versions.sheet.show', [$sheet->id, 2]))
+        ->assertOk()
+        ->assertSee('data-version-chain-broken', false);
+});

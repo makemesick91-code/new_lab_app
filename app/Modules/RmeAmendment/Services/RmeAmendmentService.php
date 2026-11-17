@@ -146,6 +146,8 @@ final class RmeAmendmentService
 
     public const MESSAGE_DIAGNOSIS_ROLE = 'Peran diagnosis tidak valid.';
 
+    public const MESSAGE_CHAIN_BROKEN = 'Riwayat versi rekam medis ini tidak utuh (rantai hash tidak cocok). Amandemen tidak dapat diterapkan; laporkan kepada Supervisor RME.';
+
     public const MESSAGE_STALE_BASE = 'Rekam medis sudah memiliki versi yang lebih baru daripada versi dasar amandemen ini. Pengaju perlu mengajukan amandemen baru.';
 
     public const MESSAGE_PROPOSAL_CHANGED = 'Usulan amandemen tidak lagi sesuai dengan rekam medis saat ini. Pengaju perlu mengajukan amandemen baru.';
@@ -387,6 +389,13 @@ final class RmeAmendmentService
             $latest = $this->versions->latestFor($type, $id);
             if ($latest === null || (int) $latest->getKey() !== (int) $locked->base_version_id) {
                 throw $this->refusal('amendment', self::MESSAGE_STALE_BASE);
+            }
+
+            // Re-review — the next version is chained onto this history, so the
+            // history must verify first (rule 240 §5.7): a broken chain is never
+            // extended, and nothing is written.
+            if (! $this->versionService->verifyChain($subject)) {
+                throw $this->refusal('amendment', self::MESSAGE_CHAIN_BROKEN);
             }
 
             $content = $this->revalidated($locked, $subject);
@@ -718,8 +727,8 @@ final class RmeAmendmentService
         [$type, $id] = $this->subjectKey($subject);
 
         // The list needs no snapshot: number, kind, author and time only, the
-        // authors eager-loaded (review LOW). The chain is verified where a
-        // snapshot is read in full, not on every list view.
+        // authors eager-loaded (review LOW). The chain is verified on the
+        // version page (versionDetailFor) and before every apply (approve()).
         return [
             'subject' => $subject,
             'isChart' => $subject instanceof Odontogram,
@@ -748,7 +757,14 @@ final class RmeAmendmentService
         $previous = $number > 1 ? $this->versionService->version($user, $subject, $number - 1) : null;
         $snapshot = $version->snapshot ?? [];
         $before = $previous?->snapshot ?? [];
-        $detail = ['subject' => $subject, 'isChart' => $subject instanceof Odontogram, 'version' => $version, 'previous' => $previous];
+        $detail = [
+            'subject' => $subject,
+            'isChart' => $subject instanceof Odontogram,
+            'version' => $version,
+            'previous' => $previous,
+            // Re-review — a reader sees whether this record's history verifies.
+            'chainVerified' => $this->versionService->verifyChain($subject),
+        ];
 
         if ($subject instanceof Odontogram) {
             return $detail + ['chart_diff' => $this->chartDiff($before, $snapshot)];

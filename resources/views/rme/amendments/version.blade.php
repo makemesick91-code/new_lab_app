@@ -19,6 +19,12 @@
             </x-slot:actions>
         </x-ui.page-header>
 
+        @unless ($chainVerified)
+            <div class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800" role="alert" data-version-chain-broken>
+                Riwayat versi rekam medis ini tidak utuh: rantai hash tidak cocok. Isi versi di bawah ini tidak dapat dipastikan keasliannya; laporkan kepada Supervisor RME.
+            </div>
+        @endunless
+
         @if ($isChart)
             <x-ui.card title="Odontogram">
                 <x-ui.table>
