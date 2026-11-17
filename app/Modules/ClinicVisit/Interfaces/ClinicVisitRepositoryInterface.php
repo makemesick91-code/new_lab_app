@@ -136,13 +136,19 @@ interface ClinicVisitRepositoryInterface
      * When $requireMedicalRecord is true, only visits that already have a medical
      * record are considered (so RM navigation never lands on a 404).
      *
+     * When $accept is given, each direction returns the NEAREST visit it accepts,
+     * skipping the ones it refuses (DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1: the
+     * viewer's own page ability, rule 227 §1.8c).
+     *
      * @param  array<int, int>  $branchIds
+     * @param  (\Closure(ClinicVisit): bool)|null  $accept
      * @return array{previous: ?ClinicVisit, next: ?ClinicVisit}
      */
     public function adjacentVisitsForPatient(
         array $branchIds,
         ClinicVisit $visit,
-        bool $requireMedicalRecord = false
+        bool $requireMedicalRecord = false,
+        ?\Closure $accept = null,
     ): array;
 
     /**

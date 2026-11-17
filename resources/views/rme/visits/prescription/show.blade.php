@@ -55,7 +55,7 @@
                     &larr; Kembali ke Kunjungan
                 </x-ui.button>
                 @include('rme.visits.partials.visit-nav-arrows', [
-                    'prev' => $adjacentVisits['prev'] ?? null,
+                    'prev' => $adjacentVisits['previous'] ?? null,
                     'next' => $adjacentVisits['next'] ?? null,
                     'routeName' => 'rme.visits.prescription.show',
                 ])

@@ -31,7 +31,14 @@ class RmePrescriptionController extends Controller
         $this->authorize('viewForVisit', [RmePrescription::class, $clinicVisit]);
 
         $data = $this->service->showDataForVisit($clinicVisit, request()->user());
-        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
+        // DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1 — the arrows offer only a visit
+        // whose prescription page this viewer may open (rule 227 §1.8c).
+        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits(
+            $clinicVisit,
+            request()->user(),
+            'viewForVisit',
+            RmePrescription::class,
+        );
         $prescription = $data['prescription'];
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 — a signed prescription offers no edit
         // to anyone but its own doctor (the policy and the service refuse it).

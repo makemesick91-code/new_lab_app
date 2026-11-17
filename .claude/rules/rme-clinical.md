@@ -130,8 +130,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `DOCTOR_PRINT_ODONTOGRAM_REJECTED` from controllers only, never from a policy. Source: rule 138 §6–7.
 - **AIR-RMC-21** Aggregate visit data (RME dashboard, visit widgets) over
   `ClinicVisitService::scopedBranchIdsFor($actor)`, never `BranchService::rmeEnabledIds()`;
-  `patientVisitHistory()` and `adjacentVisits()` stay cross-branch by design because callers authorize the anchor
-  visit first. Source: rule 199 §E.
+  `patientVisitHistory()` stays cross-branch by design because callers authorize the anchor visit first. Source: rule
+  199 §E. `adjacentVisits()` (prescription/odontogram arrows) takes the viewer and the page's own ability and offers
+  only the nearest visit that viewer may open, skipping the rest. Rule 227 §1.8c.
 
 ### Medical record workspace
 
