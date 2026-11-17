@@ -36,6 +36,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\PatientMerge\Support\PatientMergeStatus;
 use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
@@ -47,6 +48,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
@@ -599,3 +601,22 @@ it('refuses a TRUNCATE of the amendment table (PostgreSQL trigger)', function ()
         ->toThrow(QueryException::class, 'immutable')
         ->and(RmeAmendment::query()->count())->toBe(1);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL trigger');
+
+// ─── Patient merge (M3.3 PR4, merge regression) ──────────────────────────────
+
+it('lets a patient with an amendment be merged; the amendment follows the surviving patient through its visit', function () {
+    require_once base_path('tests/Feature/PatientMerge/helpers.php');
+
+    $survivor = pmPatient(['name' => 'M33A Pasien Utama'], $this->branch);
+    $duplicate = pmPatient(['name' => 'M33A Pasien Ganda'], $this->branch);
+    $this->patient = $duplicate;
+    $amendment = m33aRequest(m33aSheet());
+
+    $merged = pmMerge(pmSubmittedCase($survivor, $duplicate, pmUser('Supervisor RME'), $survivor), pmUser('Supervisor RME'));
+
+    $fresh = $amendment->fresh(['clinicVisit.patient']);
+    expect($merged->status)->toBe(PatientMergeStatus::COMPLETED)
+        ->and((int) $fresh->clinicVisit->patient_id)->toBe((int) $survivor->id)
+        ->and($fresh->clinicVisit->patient->name)->toBe('M33A Pasien Utama')
+        ->and(Schema::hasColumn('trx_rme_amendments', 'patient_id'))->toBeFalse();
+});

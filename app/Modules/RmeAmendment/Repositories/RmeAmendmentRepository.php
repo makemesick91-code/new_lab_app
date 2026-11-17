@@ -66,7 +66,8 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
     public function paginateQueue(array $branchIds, ?string $status, int $perPage): LengthAwarePaginator
     {
         return RmeAmendment::query()
-            ->with(['branch:id,name', 'patient:id,name,medical_record_number', 'requester:id,name'])
+            // The patient through the visit (a merge reassigns the visit).
+            ->with(['branch:id,name', 'clinicVisit:id,patient_id', 'clinicVisit.patient:id,name,medical_record_number', 'requester:id,name'])
             ->whereIn('branch_id', $branchIds)
             ->when($status !== null, fn ($query) => $query->where('status', $status))
             // Pending first (the work), then the newest.

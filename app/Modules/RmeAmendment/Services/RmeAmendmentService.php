@@ -205,7 +205,6 @@ final class RmeAmendmentService
                     'subject_id' => $id,
                     'branch_id' => (int) $locked->branch_id,
                     'clinic_visit_id' => (int) $locked->clinic_visit_id,
-                    'patient_id' => $this->patientId($locked),
                     'base_version_id' => (int) $base->getKey(),
                     'base_version' => (int) $base->version,
                     'reason' => $reason,
@@ -502,7 +501,7 @@ final class RmeAmendmentService
      */
     public function detailFor(RmeAmendment $amendment, User $user): array
     {
-        $amendment->loadMissing(['branch:id,name', 'patient:id,name,medical_record_number', 'requester:id,name', 'decider:id,name', 'baseVersion']);
+        $amendment->loadMissing(['branch:id,name', 'clinicVisit:id,patient_id', 'clinicVisit.patient:id,name,medical_record_number', 'requester:id,name', 'decider:id,name', 'baseVersion']);
         $subject = $this->subjectOf($amendment);
         $before = $amendment->baseVersion?->snapshot ?? [];
         $proposed = $amendment->proposed_content ?? [];
@@ -994,11 +993,6 @@ final class RmeAmendmentService
         $doctorId = $subject instanceof Odontogram ? $subject->clinicVisit?->doctor_id : $subject->doctor_id;
 
         return $this->amendments->doctorUserId($doctorId !== null ? (int) $doctorId : null);
-    }
-
-    private function patientId(MedicalRecord|Odontogram $subject): int
-    {
-        return $subject instanceof Odontogram ? (int) $subject->clinicVisit?->patient_id : (int) $subject->patient_id;
     }
 
     /** The patient's live encounter, whose own unsealed pages the baseline does not count as locked (rule 240 §5.4). */

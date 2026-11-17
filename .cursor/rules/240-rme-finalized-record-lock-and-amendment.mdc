@@ -293,8 +293,12 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 ## 6. Supervised amendment — request, cancel, reject (M3.3 PR4)
 
 1. **The table.** `trx_rme_amendments` (migration `2026_11_17_400001_create_trx_rme_amendments_table`, additive): the
-   subject (`subject_type` = `RmeRecordVersion::SUBJECT_*`, `subject_id`), its `branch_id`, `clinic_visit_id` and
-   `patient_id` (copied from the subject by the service, never from a request), `base_version_id` /
+   subject (`subject_type` = `RmeRecordVersion::SUBJECT_*`, `subject_id`), its `branch_id` and `clinic_visit_id`
+   (copied from the subject by the service, never from a request; the patient is read through the visit,
+   `clinicVisit.patient` — there is deliberately no `patient_id`: a patient merge reassigns
+   `trx_clinic_visits.patient_id` and visit ids stay valid, so the amendment follows the surviving patient, while a
+   patient column would be a reference `PatientOwnedRecordRegistry` does not know — blocking every merge — that the
+   row guard could never let a merge rewrite), `base_version_id` /
    `base_version` (the version the request was made against), `status`, `reason` (10–1000 characters),
    `proposed_content` (`json`, read back in the order written), `requested_by`, `cancelled_at`, `decided_by`,
    `decided_at`, `decision_reason`, timestamps (technical instants, UTC; pages render WITA). Constraint names
@@ -305,7 +309,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `cancelled_at` and none of the decision columns; rejected/applied: `decided_by` and `decided_at`, no
    `cancelled_at`; rejected: a bounded `decision_reason`). The PostgreSQL trigger `trx_rme_amendments_guard` (BEFORE
    UPDATE OR DELETE per row, BEFORE TRUNCATE per statement) refuses any change of the request columns
-   (`RmeAmendment::REQUEST_COLUMNS`: subject, branch, visit, patient, base version, reason, proposal compared as
+   (`RmeAmendment::REQUEST_COLUMNS`: subject, branch, visit, base version, reason, proposal compared as
    text, requester, `created_at`), any change of a row that left `pending`, and every DELETE or TRUNCATE; the model
    refuses the same on every engine, and `status` is not mass-assignable (a new row is always `pending`). Because
    `base_version_id` references `trx_rme_record_versions`, a plain TRUNCATE of the version table now fails on the

@@ -10,8 +10,11 @@ use Illuminate\Support\Facades\Schema;
  * amendment of a final sheet or of a finalized odontogram.
  *
  * One row per amendment request: the subject (`medical_record` | `odontogram`,
- * by id), its branch, visit and patient (server-derived from the subject, for the
- * branch-scoped queue), the version the request was made against
+ * by id), its branch and visit (server-derived from the subject, for the
+ * branch-scoped queue; the patient is read through the visit — a patient merge
+ * reassigns `trx_clinic_visits.patient_id` and visit ids stay valid, while a
+ * patient column here would be an unregistered patient reference that blocks
+ * every merge and that the row guard below could never let a merge rewrite), the version the request was made against
  * (`base_version_id`, `base_version`), the written reason, the proposed change
  * (JSON) and the decision. Status `pending` → `cancelled` (the requester),
  * `rejected` (a checker, with a reason) or `applied` (M3.3 PR5).
@@ -37,7 +40,6 @@ return new class extends Migration
             $table->unsignedBigInteger('subject_id');
             $table->foreignId('branch_id')->constrained('mst_branches', 'id', 'trx_rme_amd_branch_fk')->restrictOnDelete();
             $table->foreignId('clinic_visit_id')->constrained('trx_clinic_visits', 'id', 'trx_rme_amd_visit_fk')->restrictOnDelete();
-            $table->foreignId('patient_id')->constrained('mst_patients', 'id', 'trx_rme_amd_patient_fk')->restrictOnDelete();
             $table->foreignId('base_version_id')->constrained('trx_rme_record_versions', 'id', 'trx_rme_amd_base_version_fk')->restrictOnDelete();
             $table->unsignedInteger('base_version');
             $table->string('status', 16);
@@ -95,7 +97,6 @@ return new class extends Migration
                     OR NEW.subject_id IS DISTINCT FROM OLD.subject_id
                     OR NEW.branch_id IS DISTINCT FROM OLD.branch_id
                     OR NEW.clinic_visit_id IS DISTINCT FROM OLD.clinic_visit_id
-                    OR NEW.patient_id IS DISTINCT FROM OLD.patient_id
                     OR NEW.base_version_id IS DISTINCT FROM OLD.base_version_id
                     OR NEW.base_version IS DISTINCT FROM OLD.base_version
                     OR NEW.reason IS DISTINCT FROM OLD.reason

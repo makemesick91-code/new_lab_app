@@ -7,7 +7,6 @@ namespace App\Modules\RmeAmendment\Models;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
@@ -20,8 +19,10 @@ use LogicException;
  * not the requester, not the doctor of record and not the finalizer, with a
  * written reason) or `applied` (M3.3 PR5, approve-and-apply in one
  * transaction). The subject is named by `subject_type`
- * (RmeRecordVersion::SUBJECT_*) and `subject_id`; the branch, visit and patient
- * are copied from the subject by the service, never taken from a request.
+ * (RmeRecordVersion::SUBJECT_*) and `subject_id`; the branch and visit are
+ * copied from the subject by the service, never taken from a request. The
+ * patient is read through the visit (`clinicVisit.patient`): a patient merge
+ * reassigns the visit, so the amendment follows the surviving patient.
  *
  * Neither `status` nor the decision columns are mass-assignable: a new row is
  * always `pending` (RmeAmendmentRepository::create()), and only
@@ -36,7 +37,6 @@ use LogicException;
  * @property int $subject_id
  * @property int $branch_id
  * @property int $clinic_visit_id
- * @property int $patient_id
  * @property int $base_version_id
  * @property int $base_version
  * @property string $status
@@ -82,7 +82,6 @@ class RmeAmendment extends Model
         'subject_id',
         'branch_id',
         'clinic_visit_id',
-        'patient_id',
         'base_version_id',
         'base_version',
         'reason',
@@ -98,7 +97,6 @@ class RmeAmendment extends Model
         'subject_id',
         'branch_id',
         'clinic_visit_id',
-        'patient_id',
         'base_version_id',
         'base_version',
         'reason',
@@ -131,7 +129,6 @@ class RmeAmendment extends Model
             'subject_id' => 'integer',
             'branch_id' => 'integer',
             'clinic_visit_id' => 'integer',
-            'patient_id' => 'integer',
             'base_version_id' => 'integer',
             'base_version' => 'integer',
             'proposed_content' => 'array',
@@ -162,14 +159,14 @@ class RmeAmendment extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    /**
+     * The subject's visit — and through it the patient (`clinicVisit.patient`):
+     * the amendment carries no patient column, so a patient merge, which
+     * reassigns the visit, carries the amendment along (rule 240 §6.1).
+     */
     public function clinicVisit(): BelongsTo
     {
-        return $this->belongsTo(ClinicVisit::class);
-    }
-
-    public function patient(): BelongsTo
-    {
-        return $this->belongsTo(Patient::class);
+        return $this->belongsTo(ClinicVisit::class)->withTrashed();
     }
 
     public function baseVersion(): BelongsTo

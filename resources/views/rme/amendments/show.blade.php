@@ -25,7 +25,7 @@
 
         <x-ui.card title="Permintaan">
             <dl class="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-                <div><dt class="text-ink-soft">Pasien</dt><dd>{{ $amendment->patient?->name }} <span class="font-mono text-ink-soft">{{ $amendment->patient?->medical_record_number }}</span></dd></div>
+                <div><dt class="text-ink-soft">Pasien</dt><dd>{{ $amendment->clinicVisit?->patient?->name }} <span class="font-mono text-ink-soft">{{ $amendment->clinicVisit?->patient?->medical_record_number }}</span></dd></div>
                 <div><dt class="text-ink-soft">Cabang</dt><dd>{{ $amendment->branch?->name }}</dd></div>
                 <div><dt class="text-ink-soft">Diajukan</dt><dd>{{ OversightFormat::clinicalTime($amendment->created_at, 'd/m/Y H:i') }} WITA — {{ $amendment->requester?->name }}</dd></div>
                 <div>

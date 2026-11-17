@@ -48,7 +48,7 @@
                                 <td class="px-4 py-3 text-ink-soft">{{ OversightFormat::clinicalTime($row->created_at, 'd/m/Y H:i') }} WITA</td>
                                 <td class="px-4 py-3">{{ $row->branch?->name }}</td>
                                 @if (in_array((int) $row->id, $viewable, true))
-                                    <td class="px-4 py-3">{{ $row->patient?->name }} <span class="font-mono text-ink-soft">{{ $row->patient?->medical_record_number }}</span></td>
+                                    <td class="px-4 py-3">{{ $row->clinicVisit?->patient?->name }} <span class="font-mono text-ink-soft">{{ $row->clinicVisit?->patient?->medical_record_number }}</span></td>
                                 @else
                                     <td class="px-4 py-3 text-ink-soft">Di luar cakupan pasien Anda</td>
                                 @endif
