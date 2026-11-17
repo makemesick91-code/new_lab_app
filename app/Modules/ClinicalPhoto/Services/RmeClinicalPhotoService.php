@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\ClinicalPhoto\Interfaces\RmeClinicalPhotoRepositoryInterface;
 use App\Modules\ClinicalPhoto\Models\RmeClinicalPhoto;
 use App\Modules\ClinicalPhoto\Support\ClinicalPhotoNormalizer;
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LabOrder\Services\AuditLogService;
@@ -41,6 +42,13 @@ class RmeClinicalPhotoService
 
     public const VIEW_PERMISSION = 'view_rme_clinical_photos';
 
+    /** Rule 242 §9 — the supervised void (Supervisor RME; Super Admin through `*`). */
+    public const VOID_PERMISSION = 'void_rme_clinical_photos';
+
+    public const VOID_REASON_MIN = 10;
+
+    public const VOID_REASON_MAX = 1000;
+
     /**
      * Rule 242 §2 — who uploads: Doctor and Perawat only (plan default). An
      * allowlist decided here, so it binds Super Admin, and a runtime grant of the
@@ -63,6 +71,8 @@ class RmeClinicalPhotoService
 
     public const AUDIT_VIEWED = 'RME_CLINICAL_PHOTO_VIEWED';
 
+    public const AUDIT_VOIDED = 'RME_CLINICAL_PHOTO_VOIDED';
+
     public const MESSAGE_DISABLED = 'Fitur foto klinis belum diaktifkan.';
 
     public const MESSAGE_UPLOAD_PERMISSION = 'Akun ini tidak berwenang mengunggah foto klinis.';
@@ -70,6 +80,14 @@ class RmeClinicalPhotoService
     public const MESSAGE_UPLOAD_ROLE = 'Foto klinis hanya dapat diunggah oleh dokter atau perawat.';
 
     public const MESSAGE_UPLOAD_SCOPE = 'Anda tidak memiliki akses ke kunjungan ini untuk mengunggah foto klinis.';
+
+    public const MESSAGE_VOID_PERMISSION = 'Akun ini tidak berwenang membatalkan foto klinis.';
+
+    public const MESSAGE_VOID_SELF = 'Foto klinis tidak dapat dibatalkan oleh akun yang mengunggahnya. Pembatalan dilakukan oleh pengawas lain.';
+
+    public const MESSAGE_VOID_ALREADY = 'Foto klinis ini sudah dibatalkan.';
+
+    public const MESSAGE_VOID_REASON = 'Alasan pembatalan wajib diisi, 10–1000 karakter.';
 
     private const JPEG_MAGIC = "\xFF\xD8\xFF";
 
@@ -82,6 +100,7 @@ class RmeClinicalPhotoService
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly ClinicalClock $clock,
         private readonly AuditLogService $auditLog,
+        private readonly ClinicVisitRepositoryInterface $visits,
     ) {}
 
     public function enabled(): bool
@@ -321,6 +340,92 @@ class RmeClinicalPhotoService
         ], $viewer);
 
         return $bytes;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Void (rule 242 §9) — correction, never deletion
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * The account side of the void, shared by the policy and the service: the
+     * permission, and maker ≠ checker — never the account that uploaded the
+     * photo (identity, so it binds Super Admin). Null when allowed. The read
+     * scope comes first and answers 404 (a photo the account may not read is
+     * one it cannot know of).
+     */
+    public function voidAccountRefusal(?User $actor, RmeClinicalPhoto $photo): ?string
+    {
+        if (! $actor instanceof User || ! $actor->can(self::VOID_PERMISSION)) {
+            return self::MESSAGE_VOID_PERMISSION;
+        }
+
+        if ((int) $photo->uploaded_by === (int) $actor->getKey()) {
+            return self::MESSAGE_VOID_SELF;
+        }
+
+        return null;
+    }
+
+    /**
+     * Void a clinical photo with a written reason. Order: the flag and the read
+     * scope (404); the permission and maker ≠ checker (403); the reason (422);
+     * then one transaction that locks the visit row FIRST (the lock the upload
+     * takes, rule 223 §1), then the photo row (FOR NO KEY UPDATE), and decides
+     * again on it: not already voided, not the uploader. Only the void columns
+     * are written; the row, the object and the original evidence stay (rule
+     * 224 §4). Neither the live encounter nor the consent is consulted: a wrong
+     * photo found after the visit finished is still corrected. Audited with ids
+     * only — never the reason.
+     */
+    public function void(RmeClinicalPhoto $photo, User $actor, string $reason): RmeClinicalPhoto
+    {
+        if (! $this->enabled() || ! $this->mayView($actor, $photo)) {
+            throw new NotFoundHttpException;
+        }
+
+        $refusal = $this->voidAccountRefusal($actor, $photo);
+
+        if ($refusal !== null) {
+            throw new AuthorizationException($refusal);
+        }
+
+        $reason = trim($reason);
+
+        if (mb_strlen($reason) < self::VOID_REASON_MIN || mb_strlen($reason) > self::VOID_REASON_MAX) {
+            throw ValidationException::withMessages(['void_reason' => self::MESSAGE_VOID_REASON]);
+        }
+
+        return DB::transaction(function () use ($photo, $actor, $reason): RmeClinicalPhoto {
+            $this->visits->lockForStatusDecision((int) $photo->clinic_visit_id);
+            $locked = $this->photos->lockForVoid((int) $photo->getKey());
+
+            if ($locked === null) {
+                throw new NotFoundHttpException;
+            }
+
+            if ($locked->isVoided()) {
+                throw ValidationException::withMessages(['photo' => self::MESSAGE_VOID_ALREADY]);
+            }
+
+            if ((int) $locked->uploaded_by === (int) $actor->getKey()) {
+                throw new AuthorizationException(self::MESSAGE_VOID_SELF);
+            }
+
+            $this->photos->markVoided($locked, [
+                'voided_at' => $this->clock->now(),
+                'voided_by' => (int) $actor->getKey(),
+                'void_reason' => $reason,
+            ]);
+
+            // Ids only — the reason is free text and stays on the row.
+            $this->auditLog->log(self::AUDIT_TABLE, (int) $locked->getKey(), self::AUDIT_VOIDED, null, [
+                'clinic_visit_id' => (int) $locked->clinic_visit_id,
+            ], $actor);
+
+            return $locked;
+        });
     }
 
     /** @param  list<string>  $keys */

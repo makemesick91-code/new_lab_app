@@ -22,4 +22,16 @@ class RmeClinicalPhotoRepository implements RmeClinicalPhotoRepositoryInterface
             ->orderBy('id')
             ->get();
     }
+
+    public function lockForVoid(int $id): ?RmeClinicalPhoto
+    {
+        return RmeClinicalPhoto::query()->whereKey($id)->lock('for no key update')->first();
+    }
+
+    public function markVoided(RmeClinicalPhoto $photo, array $attributes): RmeClinicalPhoto
+    {
+        $photo->forceFill(array_intersect_key($attributes, array_flip(RmeClinicalPhoto::VOID_COLUMNS)))->save();
+
+        return $photo;
+    }
 }

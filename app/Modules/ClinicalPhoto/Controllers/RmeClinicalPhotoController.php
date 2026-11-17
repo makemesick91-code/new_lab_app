@@ -5,6 +5,7 @@ namespace App\Modules\ClinicalPhoto\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicalPhoto\Models\RmeClinicalPhoto;
 use App\Modules\ClinicalPhoto\Requests\StoreRmeClinicalPhotoRequest;
+use App\Modules\ClinicalPhoto\Requests\VoidRmeClinicalPhotoRequest;
 use App\Modules\ClinicalPhoto\Services\RmeClinicalPhotoService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -37,6 +38,18 @@ class RmeClinicalPhotoController extends Controller
         }
 
         return back()->with('status', 'Foto klinis tersimpan.');
+    }
+
+    /** Rule 242 §9 — the supervised void; never a delete. */
+    public function void(VoidRmeClinicalPhotoRequest $request, RmeClinicalPhoto $clinicalPhoto): JsonResponse|RedirectResponse
+    {
+        $photo = $this->photos->void($clinicalPhoto, $request->user(), (string) $request->validated('void_reason'));
+
+        if ($request->expectsJson()) {
+            return response()->json(['id' => $photo->getKey(), 'voided' => true]);
+        }
+
+        return back()->with('status', 'Foto klinis dibatalkan.');
     }
 
     public function image(Request $request, RmeClinicalPhoto $clinicalPhoto): Response

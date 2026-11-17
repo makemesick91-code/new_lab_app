@@ -614,9 +614,11 @@ class RoleSeeder extends Seeder
             // supervised amendment; never the maker (no request_rme_amendments), never
             // on a record it is the doctor of or finalized (RmeAmendmentService).
             'approve_rme_amendments',
-            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos only;
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos and
+            // VOID them (supervised, never one this account uploaded; PR4b, §9);
             // upload is Doctor and Perawat (flag OFF).
             'view_rme_clinical_photos',
+            'void_rme_clinical_photos',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',

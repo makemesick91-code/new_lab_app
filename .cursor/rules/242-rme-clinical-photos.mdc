@@ -1,6 +1,6 @@
 ---
-description: Internal memo M4.4 / M1.x (rule 242) — clinical photos of an encounter, built behind the risky flag rme.clinical_photos (default OFF; turning it on is a separate owner decision). §1–§8 (PTM PR4a, backend) — with the flag off every photo route answers 404 to the accounts holding its permission and the service refuses. Upload: Doctor or Perawat only (a service allowlist, so Super Admin is bound), on the live in_progress encounter they may work on, only while its PTM is EXECUTED (rule 241 §2) and its clinical-documentation answer is YA (2026.1 the combined clause 8, v2026.2 clause 8); clause 9 never gates or permits. Validated before any write (JPEG/PNG sniffed from the bytes, byte, edge and pixel bounds from the header), re-encoded as JPEG (EXIF/GPS stripped, orientation applied, long edge 2560), stored only through ClinicalEvidenceStorage under a fresh random key; row and object one unit with the visit row locked first (rule 224); audit ids only. Read: the image route only (private, no-store, nosniff, each view audited), clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope, 404 out of scope; never Front Office, Kasir or Admin Klinik even with a runtime grant. No delete path.
-globs: app/Modules/ClinicalPhoto/**, database/migrations/2026_11_18_100001_create_trx_rme_clinical_photos_table.php, tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php
+description: Internal memo M4.4 / M1.x (rule 242) — clinical photos of an encounter, built behind the risky flag rme.clinical_photos (default OFF; turning it on is a separate owner decision). §1–§8 (PTM PR4a, backend) — with the flag off every photo route answers 404 to the accounts holding its permission and the service refuses. Upload: Doctor or Perawat only (a service allowlist, so Super Admin is bound), on the live in_progress encounter they may work on, only while its PTM is EXECUTED (rule 241 §2) and its clinical-documentation answer is YA (2026.1 the combined clause 8, v2026.2 clause 8); clause 9 never gates or permits. Validated before any write (JPEG/PNG sniffed from the bytes, byte, edge and pixel bounds from the header), re-encoded as JPEG (EXIF/GPS stripped, orientation applied, long edge 2560), stored only through ClinicalEvidenceStorage under a fresh random key; row and object one unit with the visit row locked first (rule 224); audit ids only. Read: the image route only (private, no-store, nosniff, each view audited), clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope, 404 out of scope; never Front Office, Kasir or Admin Klinik even with a runtime grant. §9 (PTM PR4b) — no delete path; a supervised void: own permission (Supervisor RME), the read scope first (404), never the account that uploaded the photo (identity, binds Super Admin), a 10–1000 character reason, once, the visit row then the photo row locked, the object and evidence kept, audit ids only.
+globs: app/Modules/ClinicalPhoto/**, database/migrations/2026_11_18_100001_create_trx_rme_clinical_photos_table.php, tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php
 alwaysApply: false
 ---
 
@@ -158,7 +158,9 @@ identity number.
 The controller (never Blade) asks `RmeClinicalPhotoService::uploadRefusal($visit, $user)` (null = may upload; else the
 message to show; read-only), `canUpload()` and `visibleForVisit()`, and renders each photo through
 `route('rme.clinical-photos.image', $photo)`. Upload posts `photo` to `rme.visits.clinical-photos.store` (201 JSON
-`{id}` for XHR, else a redirect back with `status`). Nothing renders while the flag is off.
+`{id}` for XHR, else a redirect back with `status`). A voided photo is listed with `isVoided()` and should render
+marked as voided; the void form posts `void_reason` to `rme.clinical-photos.void`, offered when the viewer holds
+`void_rme_clinical_photos` and did not upload the photo (`voidAccountRefusal()`). Nothing renders while the flag is off.
 
 ## 8. Deploy
 
@@ -171,3 +173,31 @@ Tests: `tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php` and
 `tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php` (token `ClinicalEvidence`, both declared in
 `critical_gate_mandatory_suites`). The lock order and the re-decision under the lock are proven in-process; a
 multi-process PostgreSQL race suite is not part of this PR.
+
+## 9. The supervised void (PTM PR4b)
+
+Plan default (accepted): a void with a 10–1000 character reason, no delete path. Maker ≠ checker follows the supervised
+consent void (rule 237 §14.2). Committed evidence is never deleted (rule 224 §4).
+
+1. **One writer.** `RmeClinicalPhotoService::void(RmeClinicalPhoto, User, string)`; route `rme.clinical-photos.void`
+   (`POST rme/clinical-photos/{clinicalPhoto}/void`, `permission:void_rme_clinical_photos`, `{clinicalPhoto}`
+   constrained per route); `VoidRmeClinicalPhotoRequest` (authorizes before it validates); `RmeClinicalPhotoPolicy::void`.
+   There is no delete route, and the model refuses delete.
+2. **Order.** The flag and the §5 read scope — 404, so Front Office, Kasir and Admin Klinik never void, even with a
+   grant (the request asks the service, so Super Admin is bound); the permission `void_rme_clinical_photos` (seeded to
+   Supervisor RME; Super Admin through `*`) — 403 `MESSAGE_VOID_PERMISSION`; maker ≠ checker: never the account that
+   uploaded the photo (identity, so it binds Super Admin, whom `Gate::before` passes through the policy) — 403
+   `MESSAGE_VOID_SELF`; the reason, trimmed, 10–1000 characters — 422 on `void_reason`.
+3. **Locks.** One transaction: the visit row FIRST (`lockForStatusDecision`, the lock the upload takes), then the photo
+   row (`lockForVoid`, FOR NO KEY UPDATE), and on the locked row: not already voided (`MESSAGE_VOID_ALREADY`, 422 on
+   `photo`; a racing second void waits, then is refused) and not the uploader. Only `voided_at` (clinic time),
+   `voided_by` and `void_reason` are written (`markVoided`; the model refuses any other change and a second void).
+4. **Kept.** The row, its object and every evidence column stay. A voided photo stays readable in the §5 scope and is
+   listed with `isVoided()`. Purging voided objects is a separate owner phase (plan risk).
+5. **Not gated** by the live encounter or the consent: a wrong photo found after the visit finished, or after its
+   consent was voided, is still corrected.
+6. **Audit.** `RME_CLINICAL_PHOTO_VOIDED` with `clinic_visit_id` only; the reason is free text and stays on the row,
+   never in an audit payload or a log.
+7. **Deploy.** `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`; no migration (the void columns ship in §4).
+8. **Tests.** `tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php` (token `ClinicalEvidence`, declared in
+   `critical_gate_mandatory_suites`).

@@ -137,7 +137,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   controllers only, never a policy. Rule 138 §6–7; rule 243 §1.
 - **AIR-RMC-21** Aggregate visit data (RME dashboard, visit widgets) over
   `ClinicVisitService::scopedBranchIdsFor($actor)`, never `BranchService::rmeEnabledIds()`;
-  `patientVisitHistory()` stays cross-branch by design because callers authorize the anchor visit first. Rule
+  `patientVisitHistory()` stays cross-branch (callers authorize the anchor visit first). Rule
   199 §E. `adjacentVisits()` (prescription/odontogram arrows) takes the viewer and the page's own ability and offers
   only the nearest visit that viewer may open. Rule 227 §1.8c.
 
@@ -172,8 +172,8 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   schema or the detail screen. Rule 127; rule 100 §9.
 - **AIR-RMC-28** Print/PDF embeds handwriting as inline base64 (`orderedHandwritingPages(true)`), never a link (dompdf
   cannot authenticate). Handwriting and prescription/doctor-signature canvases are written only through
-  `App\Support\Storage\ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`) and read through
-  policy-gated controllers, with no fallback disk. Rule 121.
+  `ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`) and read through policy-gated
+  controllers, with no fallback disk. Rule 121.
 - **AIR-RMC-29** Render the structured odontogram print through `OdontogramPrintFormatter` and
   `rme/visits/odontogram/partials/structured-print-template.blade.php`: HTML table cells, no flexbox, DMF-T from
   `Odontogram::dmftCounts()` (an unknown status never inflates it). Archive Sprint 63.1.
@@ -236,7 +236,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   request input, or delete committed evidence. Rule 224 §1–5.
 - **AIR-RMC-43** Name a controller's route-model argument after its route segment (`{rmePrescription}` →
   `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
-  unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
+  unreadable or non-PNG object; print then renders "Gambar halaman ini tidak tersedia.", never an empty `<img>`.
   Rule 224 §6–7.
 - **AIR-RMC-44** A racing insert that may lose a unique index runs in a nested `DB::transaction()` (SAVEPOINT); catch
   `UniqueConstraintViolationException` outside it and re-read the winner, never inside the aborted transaction
@@ -285,7 +285,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-58** Clinical photos only via `RmeClinicalPhotoService` behind `rme.clinical_photos` (OFF: 404, refused):
   Doctor/Perawat allowlist (binds Super Admin), live encounter, EXECUTED PTM with `allowsClinicalDocumentation()`
   (never clause 9), re-encoded before any write, visit locked first; no-store reads in the clinical scope, never
-  FO/Kasir/Admin Klinik. Rule 242.
+  FO/Kasir/Admin Klinik; no delete, a supervised void (reason, maker ≠ checker). Rule 242.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 

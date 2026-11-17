@@ -1441,6 +1441,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->middleware(['permission:view_rme_clinical_photos', 'cache.headers:private;no_store;max_age=0'])
             ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
             ->name('clinical-photos.image');
+        // Rule 242 §9 — the supervised void (own permission); there is no delete route.
+        Route::post('clinical-photos/{clinicalPhoto}/void', [RmeClinicalPhotoController::class, 'void'])
+            ->middleware('permission:void_rme_clinical_photos')
+            ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
+            ->name('clinical-photos.void');
 
         /*
          * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — authorised read path for native

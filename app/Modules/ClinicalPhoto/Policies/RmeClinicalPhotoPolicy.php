@@ -37,4 +37,16 @@ class RmeClinicalPhotoPolicy
     {
         return $this->photos->mayView($user, $photo) ? Response::allow() : Response::denyAsNotFound();
     }
+
+    /** Rule 242 §9 — read scope first (404), then permission and maker ≠ checker (403). */
+    public function void(User $user, RmeClinicalPhoto $photo): Response
+    {
+        if (! $this->photos->mayView($user, $photo)) {
+            return Response::denyAsNotFound();
+        }
+
+        $refusal = $this->photos->voidAccountRefusal($user, $photo);
+
+        return $refusal === null ? Response::allow() : Response::deny($refusal);
+    }
 }

@@ -17,4 +17,15 @@ interface RmeClinicalPhotoRepositoryInterface
      * @return Collection<int, RmeClinicalPhoto>
      */
     public function forVisit(int $visitId): Collection;
+
+    /** The photo row locked FOR NO KEY UPDATE (rule 242 §9; the visit row is locked before it). */
+    public function lockForVoid(int $id): ?RmeClinicalPhoto;
+
+    /**
+     * Write the void columns only (voided_at, voided_by, void_reason); the model
+     * refuses any other change.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function markVoided(RmeClinicalPhoto $photo, array $attributes): RmeClinicalPhoto;
 }

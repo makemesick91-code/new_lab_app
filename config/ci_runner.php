@@ -1810,6 +1810,11 @@ return [
         // in BOTH critical variants.
         'tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php',
         'tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php',
+        // PTM PR4b (rule 242 §9) — the supervised void: own permission, read scope first (404),
+        // maker ≠ checker binding Super Admin, a 10–1000 character reason, once, visit row then
+        // photo row locked, object and evidence columns kept, no delete path, audit ids only.
+        // Selected by the existing `ClinicalEvidence` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

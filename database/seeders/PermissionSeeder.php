@@ -164,6 +164,9 @@ class PermissionSeeder extends Seeder
         // Doctor, Perawat, Supervisor RME; never Front Office, Kasir or Admin Klinik.
         'upload_rme_clinical_photos',
         'view_rme_clinical_photos',
+        // PTM PR4b (rule 242 §9) — the supervised void of a clinical photo (Supervisor
+        // RME; never the uploader, decided in the service).
+        'void_rme_clinical_photos',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist
