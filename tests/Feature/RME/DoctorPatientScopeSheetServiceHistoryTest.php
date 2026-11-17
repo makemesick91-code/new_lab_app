@@ -434,3 +434,117 @@ it('keeps Supervisor RME exempt from the sheet rule in the services', function (
 
     expect($f['bSheet']->fresh()->notes)->toBe('oleh supervisor');
 });
+
+/*
+|--------------------------------------------------------------------------
+| PR A1c (rule 243 §2.5) — every workspace control follows the record it writes
+|--------------------------------------------------------------------------
+| "+ Tambah Halaman RM" always writes a NEW page to the patient's book, so it is
+| offered on every page the doctor may open while the book takes pages
+| (`appendPage`); the in-place editor follows the shown page's own record.
+*/
+
+/**
+ * Walk every page of the workspace as $viewer and report, per page, which
+ * record the in-place editor would save to, whether it is offered, and where
+ * "+ Tambah Halaman RM" posts.
+ *
+ * @param  array<string, string>  $actions  name => handwriting store URL
+ * @return array<int, array{record: ?string, editable: bool, addAction: ?string}>
+ */
+function dpshWalkPages(User $viewer, ClinicVisit $visit, array $actions): array
+{
+    $open = fn (string $url): string => test()->followingRedirects()
+        ->actingAs($viewer)
+        ->get($url)
+        ->assertOk()
+        ->getContent();
+
+    // The visit URL redirects to the patient's workspace URL, so the walk starts
+    // from the page's own navigation (page 1), then follows its next-page URL.
+    $html = $open(route('rme.visits.medical-record.show', $visit));
+    $url = preg_match('/data-(?:next|prev)-url="([^"]+)"/', $html, $nav) === 1
+        ? preg_replace('/rm_page=\d+/', 'rm_page=1', html_entity_decode($nav[1]))
+        : null;
+
+    $seen = [];
+    while (count($seen) < 10) {
+        if ($url !== null) {
+            $html = $open($url);
+        }
+
+        preg_match('/<figure\b[^>]*class="rm-page-preview[^>]*>/s', $html, $figure);
+        preg_match('/<button\b[^>]*\bid="add-rm-page-btn"[^>]*>/s', $html, $button);
+        preg_match('/data-form-action="([^"]+)"/', $button[0] ?? '', $addAction);
+
+        $record = null;
+        foreach ($actions as $name => $action) {
+            if (str_contains($figure[0] ?? '', 'data-form-action="'.$action.'"')) {
+                $record = $name;
+            }
+        }
+
+        $seen[count($seen) + 1] = [
+            'record' => $record,
+            'editable' => str_contains($figure[0] ?? '', 'data-rm-editable'),
+            'addAction' => isset($addAction[1]) ? html_entity_decode($addAction[1]) : null,
+        ];
+
+        if ($url === null || preg_match('/data-next-url="([^"]+)"/', $html, $next) !== 1) {
+            break;
+        }
+        $url = html_entity_decode($next[1]);
+    }
+
+    return $seen;
+}
+
+/** @return array<string, string> */
+function dpshStoreActions(array $f): array
+{
+    $action = fn (ClinicVisit $visit, MedicalRecord $record) => route('rme.visits.medical-record.handwriting.store', [$visit, $record]);
+
+    return [
+        'book' => $action($f['bookVisit'], $f['book']),
+        'bSheet' => $action($f['bVisit'], $f['bSheet']),
+        'aSheet' => $action($f['aVisit'], $f['aSheet']),
+    ];
+}
+
+it('offers a new book page on another doctor\'s sheet page but not its in-place editor (flag ON)', function () {
+    dpshFlag(true);
+    $f = dpshFixture();
+    dpshPage($f['book'], 1, test()->dpshDoctorB);
+    dpshPage($f['bSheet'], 1, test()->dpshDoctorB);
+    dpshPage($f['aSheet'], 1, test()->dpshDoctorA);
+    $actions = dpshStoreActions($f);
+
+    $pages = dpshWalkPages(test()->dpshUserA, $f['aVisit'], $actions);
+    $byRecord = collect($pages)->keyBy('record');
+
+    // The probe of the A1b review: book page, B's sheet page, A's own sheet page.
+    expect($byRecord->keys()->all())->toContain('book', 'bSheet', 'aSheet');
+
+    foreach ($pages as $n => $page) {
+        expect($page['addAction'])->toBe($actions['book'], "page {$n}: \"+ Tambah Halaman RM\" posts to the book")
+            ->and($page['editable'])->toBe($page['record'] !== 'bSheet', "page {$n} ({$page['record']}): in-place editor");
+    }
+});
+
+it('keeps the in-place editor and a new book page on every sheet page with the flag OFF', function () {
+    dpshFlag(false);
+    $f = dpshFixture();
+    dpshPage($f['book'], 1, test()->dpshDoctorB);
+    dpshPage($f['bSheet'], 1, test()->dpshDoctorB);
+    dpshPage($f['aSheet'], 1, test()->dpshDoctorA);
+    $actions = dpshStoreActions($f);
+
+    $pages = dpshWalkPages(test()->dpshUserA, $f['aVisit'], $actions);
+
+    expect(collect($pages)->pluck('record')->all())->toContain('book', 'bSheet', 'aSheet');
+
+    foreach ($pages as $n => $page) {
+        expect($page['addAction'])->toBe($actions['book'], "page {$n}")
+            ->and($page['editable'])->toBeTrue("page {$n} ({$page['record']})");
+    }
+});

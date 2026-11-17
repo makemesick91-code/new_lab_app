@@ -177,8 +177,10 @@ added by their own PRs.
    `MedicalRecordSheetWriteScope::followsItsVisit()` is the one definition of "not the book" for reads, shared with
    `MedicalRecordPolicy` (the book id is memoised per routed request once found). The workspace controls mirror these
    abilities, computed in `MedicalRecordController` (rule 135): the handwriting editor on `appendPage` for a book page
-   and on `update` for an in-place sheet page, "+ Tambah Lembar RM" on `create` for its target visit, the diagnosis
-   form on `update` of the sheet it writes. With the flag OFF all of these answer exactly as before (`appendPage` =
+   and on `update` for an in-place sheet page, "+ Tambah Halaman RM" — which always writes a NEW page to the book,
+   whatever page is shown — on `appendPage` of the book (`canAppendBookPage`, PR A1c; on a page of another doctor's
+   sheet the in-place editor is withheld while the book still takes new pages), "+ Tambah Lembar RM" on `create` for
+   its target visit, the diagnosis form on `update` of the sheet it writes. With the flag OFF all of these answer exactly as before (`appendPage` =
    the old `update`; the sheet assertions are no-ops).
 6. **Lists: scoped now, and what waits for A3.** Scoped now and mirroring their per-record checks:
    `applyVisitScopeForUser()` = own visits OR (non-pre-exam AND an own in-service encounter with that patient) — the
@@ -210,14 +212,19 @@ added by their own PRs.
    (`PatientRmWorkspaceResolver::orderedHandwritingBookForPatient` — the book is patient-level, its pages are not yet
    filtered by their authoring visit); the consent banner (`activeEncounter`, `MedicalRecordController::show`); the
    unified RM pages (`UnifiedMedicalRecordIndexRepository::nativeRecordsForPatient`, `latestNativeRecordsFor`); the
-   prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`); the prev/next visit arrows
-   (`ClinicVisitRepository::adjacentVisitsForPatient`); and the visit page's follow-up links
-   (`rme/visits/show.blade.php`, "Kunjungan Kontrol"). The per-record checks behind each of these already refuse (404);
-   only the listing can still name another doctor's visit. Pre-existing finding, deliberately NOT fixed here: the
-   prescription page reads `$adjacentVisits['prev']` while the repository returns `'previous'`, so its previous-visit
-   arrow never renders. Correcting the key alone would expose the arrows' unscoped visit (all RME branches —
-   `RmeClinicalDocumentReadScopeTest` "keeps another branch's prescriptions out of the front desk's history list"
-   then fails), so it belongs with the A3 arrow scoping (branch read scope and encounter scope together).
+   prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`); the visit page's follow-up
+   links (`rme/visits/show.blade.php`, "Kunjungan Kontrol"); and the odontogram page's parent link
+   (`rme/visits/odontogram/show.blade.php`, "Odontogram Kunjungan Sebelumnya"). The per-record checks behind each of
+   these already refuse (404); only the listing can still name another doctor's visit. The book ANCHOR is an A3 item
+   too: `PatientRmWorkspaceResolver::resolveCanonicalWorkspaceVisit()` picks the earliest non-cancelled visit, which
+   can be another doctor's pre-exam visit (a stale waiting visit, or a same-day visit with a lower id); with the flag
+   ON `create` on it answers 404, so the doctor cannot start the book until that visit is cancelled or examined.
+   Changing the anchor changes the book selector (rule 237 §16, R7-1) for every role, so it is decided with A3, not
+   patched here. The prev/next visit arrows are NOT an A3 item: CC1-ADJ-1 (rule 227 §1.8c, its own PR, merged before
+   this series) offers only a visit whose page the viewer may open, asked through that page's own ability, so the
+   working-branch read scope applies now and the encounter scope when the flag is ON; it also corrects the
+   prescription page's `'prev'` key.
 9. **Tests.** `tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php` (A1) and
-   `tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php` (A1b) (critical-gate token `DoctorPatientScope`,
+   `tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php` (A1b; A1c adds the workspace controls on a page
+   of another doctor's sheet, flag ON and OFF) (critical-gate token `DoctorPatientScope`,
    declared in `critical_gate_mandatory_suites`); the existing doctor-scope suites run unchanged with the flag OFF.

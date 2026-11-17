@@ -429,6 +429,15 @@ class MedicalRecordController extends Controller
         $canEditHandwritingTarget = $viewer?->can($handwritingIsBook ? 'appendPage' : 'update', $handwritingFormRecord) ?? false;
         $canAddSheet = $addSheetVisit !== null
             && ($viewer?->can('create', [MedicalRecord::class, $addSheetVisit]) ?? false);
+        // Rule 243 §2.5 (PR A1c) — "+ Tambah Halaman RM" always writes a NEW page
+        // to the patient's BOOK, whatever page is shown, so it follows
+        // `appendPage` on the book, never the active page's record: on a page of
+        // another doctor's sheet the in-place editor is refused while the book
+        // still takes new pages. Without a book it posts to the form record,
+        // exactly as the editor does.
+        $canAppendBookPage = $handwritingRecord !== null
+            ? ($viewer?->can('appendPage', $handwritingRecord) ?? false)
+            : $canEditHandwritingTarget;
 
         return view('rme.visits.medical-record.show', [
             'clinicVisit' => $activeVisit,
@@ -463,6 +472,7 @@ class MedicalRecordController extends Controller
             'editorRevision' => $editorRevision,
             'canEditHandwritingTarget' => $canEditHandwritingTarget,
             'canAddSheet' => $canAddSheet,
+            'canAppendBookPage' => $canAppendBookPage,
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),

@@ -24,6 +24,9 @@
         // writes (the book: appendPage; an in-place sheet page: update), computed
         // in the controller.
         $canEditHandwriting = ($canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
+        // PR A1c — "+ Tambah Halaman RM" writes a new page to the BOOK
+        // (appendPage), so it has its own ability, also computed in the controller.
+        $canAppendHandwritingPage = ($canAppendBookPage ?? $canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
         $savedHandwriting = $medicalRecord->latestHandwriting();
         $hasHandwriting = $hasRequiredHandwriting ?? false;
         $hasLegacySoap = filled($medicalRecord->subjective)
@@ -367,7 +370,7 @@
                 @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
                 @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
             >
-            @include('rme.visits.medical-record.partials.rm-page-navigator')
+            @include('rme.visits.medical-record.partials.rm-page-navigator', ['canEditHandwriting' => $canAppendHandwritingPage])
 
             <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
             {{-- Only the ACTIVE page is rendered. LEGACY-RME-DOCTOR-WORKSPACE-1A:
@@ -391,7 +394,7 @@
                         data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
                     @endif
                     data-existing-src="{{ $activeSrc }}"
-                    @if ($canEditActivePage) role="button" tabindex="0" @endif
+                    @if ($canEditActivePage) data-rm-editable role="button" tabindex="0" @endif
                 >
                     <figcaption class="mb-2 flex items-center justify-between text-xs">
                         <span class="font-semibold text-gray-700">Halaman {{ $activePageNumber }}</span>
@@ -439,7 +442,9 @@
             </div>
             @endif
             </div>{{-- /#rm-handwriting-swipe --}}
-            @if ($canEditHandwriting)
+            {{-- PR A1c — the overlay serves both writes: the in-place page (only a
+                 preview marked data-rm-editable opens it) and a new book page. --}}
+            @if ($canEditHandwriting || $canAppendHandwritingPage)
                 @error('handwriting_data')
                     <p class="mt-2 text-xs text-danger-600">{{ $message }}</p>
                 @enderror
@@ -779,7 +784,7 @@
                     loadPage(existingSrc);
 
                     // Read-only previews open the overlay for their own page.
-                    document.querySelectorAll('#rm-page-previews .rm-page-preview').forEach(function (fig) {
+                    document.querySelectorAll('#rm-page-previews .rm-page-preview[data-rm-editable]').forEach(function (fig) {
                         // Rule 240 §4 — a sealed page never opens the editor.
                         if (fig.dataset.sealed === '1') {
                             return;

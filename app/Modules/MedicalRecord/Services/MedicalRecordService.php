@@ -464,7 +464,10 @@ class MedicalRecordService
             // its anchor (the locked canonical visit), so with the encounter scope
             // ON it needs that visit's writer, exactly like updateDraft(). A book
             // started WITHOUT typed content is the patient-level handwriting book
-            // and is allowed as before; nothing typed is ever silently dropped.
+            // and is allowed as before. When a book already exists (or a
+            // concurrent first save created it) the early return above opens it
+            // and this request's typed fields are not written; no form sends
+            // typed fields here (only the CSRF token and source_visit_id).
             if ($this->hasTypedContent($data)) {
                 $this->sheetScope->assertTypedWriteOn($target, $actor);
             }

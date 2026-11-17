@@ -207,10 +207,11 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 - **AIR-DAC-43** `rme.doctor_encounter_scope` (default OFF; `FeatureFlagService` only): OFF = AIR-DAC-40 exactly. ON:
   `DoctorEncounterWindow` (open status or completed today in WITA; cancelled never) and read modes NONE/OWN/HISTORY in
   `DoctorPatientScopeService`: own visits and sheets at any date, other non-pre-exam visits and sheets, the book and
-  the patient only inside an own in-service encounter; assignments grant nothing; out of scope 404; writes (sheets by
-  every sheet's typed content by its anchor visit, re-asserted in the services) only on the own in-service encounter
-  (403 "ditangani dokter lain"); book pages via `appendPage`; visit/patient lists and histories mirror records, the
-  workspace rail, book pages, unified RM pages, prescription history and arrows wait for A3. ON needs A2–A4, the
+  the patient only inside an own in-service encounter; assignments grant nothing; out of scope 404; writes (every
+  sheet's typed content by its anchor visit, re-asserted in the services) only on the own in-service encounter
+  (403 "ditangani dokter lain"); book pages via `appendPage`, and each workspace control follows the record it writes;
+  visit/patient lists and histories mirror records; the workspace rail, book pages, book anchor, unified RM pages,
+  prescription history and follow-up/odontogram parent links wait for A3 (arrows: CC1-ADJ-1). ON needs A2–A4, the
   A3 lists and M3.3 first. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
 
