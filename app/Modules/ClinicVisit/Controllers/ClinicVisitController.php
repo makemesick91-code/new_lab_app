@@ -107,7 +107,7 @@ class ClinicVisitController extends Controller
      * that already have an assigned treatment room and are still in an active
      * (non-terminal) state, scoped to the active RME-enabled branch set.
      */
-    public function roomWorklist(Request $request): View
+    public function roomWorklist(Request $request, RmeVisitConsentService $consents): View
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
@@ -129,9 +129,15 @@ class ClinicVisitController extends Controller
             $filters['branch_id'] = null;
         }
 
+        $visits = $this->visits->roomWorklist($request->user(), $filters);
+
         return view('rme.visits.room-worklist', [
             'roomScoped' => $roomScoped,
-            'visits' => $this->visits->roomWorklist($request->user(), $filters),
+            'visits' => $visits,
+            // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — "Tanda Tangani PTM": the
+            // live consents this account may countersign now, keyed by visit id,
+            // decided by the consent service (never in Blade).
+            'countersignableConsents' => $consents->countersignableConsentsFor($request->user(), $visits->getCollection()),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)

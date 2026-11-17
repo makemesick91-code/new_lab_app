@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — a signed PERSETUJUAN TINDAKAN
@@ -127,6 +128,16 @@ class RmeVisitConsent extends Model
         return $this->belongsTo(User::class, 'voided_by');
     }
 
+    /**
+     * DMS memo M1.1–M1.3 (rule 241 §1) — the treating doctor's countersignature,
+     * its own insert-only row (UNIQUE per consent). The legacy optional doctor
+     * drawing in `doctor_signature_path` is display history and never this.
+     */
+    public function doctorCountersignature(): HasOne
+    {
+        return $this->hasOne(RmeVisitConsentDoctorSignature::class, 'rme_visit_consent_id');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | State
@@ -145,6 +156,11 @@ class RmeVisitConsent extends Model
     public function isVoided(): bool
     {
         return $this->voided_at !== null;
+    }
+
+    public function isDoctorCountersigned(): bool
+    {
+        return $this->doctorCountersignature !== null;
     }
 
     public function scopeValid(Builder $query): Builder

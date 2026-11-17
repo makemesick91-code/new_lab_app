@@ -30,10 +30,10 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 
 ### Visit status machine
 
-- **AIR-RMC-01** Keep `ClinicVisit::VALID_TRANSITIONS` as `registered→{waiting,cancelled}`,
-  `waiting→{in_progress,cancelled}`, `in_progress→{cashier_pending,cancelled}`, `cashier_pending→{completed}`, with
-  `completed`/`cancelled` terminal. Never re-add an `in_progress→completed` edge and never let
-  `TransitionStatusRequest` accept `completed`. Source: archive Sprint 62.1; code `ClinicVisit`.
+- **AIR-RMC-01** `ClinicVisit::VALID_TRANSITIONS` stays `registered→{waiting,cancelled}`,
+  `waiting→{in_progress,cancelled}`, `in_progress→{cashier_pending,cancelled}`, `cashier_pending→{completed}`;
+  `completed`/`cancelled` terminal. Never an `in_progress→completed` edge; `TransitionStatusRequest` never accepts
+  `completed`. Source: archive Sprint 62.1; code `ClinicVisit`.
 - **AIR-RMC-02** Reach `completed` only through `RmePaymentService`, from `cashier_pending`, after a cashier payment;
   `ClinicVisitService::transitionStatus()` refuses `completed` from any other status. Add no manual path. Payment
   rules live in `.claude/rules/rme-billing.md`. Source: rule 108 §11,
@@ -111,23 +111,25 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 
 ### Room, doctor scope and print denial
 
-- **AIR-RMC-18** Keep the room gate: `visit.room` (`EnsureVisitRoomAssigned`) guards medical-record and odontogram
-  routes and redirects a roomless pre-exam visit to `rme.visits.show`; `cashier_pending` and terminal visits are
-  exempt. The room is written only by `ClinicVisitService::assignRoom()` (`rme.visits.assign-room`). The doctor comes from
-  `assignRoom()` for a front-desk registration (which drops `doctor_id`); any other registrar must name a doctor online
-  at the visit's branch (`UserOnlineContextService::assertDoctorSelectableForVisit()`);
-  registration never writes `clinic_room_id`; the visit edit is the allow-list `ClinicVisitService::EDITABLE_FIELDS`.
-  Source: archive Hotfix Sprint 60.8; rule 199 §14a; rule 200 §17–18.
-- **AIR-RMC-19** Route doctor room isolation only through `App\Modules\RME\Services\DoctorRoomScopeService`: the room
-  comes from the doctor's live online context (`trx_user_online_contexts`), never the request; it restricts only
-  `ClinicVisit::PRE_EXAM_STATUSES`; no resolvable room ⇒ no active visit; history stays readable. Keep
-  `applyRoomScope()` and `deniesActiveVisitOutsideRoom()` mirror images. Owner, Super Admin and Supervisor RME are
-  exempt via `DoctorPatientScopeService::shouldApplyDoctorScope()`. Do not room-guard `completeExamination`. Source:
-  rule 138 §1–5.
-- **AIR-RMC-20** Deny `print` to a scoped Doctor on `rme.visits.print`, `rme.visits.pdf` (`ClinicVisitPolicy::print`)
-  and `rme.odontograms.print` (`OdontogramPolicy::print`); the existing `@can('print')` hides the buttons, so add no
-  UI-only check. Prescription print keeps working. Audit `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
-  `DOCTOR_PRINT_ODONTOGRAM_REJECTED` from controllers only, never from a policy. Source: rule 138 §6–7.
+- **AIR-RMC-18** Room gate: `visit.room` (`EnsureVisitRoomAssigned`) guards medical-record and odontogram routes and
+  redirects a roomless pre-exam visit to `rme.visits.show` (`cashier_pending` and terminal visits exempt). Only
+  `ClinicVisitService::assignRoom()` (`rme.visits.assign-room`) writes the room; it supplies the doctor for a
+  front-desk registration (which drops `doctor_id`); any other registrar names a doctor online at the visit's branch
+  (`UserOnlineContextService::assertDoctorSelectableForVisit()`). Registration never writes `clinic_room_id`; the
+  visit edit is the allow-list `ClinicVisitService::EDITABLE_FIELDS`. Hotfix Sprint 60.8; rule 199 §14a; rule 200
+  §17–18.
+- **AIR-RMC-19** Doctor room isolation only via `DoctorRoomScopeService` (RME module): the room comes from the
+  doctor's live online context (`trx_user_online_contexts`), never the request; it restricts only
+  `ClinicVisit::PRE_EXAM_STATUSES`; no resolvable room ⇒ no active visit; history stays readable. `applyRoomScope()`
+  and `deniesActiveVisitOutsideRoom()` stay mirror images. Owner, Super Admin, Supervisor RME exempt
+  (`DoctorPatientScopeService::shouldApplyDoctorScope()`). Never room-guard `completeExamination`. Rule 138 §1–5.
+- **AIR-RMC-20** A scoped Doctor (rule 138 definition) is denied `print` on `rme.visits.print`, `rme.visits.pdf`
+  (`ClinicVisitPolicy::print`) and `rme.odontograms.print` (`OdontogramPolicy::print`) — `@can('print')` already hides
+  the buttons, so no UI-only check — and is refused, 403 and audited, the PTM print `rme.consents.print` and legacy
+  print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; on the oversight
+  legacy doors controller + service only). Reading on screen stays; prescription print keeps working; FO, Admin
+  Klinik, Supervisor RME keep printing. `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
+  `DOCTOR_PRINT_ODONTOGRAM_REJECTED` are audited from controllers only, never a policy. Rule 138 §6–7; rule 243 §1.
 - **AIR-RMC-21** Aggregate visit data (RME dashboard, visit widgets) over
   `ClinicVisitService::scopedBranchIdsFor($actor)`, never `BranchService::rmeEnabledIds()`;
   `patientVisitHistory()` stays cross-branch by design because callers authorize the anchor visit first. Source: rule
@@ -147,51 +149,46 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-24** Keep Medical Record page order Informasi Kunjungan → RME Tulisan Tangan → Dokumen RME Pasien, with
   exactly one Finalisasi and one Cetak RME, both in its header. Cetak RME is not on Detail Kunjungan (front office
   uses the Rekam Medis link); moving a button never adds a print endpoint. Source: rule 100 §8–9.
-- **AIR-RMC-25** Gate every RME authoring control on the capability, not a permission: the controller passes
-  `RmeVisitConsentService::canAuthorRmeForPatient()` (odontogram page: `canAuthorOdontogramFor()`); never use
-  `can('create', MedicalRecord)` alone and never re-derive consent in Blade. A not-yet-allowed "Buat Halaman RM
-  Pertama" renders disabled with the reason and no `<form>`. Resolve a UI/server mismatch toward UI DENY + server DENY,
-  never by relaxing the service. Source: rule 135; rule 134 §6.
-- **AIR-RMC-26** Treat `/rme/medical-records` as a read-only unified index: one row per patient holding a readable
-  native record or a PUBLISHED legacy RME/odontogram, each source under its own canonical scope (composed, never
-  copied) plus `DoctorPatientScopeService`, paginated after the union. Never convert a legacy archive into a
-  `MedicalRecord` or create a visit; `rme.medical-records.patients.show` answers 404 outside the actor's index.
-  Source: rule 173.
+- **AIR-RMC-25** RME authoring controls follow the capability, not a permission: the controller passes
+  `RmeVisitConsentService::canAuthorRmeForPatient()` (odontogram page: `canAuthorOdontogramFor()`); never
+  `can('create', MedicalRecord)` alone, never consent re-derived in Blade. A not-yet-allowed "Buat Halaman RM Pertama"
+  renders disabled with its reason and no `<form>`. A UI/server mismatch resolves to UI DENY + server DENY, never a
+  relaxed service. Rule 135; rule 134 §6.
+- **AIR-RMC-26** `/rme/medical-records` is a read-only unified index: one row per patient with a readable native
+  record or a PUBLISHED legacy RME/odontogram, each source under its own canonical scope (composed, never copied) plus
+  `DoctorPatientScopeService`, paginated after the union. A legacy archive never becomes a `MedicalRecord` or a visit;
+  `rme.medical-records.patients.show` answers 404 outside the actor's index. Rule 173.
 
 ### Print and evidence
 
-- **AIR-RMC-27** `rme.visits.print` and `rme.visits.pdf` share `rme.visits.partials.print-body`; change it once and
-  never fork. It carries no `Data Pasien & Kunjungan` card or its cells and no odontogram (standalone
-  `rme.odontograms.print`), keeps the wrapper `<title>`, footer and logo, and leaves no empty
-  `section-block`/`info-grid`. "Remove X from the print" never touches data, schema or the detail screen. Source:
-  rule 127; rule 100 §9.
-- **AIR-RMC-28** Embed handwriting in print/PDF as inline base64 (`orderedHandwritingPages(true)`), never a link —
-  dompdf cannot authenticate. Write handwriting and prescription/doctor-signature canvases only through
-  `App\Support\Storage\ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`), read through
-  policy-gated controllers, with no fallback disk. Source: rule 121.
+- **AIR-RMC-27** `rme.visits.print` and `rme.visits.pdf` share `rme.visits.partials.print-body` (change once, never
+  fork): no `Data Pasien & Kunjungan` card or cells, no odontogram (standalone `rme.odontograms.print`), the wrapper
+  `<title>`, footer and logo kept, no empty `section-block`/`info-grid`. "Remove X from the print" never touches data,
+  schema or the detail screen. Rule 127; rule 100 §9.
+- **AIR-RMC-28** Print/PDF embeds handwriting as inline base64 (`orderedHandwritingPages(true)`), never a link (dompdf
+  cannot authenticate). Handwriting and prescription/doctor-signature canvases are written only through
+  `App\Support\Storage\ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`) and read through
+  policy-gated controllers, with no fallback disk. Rule 121.
 - **AIR-RMC-29** Render the structured odontogram print through `OdontogramPrintFormatter` and
   `rme/visits/odontogram/partials/structured-print-template.blade.php`: HTML table cells, no flexbox, DMF-T from
   `Odontogram::dmftCounts()` (an unknown status never inflates it). Source: archive Sprint 63.1.
 
 ### Registration, visit detail, dates, prescriptions
 
-- **AIR-RMC-30** Derive "Jenis Kunjungan" server-side: `StoreClinicVisitRequest::prepareForValidation()` overwrites
-  any client `visit_type` — Kontrol only when `follow_up_of_visit_id` is explicitly selected, Baru otherwise. An
-  invalid, cross-patient, non-RME or soft-deleted prior visit is rejected, never downgraded; history alone never makes
-  Kontrol; `continued_treatment`/`emergency` stay in data but are not creatable. Source:
-  rule 185 §C.
+- **AIR-RMC-30** "Jenis Kunjungan" is server-derived: `StoreClinicVisitRequest::prepareForValidation()` overwrites any
+  client `visit_type` — Kontrol only with an explicitly selected `follow_up_of_visit_id`, else Baru. An invalid,
+  cross-patient, non-RME or soft-deleted prior visit is rejected, never downgraded; history alone never makes Kontrol;
+  `continued_treatment`/`emergency` stay in data but are not creatable. Rule 185 §C.
 - **AIR-RMC-31** Render Detail Kunjungan clinical cards in Blade source order Odontogram → Rekam Medis → Resep (never
   CSS `order-*`), each keeping its own `@can`; front-office-only accounts see none of them. Source: rule 185 §A.
-- **AIR-RMC-32** Stamp clinical dates from `ClinicalClock` (CG-12): `visit_date` (it also drives queue and visit
-  numbers), the RM year in `PatientMedicalRecordNumberService::composeForRegistration()`, and the RM pre-check in
-  `StoreClinicVisitRequest`. Use a supplied date verbatim; never renumber an existing patient. Daftar Kunjungan
-  defaults to the clinical day. Source: rule 110 §4, rule 108 §13–14,
-  rule 92.
-- **AIR-RMC-33** Send a prescription by WhatsApp only as an explicit, confirmed operator action gated by
-  `send_prescription_whatsapp` (`rme.prescriptions.whatsapp.send`): Meta Cloud API with an approved utility template,
-  HTTPS host allowlist, no redirects, token never logged or persisted, idempotent per prescription + recipient +
-  template, no diagnosis or KTP/NIK in the message; a failure never mutates the prescription or visit. Source: rule 108
-  §15–22.
+- **AIR-RMC-32** Clinical dates come from `ClinicalClock` (CG-12): `visit_date` (it also drives queue and visit
+  numbers), the RM year in `PatientMedicalRecordNumberService::composeForRegistration()`, the RM pre-check in
+  `StoreClinicVisitRequest`. A supplied date is used verbatim; an existing patient is never renumbered. Daftar
+  Kunjungan defaults to the clinical day. Rule 110 §4, rule 108 §13–14, rule 92.
+- **AIR-RMC-33** WhatsApp a prescription only as an explicit, confirmed operator action under
+  `send_prescription_whatsapp` (`rme.prescriptions.whatsapp.send`): Meta Cloud API, approved utility template, HTTPS
+  host allowlist, no redirects, token never logged or stored, idempotent per prescription + recipient + template, no
+  diagnosis or KTP/NIK in the message; a failure never changes the prescription or visit. Rule 108 §15–22.
 
 ### Testing
 
@@ -211,11 +208,11 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `enabledFor($visit)` (fail-closed allowlist via `RmePerformedTreatmentPilotScope`), never the bare flag, re-decided
   on the LOCKED visit. Pilot posture and DPT-Q2…Q10: rule 219 §14–§15. Consent void = `RmeVisitConsentService::void()`.
 
-- **AIR-RMC-37** The governed RME route keys (`{clinicVisit}`, `{medicalRecord}`, `{rmePrescription}`, `{consent}`,
+- **AIR-RMC-37** Governed RME route keys (`{clinicVisit}`, `{medicalRecord}`, `{rmePrescription}`, `{consent}`,
   `{odontogram}`, `{diagnosis}`, `{handwriting}`, `{handwritingPage}` = the page ROW key) are constrained globally by
   `App\Support\Routing\DatabaseRouteKey` (first in `AppServiceProvider::boot()`): a non-bigint segment answers 404,
-  never a PostgreSQL 500, for any signed-in account. Never add a per-route `where`/`whereNumber` for them; a generic
-  name is constrained per route. Source: rule 222 §1.
+  never a PostgreSQL 500, for any signed-in account. Never a per-route `where`/`whereNumber` for them; a generic name
+  is constrained per route. Rule 222 §1.
 - **AIR-RMC-38** Decide a visit's status, room and consent window on the LOCKED row:
   `transitionStatus()`, `assignRoom()` and `RmeVisitConsentService::sign()` take
   `ClinicVisitRepositoryInterface::lockForStatusDecision()` (FOR NO KEY UPDATE, never FOR UPDATE: FK inserts must not
@@ -233,8 +230,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   never a raw request id. Source: rule 223 §4.
 - **AIR-RMC-42** A handwriting page or prescription canvas row and its private object are one unit: validate first,
   then one transaction (draft if needed, authorize, lock the parent FOR NO KEY UPDATE, write a fresh random-suffixed
-  object, write the row); a failure removes only this call's object. Never draft before validation, never build a key
-  from request input, never delete committed evidence. Source: rule 224 §1–5.
+  object, write the row); a failure removes only this call's object. Never draft before validation, build a key from
+  request input, or delete committed evidence. Rule 224 §1–5.
 - **AIR-RMC-43** Name a controller's route-model argument after its route segment (`{rmePrescription}` →
   `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
   unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
@@ -242,11 +239,12 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-44** A racing insert that may lose a unique index runs in a nested `DB::transaction()` (SAVEPOINT); catch
   `UniqueConstraintViolationException` outside it and re-read the winner, never inside the aborted transaction
   (25P02). Visit numbers: `lockVisitSequence($branchId)` (advisory 92_001), then `withTrashed()` MAX; a row lock
-  cannot serialise `MAX + 1`. Source: rule 225 §1–4.
-- **AIR-RMC-45** A prescription write (create, update, R/ canvas, doctor-signature canvas) follows the clinical authoring
-  authority: never the front-desk-only tier, only inside the actor's working branch (`RmeWorkingBranchScope::allows()`),
-  doctor-patient scope for a Doctor. `PrescriptionAuthoringAuthority` is the single predicate; the policy reads it and
-  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent rule (room: AIR-RMC-50; lock, signer: AIR-RMC-53). Source: rule 226 §1.
+  cannot serialise `MAX + 1`. Rule 225 §1–4.
+- **AIR-RMC-45** A prescription write (create, update, R/ canvas, doctor-signature canvas) follows the clinical
+  authoring authority: never the front-desk-only tier, only in the actor's working branch
+  (`RmeWorkingBranchScope::allows()`), doctor-patient scope for a Doctor. `PrescriptionAuthoringAuthority` is the one
+  predicate, read by the policy and re-asserted by `RmePrescriptionService` before any lock or canvas write. No
+  consent rule (room: AIR-RMC-50; lock, signer: AIR-RMC-53). Rule 226 §1.
 - **AIR-RMC-46** Clinical documents (MR + handwriting images, prescription page/canvas/print/history, odontogram) are
   read under `RmeWorkingBranchScope::allowsClinicalDocument()`: Kasir / Admin Klinik / Front Office only in their
   working branch (none without one); clinicians and Owner keep the RME set; never wider. Source: rule 227 §1.
@@ -266,10 +264,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-53** A completed/cancelled visit's prescription is read-only (`documentLocked()`: policy, and the service
   under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases and consent
   signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
-- **AIR-RMC-54** A scoped Doctor (rule 138 definition) is refused, 403 and audited, the PTM print `rme.consents.print`
-  and legacy print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; on the
-  oversight legacy doors controller + service only); reading on screen stays; prescription print unchanged; FO, Admin
-  Klinik, Supervisor RME keep printing. Rule 243 §1.
+- **AIR-RMC-54** The doctor countersigns the PTM only via `RmeVisitConsentService::countersign()`: own insert-only
+  row (UNIQUE per consent), visit locked first, `in_progress`, live consent, linked active doctor = the visit's and the
+  consent's doctor (binds Super Admin), never the patient-signature capturer. No gate changes yet. Rule 241 §1.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
@@ -289,31 +286,32 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 
 | Rule | Covers |
 |---|---|
-| `.cursor/rules/10-laravel-modular-monolith.mdc` | Module layering, scaffolding order, forbidden controller patterns |
-| `.cursor/rules/92-canonical-clinical-timezone-date-boundary.mdc` | `ClinicalClock`, clinical vs technical dates, boundary diagnosis |
-| `.cursor/rules/100-rme-consent-payment-gate-print-ownership.mdc` | Consent evidence, permissions, PII; MR page and print ownership |
-| `.cursor/rules/108-clinic-ops-working-branch-context.mdc` | Examination-completion authority, visit list date, WhatsApp delivery |
-| `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Canonical workflow, consent timing, positive authoring authority, history |
-| `.cursor/rules/110-post-rme-odontogram-stabilization.mdc` | Odontogram GET writes nothing; RM year from clinical calendar |
-| `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence private-disk only; inline print embedding |
-| `.cursor/rules/127-rme-print-composition-no-duplicate-patient-card.mdc` | RME print composition, shared print-body partial |
-| `.cursor/rules/134-odontogram-pre-consent-authoring.mdc` | Active odontogram editable before consent; single authority method |
-| `.cursor/rules/135-rme-authoring-ui-capability-mirror.mdc` | RME controls mirror server capability, not permission |
-| `.cursor/rules/138-doctor-room-scoped-access-and-print-deny.mdc` | Doctor room isolation and doctor print denial |
+| `.cursor/rules/10-laravel-modular-monolith.mdc` | Module layering, forbidden controller patterns |
+| `.cursor/rules/92-canonical-clinical-timezone-date-boundary.mdc` | `ClinicalClock`, clinical vs technical dates |
+| `.cursor/rules/100-rme-consent-payment-gate-print-ownership.mdc` | Consent evidence, permissions, PII; MR print ownership |
+| `.cursor/rules/108-clinic-ops-working-branch-context.mdc` | Exam completion, visit list date, WhatsApp |
+| `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Workflow, consent timing, authoring authority, history |
+| `.cursor/rules/110-post-rme-odontogram-stabilization.mdc` | Odontogram GET writes nothing; RM clinical year |
+| `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Private-disk evidence; inline print embedding |
+| `.cursor/rules/127-rme-print-composition-no-duplicate-patient-card.mdc` | Print composition, shared print-body |
+| `.cursor/rules/134-odontogram-pre-consent-authoring.mdc` | Odontogram editable before consent; one authority |
+| `.cursor/rules/135-rme-authoring-ui-capability-mirror.mdc` | Controls mirror server capability |
+| `.cursor/rules/138-doctor-room-scoped-access-and-print-deny.mdc` | Doctor room isolation, print denial |
 | `.cursor/rules/173-unified-medical-record-index.mdc` | Unified native + legacy medical-record index |
-| `.cursor/rules/185-rme-visit-detail-invoice-registration-ux.mdc` | Visit detail order, invoice document, server-derived visit type |
-| `.cursor/rules/199-rme-clinic-visit-branch-authority.mdc` | Explicit-actor clinic visit service, aggregates, fail-closed reads |
-| `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Active accounts, registration guard, edit allow-list, OD-1 |
-| `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | "Tindakan Dilakukan": structured record; "Tidak Ada Tindakan" = KONTROL ≠ NO_CHARGE |
-| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | RME route keys constrained (404, never 500); redacted failure logs |
-| `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row decisions; capability-mirrored controls; front office never authors |
-| `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object as one unit; canvas binding; honest print |
-| `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint-adopt racing first writes; per-branch visit number lock |
-| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Prescription writes follow the clinical authoring authority; Blade PHP pairing |
-| `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Document read scope; printed prescription identity; authoring allowlist; serialised numbers |
-| `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; clinical exam start; role allowlists; prescription lock/signer |
-| `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx lock; consent integrity; lease grace; one RM book |
+| `.cursor/rules/185-rme-visit-detail-invoice-registration-ux.mdc` | Visit detail order, invoice document, visit type |
+| `.cursor/rules/199-rme-clinic-visit-branch-authority.mdc` | Explicit-actor visit service, fail-closed reads |
+| `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Active accounts, registration guard, edit allow-list |
+| `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | "Tindakan Dilakukan"; "Tidak Ada Tindakan" = KONTROL ≠ NO_CHARGE |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Route keys (404, never 500); redacted failure logs |
+| `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row decisions; mirrored controls; front office never authors |
+| `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object one unit; canvas binding |
+| `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint racing first writes; visit number lock |
+| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Rx writes follow the authoring authority; Blade PHP pairing |
+| `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Read scope; printed Rx identity; authoring allowlist; numbers |
+| `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
+| `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
+| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM doctor countersignature: own record, identity, lock (gate in a later PR) |
 
 ## History
 

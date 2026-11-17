@@ -9,7 +9,9 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Validation\ValidationException;
 
 /**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01.
@@ -101,6 +103,53 @@ class RmeVisitConsentPolicy
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+    }
+
+    /**
+     * DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+     * countersignature: its own permission (`countersign_rme_consents`, Doctor),
+     * branch and patient scope, a live consent on an `in_progress` visit, and the
+     * doctor identity. Gate::before answers this for Super Admin without reaching
+     * here, so RmeVisitConsentService::countersign() decides every condition
+     * again under the visit lock — that is what binds Super Admin.
+     */
+    public function countersign(User $user, RmeVisitConsent $consent): Response|bool
+    {
+        if (! $user->can(RmeVisitConsentService::COUNTERSIGN_PERMISSION) || ! $this->withinWorkingBranchScope($user, $consent->branch_id)) {
+            return false;
+        }
+
+        if ($consent->isVoided()) {
+            return false;
+        }
+
+        $visit = $consent->clinicVisit;
+
+        if ($visit === null || $visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+            return false;
+        }
+
+        $scope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+
+        if ($scope === false || ($scope instanceof Response && $scope->denied())) {
+            return $scope;
+        }
+
+        // Identity and encounter authority, the service's own decision (no lock
+        // here). The service runs every authorization guard (permission, scope,
+        // encounter, doctor identity) BEFORE any state guard, so a
+        // ValidationException can only reach an account that passed all of
+        // them: a state refusal (already countersigned, maker = checker) is left
+        // to the service so the operator sees why.
+        try {
+            app(RmeVisitConsentService::class)->assertCountersignable($consent, $user);
+        } catch (AuthorizationException) {
+            return false;
+        } catch (ValidationException) {
+            return true;
+        }
+
+        return true;
     }
 
     /**

@@ -8,6 +8,8 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
+use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
@@ -20,6 +22,7 @@ use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -65,6 +68,35 @@ class RmeVisitConsentService
 
     public const AUDIT_VOIDED = 'RME_CONSENT_VOIDED';
 
+    /*
+     * DMS memo M1.1–M1.3, PR1 (rule 241 §1; owner decisions 2026-11-17) — the
+     * treating doctor's countersignature on the PTM.
+     */
+    public const COUNTERSIGN_PERMISSION = 'countersign_rme_consents';
+
+    public const AUDIT_DOCTOR_SIGNED = 'RME_CONSENT_DOCTOR_SIGNED';
+
+    public const MESSAGE_COUNTERSIGN_PERMISSION = 'Akun ini tidak berwenang menandatangani persetujuan tindakan medis sebagai dokter.';
+
+    // One message per guard, so a refusal names the guard that fired.
+    public const MESSAGE_COUNTERSIGN_ENCOUNTER = 'Akun ini tidak dapat bekerja pada pemeriksaan kunjungan ini, sehingga tidak dapat menandatangani persetujuannya sebagai dokter.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_LINKED = 'Akun ini tidak terhubung ke data dokter, sehingga tidak dapat menandatangani persetujuan tindakan medis sebagai dokter.';
+
+    public const MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE = 'Data dokter yang terhubung ke akun ini tidak aktif.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR = 'Hanya dokter yang menangani kunjungan ini yang dapat menandatangani persetujuan tindakan medisnya.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR = 'Persetujuan ini mencantumkan dokter lain. Bila dokter yang menangani berganti, persetujuan dibatalkan (void) dan ditandatangani ulang.';
+
+    public const MESSAGE_COUNTERSIGN_WINDOW = 'Persetujuan tindakan medis hanya dapat ditandatangani dokter selama pemeriksaan kunjungan ini berlangsung.';
+
+    public const MESSAGE_COUNTERSIGN_VOIDED = 'Persetujuan ini sudah dibatalkan dan tidak dapat ditandatangani dokter.';
+
+    public const MESSAGE_COUNTERSIGN_SELF = 'Akun yang mencatat tanda tangan pasien tidak dapat sekaligus menandatangani sebagai dokter.';
+
+    public const MESSAGE_COUNTERSIGN_DUPLICATE = 'Persetujuan tindakan medis ini sudah ditandatangani dokter.';
+
     public function __construct(
         private readonly RmeVisitConsentRepositoryInterface $consents,
         private readonly RmeVisitConsentNumberGeneratorService $numbers,
@@ -72,6 +104,7 @@ class RmeVisitConsentService
         private readonly ClinicalClock $clock,
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly AuditLogService $auditLog,
+        private readonly DoctorIdentityResolver $doctorIdentity,
     ) {}
 
     /*
@@ -838,6 +871,323 @@ class RmeVisitConsentService
 
             return $consent->refresh();
         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Doctor countersignature (rule 241 §1)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * DMS memo M1.1–M1.3, PR1 (rule 241 §1; owner decisions 2026-11-17) — the
+     * treating doctor countersigns the PTM the patient signed.
+     *
+     * Capture and storage only: no authoring gate reads it yet (the RME, the
+     * odontogram and "Selesai Pemeriksaan" keep their patient-signature
+     * conditions until PR2).
+     *
+     *  - The canvas is bounded and decoded BEFORE anything else is written.
+     *  - The visit row is locked FIRST (`lockForStatusDecision`, rule 223 §6, the
+     *    same lock in the same order as sign(), void() and transitionStatus()),
+     *    then the consent is re-read under it, and every condition is decided on
+     *    those two rows ({@see self::assertCountersignableUnderLock()}).
+     *  - The object goes to ClinicalEvidenceStorage under a fresh random key; the
+     *    row is inserted inside a savepoint, and the UNIQUE(consent) violation of a
+     *    racing second countersignature becomes the same refusal. A failure while
+     *    the body still runs removes only the object this call wrote (rule 224).
+     *  - The consent row is never updated (AIR-RMC-12): the countersignature is its
+     *    own insert-only row.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function countersign(RmeVisitConsent $consent, User $actor, array $data): RmeVisitConsentDoctorSignature
+    {
+        // An account without the permission never has its payload parsed; the
+        // whole decision is re-made under the lock below.
+        if (! $actor->can(self::COUNTERSIGN_PERMISSION)) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_PERMISSION);
+        }
+
+        // Rule 237 §5 / rule 228 §10.3 bounds, the same ones the patient's
+        // signature carries, enforced here for a caller that skips the request.
+        $signature = $this->canvas->decode(
+            $data['doctor_signature'] ?? null,
+            'doctor_signature',
+            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
+        );
+
+        if ($signature === null) {
+            throw ValidationException::withMessages([
+                'doctor_signature' => 'Tanda tangan dokter wajib diisi.',
+            ]);
+        }
+
+        $written = [];
+        $bodyDone = false;
+
+        try {
+            return DB::transaction(function () use ($consent, $actor, $signature, &$written, &$bodyDone): RmeVisitConsentDoctorSignature {
+                $visit = $this->visits->lockForStatusDecision((int) $consent->clinic_visit_id);
+                $consent->refresh();
+
+                // INFO-5 — the doctor identity is read again under the lock, not
+                // from the request's memo, so a deactivation or an unlink committed
+                // after the policy ran is seen here.
+                $this->doctorIdentity->forget((int) $actor->getKey());
+
+                $doctorId = $this->assertCountersignableUnderLock($consent, $visit, $actor);
+
+                $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
+                $path = $directory.'/'.$consent->consent_number.'/doctor-countersign-'.bin2hex(random_bytes(8)).'.png';
+                $this->disk()->put($path, $signature);
+                $written[] = $path;
+
+                try {
+                    // A savepoint, so a unique violation leaves the outer
+                    // transaction usable for the refusal below.
+                    $row = DB::transaction(fn (): RmeVisitConsentDoctorSignature => $this->consents->createDoctorSignature([
+                        'rme_visit_consent_id' => (int) $consent->getKey(),
+                        'doctor_id' => $doctorId,
+                        'signed_by' => (int) $actor->getKey(),
+                        'signature_path' => $path,
+                        'signature_sha256' => hash('sha256', $signature),
+                        'signed_at' => $this->clock->now(),
+                    ]));
+                } catch (UniqueConstraintViolationException) {
+                    // The table's only unique key besides the id is the consent:
+                    // a violation here means it already carries a countersignature.
+                    throw ValidationException::withMessages([
+                        'consent' => self::MESSAGE_COUNTERSIGN_DUPLICATE,
+                    ]);
+                }
+
+                // Ids only — no name, no path, no hash in the audit payload.
+                $this->auditLog->log(
+                    self::AUDIT_TABLE,
+                    (int) $consent->getKey(),
+                    self::AUDIT_DOCTOR_SIGNED,
+                    null,
+                    [
+                        'clinic_visit_id' => (int) $consent->clinic_visit_id,
+                        'doctor_id' => $doctorId,
+                        'doctor_signature_id' => (int) $row->getKey(),
+                    ],
+                    $actor,
+                );
+
+                $bodyDone = true;
+
+                return $row;
+            });
+        } catch (Throwable $e) {
+            if (! $bodyDone) {
+                $this->discardUncommitted($written);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Presentation predicate: may this account countersign this consent right
+     * now? Never the authorisation answer — countersign() decides again under
+     * the visit lock. Read-only; locks nothing.
+     */
+    public function canCountersign(RmeVisitConsent $consent, ?User $actor): bool
+    {
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        try {
+            $this->assertCountersignable($consent, $actor);
+        } catch (AuthorizationException|ValidationException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * The same decision as countersign(), without a lock, for a page's
+     * pre-check. Throws the refusal countersign() would throw.
+     *
+     * @throws AuthorizationException|ValidationException
+     */
+    public function assertCountersignable(RmeVisitConsent $consent, User $actor): void
+    {
+        $visit = $consent->clinicVisit;
+
+        $this->assertCountersignableUnderLock($consent, $visit, $actor);
+    }
+
+    /**
+     * Ruang Perawatan (rule 241 §1) — for the given visits, the live consents
+     * this account may countersign now, keyed by clinic_visit_id. Only the
+     * account's own in-progress visits are considered, so the per-row decision
+     * runs for a handful of rows at most.
+     *
+     * @param  iterable<int, ClinicVisit>  $visits
+     * @return array<int, RmeVisitConsent>
+     */
+    public function countersignableConsentsFor(User $actor, iterable $visits): array
+    {
+        if (! $actor->can(self::COUNTERSIGN_PERMISSION)) {
+            return [];
+        }
+
+        $doctorId = $this->linkedActiveDoctorId($actor);
+
+        if ($doctorId === null) {
+            return [];
+        }
+
+        $candidates = [];
+        foreach ($visits as $visit) {
+            if ($visit->status === ClinicVisit::STATUS_IN_PROGRESS && (int) $visit->doctor_id === $doctorId) {
+                $candidates[(int) $visit->getKey()] = $visit;
+            }
+        }
+
+        $result = [];
+        foreach ($this->consents->validForVisits(array_keys($candidates)) as $visitId => $consent) {
+            $consent->setRelation('clinicVisit', $candidates[(int) $visitId]);
+
+            if ($this->canCountersign($consent, $actor)) {
+                $result[(int) $visitId] = $consent;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Every countersign condition, decided on the rows given (the LOCKED visit
+     * and the consent re-read under it, in countersign()). Returns the doctor id
+     * that signs.
+     *
+     * Order (review LOW-2): every AUTHORIZATION guard — permission, scope,
+     * encounter authority, doctor identity — runs before any STATE guard, and
+     * refuses with an AuthorizationException (403) naming its own message. Only
+     * an account that passed all of them can meet a state refusal (window, live
+     * consent, maker ≠ checker, already countersigned: ValidationException on
+     * `consent`), so the policy may treat a state refusal as "authorized, but
+     * not now".
+     *
+     * @throws AuthorizationException|ValidationException
+     */
+    private function assertCountersignableUnderLock(RmeVisitConsent $consent, ?ClinicVisit $visit, User $actor): int
+    {
+        // CG-06 — the dedicated permission, re-asserted here (the route and the
+        // policy ask first). Gate::before answers it for Super Admin; the
+        // identity guards below are what bind Super Admin.
+        if (! $actor->can(self::COUNTERSIGN_PERMISSION)) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_PERMISSION);
+        }
+
+        // A consent without its visit has no encounter anyone may work on.
+        if ($visit === null || (int) $consent->clinic_visit_id !== (int) $visit->getKey()) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_ENCOUNTER);
+        }
+
+        // Branch and patient scope, as sign() and void() re-assert them.
+        $this->assertOperatorWithinScope($actor, $visit);
+
+        // The encounter authority every clinical writer uses: the front office
+        // never, a clinical role, branch, doctor room and patient scope.
+        if (! $this->actorMayWorkOnEncounter($actor, $visit)) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_ENCOUNTER);
+        }
+
+        // Identity, never role (the PrescriptionAuthoringAuthority::maySign()
+        // approach): the account linked to an ACTIVE doctor who is both the
+        // locked visit's doctor and the consent's doctor. A Super Admin, Owner or
+        // Supervisor RME that is not that doctor is refused; nothing in the
+        // request names the doctor. One guard per condition.
+        $doctor = $this->doctorIdentity->resolveForUser($actor);
+
+        if ($doctor === null) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_LINKED);
+        }
+
+        if (! $doctor->is_active) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE);
+        }
+
+        $doctorId = (int) $doctor->getKey();
+
+        if ($doctorId !== (int) $visit->doctor_id) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR);
+        }
+
+        if ($doctorId !== (int) $consent->doctor_id) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR);
+        }
+
+        if ($visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_COUNTERSIGN_WINDOW,
+            ]);
+        }
+
+        // The consent must be THE live consent of this visit (one per visit, OD-5-8).
+        if ($consent->isVoided() || $this->validConsentFor($visit)?->getKey() !== $consent->getKey()) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_COUNTERSIGN_VOIDED,
+            ]);
+        }
+
+        // Maker ≠ checker (CG-07), identity-based so it binds Super Admin too:
+        // the account that captured the patient's signature never countersigns.
+        if ((int) $consent->signed_by === (int) $actor->getKey()) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_COUNTERSIGN_SELF,
+            ]);
+        }
+
+        if ($this->consents->doctorSignatureFor((int) $consent->getKey()) !== null) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_COUNTERSIGN_DUPLICATE,
+            ]);
+        }
+
+        return $doctorId;
+    }
+
+    /**
+     * Rule 241 §1.6 — is a countersignature still POSSIBLE for this consent,
+     * whoever the viewer is: the consent is the visit's live consent, the visit
+     * is in progress, and none is recorded yet. Decides whether the document
+     * says "Belum ditandatangani dokter"; a historical consent never does.
+     */
+    public function countersignaturePending(RmeVisitConsent $consent): bool
+    {
+        $visit = $consent->clinicVisit;
+
+        return $visit !== null
+            && $visit->status === ClinicVisit::STATUS_IN_PROGRESS
+            && ! $consent->isVoided()
+            && $this->validConsentFor($visit)?->getKey() === $consent->getKey()
+            && $this->doctorCountersignatureFor($consent) === null;
+    }
+
+    private function linkedActiveDoctorId(User $actor): ?int
+    {
+        $doctor = $this->doctorIdentity->resolveForUser($actor);
+
+        return $doctor !== null && $doctor->is_active ? (int) $doctor->getKey() : null;
+    }
+
+    /**
+     * The countersignature of a consent, or null (its image stays private:
+     * {@see self::signatureDataUri()}).
+     */
+    public function doctorCountersignatureFor(RmeVisitConsent $consent): ?RmeVisitConsentDoctorSignature
+    {
+        return $consent->relationLoaded('doctorCountersignature')
+            ? $consent->doctorCountersignature
+            : $this->consents->doctorSignatureFor((int) $consent->getKey());
     }
 
     /*

@@ -107,9 +107,17 @@
                                     </td>
                                     <td class="px-3 py-3 text-ink-soft">{{ $visit->visit_date?->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 text-right">
-                                        {{-- Sprint 58.6.2 — open the visit detail page first so Doctor/Perawat
-                                             can reach both Rekam Medis and Odontogram from there. --}}
-                                        <x-ui.button variant="primary" size="sm" :href="route('rme.visits.show', $visit)">Buka Detail Pasien</x-ui.button>
+                                        <div class="flex flex-wrap justify-end gap-2">
+                                            {{-- Rule 241 §1 — the treating doctor's PTM countersignature, offered
+                                                 only for a consent the controller says this account may sign. --}}
+                                            @if (isset($countersignableConsents[$visit->id]))
+                                                <x-ui.button variant="secondary" size="sm" data-testid="worklist-countersign-ptm"
+                                                    :href="route('rme.consents.countersign.create', $countersignableConsents[$visit->id])">Tanda Tangani PTM</x-ui.button>
+                                            @endif
+                                            {{-- Sprint 58.6.2 — open the visit detail page first so Doctor/Perawat
+                                                 can reach both Rekam Medis and Odontogram from there. --}}
+                                            <x-ui.button variant="primary" size="sm" :href="route('rme.visits.show', $visit)">Buka Detail Pasien</x-ui.button>
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach

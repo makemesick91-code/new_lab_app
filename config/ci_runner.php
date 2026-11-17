@@ -1651,6 +1651,12 @@ return [
         // disk, authorization before validation, writes re-deciding consent under the visit lock.
         // Selected by the existing `RmeVisitConsent` token in BOTH critical variants.
         'tests/Feature/RME/RmeVisitConsentSupervisedVoidTest.php',
+        // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's PTM countersignature: its own
+        // insert-only row (UNIQUE per consent), identity bound to the locked visit and the consent
+        // (binds Super Admin), maker ≠ checker, bounded canvas validated before any write, no orphan
+        // object, audit ids only, no authoring gate changed. Selected by the existing `RmeVisitConsent`
+        // token in BOTH critical variants.
+        'tests/Feature/RME/RmeVisitConsentDoctorCountersignTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
