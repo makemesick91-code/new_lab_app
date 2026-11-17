@@ -11,6 +11,7 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use LogicException;
 use Throwable;
 
 /**
@@ -53,8 +54,8 @@ final class MedicalRecordHandwritingService
     /** Rule 240 §4 (memo M3.3) — an overwrite of a page sealed by a finalized sheet. */
     public const MESSAGE_SEALED_PAGE = 'Halaman RM ini sudah terkunci karena termasuk rekam medis yang telah final. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
 
-    /** Rule 240 §4.4 (plan default 4) — an overwrite of a page another encounter wrote. */
-    public const MESSAGE_EARLIER_ENCOUNTER_PAGE = 'Halaman RM ini ditulis pada pemeriksaan lain dan tidak dapat ditimpa. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
+    /** Rule 240 §4.4 (plan default 4) — an overwrite of a page another encounter wrote, or of an unstamped pre-rule page no finalize covers. */
+    public const MESSAGE_EARLIER_ENCOUNTER_PAGE = 'Halaman RM ini ditulis di luar pemeriksaan yang sedang berlangsung dan tidak dapat ditimpa. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
 
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
@@ -79,17 +80,20 @@ final class MedicalRecordHandwritingService
      * before any object is written, an overwrite of an existing page is refused
      * unless the page is not sealed AND the live encounter wrote it: a page sealed
      * when a sheet was finalized, a page from before rule 240 that a finalize
-     * already covered, and a page another encounter wrote (plan default 4: a page
-     * after its encounter only as an amendment item) are all refused. Decided on
+     * already covered, a pre-rule page no finalize covers (its encounter is
+     * unknown), and a page another encounter wrote (plan default 4: a page after
+     * its encounter only as an amendment item) are all refused. Decided on
      * the rows read under the visit and record locks, inside this transaction, so
      * it binds every caller, Super Admin included. A NEW page (an empty slot) is
      * never locked: appending in a live, consented encounter stays allowed
-     * (OD-5-6, R7-1). The optional third element `$resolveTarget` returns is the
+     * (OD-5-6, R7-1). The third element `$resolveTarget` returns is the
      * authorized encounter; it is the live encounter for this decision and is
      * stamped on the page as its author, because the page itself is stored on the
-     * book's visit. Without it every stamped page is refused (fail closed).
+     * book's visit. It is REQUIRED (review LOW-B): a resolver that names no
+     * encounter would write unstamped pages, so it is refused with a
+     * LogicException before any object or row is written.
      *
-     * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit, 2?: ClinicVisit|null}  $resolveTarget
+     * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit, 2: ClinicVisit}  $resolveTarget
      * @return array{medical_record: MedicalRecord, storage_visit: ClinicVisit, page_number: int}
      */
     public function save(Closure $resolveTarget, int $requestedPage, string $png, ?int $actorId, ?string $expectedRevision = null): array
@@ -100,6 +104,13 @@ final class MedicalRecordHandwritingService
         try {
             return DB::transaction(function () use ($resolveTarget, $requestedPage, $png, $actorId, $expectedRevision, &$writtenKey, &$bodyDone): array {
                 [$medicalRecord, $storageVisit, $encounter] = array_pad($resolveTarget(), 3, null);
+
+                // Review LOW-B — the encounter is not optional: without it a page
+                // would be written unstamped (rule 240 §4.4). A programming error,
+                // not a user error; the transaction rolls back any draft created.
+                if (! $encounter instanceof ClinicVisit) {
+                    throw new LogicException('The handwriting save target must name the authorized encounter (rule 240 §4.4).');
+                }
 
                 $this->medicalRecords->lockForHandwriting($medicalRecord->id);
 
@@ -114,7 +125,7 @@ final class MedicalRecordHandwritingService
                     ]);
                 }
 
-                $authoredBy = $encounter instanceof ClinicVisit ? (int) $encounter->getKey() : null;
+                $authoredBy = (int) $encounter->getKey();
 
                 // Rule 240 §4 — an existing page is overwritten only when it is not
                 // sealed and the live encounter wrote it (plan default 4); nothing

@@ -13,8 +13,10 @@
 | written. Appending a NEW page in a live, consented encounter stays allowed
 | (OD-5-6, R7-1): it goes onto the one book and stays writable until a sheet is
 | finalized again. A page that carries neither a seal nor an authoring stamp
-| (written before this rule) is locked when a final sheet of the patient was
-| finalized at or after the page was created (ties lock; fails closed).
+| (written before this rule) is sealed when a final sheet of the patient was
+| finalized at or after the page was created (ties lock; fails closed), and is
+| otherwise refused as another encounter's page (review MEDIUM-A). The save
+| requires the encounter its resolver names (review LOW-B).
 |
 | Selected by the existing `MedicalRecordFinalization` critical-gate token in both
 | runner variants and declared in critical_gate_mandatory_suites (CG-19). Helper
@@ -24,6 +26,7 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
@@ -164,6 +167,37 @@ it('refuses to overwrite a sealed page over HTTP, before any object is written, 
 
     expect(m33sRow($book, 1)->handwriting_path)->toBe($paths[1])
         ->and(m33sRow($book, 2)->handwriting_path)->toBe($paths[2])
+        ->and(m33sObjects())->toBe($objects);
+});
+
+it('answers a sealed-page overwrite on an encounter whose PTM is missing with the consent, and with the seal once it is executed (rule 240 §4.2)', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
+    m33sFinalize($book, $this->author);
+    m33sCloseEncounter($v1);
+
+    // A new encounter of the same patient, its PTM not signed yet.
+    $v2 = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'visit_date' => '2026-11-08',
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+    $path = m33sRow($book, 1)->handwriting_path;
+    $objects = m33sObjects();
+
+    // A page write is consent-gated as a whole, and the only write the book then
+    // allows — a NEW page — needs the PTM too: the consent answers first.
+    m33sSave($this->author, $v1, $book, 1, 9, m33sRevision($book, 1))
+        ->assertSessionHasErrors(['consent' => RmeVisitConsentService::MESSAGE_RME_AWAITING_PATIENT])
+        ->assertSessionDoesntHaveErrors('handwriting_data');
+
+    rmeSignedConsentFor($v2);
+
+    m33sSave($this->author, $v1, $book, 1, 9, m33sRevision($book, 1))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
+
+    expect(m33sRow($book, 1)->handwriting_path)->toBe($path)
         ->and(m33sObjects())->toBe($objects);
 });
 
@@ -425,6 +459,29 @@ it('refuses a sealed page when the canonical-draft path adopts an existing book'
         ->and(MedicalRecord::query()->where('patient_id', $this->patient->id)->count())->toBe(1);
 });
 
+// Review LOW-B — the encounter is the page's author and the live encounter of the
+// lock decision. A resolver that names none (a two-element array, or null) would
+// write unstamped pages and judge stamped ones without an encounter; it is a
+// programming error, refused before anything is written.
+it('refuses a resolver that names no encounter, before any object or row is written', function (Closure $resolver) {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    $png = base64_decode(substr(m33sDrawing(3), strlen('data:image/png;base64,')));
+    $objects = m33sObjects();
+
+    expect(fn () => app(MedicalRecordHandwritingService::class)->save(
+        fn (): array => $resolver($book->fresh(), $v1->fresh()),
+        1,
+        $png,
+        $this->author->id,
+    ))->toThrow(LogicException::class);
+
+    expect(m33sObjects())->toBe($objects)
+        ->and(m33sRow($book, 1))->toBeNull();
+})->with([
+    'two elements' => [fn (MedicalRecord $book, ClinicVisit $visit): array => [$book, $visit]],
+    'a null encounter' => [fn (MedicalRecord $book, ClinicVisit $visit): array => [$book, $visit, null]],
+]);
+
 it('still locks a pre-rule page when the only final sheet that covers it is soft-deleted', function () {
     [$v2, $book] = m33sEncounter('2026-11-10');
     MedicalRecordHandwriting::factory()->create([
@@ -453,7 +510,11 @@ it('still locks a pre-rule page when the only final sheet that covers it is soft
 
 // ─── Pages written before this rule (no seal, no authoring stamp) ────────────
 
-it('locks an unstamped page when a final sheet was finalized at or after its creation (ties lock)', function (string $finalizedAt, bool $locked) {
+// Review MEDIUM-A — the 'one second before' case was flipped from writable: an
+// unstamped page no finalize covers is still a page from before rule 240, so a
+// later encounter could overwrite it and restamp it as its own. It is now locked
+// as another encounter's page (LOCK_EARLIER_ENCOUNTER), never sealed.
+it('locks an unstamped page: sealed when a final sheet was finalized at or after its creation (ties lock), otherwise as another encounter\'s page', function (string $finalizedAt, bool $sealed) {
     [$v2, $book] = m33sEncounter('2026-11-10');
     $created = Carbon::parse('2026-11-01 02:00:00');
     $legacy = MedicalRecordHandwriting::factory()->create([
@@ -478,26 +539,79 @@ it('locks an unstamped page when a final sheet was finalized at or after its cre
         'finalized_at' => Carbon::parse($finalizedAt),
     ]);
 
-    expect(app(MedicalRecordHandwritingService::class)->isPageSealed($book->fresh(), 1))->toBe($locked);
+    expect(app(MedicalRecordHandwritingService::class)->isPageSealed($book->fresh(), 1))->toBe($sealed);
 
     $path = $legacy->handwriting_path;
-    $response = m33sSave($this->author, $v2, $book, 1, 5, m33sRevision($book, 1));
+    $objects = m33sObjects();
 
-    if ($locked) {
-        $response->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
-        expect($legacy->fresh()->handwriting_path)->toBe($path);
-    } else {
-        $response->assertSessionHasNoErrors();
-        expect($legacy->fresh()->handwriting_path)->not->toBe($path)
-            ->and($legacy->fresh()->authored_clinic_visit_id)->toBe($v2->id);
-    }
+    m33sSave($this->author, $v2, $book, 1, 5, m33sRevision($book, 1))
+        ->assertSessionHasErrors(['handwriting_data' => $sealed
+            ? MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE
+            : MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE]);
+
+    expect($legacy->fresh()->handwriting_path)->toBe($path)
+        ->and($legacy->fresh()->authored_clinic_visit_id)->toBeNull()
+        ->and(m33sObjects())->toBe($objects);
 })->with([
-    'finalized one second before the page' => ['2026-11-01 01:59:59', false],
+    'finalized one second before the page (not covered: another encounter\'s page)' => ['2026-11-01 01:59:59', false],
     'finalized in the same second (tie)' => ['2026-11-01 02:00:00', true],
     'finalized one second after the page' => ['2026-11-01 02:00:01', true],
 ]);
 
-it('fails closed on an unstamped page: a final sheet with no finalized_at locks it; no final sheet leaves it writable', function () {
+// Review MEDIUM-A — an unstamped page that no finalize covers (no final sheet at
+// all) was written before rule 240 by an encounter nobody recorded. A later
+// encounter may not overwrite it (and so cannot restamp it as its own); it
+// appends instead.
+it('refuses a later encounter overwriting an unstamped pre-rule page no finalize covers; appending still works', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    $legacy = MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $v1->id,
+        'branch_id' => $v1->branch_id,
+        'created_at' => Carbon::parse('2026-11-01 02:00:00'),
+    ]);
+    $legacyPage = MedicalRecordHandwritingPage::factory()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $v1->id,
+        'branch_id' => $v1->branch_id,
+        'page_number' => 2,
+        'created_at' => Carbon::parse('2026-11-01 02:05:00'),
+    ]);
+    m33sCloseEncounter($v1);
+    [$v2] = m33sEncounter('2026-11-10');
+
+    expect(MedicalRecord::query()->where('patient_id', $this->patient->id)->where('status', MedicalRecord::STATUS_FINAL)->exists())->toBeFalse();
+
+    $paths = [1 => $legacy->handwriting_path, 2 => $legacyPage->handwriting_path];
+    $objects = m33sObjects();
+
+    foreach ([$this->author, superAdmin()] as $user) {
+        foreach ([1, 2] as $page) {
+            m33sSave($user, $v1, $book, $page, 7, m33sRevision($book, $page))
+                ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE]);
+        }
+    }
+
+    expect($legacy->fresh()->handwriting_path)->toBe($paths[1])
+        ->and($legacy->fresh()->authored_clinic_visit_id)->toBeNull()
+        ->and($legacyPage->fresh()->handwriting_path)->toBe($paths[2])
+        ->and($legacyPage->fresh()->authored_clinic_visit_id)->toBeNull()
+        ->and(m33sObjects())->toBe($objects)
+        // Locked, but not sealed: no finalize covers it.
+        ->and(app(MedicalRecordHandwritingService::class)->isPageSealed($book->fresh(), 1))->toBeFalse()
+        ->and(app(MedicalRecordHandwritingService::class)->pageLockMessage($book->fresh(), 1, $v2->id))
+        ->toBe(MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE);
+
+    // Appending stays open in the live encounter, and it overwrites its own page.
+    m33sSave($this->author, $v1, $book, 3, 8, MedicalRecord::HANDWRITING_REVISION_NONE)->assertSessionHasNoErrors();
+    m33sSave($this->author, $v1, $book, 3, 9, m33sRevision($book, 3))->assertSessionHasNoErrors();
+    expect(m33sRow($book, 3)->authored_clinic_visit_id)->toBe($v2->id);
+});
+
+// Review MEDIUM-A — "no final sheet leaves it writable" no longer holds: with no
+// final sheet the page is not sealed, but it is still locked against overwrite as
+// another encounter's page.
+it('fails closed on an unstamped page: a final sheet with no finalized_at seals it; with no final sheet it is unsealed yet not overwritable', function () {
     [$v2, $book] = m33sEncounter('2026-11-10');
     MedicalRecordHandwritingPage::factory()->create([
         'medical_record_id' => $book->id,
@@ -508,7 +622,8 @@ it('fails closed on an unstamped page: a final sheet with no finalized_at locks 
     ]);
     $service = app(MedicalRecordHandwritingService::class);
 
-    expect($service->isPageSealed($book->fresh(), 2))->toBeFalse();
+    expect($service->isPageSealed($book->fresh(), 2))->toBeFalse()
+        ->and($service->pageLockMessage($book->fresh(), 2, $v2->id))->toBe(MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE);
 
     // Another sheet of the patient, final. Its visit is dated after the book's,
     // so the book stays the encounter sheet created above.

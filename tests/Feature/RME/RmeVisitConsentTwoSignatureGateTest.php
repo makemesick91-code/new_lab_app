@@ -109,7 +109,13 @@ function rtsgRecord(ClinicVisit $visit, bool $withHandwriting = false): MedicalR
     ]);
 
     if ($withHandwriting) {
-        MedicalRecordHandwriting::factory()->create(['medical_record_id' => $record->id, 'clinic_visit_id' => $visit->id]);
+        // Rule 240 §4.4 (memo M3.3 PR2) — the live encounter's own page, so the
+        // encounter may overwrite it; an unstamped page is a pre-rule page.
+        MedicalRecordHandwriting::factory()->create([
+            'medical_record_id' => $record->id,
+            'clinic_visit_id' => $visit->id,
+            'authored_clinic_visit_id' => $visit->id,
+        ]);
     }
 
     return $record;

@@ -82,6 +82,11 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
                     return self::LOCK_SEALED;
                 }
 
+                // Review MEDIUM-A — written before rule 240 by an encounter nobody
+                // recorded, so it is never the live encounter's own: overwriting it
+                // would let a later encounter restamp a closed encounter's page.
+                $lock = self::LOCK_EARLIER_ENCOUNTER;
+
                 continue;
             }
 

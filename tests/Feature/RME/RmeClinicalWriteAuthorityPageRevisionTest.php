@@ -188,9 +188,13 @@ it('HR-06 compares page 1 with the very row the page renders when two page-1 row
     // Two page-1 rows (possible before the record lock existed) whose orders
     // disagree: A was created last, B was saved last. The page renders B
     // (MedicalRecord::latestHandwriting(): saved_at desc, id desc).
+    // Rule 240 §4.4 (review MEDIUM-A): both rows are stamped as the live
+    // encounter's own. An unstamped row is a pre-rule page no finalize covers and
+    // is locked against overwrite, which is not what HR-06 is about.
     $row = fn (string $path, string $createdAt, string $savedAt) => DB::table('trx_medical_record_handwritings')->insertGetId([
         'medical_record_id' => $this->record->id,
         'clinic_visit_id' => $this->visit->id,
+        'authored_clinic_visit_id' => $this->visit->id,
         'branch_id' => $this->visit->branch_id,
         'handwriting_path' => $path,
         'handwriting_hash' => str_repeat('a', 64),

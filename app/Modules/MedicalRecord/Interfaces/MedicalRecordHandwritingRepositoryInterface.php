@@ -47,7 +47,9 @@ interface MedicalRecordHandwritingRepositoryInterface
      *    timestamp or a final sheet without `finalized_at` locks; soft-deleted
      *    final sheets count);
      *  - LOCK_EARLIER_ENCOUNTER: a row was written by an encounter other than
-     *    `$liveEncounterId` (null locks every stamped row).
+     *    `$liveEncounterId` (null locks every stamped row), or a row with neither
+     *    a seal nor an authoring stamp that no finalize covers (its encounter is
+     *    unknown, so it is never the live encounter's own).
      * A slot with no row is never locked: appending a page stays possible. Read
      * inside the caller's transaction, under its record lock.
      */

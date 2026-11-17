@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is locked when a final sheet was finalized at or after its creation. Release constraint — the lock and the amendment path ship in the same release.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Release constraint — the lock and the amendment path ship in the same release.
 globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php
 alwaysApply: false
 ---
@@ -136,11 +136,18 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   page sealed, overwrite refused in that and a later encounter); a later encounter refused on an unsealed page an
   earlier encounter wrote, and that page rendered read-only; another patient's pages untouched; a sealed page of a
   non-canonical sheet refused through the edit-in-place path; the canonical-draft path adopting a book with a sealed
-  page; the derived rule for unstamped pages (one second before: writable; same second and after: locked; a final
-  sheet without `finalized_at`: locked; a soft-deleted covering final sheet: locked; an empty slot: never locked);
+  page; the derived rule for unstamped pages (one second before: not sealed but refused as another encounter's page —
+  flipped from "writable" by the review MEDIUM-A; same second and after: sealed; a final sheet without
+  `finalized_at`: sealed; no final sheet: not sealed yet refused; a soft-deleted covering final sheet: locked; an
+  empty slot: never locked); a later encounter refused on an unstamped pre-rule page no finalize covers, for a
+  clinician and Super Admin, with appending kept (MEDIUM-A); a resolver that names no encounter refused with a
+  `LogicException` before any object or row is written (LOW-B);
   the page rendered read-only with the add-page control kept; the explicit foreign-key names (PostgreSQL); visit →
   sheet → page seal order (PostgreSQL). `MedicalRecordHandwritingTest` "final show page … keeps the canvas editable (Sprint 59)" was
-  flipped to the sealed rendering, never deleted.
+  flipped to the sealed rendering, never deleted. Fixtures that overwrite or edit a page as the live encounter's own
+  now stamp it with that encounter (`RmeClinicalWriteAuthorityPageRevisionTest` HR-06, `Sprint60MultiPageHandwritingTest`
+  "loads only the selected page"), and `RmeClinicalEvidenceWriteLockConcurrencyTest` names the encounter in its
+  resolver (§4.4).
 
 ## 4. Handwriting pages sealed on finalize (M3.3 PR2)
 
@@ -162,19 +169,30 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    page-revision compare (rule 237 §15, a stale save still answers stale) and BEFORE any object is written — refuses
    an overwrite of an existing page the live encounter may not overwrite (§4.3, §4.4), key `handwriting_data`:
    `MESSAGE_SEALED_PAGE` for a sealed (or pre-rule covered) page, `MESSAGE_EARLIER_ENCOUNTER_PAGE` for a page another
-   encounter wrote. Nothing is written: no object, no row. It binds every caller, Super Admin included
-   (`Gate::before` lets Super Admin past `MedicalRecordPolicy::update`, which cannot see a page anyway).
+   encounter wrote or an unstamped page no finalize covers (§4.4). Nothing is written: no object, no row. It binds every caller, Super Admin included
+   (`Gate::before` lets Super Admin past `MedicalRecordPolicy::update`, which cannot see a page anyway). Refusal
+   order with the PTM gate (rule 241 §2; contrast §1.8): a page save is consent-gated as a whole — the controller asks
+   the authority before validation and again inside the save, before the record lock the seal is decided on — so on
+   an encounter whose PTM is missing an overwrite of a sealed page answers with the consent refusal. That is
+   deliberate: the only write the book then allows, a NEW page, needs the PTM too. With the PTM executed the seal
+   answers (`MedicalRecordFinalizationPageSealTest`).
 3. **Sealed** (`pageSlotLock()` → `LOCK_SEALED`): a page row that is sealed; or a row with neither a seal nor an
    authoring stamp (written before this rule) when a final sheet of the patient was finalized at or after the row's
    `created_at` — a tie locks, a missing `created_at` or a final sheet without `finalized_at` locks, a soft-deleted
-   final sheet still counts. No backfill: such rows are judged by this derived rule until a finalize seals them.
+   final sheet still counts. No backfill: such rows are judged by this derived rule until a finalize seals them; until
+   then §4.4 locks them against overwrite.
 4. **Only the live encounter overwrites its own pages; everyone appends** (plan default 4, "a page after the encounter
    only as an amendment item", accepted 2026-11-17). An existing page may be overwritten only when it is not sealed
    AND its `authored_clinic_visit_id` is the live encounter (the authorized encounter the controller resolved,
    `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`). A page another encounter wrote — even one never
-   sealed because that encounter finalized nothing — is refused (`LOCK_EARLIER_ENCOUNTER`); a page with no author
-   stamp falls under the pre-rule derived lock of §4.3; a caller that names no encounter is refused for every
-   stamped page (fail closed). A slot with no row (a new page 1 of an empty book, or the next page number) is never
+   sealed because that encounter finalized nothing — is refused (`LOCK_EARLIER_ENCOUNTER`). A page with no author
+   stamp (written before this rule) is sealed under §4.3 when a finalize covers it, and otherwise is refused as
+   `LOCK_EARLIER_ENCOUNTER` too (review MEDIUM-A): the encounter that wrote it was never recorded, so it is never the
+   live encounter's own, and letting a later encounter overwrite it would restamp a closed encounter's page as that
+   encounter's. The accepted cost: an encounter that spans the deploy loses overwrite of its own pre-deploy page and
+   keeps appending. `save()` requires the encounter: a resolver that names none is a programming error, refused
+   with a `LogicException` before any object or row is written (review LOW-B), so no unstamped row is written after
+   this rule; `pageLockMessage()` with no live encounter locks every existing page. A slot with no row (a new page 1 of an empty book, or the next page number) is never
    locked: a live, consented encounter keeps adding pages to the one book (OD-5-6, R7-1 — stored on the book's
    visit). Each write stamps `authored_clinic_visit_id` with the live encounter, because `clinic_visit_id` names the
    book's visit, not the encounter.
