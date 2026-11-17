@@ -15,7 +15,7 @@ use RuntimeException;
 
 class PatientRmPaperCardRegistrationRepository implements PatientRmPaperCardRegistrationRepositoryInterface
 {
-    public function record(array $attributes): PatientRmPaperCardRegistration
+    public function record(#[\SensitiveParameter] array $attributes): PatientRmPaperCardRegistration
     {
         if (PatientRmPaperCardRegistration::query()->getConnection()->transactionLevel() < 1) {
             throw new LogicException('A paper-card registration is recorded only inside the claim transaction.');
@@ -23,12 +23,18 @@ class PatientRmPaperCardRegistrationRepository implements PatientRmPaperCardRegi
 
         try {
             return PatientRmPaperCardRegistration::query()->create($attributes);
-        } catch (QueryException) {
+        } catch (QueryException $e) {
             // PR-3b review B1 — the driver error carries the SQL bindings, the
             // note among them, and a reported exception lands in the log. It is
             // replaced by one with no value and no previous exception; the
             // caller's transaction rolls the registration back.
-            throw new RuntimeException('The paper-card registration could not be stored.');
+            // Re-review F2: only the five-character SQLSTATE, which carries no value
+            // (errorInfo[2] would: its DETAIL echoes the row).
+            $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
+                ? $e->errorInfo[0]
+                : 'unknown';
+
+            throw new RuntimeException('The paper-card registration could not be stored (SQLSTATE '.$state.').');
         }
     }
 

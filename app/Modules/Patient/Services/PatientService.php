@@ -224,8 +224,15 @@ class PatientService
      *  - `registered_at` is the clinical day the patient enters the system; the
      *    card's own date is not invented.
      */
-    public function createWithPaperCardNumber(array $data, User $actor, int $year, string $sequence, string $reasonCode, ?string $reasonNote): Patient
-    {
+    public function createWithPaperCardNumber(
+        array $data,
+        User $actor,
+        #[\SensitiveParameter] int $year,
+        #[\SensitiveParameter] string $sequence,
+        string $reasonCode,
+        // Re-review F1 — never in a logged stack trace, whatever zend.exception_ignore_args says.
+        #[\SensitiveParameter] ?string $reasonNote,
+    ): Patient {
         if (! $actor->can(self::PAPER_CARD_PERMISSION) || ! $actor->can('manage patients')) {
             throw new AuthorizationException('Nomor RM kartu lama hanya dapat didaftarkan oleh Supervisor RME.');
         }

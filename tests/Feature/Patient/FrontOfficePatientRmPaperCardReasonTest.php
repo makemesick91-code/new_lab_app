@@ -539,6 +539,41 @@ it('PR-24 answers a failed insert with a 500 whose log line never contains the n
         ->and(Patient::query()->where('name', 'Pasien Gagal Simpan')->exists())->toBeFalse();
 });
 
+it('PR-24b keeps the note out of a logged stack trace even when PHP keeps call arguments (re-review F1)', function (): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Needs a database that enforces the reason_code column width.');
+    }
+
+    // The settings a non-production php.ini may carry: traces keep string
+    // arguments, truncated at 15 bytes. The marker sits in those 15 bytes.
+    $ignoreArgs = ini_get('zend.exception_ignore_args');
+    $maxLen = ini_get('zend.exception_string_param_max_len');
+    ini_set('zend.exception_ignore_args', '0');
+    ini_set('zend.exception_string_param_max_len', '15');
+
+    try {
+        $tooWide = str_repeat('Y', 41);
+        config()->set('patient.paper_card_reasons', config('patient.paper_card_reasons') + [$tooWide => 'Kode terlalu panjang']);
+
+        $logged = fprrLogLines(function () use ($tooWide): void {
+            $this->actingAs($this->supervisor)
+                ->post(route('settings.patients.store'), fprrPayload([
+                    'name' => 'Pasien Jejak Argumen',
+                    'paper_card_reason_code' => $tooWide,
+                    'paper_card_reason_note' => 'qq7zt catatan awal yang sensitif',
+                ]))
+                ->assertStatus(500);
+        });
+    } finally {
+        ini_set('zend.exception_ignore_args', (string) $ignoreArgs);
+        ini_set('zend.exception_string_param_max_len', (string) $maxLen);
+    }
+
+    expect($logged)->toContain('could not be stored')
+        ->and($logged)->not->toContain('qq7zt')
+        ->and($logged)->not->toContain('catatan awal');
+});
+
 it('PR-25 opens the page of a soft-deleted patient, whose reason the list still links to (review B3)', function (): void {
     $patient = fprrRegister($this->supervisor);
     $patient->delete();
