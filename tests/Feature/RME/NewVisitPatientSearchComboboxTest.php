@@ -468,12 +468,12 @@ it('drops a stale existing-patient selection when registering a new patient', fu
             'patient_id' => $this->nurbaya->id, // left behind by the combobox
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Combobox',
                 'branch_id' => $this->ldk2->id,
                 'registered_at' => '2026-08-29',
                 'manual_rm_number' => '0099',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -497,12 +497,12 @@ it('nulls a stale patient_id in the validated payload of a new-patient registrat
         'patient_id' => $this->nurbaya->id,
         'doctor_id' => $this->doctor->id,
         'initial_treatment_id' => $this->treatment->id,
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Pasien Baru Kontrak',
             'branch_id' => $this->ldk2->id,
             'registered_at' => '2026-08-29',
             'manual_rm_number' => '0123',
-        ],
+        ]),
     ]);
 
     $request->setUserResolver(fn () => $this->actor);

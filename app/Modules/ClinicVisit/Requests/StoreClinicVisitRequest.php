@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Requests;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Support\AccessControl\FrontOfficeBranchPinResolver;
@@ -41,6 +42,14 @@ class StoreClinicVisitRequest extends FormRequest
          */
         $user = $this->user();
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.2 (rule 244 §5.3) — the
+        // no-phone exception of a NEW patient is sent only by a holder of
+        // `register_patient_without_phone` (the checkbox is rendered for holders
+        // only); PatientService re-asserts it against the registrar.
+        if ($this->hasNoPhoneInput() && ! $user?->can(PatientCoreFields::WITHOUT_PHONE_PERMISSION)) {
+            return false;
+        }
+
         if ($user === null) {
             return true;
         }
@@ -66,6 +75,22 @@ class StoreClinicVisitRequest extends FormRequest
          * a working branch AND it is the pinned one".
          */
         return app(UserOnlineContextService::class)->activeContextBranchId($user) !== null;
+    }
+
+    /** Rule 244 §5.3 — whether a new-patient registration carries a no-phone exception field. */
+    public function hasNoPhoneInput(): bool
+    {
+        if ($this->input('patient_mode') !== 'new') {
+            return false;
+        }
+
+        foreach (PatientCoreFields::NO_PHONE_FIELDS as $field) {
+            if ($this->filled('new_patient.'.$field)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function prepareForValidation(): void
@@ -282,14 +307,15 @@ class StoreClinicVisitRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
             ],
-            'new_patient.gender' => ['nullable', 'string', 'in:Male,Female,Other'],
-            'new_patient.date_of_birth' => ['nullable', 'date'],
-            'new_patient.phone' => ['nullable', 'string', 'max:50'],
-            'new_patient.whatsapp_number' => ['nullable', 'string', 'max:50'],
-            'new_patient.ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
+            // Memo M4.2 (rule 244 §5) — NIK stays optional; when given it is
+            // exactly 16 digits. Never read on an existing-patient visit.
+            'new_patient.ktp_number' => [Rule::excludeIf(! $isNew), 'nullable', 'string', ...PatientCoreFields::NIK_RULES, Rule::unique('mst_patients', 'ktp_number')],
             'new_patient.email' => ['nullable', 'email', 'max:150'],
-            'new_patient.occupation' => ['nullable', 'string', 'max:150'],
-            'new_patient.address' => ['nullable', 'string', 'max:1000'],
+            // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient and the
+            // no-phone exception, from the ONE builder the Master Data form uses
+            // too. On an existing-patient visit the hidden panel's leftovers are
+            // excluded, never validated (as rule 184 §13 does for KTP state).
+            ...PatientCoreFields::rules((array) $this->input('new_patient', []), 'new_patient.', $isNew),
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
             // a strong duplicate of the new patient is found.
             'new_patient.duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
@@ -324,6 +350,7 @@ class StoreClinicVisitRequest extends FormRequest
             'visit_type.in' => 'Jenis kunjungan tidak valid.',
             'follow_up_of_visit_id.required' => 'Kunjungan sebelumnya wajib dipilih untuk kunjungan kontrol atau lanjutan tindakan.',
             'follow_up_of_visit_id.exists' => 'Kunjungan sebelumnya tidak ditemukan.',
+            ...PatientCoreFields::messages('new_patient.'),
         ];
     }
 

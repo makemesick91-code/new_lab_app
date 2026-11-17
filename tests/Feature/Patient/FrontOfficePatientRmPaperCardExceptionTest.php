@@ -83,7 +83,7 @@ function fppcUser(string $role): User
 
 function fppcPayload(array $overrides = []): array
 {
-    return array_merge([
+    return array_merge(newPatientCoreFields(), [
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'branch_id' => test()->sunu->id,

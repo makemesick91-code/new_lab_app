@@ -98,12 +98,12 @@ it('creates a new patient visit at an active RME branch', function () {
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Megasanti',
                 'branch_id' => $this->atg3->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '14023',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -124,12 +124,12 @@ it('issues the new patient RM automatically as DG-{branch_code}-{year}-{NNNN}, i
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Megasanti',
                 'branch_id' => $this->atg3->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '14023',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -146,12 +146,12 @@ it('pads the automatic RM sequence to four digits', function () {
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Nol',
                 'branch_id' => $this->tkm1->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0007',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -165,12 +165,12 @@ it('rejects MAIN as a new patient branch (not RME-enabled)', function () {
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Tolak MAIN',
                 'branch_id' => $this->main->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0001',
-            ],
+            ]),
         ])
         ->assertSessionHasErrors('new_patient.branch_id');
 
@@ -182,12 +182,12 @@ it('shows a new patient visit in the all-RME visit list', function () {
         'patient_mode' => 'new',
         'doctor_id' => $this->doctor->id,
         'initial_treatment_id' => $this->treatment->id,
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Megasanti',
             'branch_id' => $this->atg3->id,
             'registered_at' => '2026-06-13',
             'manual_rm_number' => '14023',
-        ],
+        ]),
     ]);
 
     $this->actingAs($this->admin)

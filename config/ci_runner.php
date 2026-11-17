@@ -637,6 +637,12 @@ return [
         // scoped, no-store), never in logs, audit payloads or exports.
         // Selected by the existing `FrontOffice` token in BOTH critical variants.
         'tests/Feature/Patient/FrontOfficePatientRmPaperCardReasonTest.php',
+        // Rule 244 §5 (PR-4, memo M4.2) — the required core fields of a NEW
+        // patient on both forms (one shared builder), NIK optional, and the
+        // no-phone exception (permission, reason, audit without values, closed
+        // on a later number); legacy edits never forced. Selected by the
+        // existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

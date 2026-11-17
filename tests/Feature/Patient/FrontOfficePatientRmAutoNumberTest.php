@@ -69,7 +69,7 @@ function fpanBranch(string $code): Branch
 
 function fpanPayload(array $overrides = []): array
 {
-    return array_merge([
+    return array_merge(newPatientCoreFields(), [
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'branch_id' => test()->branch->id,
@@ -227,7 +227,7 @@ it('AN-04 issues the automatic number on Kunjungan → Pasien Baru and ignores a
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $treatment->id,
             'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
-            'new_patient' => [
+            'new_patient' => newPatientCoreFields() + [
                 'name' => 'Pasien Baru Kunjungan',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2020-02-02',
@@ -552,7 +552,7 @@ it('AN-23 keeps Kunjungan → Pasien Baru on the working branch: another branch 
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $treatment->id,
             'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
-            'new_patient' => ['name' => 'Pasien Kunjungan Cabang Lain', 'branch_id' => $other->id],
+            'new_patient' => newPatientCoreFields(['name' => 'Pasien Kunjungan Cabang Lain', 'branch_id' => $other->id]),
         ]);
 
     // StoreClinicVisitRequest pins a pinned desk account's visit AND new

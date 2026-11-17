@@ -3,6 +3,7 @@
 namespace App\Modules\Patient\Requests;
 
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
@@ -21,8 +22,27 @@ class StorePatientRequest extends FormRequest
      */
     public function authorize(): bool
     {
+        // Rule 244 §5.3 — the no-phone exception likewise: only a holder of
+        // `register_patient_without_phone` may send it (the checkbox is rendered
+        // for holders only); PatientService re-asserts it for every caller.
+        if ($this->hasNoPhoneInput() && ! $this->user()?->can(PatientCoreFields::WITHOUT_PHONE_PERMISSION)) {
+            return false;
+        }
+
         return ! $this->hasPaperCardInput()
             || (bool) $this->user()?->can(PatientService::PAPER_CARD_PERMISSION);
+    }
+
+    /** Rule 244 §5.3 — whether any no-phone exception field was sent. */
+    public function hasNoPhoneInput(): bool
+    {
+        foreach (PatientCoreFields::NO_PHONE_FIELDS as $field) {
+            if ($this->filled($field)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Rule 244 §4 — whether any paper-card field was sent. */
@@ -85,16 +105,17 @@ class StorePatientRequest extends FormRequest
                 // refuse anything else, and its error carries the value.
                 'regex:'.PatientService::PAPER_CARD_NOTE_PATTERN,
             ],
-            'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
+            // Memo M4.2 (rule 244 §5) — NIK stays optional; when given it is
+            // exactly 16 digits (new patients only; an edit keeps a legacy value).
+            'ktp_number' => ['nullable', 'string', ...PatientCoreFields::NIK_RULES, Rule::unique('mst_patients', 'ktp_number')],
             'name' => ['required', 'string', 'max:150'],
-            'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
-            'date_of_birth' => ['nullable', 'date'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'whatsapp_number' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:150'],
-            'address' => ['nullable', 'string', 'max:1000'],
-            'occupation' => ['nullable', 'string', 'max:150'],
             'is_active' => ['sometimes', 'boolean'],
+            // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient (gender,
+            // place and date of birth, phone or WhatsApp, address, occupation)
+            // and the no-phone exception, from the ONE builder Kunjungan →
+            // Pasien Baru uses too.
+            ...PatientCoreFields::rules($this->all()),
             // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
             // workflow. Attached to the patient after creation (controller).
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],
@@ -134,6 +155,7 @@ class StorePatientRequest extends FormRequest
             'paper_card_reason_note.max' => 'Catatan maksimal :max karakter.',
             'paper_card_reason_note.regex' => 'Catatan berisi karakter yang tidak valid.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            ...PatientCoreFields::messages(),
         ];
     }
 

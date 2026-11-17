@@ -243,6 +243,28 @@ class PatientRepository implements PatientRepositoryInterface
         return $patient->refresh();
     }
 
+    public function closeNoPhoneException(Patient $patient): ?string
+    {
+        $open = Patient::withTrashed()
+            ->whereKey($patient->getKey())
+            ->lockForUpdate()
+            ->value('no_phone_reason_code');
+
+        if ($open === null) {
+            return null;
+        }
+
+        Patient::withTrashed()->whereKey($patient->getKey())->update([
+            'no_phone_reason_code' => null,
+            'no_phone_reason_note' => null,
+            'no_phone_recorded_at' => null,
+        ]);
+
+        $patient->refresh();
+
+        return (string) $open;
+    }
+
     public function delete(Patient $patient): bool
     {
         return (bool) $patient->delete();

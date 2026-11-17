@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3). PR-3: a number a person enters (old paper card at Master Data registration, legacy CSV commit) only under `register_patient_paper_card_rm` plus `manage patients` (Supervisor RME; Super Admin via '*'), with a reason, claimed under the counter lock, audited without the number; the pilot backup importer (`rme:import-pilot-backup`, a CLI command with no actor or permission) is gated by the claim alone (§4). Claim cap (owner decisions 2026-11-17 "refuse jump > +1000" and "Per batch"): the current clinical year's counter is raised by at most +1000 — per claim for a paper card, in TOTAL for a legacy CSV batch or a pilot backup run (measured from the counter locked at its start) — and never above 9999; a later year is refused outright; a current-year sequence that is not all digits, or a value of zero or nine digits and up in any year, is refused; a refused claim is escalated to Supervisor RME; a past-year claim touches only its own year (§2.6). PR-3b (owner decision 2026-11-17 "PAPER-CARD REASON: store text, restricted"): the paper card takes a structured reason code (config `patient.paper_card_reasons`) plus an optional note (10–500, required for LAINNYA), stored in the immutable table `trx_patient_rm_paper_card_registrations` in the claim's transaction and kept for the life of the patient record; read only with `view_patient_rm_paper_card_reasons` (Supervisor RME, Owner; Super Admin via Gate::before), branch-scoped (404), `private, no-store`; never in logs, audit payloads (ids + reason_code only), exports or the session (§4.3). PR-2, PR-3 and PR-3b ship in one release (§4.7).
-globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/Patient/Requests/ConfirmLegacyPatientImportRequest.php, app/Modules/Patient/Policies/PatientPolicy.php, app/Support/PilotImport/PilotBackupImportService.php, app/Modules/Patient/Models/PatientRmPaperCardRegistration.php, app/Modules/Patient/Interfaces/PatientRmPaperCardRegistrationRepositoryInterface.php, app/Modules/Patient/Repositories/PatientRmPaperCardRegistrationRepository.php, app/Modules/Patient/Controllers/PatientController.php, database/migrations/2026_11_18_100002_create_trx_patient_rm_paper_card_registrations_table.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3). PR-3: a number a person enters (old paper card at Master Data registration, legacy CSV commit) only under `register_patient_paper_card_rm` plus `manage patients` (Supervisor RME; Super Admin via '*'), with a reason, claimed under the counter lock, audited without the number; the pilot backup importer (`rme:import-pilot-backup`, a CLI command with no actor or permission) is gated by the claim alone (§4). Claim cap (owner decisions 2026-11-17 "refuse jump > +1000" and "Per batch"): the current clinical year's counter is raised by at most +1000 — per claim for a paper card, in TOTAL for a legacy CSV batch or a pilot backup run (measured from the counter locked at its start) — and never above 9999; a later year is refused outright; a current-year sequence that is not all digits, or a value of zero or nine digits and up in any year, is refused; a refused claim is escalated to Supervisor RME; a past-year claim touches only its own year (§2.6). PR-3b (owner decision 2026-11-17 "PAPER-CARD REASON: store text, restricted"): the paper card takes a structured reason code (config `patient.paper_card_reasons`) plus an optional note (10–500, required for LAINNYA), stored in the immutable table `trx_patient_rm_paper_card_registrations` in the claim's transaction and kept for the life of the patient record; read only with `view_patient_rm_paper_card_reasons` (Supervisor RME, Owner; Super Admin via Gate::before), branch-scoped (404), `private, no-store`; never in logs, audit payloads (ids + reason_code only), exports or the session (§4.3). PR-2, PR-3 and PR-3b ship in one release (§4.7). PR-4 (memo M4.2, owner 2026-11-17 "Core fields, NIK optional. A controlled exception for patients without a phone. Existing patients are never blocked."): ONE builder (`PatientCoreFields::rules()`) for both registration forms requires, for a NEW patient only, gender, place of birth (new additive column `place_of_birth`), date of birth (1900..clinical day), phone OR WhatsApp, address, occupation; NIK optional (16 digits when typed); a patient with neither number only under `register_patient_without_phone` (Front Office + Admin Klinik; Super Admin via '*') with a reason code from `patient.no_phone_reasons` (note for LAINNYA), 403 from both requests and re-asserted in PatientService, stored as the open exception on the patient row (note hidden from serialization), audited with ids + reason_code only and closed (audited once) when an edit records a number; an edit keeps every field optional and re-judges only a changed date of birth or NIK (§5).
+globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/Patient/Requests/ConfirmLegacyPatientImportRequest.php, app/Modules/Patient/Policies/PatientPolicy.php, app/Support/PilotImport/PilotBackupImportService.php, app/Modules/Patient/Models/PatientRmPaperCardRegistration.php, app/Modules/Patient/Interfaces/PatientRmPaperCardRegistrationRepositoryInterface.php, app/Modules/Patient/Repositories/PatientRmPaperCardRegistrationRepository.php, app/Modules/Patient/Controllers/PatientController.php, database/migrations/2026_11_18_100002_create_trx_patient_rm_paper_card_registrations_table.php, app/Modules/Patient/Support/PatientCoreFields.php, app/Modules/Patient/Models/Patient.php, app/Modules/Patient/Repositories/PatientRepository.php, app/Modules/Patient/Interfaces/PatientRepositoryInterface.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, database/migrations/2026_11_18_100003_add_place_of_birth_and_no_phone_exception_to_mst_patients_table.php
 alwaysApply: false
 ---
 
@@ -332,3 +332,78 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    branch ≠ working branch) in `PatientKtpArchiveBranchIsolationTest` (token `PatientKtp`). The legacy CSV suites
    commit through `legacyPatientCommitterId()` (tests/Pest.php), an account holding the permission and
    `manage patients`.
+
+## 5. Required core fields and the no-phone exception (PR-4)
+
+Owner decision 2026-11-17 (memo M4.2): "Core fields, NIK optional. A controlled exception for patients without a
+phone. Existing patients are never blocked." Plan default 2 (accepted 2026-11-17): the no-phone exception belongs to
+Front Office, with a reason, audited and reportable.
+
+1. **One rule builder for both forms.** `App\Modules\Patient\Support\PatientCoreFields::rules()` is the only source of
+   the core-field rules. `StorePatientRequest` (Master Data → Tambah Pasien) spreads it at the top level and
+   `StoreClinicVisitRequest` (Kunjungan → Pasien Baru) under `new_patient.`; on an existing-patient visit the hidden
+   panel's core fields are `exclude`d, never validated (as rule 184 §13 does for KTP state). Required for a NEW
+   patient:
+   - gender (`Male`, `Female`, `Other`);
+   - place of birth — the new additive column `mst_patients.place_of_birth` (≤100, one line, no control character);
+   - date of birth — from 1900-01-01 to the clinical day (`ClinicalClock`, CG-12: at 00:30 WITA the new day already
+     counts while UTC is still on the previous one);
+   - phone OR WhatsApp (`required_without_all` over the WhatsApp number and the no-phone reason code);
+   - address (≤1000) and occupation (≤150).
+   A missing or invalid field is a 422 on that field (`new_patient.<field>` on the visit form), in Indonesian
+   (`PatientCoreFields::messages()`), and nothing is written: no patient, no visit, no Nomor RM. The forms mark the
+   fields with `*` and use no native `required` (a hidden required control is refused silently by browsers, rule 184
+   §13). `PatientService` does not re-validate the core fields themselves: they are data quality, enforced at the two
+   forms; the exception below is authorization and is re-asserted there.
+2. **NIK optional.** NIK and the KTP scan are never required (rule 184 §10 unchanged; the KTP keys stay declared in
+   each request's own `rules()`, so its source scan still reads them). A NIK typed at a new registration is exactly 16
+   digits (`PatientCoreFields::NIK_RULES`). KTP masking is unchanged (CG-11).
+3. **The no-phone exception (plan default 2).**
+   - **Permission.** `register_patient_without_phone` (`PatientCoreFields::WITHOUT_PHONE_PERMISSION`):
+     `PermissionSeeder` declares it; `RoleSeeder` grants it to **Front Office** and to **Admin Klinik** (the
+     registration half of Front Office, so the Front Office = Admin Klinik + Kasir union stays exact; production has
+     no Admin Klinik account); Super Admin through `'*'`. Not Kasir, not Supervisor RME. Grouped under Master Data.
+   - **Fields.** `no_phone_reason_code`, one of config `patient.no_phone_reasons` (`TIDAK_PUNYA_TELEPON`,
+     `TANGGUNGAN_TANPA_TELEPON`, `LAINNYA`; a used code is never renamed or removed), and `no_phone_reason_note`
+     (10–500 characters, required for `LAINNYA`; tab, line feed and carriage return are the only control characters
+     allowed). Only with neither number (`prohibited` beside a phone or WhatsApp number). Rendered only under
+     `@can('register_patient_without_phone')` on both forms (rule 135 mirror), disabled (so not sent) until the
+     checkbox is ticked.
+   - **Three layers (CG-06).** The route (`manage patients`; the visit route plus the `create` patient ability), the
+     FormRequest (`authorize()` answers 403 to a non-holder sending any no-phone field, on both requests), and
+     `PatientService::create()` / `createWithPaperCardNumber()`, which re-assert the permission and every bound for
+     any caller (Super Admin included: `Gate::before` only answers the permission question). Kunjungan → Pasien Baru
+     passes its registrar as `$exceptionActor`; the branch-scope actor stays null there (§2.1).
+   - **Storage.** The OPEN exception lives on the patient row: `no_phone_reason_code` (≤40), `no_phone_reason_note`
+     (≤500), `no_phone_recorded_at` (additive migration `2026_11_18_100003`, with `place_of_birth`). Only
+     `PatientService` writes them: they are stripped from every create and update payload and set for an accepted
+     exception alone. The note is `$hidden` on the model (never in `toArray()`/JSON: selectors, exports, snapshots),
+     never in an audit payload or a log, and shown only on the patient's edit page while the exception is open.
+   - **Audit.** `PATIENT_NO_PHONE_EXCEPTION_RECORDED` (`PatientService::AUDIT_NO_PHONE_RECORDED`), written in the
+     registration transaction, carries exactly `patient_id`, `branch_id`, `actor_user_id`, `reason_code`.
+   - **Report.** Open exceptions are `mst_patients.no_phone_reason_code IS NOT NULL`; the history is the audit rows of
+     the two actions. This PR adds no report page.
+4. **Existing patients are never blocked.** `UpdatePatientRequest` keeps every field optional (place of birth
+   included). A stored date of birth or NIK is never re-judged: only a value the operator CHANGES is held to the
+   new-patient format (1900..the clinical day; 16 digits), so a legacy record always saves. The production measurement
+   (sprint record §10.2, 2026-11-17: of 1,522 live patients, 1 lacks a date of birth, 5 lack phone and WhatsApp, 2 lack
+   an address, 103 lack an occupation; 84 NIK values are not 16 digits; none has a place of birth) is legacy data the
+   rules never force. **Closing.** When a patient has a phone or WhatsApp number after an edit,
+   `PatientRepositoryInterface::closeNoPhoneException()` reads the open exception FOR UPDATE in the edit's transaction
+   and clears the three columns, and `PatientService::update()` writes `PATIENT_NO_PHONE_EXCEPTION_CLEARED`
+   (`patient_id`, `branch_id`, `actor_user_id`, the closed `reason_code`) exactly once. An edit never opens an
+   exception and never writes its columns.
+5. **Rules revised.** Rule 184 §9 ("typed data entry with no photo at all is a complete registration"): a complete NEW
+   registration now means the core fields above; never applied to an existing, legacy or repeat-visit patient and never
+   a visit blocker for one; §10 (no KTP field ever required) kept. AIR-PAT-21 / rules 177 §5 and 179: the place of
+   birth is now a stored field; the KTP OCR suggestion for it is PR-5 (JS only) and nothing here writes an OCR value.
+6. **Not changed (recorded).** The "Audit Data Pasien" completeness report (`PatientDataCompletenessService`) does not
+   score the place of birth: every existing patient has none, so all 1,522 would turn incomplete — a separate
+   decision. A patient merge does not reconcile `place_of_birth` (`PatientMergeField`) and does not close the
+   exception when the reconciled row gains a number; an edit closes it.
+7. **Release.** The additive migration runs with the deploy's `php artisan migrate --force`; then `PermissionSeeder`,
+   `RoleSeeder`, `permission:cache-reset` as the runtime user. Rollback is a code revert; the columns stay (never
+   dropped on production). PR-4 may ship after the PR-2/PR-3/PR-3b release or with it.
+8. **Tests.** `tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php` (CF-01..CF-24), token `FrontOffice`,
+   declared in `critical_gate_mandatory_suites`. Other suites register patients through `newPatientCoreFields()`
+   (tests/Pest.php).

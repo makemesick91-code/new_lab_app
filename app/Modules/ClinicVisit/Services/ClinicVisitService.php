@@ -406,7 +406,7 @@ class ClinicVisitService
                 $this->registration->assertPatientSelectable($registrar, $data);
             }
 
-            $data = $this->resolvePatient($data);
+            $data = $this->resolvePatient($data, $registrar);
 
             if (! $isExistingPatient) {
                 $this->mergeGuard->assertNotMergedLocked((int) $data['patient_id']);
@@ -796,10 +796,16 @@ class ClinicVisitService
      * "existing" mode the supplied patient_id is used unchanged. The transient
      * registration keys are stripped before the visit is persisted.
      *
+     * Memo M4.2 (rule 244 §5) — the core fields validated by the shared builder
+     * (place of birth included) are passed on, and so is a no-phone exception,
+     * which PatientService re-asserts against the registrar. The registrar is
+     * NOT the branch-scope actor there: the branch was already pinned and
+     * re-asserted for it by resolveBranchId().
+     *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function resolvePatient(array $data): array
+    private function resolvePatient(array $data, User $registrar): array
     {
         $mode = $data['patient_mode'] ?? 'existing';
         $newPatient = $data['new_patient'] ?? null;
@@ -817,6 +823,7 @@ class ClinicVisitService
                 'manual_rm_number' => $newPatient['manual_rm_number'] ?? null,
                 'name' => $newPatient['name'] ?? null,
                 'gender' => $newPatient['gender'] ?? null,
+                'place_of_birth' => $newPatient['place_of_birth'] ?? null,
                 'date_of_birth' => $newPatient['date_of_birth'] ?? null,
                 'phone' => $newPatient['phone'] ?? null,
                 'whatsapp_number' => $newPatient['whatsapp_number'] ?? null,
@@ -825,7 +832,9 @@ class ClinicVisitService
                 'occupation' => $newPatient['occupation'] ?? null,
                 'address' => $newPatient['address'] ?? null,
                 'is_active' => true,
-            ]);
+                'no_phone_reason_code' => $newPatient['no_phone_reason_code'] ?? null,
+                'no_phone_reason_note' => $newPatient['no_phone_reason_note'] ?? null,
+            ], null, $registrar);
 
             $data['patient_id'] = $patient->id;
         }

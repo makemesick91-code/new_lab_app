@@ -12,6 +12,7 @@ use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
@@ -79,6 +80,16 @@ class PatientService
 
     /** Rule 244 §4 — the audit action; its payload carries ids and the reason length only. */
     public const AUDIT_PAPER_CARD_REGISTERED = 'PATIENT_RM_PAPER_CARD_REGISTERED';
+
+    /**
+     * Rule 244 §5.3 (memo M4.2, plan default 2) — a new patient registered
+     * without a phone or WhatsApp number; the payload carries ids and the
+     * reason code only, never the note or any patient value.
+     */
+    public const AUDIT_NO_PHONE_RECORDED = 'PATIENT_NO_PHONE_EXCEPTION_RECORDED';
+
+    /** Rule 244 §5.3 — the open exception closed by an edit that recorded a number; ids and the closed code only. */
+    public const AUDIT_NO_PHONE_CLEARED = 'PATIENT_NO_PHONE_EXCEPTION_CLEARED';
 
     /** Rule 244 §4 — no number in the message: the operator typed it, nobody else needs it. */
     private const PAPER_CARD_TAKEN_MESSAGE = 'Nomor RM kartu lama ini sudah terdaftar (termasuk penulisan lain, pasien terhapus, atau alias penggabungan).';
@@ -158,12 +169,24 @@ class PatientService
      *    any other unique violation is rethrown untouched.
      *    Any refusal is a ValidationException (422), never a 500, and the whole
      *    transaction — counter included — rolls back.
+     *  - Memo M4.2 (rule 244 §5.3) — a patient without a phone or WhatsApp
+     *    number may carry the no-phone exception (`no_phone_reason_code`, and
+     *    `no_phone_reason_note` for LAINNYA). It is re-asserted here against
+     *    `$exceptionActor` (default `$actor`; Kunjungan → Pasien Baru passes its
+     *    registrar there while `$actor` stays null for the branch scope), with
+     *    every bound, so it binds Super Admin and any non-HTTP caller; recorded
+     *    on the row and audited (ids and the code only) in this transaction.
+     *    The core fields themselves are validated by the forms' shared builder
+     *    ({@see PatientCoreFields::rules()}).
      */
-    public function create(array $data, ?User $actor = null): Patient
+    public function create(array $data, ?User $actor = null, ?User $exceptionActor = null): Patient
     {
         foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
             unset($data[$field]);
         }
+
+        $exceptionActor ??= $actor;
+        $noPhoneCode = $this->pullNoPhoneException($data, $exceptionActor);
 
         $branch = $this->registrationBranch($data['branch_id'] ?? null);
         $data['branch_id'] = (int) $branch->getKey();
@@ -173,7 +196,7 @@ class PatientService
         }
 
         try {
-            return DB::transaction(function () use ($data, $branch): Patient {
+            return DB::transaction(function () use ($data, $branch, $noPhoneCode, $exceptionActor): Patient {
                 $today = $this->clock->today();
                 $year = (int) $today->format('Y');
                 $data['registered_at'] = $today->toDateString();
@@ -182,10 +205,16 @@ class PatientService
                     $data['medical_record_number'] = $this->rmAllocator->allocate($branch, $year);
 
                     try {
-                        return DB::transaction(fn (): Patient => $this->patients->create($data));
+                        $patient = DB::transaction(fn (): Patient => $this->patients->create($data));
                     } catch (UniqueConstraintViolationException $e) {
                         $this->refuseUniqueViolation($e, $attempt);
+
+                        continue;
                     }
+
+                    $this->auditNoPhoneException($patient, $noPhoneCode, $exceptionActor);
+
+                    return $patient;
                 }
             });
         } catch (PatientRmNumberUnavailableException $e) {
@@ -276,6 +305,10 @@ class PatientService
             unset($data[$field]);
         }
 
+        // Rule 244 §5.3 — a paper-card patient without a number takes the same
+        // exception, re-asserted against the same actor.
+        $noPhoneCode = $this->pullNoPhoneException($data, $actor);
+
         $branch = $this->registrationBranch($data['branch_id'] ?? null);
         $data['branch_id'] = (int) $branch->getKey();
 
@@ -285,7 +318,7 @@ class PatientService
         }
 
         try {
-            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonCode, $reasonNote, $today): Patient {
+            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonCode, $reasonNote, $today, $noPhoneCode): Patient {
                 $number = $this->rmNumbers->compose((string) BranchCodeAlias::canonicalize($branch->code), $year, $sequence);
 
                 if (! $this->rmAllocator->claimExisting($branch, $number)) {
@@ -333,6 +366,8 @@ class PatientService
                     'registration_id' => (int) $registration->getKey(),
                     'reason_code' => $reasonCode,
                 ], $actor);
+
+                $this->auditNoPhoneException($patient, $noPhoneCode, $actor);
 
                 return $patient;
             });
@@ -414,22 +449,124 @@ class PatientService
      * Rule 244 §2.3 (owner default 5) — an edit never changes the Nomor RM, the
      * branch it was issued under or the registration date; there is no
      * correction tool for existing numbers.
+     *
+     * Memo M4.2 (rule 244 §5.4) — an edit never writes the no-phone exception
+     * columns; once the patient has a phone or WhatsApp number after the edit,
+     * an OPEN exception is closed under the row lock and audited exactly once
+     * (ids and the closed code only). `$actor` defaults to the signed-in user.
      */
-    public function update(Patient $patient, array $data): Patient
+    public function update(Patient $patient, array $data, ?User $actor = null): Patient
     {
         $this->mergeGuard->assertNotMerged($patient, 'name');
 
-        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, 'branch_id'] as $field) {
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, 'branch_id', ...PatientCoreFields::NO_PHONE_COLUMNS] as $field) {
             unset($data[$field]);
         }
 
-        return DB::transaction(function () use ($patient, $data) {
+        return DB::transaction(function () use ($patient, $data, $actor) {
             // Re-checked under the row lock: the model above may predate a
             // merge that committed while this request was in flight.
             $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'name');
 
-            return $this->patients->update($patient, $data);
+            $updated = $this->patients->update($patient, $data);
+
+            // Only a patient with an open exception that now has a number: the
+            // repository re-reads it FOR UPDATE, so a concurrent edit closes
+            // (and audits) it once.
+            if ($updated->no_phone_reason_code !== null && PatientCoreFields::hasNumber($updated->only(['phone', 'whatsapp_number']))) {
+                $closedCode = $this->patients->closeNoPhoneException($updated);
+
+                if ($closedCode !== null) {
+                    $actor ??= auth()->user();
+                    $actor = $actor instanceof User ? $actor : null;
+
+                    $this->audit->log('mst_patients', (int) $updated->getKey(), self::AUDIT_NO_PHONE_CLEARED, null, [
+                        'patient_id' => (int) $updated->getKey(),
+                        'branch_id' => $updated->branch_id !== null ? (int) $updated->branch_id : null,
+                        'actor_user_id' => $actor !== null ? (int) $actor->getKey() : null,
+                        'reason_code' => $closedCode,
+                    ], $actor);
+                }
+            }
+
+            return $updated;
         });
+    }
+
+    /**
+     * Rule 244 §5.3 — take the no-phone exception out of a registration
+     * payload and decide it. The exception columns are never taken from the
+     * caller: they are cleared from `$data` and set here only for an accepted
+     * exception. Returns the reason code to audit once the row exists, or null
+     * when no exception was asked for (a stray note alone is dropped).
+     *
+     * Bound for every actor (Super Admin included: Gate::before only answers the
+     * permission question): the permission, no phone or WhatsApp number beside
+     * it, a configured code, and a note of 10–500 characters without control
+     * characters, required for LAINNYA.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function pullNoPhoneException(array &$data, ?User $actor): ?string
+    {
+        $code = trim((string) ($data['no_phone_reason_code'] ?? ''));
+        $note = trim((string) ($data['no_phone_reason_note'] ?? ''));
+        $note = $note === '' ? null : $note;
+
+        foreach (PatientCoreFields::NO_PHONE_COLUMNS as $column) {
+            unset($data[$column]);
+        }
+
+        if ($code === '') {
+            return null;
+        }
+
+        if ($actor === null || ! $actor->can(PatientCoreFields::WITHOUT_PHONE_PERMISSION)) {
+            throw new AuthorizationException('Pasien tanpa nomor telepon hanya dapat didaftarkan oleh akun yang berwenang (Front Office).');
+        }
+
+        if (PatientCoreFields::hasNumber($data)) {
+            throw ValidationException::withMessages(['no_phone_reason_code' => 'Pengecualian tanpa nomor telepon tidak berlaku: nomor ponsel atau WhatsApp sudah diisi.']);
+        }
+
+        if (! array_key_exists($code, PatientCoreFields::noPhoneReasons())) {
+            throw ValidationException::withMessages(['no_phone_reason_code' => 'Pilih alasan pasien tanpa nomor telepon dari daftar.']);
+        }
+
+        if ($note === null && $code === PatientCoreFields::NO_PHONE_REASON_OTHER) {
+            throw ValidationException::withMessages(['no_phone_reason_note' => 'Catatan wajib diisi untuk alasan Lainnya.']);
+        }
+
+        if ($note !== null && (! mb_check_encoding($note, 'UTF-8') || preg_match(PatientCoreFields::NOTE_PATTERN, $note) !== 1)) {
+            throw ValidationException::withMessages(['no_phone_reason_note' => 'Catatan berisi karakter yang tidak valid.']);
+        }
+
+        if ($note !== null && (mb_strlen($note) < PatientCoreFields::NO_PHONE_NOTE_MIN || mb_strlen($note) > PatientCoreFields::NO_PHONE_NOTE_MAX)) {
+            throw ValidationException::withMessages([
+                'no_phone_reason_note' => sprintf('Catatan %d sampai %d karakter.', PatientCoreFields::NO_PHONE_NOTE_MIN, PatientCoreFields::NO_PHONE_NOTE_MAX),
+            ]);
+        }
+
+        $data['no_phone_reason_code'] = $code;
+        $data['no_phone_reason_note'] = $note;
+        $data['no_phone_recorded_at'] = now();
+
+        return $code;
+    }
+
+    /** Rule 244 §5.3 — the exception's audit row: ids and the code, never the note or a patient value. */
+    private function auditNoPhoneException(Patient $patient, ?string $reasonCode, ?User $actor): void
+    {
+        if ($reasonCode === null) {
+            return;
+        }
+
+        $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_NO_PHONE_RECORDED, null, [
+            'patient_id' => (int) $patient->getKey(),
+            'branch_id' => (int) $patient->branch_id,
+            'actor_user_id' => $actor !== null ? (int) $actor->getKey() : null,
+            'reason_code' => $reasonCode,
+        ], $actor);
     }
 
     /** The active, RME-enabled branch a new patient is registered under. */

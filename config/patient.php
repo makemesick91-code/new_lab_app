@@ -39,4 +39,25 @@ return [
         'MIGRASI_ARSIP_KERTAS' => 'Migrasi arsip rekam medis kertas',
         'LAINNYA' => 'Lainnya (wajib catatan)',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | No-phone exception reason codes (rule 244 §5, PR-4)
+    |--------------------------------------------------------------------------
+    |
+    | Memo M4.2 (owner 2026-11-17, "a controlled exception for patients without
+    | a phone"; plan default 2: Front Office, with a reason, audited and
+    | reportable): a NEW patient is registered without a phone or WhatsApp
+    | number only under `register_patient_without_phone`, with one of these
+    | codes (code => Indonesian label, in display order). LAINNYA needs a note
+    | of 10–500 characters. The code is what the audit row keeps; the note stays
+    | on the patient row until a number is recorded. LAINNYA must stay in the
+    | list. A code is never renamed or removed once used; add new ones.
+    |
+    */
+    'no_phone_reasons' => [
+        'TIDAK_PUNYA_TELEPON' => 'Pasien tidak memiliki nomor telepon/WhatsApp',
+        'TANGGUNGAN_TANPA_TELEPON' => 'Pasien tanggungan (anak/lansia) tanpa nomor telepon sendiri',
+        'LAINNYA' => 'Lainnya (wajib catatan)',
+    ],
 ];

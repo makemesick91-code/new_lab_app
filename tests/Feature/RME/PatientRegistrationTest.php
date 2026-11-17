@@ -19,7 +19,7 @@ afterEach(fn () => Carbon::setTestNow());
 
 function registrationPayload(array $overrides = []): array
 {
-    return array_merge([
+    return array_merge(newPatientCoreFields(), [
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'branch_id' => test()->branch->id,
@@ -90,12 +90,12 @@ it('requires the branch to be active and RME-enabled', function () {
 
 it('retires the free override: a full number without a branch is refused, not stored', function () {
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'medical_record_number' => 'LEGACY-RM-001',
             'name' => 'Pasien Lama',
-        ])
+        ]))
         ->assertSessionHasErrors('branch_id');
 
     expect(Patient::firstWhere('name', 'Pasien Lama'))->toBeNull()

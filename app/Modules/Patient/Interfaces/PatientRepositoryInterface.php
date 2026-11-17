@@ -73,6 +73,14 @@ interface PatientRepositoryInterface
      */
     public function update(Patient $patient, array $data): Patient;
 
+    /**
+     * Rule 244 §5.4 (memo M4.2) — close the patient's OPEN no-phone exception:
+     * reads it under a row lock (FOR UPDATE, in the caller's transaction), clears
+     * the three exception columns, refreshes `$patient` and returns the closed
+     * reason code; null when none was open, so a caller audits each close once.
+     */
+    public function closeNoPhoneException(Patient $patient): ?string;
+
     public function delete(Patient $patient): bool;
 
     public function setActiveStatus(Patient $patient, bool $isActive): Patient;

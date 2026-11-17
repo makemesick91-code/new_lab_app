@@ -152,14 +152,14 @@ it('attaches the scanned KTP to the patient on registration', function () {
     $token = uploadTempKtp($actor)['token'];
 
     $this->actingAs($actor)
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $clinic->id,
             'doctor_id' => $doctor->id,
             // Rule 244 §2 — the automatic Nomor RM needs the branch.
             'branch_id' => ktpScanRmBranch()->id,
             'name' => 'Pasien Scan KTP',
             'ktp_scan_token' => $token,
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 
     $patient = Patient::where('name', 'Pasien Scan KTP')->firstOrFail();
@@ -250,13 +250,13 @@ it('still creates a patient with no KTP scan token', function () {
     $doctor = Doctor::factory()->create();
 
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $clinic->id,
             'doctor_id' => $doctor->id,
             // Rule 244 §2 — the automatic Nomor RM needs the branch.
             'branch_id' => ktpScanRmBranch()->id,
             'name' => 'Pasien Tanpa Scan',
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 
     $patient = Patient::where('name', 'Pasien Tanpa Scan')->firstOrFail();

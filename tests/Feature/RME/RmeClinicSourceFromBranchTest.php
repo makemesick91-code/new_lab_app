@@ -97,14 +97,14 @@ it('does not show an inventory-only branch on the patient create form', function
 it('rejects a non-RME branch on patient store', function () {
     $this->actingAs($this->admin)
         ->from(route('settings.patients.create'))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'branch_id' => $this->inventoryOnlyBranch->id,
             'registered_at' => '2026-06-13',
             'manual_rm_number' => '0001',
             'name' => 'Pasien Salah Cabang',
-        ])
+        ]))
         ->assertSessionHasErrors('branch_id');
 
     expect(Patient::where('name', 'Pasien Salah Cabang')->exists())->toBeFalse();
@@ -112,14 +112,14 @@ it('rejects a non-RME branch on patient store', function () {
 
 it('composes the RM number using the selected RME branch code on patient store', function () {
     $this->actingAs($this->admin)
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'branch_id' => $this->rmeBranch->id,
             'registered_at' => '2026-06-13',
             'manual_rm_number' => '0001',
             'name' => 'Pasien RME Telkomas',
-        ])
+        ]))
         ->assertRedirect();
 
     $this->assertDatabaseHas('mst_patients', [
@@ -158,12 +158,12 @@ it('stores patient branch_id from the selected RME branch in new-patient mode', 
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Telkomas',
                 'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0009',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -182,12 +182,12 @@ it('stores visit branch_id from the selected RME branch in new-patient mode', fu
             'patient_mode' => 'new',
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Visit',
                 'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0010',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -274,12 +274,12 @@ it('rejects new patient visit when visit branch differs from new patient branch'
         'doctor_id' => $this->doctor->id,
         'initial_treatment_id' => $treatment->id,
         'visit_date' => now()->toDateString(),
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Pasien Beda Cabang',
             'branch_id' => $otherRmeBranch->id,
             'registered_at' => now()->toDateString(),
             'manual_rm_number' => '0099',
-        ],
+        ]),
     ])->assertSessionHasErrors('new_patient.branch_id');
 
     expect(Patient::where('name', 'Pasien Beda Cabang')->exists())->toBeFalse();

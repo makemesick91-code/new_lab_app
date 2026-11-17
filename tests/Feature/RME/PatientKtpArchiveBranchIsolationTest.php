@@ -526,7 +526,7 @@ it('stamps the operator working branch when master data registration archives a 
         'name' => 'Pasien Master Data Isolasi',
         'ktp_scan_token' => $token,
         'is_active' => 1,
-    ];
+    ] + newPatientCoreFields();
 
     // DMS-RME-COMPREHENSIVE-CLOSURE-1 / rule 244 §2.1 (PR-2 review F2, CG-05):
     // the form may no longer name branch B for a desk account working at A —
@@ -553,7 +553,7 @@ it('stamps the patient branch when a governance account registers through master
         'filename' => 'ktp.png',
     ])->assertOk()->json('token');
 
-    $this->actingAs($admin)->post(route('settings.patients.store'), [
+    $this->actingAs($admin)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
         'name' => 'Pasien Super Admin Isolasi',
@@ -562,7 +562,7 @@ it('stamps the patient branch when a governance account registers through master
         'registered_at' => '2026-10-01',
         'ktp_scan_token' => $token,
         'is_active' => 1,
-    ])->assertSessionMissing('warning');
+    ]))->assertSessionMissing('warning');
 
     $document = Patient::where('name', 'Pasien Super Admin Isolasi')->sole()->documents()->sole();
     expect($document->captured_branch_id)->toBe($this->branchB->id);

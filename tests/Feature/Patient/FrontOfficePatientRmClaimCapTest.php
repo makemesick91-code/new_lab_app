@@ -175,7 +175,7 @@ it('CC-03 answers the refusal over HTTP as a 422 on the sequence field, writing 
     frccCounter(2026, 10);
 
     $this->actingAs($this->supervisor)
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), newPatientCoreFields() + [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'branch_id' => $this->sunu->id,

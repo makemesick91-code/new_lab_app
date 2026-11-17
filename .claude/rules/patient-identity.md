@@ -199,7 +199,7 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 | `.cursor/rules/168-legacy-patient-staged-verification-cancel.mdc` | Legacy patient CSV staging and commit |
 | `.cursor/rules/169-legacy-patient-rollback-identity-reservation.mdc` | Rolled-back batches still reserve NIK and RM |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Patient master and patient document route keys constrained (404, never 500) |
-| `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17) |
+| `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17); required core fields of a new patient and the no-phone exception (memo M4.2, §5) |
 
 ## History
 
@@ -259,3 +259,10 @@ file.
   re-asserted in `PatientService` with the working-branch scope (out of scope 404; soft-deleted patients and rows
   merged into the patient shown, read only; each read audited with ids). The audit payload holds ids and
   `reason_code` only; the note never reaches a log, an export or the session flash. Source: `244-…` §4.3, §4.7.
+- **AIR-PAT-37** A NEW patient (Master Data → Tambah Pasien and Kunjungan → Pasien Baru, one builder
+  `PatientCoreFields::rules()`) needs gender, place of birth, date of birth (1900..clinical day), phone OR WhatsApp,
+  address and occupation; NIK and the KTP scan stay optional (16 digits when typed). No number at all only under
+  `register_patient_without_phone` (Front Office + Admin Klinik) with a reason code (note for `LAINNYA`): 403 from both
+  requests, re-asserted in `PatientService`, audited with ids and `reason_code` only, closed (audited once) when an
+  edit records a number. An edit keeps every field optional and re-judges only a changed date of birth or NIK; legacy
+  rows are never forced. Source: `244-…` §5.

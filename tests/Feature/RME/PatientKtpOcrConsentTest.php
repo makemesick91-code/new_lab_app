@@ -225,14 +225,14 @@ it('keeps manual registration complete for a KTP holder who declines OCR', funct
         'image_base64' => 'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
     ])->assertOk()->json();
 
-    $this->actingAs($operator)->post(route('settings.patients.store'), [
+    $this->actingAs($operator)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
         // Rule 244 §2 — the automatic Nomor RM needs the branch; none is typed.
         'branch_id' => ktpPilotBranch()->id,
         'name' => 'Pasien Fiktif Tanpa OCR',
         'ktp_scan_token' => $upload['token'],
-    ])->assertRedirect(route('settings.patients.index'));
+    ]))->assertRedirect(route('settings.patients.index'));
 
     $patient = Patient::firstWhere('name', 'Pasien Fiktif Tanpa OCR');
     expect($patient)->not->toBeNull()

@@ -54,12 +54,12 @@ it('creates a new patient then the visit in new-patient mode', function () {
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru RME',
                 'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0007',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -77,7 +77,7 @@ it('requires new patient fields in new mode', function () {
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => ['name' => ''],
+            'new_patient' => array_merge(newPatientCoreFields(), ['name' => '']),
         ])
         ->assertSessionHasErrors(['new_patient.name', 'new_patient.branch_id'])
         // Rule 244 §2 — the Nomor RM is automatic; nothing about it is required.
@@ -108,12 +108,12 @@ it('never issues a number already held in new mode: it takes the next one', func
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Duplikat',
                 'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0001',
-            ],
+            ]),
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect();

@@ -90,12 +90,12 @@ it('attaches the scanned KTP to a new patient created in the visit flow', functi
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Scan KTP',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => '0123',
-            ],
+            ]),
             'ktp_scan_token' => $token,
         ])
         ->assertRedirect();
@@ -123,12 +123,12 @@ it('creates a new patient with no KTP scan token', function () {
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Tanpa Scan',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => '0124',
-            ],
+            ]),
         ])
         ->assertRedirect();
 

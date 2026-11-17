@@ -164,7 +164,7 @@ it('warns on a strong duplicate at registration and requires a reason to continu
         'branch_id' => $existing->branch_id,
         'name' => 'Kartini Wulandari',
         'date_of_birth' => '1985-07-07',
-    ];
+    ] + newPatientCoreFields();
 
     $this->actingAs($admin)->post(route('settings.patients.store'), $payload)
         ->assertSessionHasErrors('duplicate_override_reason')
@@ -186,7 +186,7 @@ it('does not stop a genuinely different patient who shares a birthday', function
         'branch_id' => $existing->branch_id,
         'name' => 'Yohanes Siregar',
         'date_of_birth' => '1985-07-07',
-    ])->assertSessionHasNoErrors();
+    ] + newPatientCoreFields())->assertSessionHasNoErrors();
 });
 
 it('allows a safe reversal that restores both patients exactly', function (): void {

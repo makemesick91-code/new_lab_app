@@ -39,7 +39,7 @@ it('creates a patient (happy path)', function () {
     $branch = Branch::factory()->create(['code' => 'MDP1', 'is_active' => true, 'is_rme_enabled' => true]);
 
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $clinic->id,
             'doctor_id' => $doctor->id,
             'branch_id' => $branch->id,
@@ -47,7 +47,7 @@ it('creates a patient (happy path)', function () {
             'name' => 'John Patient',
             'gender' => 'Male',
             'is_active' => 1,
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 
     expect(Patient::where('medical_record_number', 'MRN-001')->exists())->toBeFalse()
@@ -57,7 +57,7 @@ it('creates a patient (happy path)', function () {
 
 it('requires clinic_id, doctor_id and name', function () {
     $this->actingAs(superAdmin())
-        ->post(route('settings.patients.store'), ['name' => ''])
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), ['name' => '']))
         ->assertSessionHasErrors(['clinic_id', 'doctor_id', 'name']);
 });
 

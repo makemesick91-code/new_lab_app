@@ -414,6 +414,13 @@ class PermissionSeeder extends Seeder
         // Owner only; Super Admin through '*'. Entering the reason stays with
         // register_patient_paper_card_rm. No write: the rows are immutable.
         'view_patient_rm_paper_card_reasons',
+        // Memo M4.2 (rule 244 §5.3; plan default 2, owner 2026-11-17 "a controlled
+        // exception for patients without a phone") — register a NEW patient with
+        // neither a phone nor a WhatsApp number, with a reason code (a note for
+        // LAINNYA), audited with ids and the code only and closed once a number
+        // is recorded. Front Office (granted through Admin Klinik, its half, so
+        // the union stays exact); Super Admin through '*'.
+        'register_patient_without_phone',
 
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
         // read-only cross-branch OVERSIGHT surface used by the Finance Klinik

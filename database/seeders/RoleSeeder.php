@@ -134,6 +134,11 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_branch_dashboard',
             'manage patients',
+            // Memo M4.2 (rule 244 §5.3, plan default 2: Front Office) — the
+            // no-phone exception at a new registration. Granted to the registration
+            // half of Front Office so the Front Office = Admin Klinik + Kasir union
+            // stays exact (FrontOfficeRoleTest).
+            'register_patient_without_phone',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',
@@ -451,6 +456,8 @@ class RoleSeeder extends Seeder
             'manage_rme_consents',
             // --- from Admin Klinik -----------------------------------------
             'manage patients',
+            // Memo M4.2 (rule 244 §5.3, plan default 2) — the no-phone exception.
+            'register_patient_without_phone',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',

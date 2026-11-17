@@ -329,6 +329,37 @@ function legacyPatientCommitterId(): int
 }
 
 /**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.2 (rule 244 §5, PR-4) — the core
+ * fields a NEW patient registration requires on both forms (Master Data →
+ * Tambah Pasien and Kunjungan → Pasien Baru): gender, place and date of birth,
+ * phone (or WhatsApp), address and occupation. Suites that register a patient
+ * merge these into their payload; a suite's own values win (`$overrides`, or
+ * keys the suite sets after the merge).
+ *
+ * Synthetic values only. Each call gets its own phone number and birth date,
+ * so two fixtures registered in one test are never a "strong duplicate" of
+ * each other (PatientRegistrationDuplicateCheck matches a similar name with
+ * the same phone or birth date).
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function newPatientCoreFields(array $overrides = []): array
+{
+    static $sequence = 0;
+    $sequence++;
+
+    return array_merge([
+        'gender' => 'Female',
+        'place_of_birth' => 'Makassar',
+        'date_of_birth' => Carbon::create(1950, 1, 1)->addDays($sequence % 20000)->toDateString(),
+        'phone' => '0819'.str_pad((string) $sequence, 8, '0', STR_PAD_LEFT),
+        'address' => 'Jl. Uji Coba No. '.$sequence,
+        'occupation' => 'Karyawan',
+    ], $overrides);
+}
+
+/**
  * DMS-RME-REVISION-PROGRAM-8B / D7 — a clinical prescription author.
  *
  * Prescription authoring is an allowlist of clinical roles

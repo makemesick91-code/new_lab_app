@@ -81,13 +81,13 @@ function kapRegisterMasterData($actor, string $name, ?string $token)
     $branch = Branch::query()->where('code', 'KAP1')->first()
         ?? Branch::factory()->create(['code' => 'KAP1', 'is_active' => true, 'is_rme_enabled' => true]);
 
-    return test()->actingAs($actor)->post(route('settings.patients.store'), [
+    return test()->actingAs($actor)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
         'branch_id' => $branch->id,
         'name' => $name,
         'ktp_scan_token' => $token,
-    ]);
+    ]));
 }
 
 function kapPatientFiles(Patient $patient): array
@@ -160,7 +160,7 @@ it('keeps a photo across a failed submit, withdrawable before saving', function 
     // notice the browser can withdraw ("Hapus Preview" detaches it).
     $this->actingAs($actor)
         ->from(route('settings.patients.create'))
-        ->post(route('settings.patients.store'), ['ktp_scan_token' => $token])
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), ['ktp_scan_token' => $token]))
         ->assertRedirect(route('settings.patients.create'))
         ->assertSessionHasErrors();
 
@@ -366,12 +366,12 @@ describe('visit registration', function () {
             'clinic_id' => test()->clinic->id,
             'doctor_id' => test()->doctor->id,
             'initial_treatment_id' => test()->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => $name,
                 'branch_id' => test()->branch->id,
                 'registered_at' => '2026-06-26',
                 'manual_rm_number' => (string) random_int(1000, 9999),
-            ],
+            ]),
             'ktp_scan_token' => $token,
         ]);
     };
