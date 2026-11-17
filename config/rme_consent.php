@@ -38,10 +38,18 @@ return [
     | files are served only through the policy-gated consent signature route.
     |
     | `legacy_signature_disk` names where signatures were written BEFORE that
-    | change. Only `rme:consent-signatures-migrate` reads it (copy phase, key
-    | for key, SHA-256 verified); no reader falls back to it (rule 121 §5).
+    | change. `rme:consent-signatures-migrate` copies from it (key for key,
+    | SHA-256 verified, never deleting).
+    |
+    | `legacy_read_fallback` — release 2, owner decision 2026-11-17 (rule 237
+    | §14.5a, a temporary exception to rule 121 §5): while true, a READER whose
+    | object is not yet on the clinical evidence disk reads it, read-only, from
+    | `legacy_signature_disk`. It stays true until the copy is applied and
+    | verified; turning it off is a separate owner-approved change. Never an
+    | environment override (no env read here).
     */
     'legacy_signature_disk' => 'local',
+    'legacy_read_fallback' => true,
     'signature_directory' => 'rme-consents',
 
     /*

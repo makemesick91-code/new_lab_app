@@ -133,10 +133,15 @@ class RmeVisitConsentController extends Controller
 
         abort_if($path === null || $path === '', 404);
 
-        // OD-5-9 — the clinical evidence disk (rule 121), as every reader does.
-        $disk = $this->consents->disk();
+        // OD-5-9 — the clinical evidence disk (rule 121), as every reader does;
+        // release 2 (rule 237 §14.5a) — read-only fallback to the pre-change disk
+        // while the copy has not run. Authorization above already decided; the
+        // key comes from the row, never from the request. A missing, unreadable
+        // or non-PNG object answers 404, never an empty image or a 500.
+        $disk = $this->consents->signatureReadDisk($path);
 
-        abort_unless($disk->exists($path), 404);
+        abort_if($disk === null, 404);
+        abort_if($this->consents->readSignaturePng($disk, $path) === null, 404);
 
         return $disk->response($path, basename($path), [
             'Content-Type' => 'image/png',
