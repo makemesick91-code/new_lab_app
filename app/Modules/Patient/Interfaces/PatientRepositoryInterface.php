@@ -73,8 +73,9 @@ interface PatientRepositoryInterface
     public function create(array $data): Patient;
 
     /**
-     * Rule 244 §5.3 (RM PR-4b) — any database failure is a RuntimeException
-     * carrying only the SQLSTATE.
+     * Rule 244 §5.3 (RM PR-4b) — as create(): a unique violation is passed on
+     * (PatientService maps a NIK collision to its 422); any other database
+     * failure is a RuntimeException carrying only the SQLSTATE.
      *
      * @param  array<string, mixed>  $data
      */

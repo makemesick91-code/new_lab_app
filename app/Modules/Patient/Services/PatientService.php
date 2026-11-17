@@ -99,6 +99,9 @@ class PatientService
      */
     public const AUDIT_NO_PHONE_REASON_VIEWED = 'PATIENT_NO_PHONE_EXCEPTION_NOTE_VIEWED';
 
+    /** Rule 244 §2.4 — a NIK another patient holds: the same 422 on registration and on an edit. */
+    private const KTP_TAKEN_MESSAGE = 'Nomor KTP sudah terdaftar pada pasien lain.';
+
     /** Rule 244 §4 — no number in the message: the operator typed it, nobody else needs it. */
     private const PAPER_CARD_TAKEN_MESSAGE = 'Nomor RM kartu lama ini sudah terdaftar (termasuk penulisan lain, pasien terhapus, atau alias penggabungan).';
 
@@ -351,7 +354,7 @@ class PatientService
                     $driverMessage = (string) ($e->errorInfo[2] ?? '');
 
                     if (str_contains($driverMessage, 'ktp_number')) {
-                        throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
+                        throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
                     }
 
                     if (! str_contains($driverMessage, 'medical_record_number')) {
@@ -510,7 +513,19 @@ class PatientService
             // merge that committed while this request was in flight.
             $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'name');
 
-            $updated = $this->patients->update($patient, $data);
+            try {
+                $updated = $this->patients->update($patient, $data);
+            } catch (UniqueConstraintViolationException $e) {
+                // RM PR-4b re-review L1 — a NIK another patient took after the
+                // form's unique rule (or a caller without the form) is the same
+                // 422 as on registration; anything else is refused without a
+                // value. The failed statement rolls this transaction back.
+                if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+                    throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
+                }
+
+                throw $this->valueFreeUniqueViolation($e, 'updated');
+            }
 
             // Only a patient with an open exception that now has a number: the
             // repository re-reads it FOR UPDATE, so a concurrent edit closes
@@ -634,12 +649,12 @@ class PatientService
      * the SQL bindings — NIK, note — into the log). Only the driver's own
      * message is read, for the column name; it is never shown or logged here.
      */
-    private function refuseUniqueViolation(UniqueConstraintViolationException $e, int $attempt): void
+    private function refuseUniqueViolation(#[\SensitiveParameter] UniqueConstraintViolationException $e, int $attempt): void
     {
         $driverMessage = (string) ($e->errorInfo[2] ?? '');
 
         if (str_contains($driverMessage, 'ktp_number')) {
-            throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
+            throw ValidationException::withMessages(['ktp_number' => self::KTP_TAKEN_MESSAGE]);
         }
 
         if (! str_contains($driverMessage, 'medical_record_number')) {
@@ -659,7 +674,7 @@ class PatientService
      * five-character SQLSTATE and the constraint name (an identifier read from
      * the driver's message; its DETAIL, which echoes the row, is dropped).
      */
-    private function valueFreeUniqueViolation(UniqueConstraintViolationException $e): RuntimeException
+    private function valueFreeUniqueViolation(#[\SensitiveParameter] UniqueConstraintViolationException $e, string $action = 'stored'): RuntimeException
     {
         $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
             ? $e->errorInfo[0]
@@ -668,7 +683,7 @@ class PatientService
             ? $match[1]
             : 'unknown';
 
-        return new RuntimeException('The patient could not be stored: unique constraint '.$constraint.' refused it (SQLSTATE '.$state.').');
+        return new RuntimeException('The patient could not be '.$action.': unique constraint '.$constraint.' refused it (SQLSTATE '.$state.').');
     }
 
     public function delete(Patient $patient): bool

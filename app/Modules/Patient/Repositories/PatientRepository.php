@@ -251,11 +251,17 @@ class PatientRepository implements PatientRepositoryInterface
         }
     }
 
-    /** Rule 244 §5.3 (RM PR-4b) — an edit's values (a changed NIK among them) never reach the log either. */
+    /**
+     * Rule 244 §5.3 (RM PR-4b) — an edit's values (a changed NIK among them)
+     * never reach the log either. As on create(), a unique violation goes to
+     * PatientService (a NIK collision is the form's 422, re-review L1).
+     */
     public function update(Patient $patient, #[\SensitiveParameter] array $data): Patient
     {
         try {
             $patient->update($data);
+        } catch (UniqueConstraintViolationException $e) {
+            throw $e;
         } catch (QueryException $e) {
             throw self::valueFree($e, 'updated');
         }
@@ -277,12 +283,13 @@ class PatientRepository implements PatientRepositoryInterface
     /**
      * Rule 244 §5.3 (RM PR-4b, re-review M1) — the driver's error carries the SQL
      * with its bindings (every patient value: the NIK, the no-phone note) and a
-     * reported exception lands in the log. It is replaced by one that keeps only
+     * reported exception lands in the log (and `$e` is kept out of a logged
+     * trace's arguments). It is replaced by one that keeps only
      * the five-character SQLSTATE and no previous exception (the pattern of
      * PatientRmPaperCardRegistrationRepository::record()); the caller's
      * transaction rolls back and the request answers 500.
      */
-    private static function valueFree(QueryException $e, string $action): RuntimeException
+    private static function valueFree(#[\SensitiveParameter] QueryException $e, string $action): RuntimeException
     {
         $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
             ? $e->errorInfo[0]

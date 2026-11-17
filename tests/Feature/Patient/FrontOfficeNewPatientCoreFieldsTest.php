@@ -35,7 +35,9 @@ declare(strict_types=1);
 | patient insert or update is value-free in the log (CF-33..CF-36); the readers
 | reach open exceptions from the restricted index (CF-37); the page shows and
 | audits a note only for an open exception (CF-38); an edit refuses the same
-| text with a 422 (CF-39).
+| text with a 422 (CF-39); an edit that collides on a NIK in the database is
+| the registration's 422, not a 500 (CF-40); every configured reason code fits
+| its column (CF-41).
 |
 | Selected by the existing `FrontOffice` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper prefix
@@ -50,6 +52,7 @@ use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
 use App\Modules\Patient\Repositories\PatientRepository;
@@ -61,6 +64,7 @@ use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -1188,6 +1192,10 @@ it('CF-32 marks every parameter the no-phone note passes through #[\SensitivePar
         [ClinicVisitRegistrationGuard::class, 'isNewPatient', 'data'],
         [PatientCoreFields::class, 'rules', 'input'],
         [PatientCoreFields::class, 'hasNumber', 'fields'],
+        // The driver exceptions themselves (their message holds the bindings).
+        [PatientRepository::class, 'valueFree', 'e'],
+        [PatientService::class, 'valueFreeUniqueViolation', 'e'],
+        [PatientService::class, 'refuseUniqueViolation', 'e'],
     ] as [$class, $method, $name]) {
         $parameter = collect((new ReflectionMethod($class, $method))->getParameters())
             ->first(fn (ReflectionParameter $candidate): bool => $candidate->getName() === $name);
@@ -1497,4 +1505,102 @@ it('CF-39 refuses invalid UTF-8 and the NUL byte in every text field an edit wri
         ->assertRedirect(route('settings.patients.index'));
 
     expect($legacy->fresh()->occupation)->toBe("Petani\x07");
+});
+
+it('CF-40 answers an edit that collides on another patient\'s NIK in the database with the registration\'s 422, changing nothing and logging no NIK (re-review L1)', function (): void {
+    $holder = Patient::factory()->create(['branch_id' => $this->branch->id, 'ktp_number' => '7371011705909999']);
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id, 'ktp_number' => null, 'name' => 'Pasien Edit NIK']);
+
+    // A caller that bypasses UpdatePatientRequest: the database refuses it.
+    $logged = fncfLogLines(function () use ($patient): void {
+        try {
+            app(PatientService::class)->update($patient, ['ktp_number' => '7371011705909999']);
+
+            $this->fail('The NIK collision must be refused.');
+        } catch (ValidationException $e) {
+            expect(array_keys($e->errors()))->toBe(['ktp_number'])
+                ->and($e->errors()['ktp_number'][0])->toBe('Nomor KTP sudah terdaftar pada pasien lain.');
+        }
+    });
+
+    // The race the form cannot see: another patient takes the NIK between the
+    // request's unique rule and the UPDATE.
+    Patient::updating(function (Patient $updating) use ($holder): void {
+        if ($updating->ktp_number === FNCF_NIK) {
+            DB::table('mst_patients')->where('id', $holder->id)->update(['ktp_number' => FNCF_NIK]);
+        }
+    });
+
+    $logged .= fncfLogLines(function () use ($patient): void {
+        $this->actingAs(fncfMasterRegistrar())
+            ->put(route('settings.patients.update', $patient), [
+                'clinic_id' => $this->clinic->id,
+                'doctor_id' => $this->doctor->id,
+                'name' => 'Pasien Edit NIK Baru',
+                'ktp_number' => FNCF_NIK,
+                'is_active' => 1,
+            ])
+            ->assertStatus(302)
+            ->assertSessionHasErrors('ktp_number');
+    });
+
+    // Nothing changed (the race's own write rolls back with the refused edit here).
+    expect($patient->fresh()->only(['name', 'ktp_number']))->toBe(['name' => 'Pasien Edit NIK', 'ktp_number' => null])
+        ->and($logged)->not->toContain(FNCF_NIK_HEAD);
+
+    // Any other unique violation on an edit is refused without a value.
+    app()->instance(PatientRepositoryInterface::class, new class extends PatientRepository
+    {
+        public function __construct() {}
+
+        public function update(Patient $patient, array $data): Patient
+        {
+            $pdo = new PDOException('duplicate key');
+            $pdo->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "mst_patients_other_unique"'
+                ."\nDETAIL:  Key (phone)=(0819 9988 7766) already exists."];
+
+            throw new UniqueConstraintViolationException('pgsql', 'update mst_patients set phone = ?', ['0819 9988 7766'], $pdo);
+        }
+    });
+
+    try {
+        app(PatientService::class)->update($patient->fresh(), ['phone' => '0819 9988 7766']);
+
+        $this->fail('The violation must be refused.');
+    } catch (RuntimeException $e) {
+        expect(get_class($e))->toBe(RuntimeException::class)
+            ->and($e->getPrevious())->toBeNull()
+            ->and($e->getMessage())->toContain('mst_patients_other_unique')
+            ->toContain('SQLSTATE 23505')
+            ->not->toContain('9988');
+    }
+});
+
+it('CF-41 keeps every configured reason code within its database column, so a misconfigured code fails CI rather than every registration', function (): void {
+    $widths = [
+        'patient.no_phone_reasons' => ['mst_patients', 'no_phone_reason_code'],
+        'patient.paper_card_reasons' => ['trx_patient_rm_paper_card_registrations', 'reason_code'],
+    ];
+
+    foreach ($widths as $key => [$table, $column]) {
+        $reasons = config($key);
+
+        expect($reasons)->toBeArray()->not->toBeEmpty();
+
+        // The column's own width where the database enforces one (CI: PostgreSQL), else the migrations' 40.
+        $width = DB::connection()->getDriverName() === 'pgsql'
+            ? (int) DB::table('information_schema.columns')
+                ->where('table_schema', DB::raw('current_schema()'))
+                ->where('table_name', $table)
+                ->where('column_name', $column)
+                ->value('character_maximum_length')
+            : 40;
+
+        expect($width)->toBe(40, "{$table}.{$column}");
+
+        foreach (array_keys($reasons) as $code) {
+            expect($code)->toBeString()
+                ->and(mb_strlen((string) $code))->toBeGreaterThan(0)->toBeLessThanOrEqual($width, "{$key}: {$code}");
+        }
+    }
 });

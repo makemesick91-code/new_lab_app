@@ -414,11 +414,15 @@ Owner decisions (written, 2026-11-17, after the PR-4 review; CG-22):
      general export (CF-28..CF-31).
    - **Database errors are value-free (RM PR-4b, re-review M1).** A driver error's message carries the SQL with its
      bindings — the note, the NIK, every patient value — and Laravel's reporter logs an uncaught exception (rule 222
-     §2 redacts only caught ones). So: `PatientRepository::create()` replaces any failure but a unique violation, and
-     `update()` any failure, with a `RuntimeException` holding only the validated five-character SQLSTATE and no
-     previous exception ("The patient could not be stored|updated (SQLSTATE …)"); `PatientService` refuses a unique
-     violation it does not interpret (not Nomor RM, not KTP) the same way, with the constraint name only (AN-24,
-     PC-18). And text PostgreSQL refuses — invalid UTF-8, the NUL byte (SQLSTATE 22021) — is a 422 on every text field
+     §2 redacts only caught ones). So: `PatientRepository::create()` and `update()` replace any failure but a unique
+     violation with a `RuntimeException` holding only the validated five-character SQLSTATE and no previous exception
+     ("The patient could not be stored|updated (SQLSTATE …)"); `PatientService` answers a `ktp_number` collision with
+     the same 422 on registration and on an edit (an edit racing another patient for the NIK after the form's unique
+     rule, or a caller without the form — re-review L1, CF-40), and refuses a unique violation it does not interpret
+     (not Nomor RM, not KTP) the same way, with the constraint name only (AN-24, PC-18, CF-40). The exception
+     arguments of these helpers are `#[\SensitiveParameter]` too. Every configured reason code fits its 40-character
+     column (`patient.no_phone_reasons`, `patient.paper_card_reasons`; CF-41), so a misconfigured code fails CI rather
+     than every registration. And text PostgreSQL refuses — invalid UTF-8, the NUL byte (SQLSTATE 22021) — is a 422 on every text field
      either registration form writes (`PatientCoreFields::TEXT_PATTERN`: name, e-mail, phone, WhatsApp, address,
      occupation, duplicate-override reason, and on the visit form the chief complaint and service note; place of
      birth, the note and NIK already had their own patterns), and on every text field an EDIT writes
@@ -481,9 +485,9 @@ Owner decisions (written, 2026-11-17, after the PR-4 review; CG-22):
 7. **Release.** The additive migration runs with the deploy's `php artisan migrate --force`; then `PermissionSeeder`,
    `RoleSeeder`, `permission:cache-reset` as the runtime user. Rollback is a code revert; the columns stay (never
    dropped on production). PR-4 may ship after the PR-2/PR-3/PR-3b release or with it.
-8. **Tests.** `tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php` (CF-01..CF-39; CF-24..CF-27 the
+8. **Tests.** `tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php` (CF-01..CF-41; CF-24..CF-27 the
    paper-card exemption, CF-28..CF-32 the restricted note, CF-33..CF-36 and CF-39 value-free database errors and
-   invalid UTF-8,
+   invalid UTF-8, CF-40 the edit's NIK collision, CF-41 the reason-code widths,
    CF-37 the open-exception list, CF-38 the aligned read audit; RM PR-4b also revised AN-24 and PC-18), token
    `FrontOffice`, declared in `critical_gate_mandatory_suites`. Other suites register patients through `newPatientCoreFields()`
    (tests/Pest.php).
