@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\RmeAmendment\Repositories;
 
+use App\Models\User;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -14,6 +15,7 @@ use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Spatie\Permission\Models\Permission;
 
 class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
 {
@@ -95,6 +97,40 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
             RmeRecordVersion::SUBJECT_ODONTOGRAM => Odontogram::query()->find($subjectId),
             default => null,
         };
+    }
+
+    public function applySheetDiagnoses(MedicalRecord $sheet, array $add, array $remove, int $diagnosedBy, int $createdBy): void
+    {
+        if ($remove !== []) {
+            MedicalRecordDiagnosis::query()
+                ->where('medical_record_id', (int) $sheet->getKey())
+                ->whereKey($remove)
+                ->get()
+                ->each(fn (MedicalRecordDiagnosis $diagnosis) => $diagnosis->delete());
+        }
+
+        foreach ($add as $row) {
+            MedicalRecordDiagnosis::create([
+                'medical_record_id' => (int) $sheet->getKey(),
+                'clinic_visit_id' => (int) $sheet->clinic_visit_id,
+                'branch_id' => (int) $sheet->branch_id,
+                'clinical_diagnosis_id' => (int) $row['clinical_diagnosis_id'],
+                'diagnosis_role' => $row['diagnosis_role'],
+                'diagnosed_by' => $diagnosedBy,
+                'diagnosed_at' => now(),
+                'notes' => $row['notes'],
+                'created_by' => $createdBy,
+            ]);
+        }
+    }
+
+    public function approverCandidates(string $permission): Collection
+    {
+        if (! Permission::query()->where('name', $permission)->exists()) {
+            return collect();
+        }
+
+        return User::permission($permission)->orderBy('id')->get();
     }
 
     public function doctorUserId(?int $doctorId): ?int

@@ -3,6 +3,7 @@
 namespace App\Modules\Odontogram\Services;
 
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 
 /**
  * Sprint 63.1 — Structured Odontogram Print Template Conversion.
@@ -17,9 +18,16 @@ use App\Modules\Odontogram\Models\Odontogram;
  *  - DMF-T is delegated to Odontogram::dmftCounts() (single source of truth).
  *  - Unknown statuses degrade to the default cell and never inflate DMF-T.
  *  - No KTP/NIK is ever read or emitted here.
+ *  - Rule 240 §7 (memo M3.3 PR5): `amendment_count` is the number of applied
+ *    amendments of a finalized chart ("Diamandemen n×" on the print), counted
+ *    from its versions; 0 for a draft or an unsaved chart (no query).
  */
 class OdontogramPrintFormatter
 {
+    public function __construct(
+        private readonly RmeRecordVersionService $versions,
+    ) {}
+
     /**
      * Optional first-page row budget. The continuation page split is normally
      * handled by CSS (repeating <thead> + page-break-inside: avoid), so this is
@@ -95,7 +103,8 @@ class OdontogramPrintFormatter
      *   legend: array<int, array{css:string, label:string}>,
      *   table_rows: array<int, array{gigi:string, diagnosa:string, perawatan:string, dokter:string}>,
      *   has_rows: bool,
-     *   first_page_row_budget: int
+     *   first_page_row_budget: int,
+     *   amendment_count: int
      * }
      */
     public function format(Odontogram $odontogram): array
@@ -114,6 +123,9 @@ class OdontogramPrintFormatter
             'table_rows' => $tableRows,
             'has_rows' => count($tableRows) > 0,
             'first_page_row_budget' => self::FIRST_PAGE_ROW_BUDGET,
+            'amendment_count' => $odontogram->exists && $odontogram->isFinalized()
+                ? $this->versions->amendmentCount($odontogram)
+                : 0,
         ];
     }
 

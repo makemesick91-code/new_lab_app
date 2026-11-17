@@ -43,6 +43,10 @@
         @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL && $medicalRecord->finalized_at)
             <p class="meta-line">Difinalisasi pada {{ $medicalRecord->finalized_at->format('d/m/Y H:i') }}</p>
         @endif
+        {{-- Rule 240 §7 (memo M3.3 PR5) — a sheet corrected by applied amendments says so. --}}
+        @if (($amendmentCount ?? 0) > 0)
+            <p class="meta-line" data-amendment-count="{{ $amendmentCount }}">Diamandemen {{ $amendmentCount }}×</p>
+        @endif
 
         <div class="handwriting-preview">
             <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>

@@ -22,7 +22,10 @@ use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
+use App\Modules\RmeAmendment\Notifications\RmeAmendmentNotification;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\AccessControl\ActiveAccountResolver;
+use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -30,14 +33,17 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the supervised
  * amendment of a final sheet or of a finalized odontogram: request, cancel,
- * reject, and the reads behind the supervisor queue, the detail page and the
- * record page's "Amandemen" block. Approve-and-apply is M3.3 PR5.
+ * reject, approve-and-apply (§7, M3.3 PR5), and the reads behind the supervisor
+ * queue, the detail page, the record page's "Amandemen" block and the version
+ * history pages. Approvers are notified of a request and the requester of a
+ * decision, after commit, ids only.
  *
  * Who (owner decisions of 2026-11-17, plan defaults 1, 2 and 6):
  * - Requester: an account holding `request_rme_amendments` that is the doctor of
@@ -73,6 +79,8 @@ final class RmeAmendmentService
     public const AUDIT_CANCELLED = 'RME_AMENDMENT_CANCELLED';
 
     public const AUDIT_REJECTED = 'RME_AMENDMENT_REJECTED';
+
+    public const AUDIT_APPLIED = 'RME_AMENDMENT_APPLIED';
 
     /** The sheet's own text an amendment may change (rule 240 §1.1). */
     public const SHEET_FIELDS = [
@@ -133,6 +141,12 @@ final class RmeAmendmentService
 
     public const MESSAGE_CONDITIONS = 'Kondisi gigi harus berupa daftar kondisi yang dikenal, tanpa kosong dan tanpa duplikat.';
 
+    public const MESSAGE_STALE_BASE = 'Rekam medis sudah memiliki versi yang lebih baru daripada versi dasar amandemen ini. Pengaju perlu mengajukan amandemen baru.';
+
+    public const MESSAGE_PROPOSAL_CHANGED = 'Usulan amandemen tidak lagi sesuai dengan rekam medis saat ini. Pengaju perlu mengajukan amandemen baru.';
+
+    public const MESSAGE_DECISION_NOTE = 'Catatan persetujuan maksimal 1000 karakter.';
+
     /** The keys of a diagnosis row a proposal may add. */
     private const DIAGNOSIS_ROW_KEYS = ['clinical_diagnosis_id', 'diagnosis_role', 'notes'];
 
@@ -157,6 +171,7 @@ final class RmeAmendmentService
         private readonly ActiveEncounterResolver $encounters,
         private readonly AuditLogService $auditLog,
         private readonly DiagnosisRolloutService $diagnosisRollout,
+        private readonly ActiveAccountResolver $accounts,
     ) {}
 
     // ─── Writes ─────────────────────────────────────────────────────────────
@@ -228,6 +243,13 @@ final class RmeAmendmentService
                 'status' => RmeAmendment::STATUS_PENDING,
                 'reason_length' => mb_strlen($reason),
             ], $requester);
+
+            $this->notifyAfterCommit(
+                fn (): iterable => $this->approversFor($amendment, $locked),
+                'Permintaan amandemen RME',
+                'Permintaan amandemen #'.$amendment->getKey().' menunggu keputusan Anda.',
+                $amendment,
+            );
 
             return $amendment;
         });
@@ -304,6 +326,115 @@ final class RmeAmendmentService
                 'requested_by' => (int) $locked->requested_by,
                 'decision_reason_length' => mb_strlen($decisionReason),
             ], $approver);
+
+            $this->notifyAfterCommit(
+                fn (): iterable => $this->requesterOf($locked),
+                'Amandemen RME ditolak',
+                'Permintaan amandemen #'.$locked->getKey().' ditolak.',
+                $locked,
+            );
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Approve AND apply, in one transaction, so the checker approves exactly
+     * what is applied (rule 240 §7). Under visit → subject → amendment locks,
+     * re-decided on the locked rows (binding Super Admin): the approve
+     * permission, the scope (otherwise "not found"), the amendment pending, not
+     * the requester, the doctor of record or the finalizer; the subject still
+     * final; its latest version still the base of the request (otherwise the
+     * requester files again); the stored proposal re-validated against the locked
+     * record under today's rules and unchanged by it. Then the change is written
+     * to the record — which stays final and locked: only this path writes — the
+     * next version is chained to the base, and the amendment becomes `applied`.
+     */
+    public function approve(RmeAmendment $amendment, User $approver, ?string $decisionNote = null): RmeAmendment
+    {
+        $note = $this->text($decisionNote);
+        if ($note !== null && mb_strlen(trim($note)) > RmeAmendment::REASON_MAX) {
+            throw $this->refusal('decision_reason', self::MESSAGE_DECISION_NOTE);
+        }
+        $note = $note !== null ? trim($note) : null;
+
+        return DB::transaction(function () use ($amendment, $approver, $note): RmeAmendment {
+            if (! $approver->can(self::PERMISSION_APPROVE)) {
+                throw $this->refusal('amendment', self::MESSAGE_NO_APPROVE_PERMISSION);
+            }
+
+            [$locked, $subject] = $this->lockForDecision($amendment);
+
+            if (! $this->inApproverScope($approver, $locked, $subject)) {
+                throw (new ModelNotFoundException)->setModel(RmeAmendment::class, [(int) $locked->getKey()]);
+            }
+
+            $refusal = $this->decisionRefusal($locked, $subject, $approver);
+            if ($refusal !== null) {
+                throw $this->refusal('amendment', $refusal);
+            }
+
+            if (! $this->isFinal($subject)) {
+                throw $this->refusal('amendment', self::MESSAGE_NOT_FINAL);
+            }
+
+            [$type, $id] = $this->subjectKey($subject);
+            $latest = $this->versions->latestFor($type, $id);
+            if ($latest === null || (int) $latest->getKey() !== (int) $locked->base_version_id) {
+                throw $this->refusal('amendment', self::MESSAGE_STALE_BASE);
+            }
+
+            $content = $this->revalidated($locked, $subject);
+
+            if ($subject instanceof Odontogram) {
+                $subject = $this->odontograms->updatePlaceholder($subject, [
+                    'summary_notes' => $content['summary_notes'],
+                    'additional_conditions' => $content['additional_conditions'],
+                    'tooth_map_payload' => $content['tooth_map_payload'],
+                    'updated_by' => (int) $approver->getKey(),
+                ]);
+            } else {
+                if (($content['fields'] ?? []) !== []) {
+                    $subject = $this->medicalRecords->update($subject, $content['fields']);
+                }
+
+                $diagnoses = $content['diagnoses'] ?? [];
+                if ($diagnoses !== []) {
+                    // Diagnosed by the requester (the clinician who proposed them);
+                    // created by the approver whose decision wrote them.
+                    $this->amendments->applySheetDiagnoses($subject, $diagnoses['add'] ?? [], $diagnoses['remove'] ?? [], (int) $locked->requested_by, (int) $approver->getKey());
+                }
+            }
+
+            $version = $this->versionService->recordAmendment($subject, $latest, (int) $approver->getKey(), $this->liveEncounterId($subject));
+
+            $locked = $this->amendments->transition($locked, [
+                'status' => RmeAmendment::STATUS_APPLIED,
+                'decided_by' => (int) $approver->getKey(),
+                'decided_at' => now(),
+                'decision_reason' => $note,
+                'applied_version_id' => (int) $version->getKey(),
+                'applied_version' => (int) $version->version,
+            ]);
+
+            $this->auditLog->log(self::AUDIT_ENTITY, (int) $locked->getKey(), self::AUDIT_APPLIED, ['status' => RmeAmendment::STATUS_PENDING], [
+                'subject_type' => $locked->subject_type,
+                'subject_id' => (int) $locked->subject_id,
+                'branch_id' => (int) $locked->branch_id,
+                'status' => RmeAmendment::STATUS_APPLIED,
+                'requested_by' => (int) $locked->requested_by,
+                'base_version' => (int) $locked->base_version,
+                'applied_version' => (int) $version->version,
+                'applied_version_id' => (int) $version->getKey(),
+                'decision_reason_length' => $note !== null ? mb_strlen($note) : 0,
+            ], $approver);
+
+            $this->notifyAfterCommit(
+                fn (): iterable => $this->requesterOf($locked),
+                'Amandemen RME diterapkan',
+                'Permintaan amandemen #'.$locked->getKey().' disetujui dan diterapkan sebagai versi '.$version->version.'.',
+                $locked,
+            );
 
             return $locked;
         });
@@ -393,14 +524,25 @@ final class RmeAmendmentService
         return ($isRequester || $isApprover) && Gate::forUser($user)->allows('view', $subject);
     }
 
-    /** @return array{can_cancel: bool, can_reject: bool} */
+    /**
+     * What this account may do with the amendment now — the controls the detail
+     * page renders (rule 135): approve also needs the base to be the latest version.
+     *
+     * @return array{can_cancel: bool, can_reject: bool, can_approve: bool, stale: bool}
+     */
     public function actionsFor(RmeAmendment $amendment, User $user, MedicalRecord|Odontogram $subject): array
     {
+        $canDecide = $user->can(self::PERMISSION_APPROVE)
+            && $this->inApproverScope($user, $amendment, $subject)
+            && $this->decisionRefusal($amendment, $subject, $user) === null;
+        $latest = $this->versions->latestFor(...$this->subjectKey($subject));
+        $stale = $amendment->isPending() && (int) ($latest?->getKey() ?? 0) !== (int) $amendment->base_version_id;
+
         return [
             'can_cancel' => $amendment->isPending() && (int) $amendment->requested_by === (int) $user->getKey(),
-            'can_reject' => $user->can(self::PERMISSION_APPROVE)
-                && $this->inApproverScope($user, $amendment, $subject)
-                && $this->decisionRefusal($amendment, $subject, $user) === null,
+            'can_reject' => $canDecide,
+            'can_approve' => $canDecide && ! $stale,
+            'stale' => $stale,
         ];
     }
 
@@ -433,7 +575,7 @@ final class RmeAmendmentService
      * request offer mirrors the service (rule 135): shown only when request()
      * would accept this account now.
      *
-     * @return array{subject_type: string, subject_id: int, is_chart: bool, pending: ?RmeAmendment, history: Collection<int, RmeAmendment>, can_request: bool, viewable: list<int>}|null
+     * @return array{subject_type: string, subject_id: int, is_chart: bool, amendment_count: int, pending: ?RmeAmendment, history: Collection<int, RmeAmendment>, can_request: bool, viewable: list<int>}|null
      */
     public function panelFor(MedicalRecord|Odontogram $subject, ?User $user): ?array
     {
@@ -450,6 +592,8 @@ final class RmeAmendmentService
             'subject_type' => $type,
             'subject_id' => $id,
             'is_chart' => $subject instanceof Odontogram,
+            // "Diamandemen n×": the applied amendments, counted from the versions.
+            'amendment_count' => $this->versionService->amendmentCount($subject),
             'pending' => $pending,
             // The closed ones, newest first (the pending one is shown on its own).
             'history' => $recent->reject(fn (RmeAmendment $amendment): bool => $amendment->isPending())->values(),
@@ -511,7 +655,7 @@ final class RmeAmendmentService
             'amendment' => $amendment,
             'subject' => $subject,
             'latest_version' => $latest?->version,
-            'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false],
+            'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false, 'can_approve' => false, 'stale' => false],
         ];
 
         if ($amendment->subject_type === RmeRecordVersion::SUBJECT_ODONTOGRAM) {
@@ -540,7 +684,172 @@ final class RmeAmendmentService
         ];
     }
 
+    /**
+     * The version history of a record (rule 240 §7): read like the record
+     * itself — 404 for an account that may not see it.
+     *
+     * @return array<string, mixed>
+     */
+    public function versionHistoryFor(User $user, MedicalRecord|Odontogram $subject): array
+    {
+        $this->assertVisibleSubject($subject, $user);
+
+        return [
+            'subject' => $subject,
+            'isChart' => $subject instanceof Odontogram,
+            'versions' => $this->versionService->versionsFor($user, $subject),
+            'amendmentCount' => $this->versionService->amendmentCount($subject),
+            'chainVerified' => $this->versionService->verifyChain($subject),
+        ];
+    }
+
+    /**
+     * One version beside the one before it. A sheet: its fields, diagnoses,
+     * emergency overrides and locked pages — a page only as a link to the
+     * existing policy-gated, no-store page route, never its object key. A chart:
+     * the PR4 tooth-by-tooth diff against the previous version.
+     *
+     * @return array<string, mixed>
+     */
+    public function versionDetailFor(User $user, MedicalRecord|Odontogram $subject, int $number): array
+    {
+        $this->assertVisibleSubject($subject, $user);
+        $version = $this->versionService->version($user, $subject, $number);
+
+        if ($version === null) {
+            throw (new ModelNotFoundException)->setModel(RmeRecordVersion::class, [$number]);
+        }
+
+        $previous = $number > 1 ? $this->versionService->version($user, $subject, $number - 1) : null;
+        $snapshot = $version->snapshot ?? [];
+        $before = $previous?->snapshot ?? [];
+        $detail = ['subject' => $subject, 'isChart' => $subject instanceof Odontogram, 'version' => $version, 'previous' => $previous];
+
+        if ($subject instanceof Odontogram) {
+            return $detail + ['chart_diff' => $this->chartDiff($before, $snapshot)];
+        }
+
+        return $detail + [
+            'fields' => collect(self::SHEET_FIELDS)->map(fn (string $label, string $field): array => [
+                'label' => $label,
+                'value' => $snapshot['fields'][$field] ?? null,
+                'changed' => $previous !== null && ($snapshot['fields'][$field] ?? null) !== ($before['fields'][$field] ?? null),
+            ])->values()->all(),
+            'diagnoses' => array_map(fn (array $row): string => $this->snapshotDiagnosisLabel($row), $snapshot['diagnoses'] ?? []),
+            'overrides' => array_map(fn (array $row): array => [
+                'reason' => $row['reason'] ?? null,
+                'expires_at' => $row['expires_at'] ?? null,
+            ], $snapshot['diagnosis_overrides'] ?? []),
+            'pages' => array_map(fn (array $page): array => [
+                'medical_record_id' => (int) ($page['medical_record_id'] ?? 0),
+                'page_number' => (int) ($page['page_number'] ?? 0),
+                // Page 1 lives in the handwriting table, pages 2+ in the page table.
+                'url' => (int) ($page['page_number'] ?? 0) === 1
+                    ? route('rme.handwritings.image', (int) $page['row_id'])
+                    : route('rme.handwriting-pages.image', (int) $page['row_id']),
+                'sha256' => isset($page['sha256']) ? substr((string) $page['sha256'], 0, 12) : null,
+            ], $snapshot['pages'] ?? []),
+        ];
+    }
+
     // ─── Internals ──────────────────────────────────────────────────────────
+
+    /**
+     * The stored proposal, re-validated against the locked record under today's
+     * rules; refused unless it still says exactly what was requested.
+     *
+     * @return array<string, mixed>
+     */
+    private function revalidated(RmeAmendment $amendment, MedicalRecord|Odontogram $subject): array
+    {
+        $stored = (array) $amendment->proposed_content;
+
+        try {
+            $content = $subject instanceof Odontogram
+                ? $this->chartProposal($subject, $stored)
+                : $this->sheetProposal($subject, $stored);
+        } catch (ValidationException $e) {
+            throw $this->refusal('amendment', collect($e->errors())->flatten()->implode(' '));
+        }
+
+        if ($content !== $stored) {
+            throw $this->refusal('amendment', self::MESSAGE_PROPOSAL_CHANGED);
+        }
+
+        return $content;
+    }
+
+    /**
+     * After commit, never inside the transaction, and never into the caller: the
+     * amendment already stands, a failed notification changes nothing.
+     *
+     * @param  Closure(): iterable<User>  $recipients
+     */
+    private function notifyAfterCommit(Closure $recipients, string $title, string $message, RmeAmendment $amendment): void
+    {
+        $amendmentId = (int) $amendment->getKey();
+
+        DB::afterCommit(function () use ($recipients, $title, $message, $amendmentId): void {
+            try {
+                $url = route('rme.amendments.show', $amendmentId, false);
+
+                foreach ($recipients() as $recipient) {
+                    try {
+                        $recipient->notify(new RmeAmendmentNotification($title, $message, $url, $amendmentId));
+                    } catch (\Throwable $e) {
+                        Log::warning('RME amendment notification failed; the amendment stands.', [
+                            'rme_amendment_id' => $amendmentId,
+                            'recipient_id' => (int) $recipient->getKey(),
+                            'error' => $e::class,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('RME amendment notification routing failed; the amendment stands.', [
+                    'rme_amendment_id' => $amendmentId,
+                    'error' => $e::class,
+                ]);
+            }
+        });
+    }
+
+    /**
+     * The usable accounts that could decide this amendment now: the approve
+     * permission, the scope, and none of the separation-of-duties refusals.
+     *
+     * @return list<User>
+     */
+    private function approversFor(RmeAmendment $amendment, MedicalRecord|Odontogram $subject): array
+    {
+        $candidates = $this->amendments->approverCandidates(self::PERMISSION_APPROVE);
+        if ($candidates->isEmpty()) {
+            return [];
+        }
+
+        // Another account's working-branch scope may expire its stale online
+        // context as a side effect; read it in a transaction that always rolls
+        // back, as RmeBillingDisputeEscalationService does.
+        DB::beginTransaction();
+
+        try {
+            return $candidates
+                ->filter(fn (User $user): bool => $this->accounts->isUsable($user)
+                    && $this->inApproverScope($user, $amendment, $subject)
+                    && $this->decisionRefusal($amendment, $subject, $user) === null)
+                ->values()
+                ->all();
+        } finally {
+            DB::rollBack();
+        }
+    }
+
+    /** @return list<User> */
+    private function requesterOf(RmeAmendment $amendment): array
+    {
+        $requester = $amendment->requester()->first();
+
+        return $requester instanceof User && $this->accounts->isUsable($requester) ? [$requester] : [];
+    }
 
     private function assertRequester(MedicalRecord|Odontogram $subject, User $user): void
     {

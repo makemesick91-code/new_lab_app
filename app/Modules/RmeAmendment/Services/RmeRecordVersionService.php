@@ -24,15 +24,19 @@ use LogicException;
  * - Version 1 is written by finalize (`final`, recordFinal()) inside the finalize
  *   transaction, after the visit and subject locks. A record finalized before
  *   rule 240 gets a `baseline` version 1 the first time an amendment needs one
- *   (ensureBaseline(), called by M3.3 PR5 under the same locks). Both are
- *   idempotent: a subject that already has version 1 gets it back.
+ *   (ensureBaseline(), under the amendment's locks). Both are idempotent: a
+ *   subject that already has version 1 gets it back. Version n+1 (`amendment`)
+ *   is written by an applied amendment (recordAmendment(), M3.3 PR5), chained to
+ *   the latest version. Every version is written by write(): the stored text and
+ *   the hash come from the same canonicalJson() result.
  * - A snapshot is the clinical record as it stands: for a sheet, its SOAP fields
  *   and notes, its structured diagnoses, its emergency diagnosis overrides and
  *   the LOCKED pages of the patient's handwriting book (object key and SHA-256,
  *   never bytes); for a chart, its payload. Nothing is logged and no audit row
  *   carries a snapshot.
  * - Each version's hash is SHA-256 over a canonical JSON encoding of its subject,
- *   number, kind, previous hash and snapshot (object keys sorted recursively), so
+ *   number, kind, previous hash, snapshot schema version and snapshot (object keys
+ *   sorted recursively), so
  *   the versions form a chain (verifyChain()). The snapshot is stored as that
  *   canonical text, verbatim (a `json` column), and the hash is always computed
  *   over the stored text itself, never over a re-encoding of its decoded value:
@@ -122,7 +126,7 @@ final class RmeRecordVersionService
         foreach ($this->versions->listFor($type, $id) as $version) {
             if ($version->version !== $expected
                 || $version->previous_hash !== $previous
-                || ! hash_equals($this->hashFor($type, $id, $version->version, $version->kind, $version->previous_hash, $version->snapshotJson()), $version->hash)) {
+                || ! hash_equals($this->hashFor($type, $id, $version->version, $version->kind, $version->previous_hash, $version->snapshotJson(), $version->snapshot_schema_version), $version->hash)) {
                 return false;
             }
 
@@ -135,13 +139,14 @@ final class RmeRecordVersionService
 
     /**
      * SHA-256 of the canonical JSON of the version: its subject, number, kind,
-     * previous hash and snapshot. `$snapshot` is either the snapshot's stored text
-     * (hashed byte for byte) or an array (hashed as its canonical text, which is
-     * what a version stores).
+     * previous hash, snapshot schema version (M3.3 PR5: a snapshot read under the
+     * wrong schema is detected) and snapshot. `$snapshot` is either the
+     * snapshot's stored text (hashed byte for byte) or an array (hashed as its
+     * canonical text, which is what a version stores).
      *
      * @param  array<string, mixed>|string  $snapshot
      */
-    public function hashFor(string $subjectType, int $subjectId, int $version, string $kind, ?string $previousHash, array|string $snapshot): string
+    public function hashFor(string $subjectType, int $subjectId, int $version, string $kind, ?string $previousHash, array|string $snapshot, int $snapshotSchemaVersion): string
     {
         $snapshotJson = is_string($snapshot) ? $snapshot : self::canonicalJson($snapshot);
         $encode = static fn (mixed $value): string => json_encode($value, self::JSON_FLAGS);
@@ -152,6 +157,7 @@ final class RmeRecordVersionService
         return hash('sha256', '{"kind":'.$encode($kind)
             .',"previous_hash":'.$encode($previousHash)
             .',"snapshot":'.$snapshotJson
+            .',"snapshot_schema_version":'.$encode($snapshotSchemaVersion)
             .',"subject_id":'.$encode($subjectId)
             .',"subject_type":'.$encode($subjectType)
             .',"version":'.$encode($version)
@@ -235,6 +241,65 @@ final class RmeRecordVersionService
 
     private function firstVersion(MedicalRecord|Odontogram $subject, string $kind, ?int $actorId, ?int $liveEncounterId): RmeRecordVersion
     {
+        $this->assertWritable($subject);
+
+        [$type, $id] = $this->subjectKey($subject);
+        $existing = $this->versions->findVersion($type, $id, 1);
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        return $this->write($subject, 1, $kind, null, $actorId, $liveEncounterId);
+    }
+
+    /**
+     * Version n+1 (`amendment`) of a subject an approved amendment has just
+     * changed, chained to `$latest`. Must run inside the amendment transaction,
+     * after the subject's lock, with `$latest` the subject's latest version read
+     * under that lock (anything else is refused: the base of an approval must
+     * still be current, rule 240 §7).
+     */
+    public function recordAmendment(MedicalRecord|Odontogram $subject, RmeRecordVersion $latest, ?int $actorId, ?int $liveEncounterId = null): RmeRecordVersion
+    {
+        $this->assertWritable($subject);
+        [$type, $id] = $this->subjectKey($subject);
+        $current = $this->versions->latestFor($type, $id);
+
+        if ($current === null || (int) $current->getKey() !== (int) $latest->getKey()) {
+            throw new LogicException('An amendment version is chained only to the latest version of the record.');
+        }
+
+        return $this->write($subject, (int) $latest->version + 1, RmeRecordVersion::KIND_AMENDMENT, (string) $latest->hash, $actorId, $liveEncounterId);
+    }
+
+    /**
+     * The one writer of a version: the canonical text is what is stored,
+     * verbatim, and the hash is computed over that same text (review MEDIUM-C);
+     * nothing re-encodes it on the way in or out.
+     */
+    private function write(MedicalRecord|Odontogram $subject, int $number, string $kind, ?string $previousHash, ?int $actorId, ?int $liveEncounterId): RmeRecordVersion
+    {
+        [$type, $id] = $this->subjectKey($subject);
+        $snapshot = self::canonicalJson($this->snapshotOf($subject, $liveEncounterId));
+
+        return $this->versions->create([
+            'subject_type' => $type,
+            'subject_id' => $id,
+            'version' => $number,
+            'kind' => $kind,
+            'snapshot_schema_version' => self::SNAPSHOT_SCHEMA_VERSION,
+            'snapshot' => $snapshot,
+            'previous_hash' => $previousHash,
+            'hash' => $this->hashFor($type, $id, $number, $kind, $previousHash, $snapshot, self::SNAPSHOT_SCHEMA_VERSION),
+            'created_by' => $actorId,
+            'created_at' => now(),
+        ]);
+    }
+
+    /** Inside the caller's transaction, and only for a final sheet or a finalized chart. */
+    private function assertWritable(MedicalRecord|Odontogram $subject): void
+    {
         // Under the caller's transaction and subject lock, never on its own: a
         // version must commit or roll back with the act that makes it true.
         if (DB::transactionLevel() < 1) {
@@ -248,30 +313,6 @@ final class RmeRecordVersionService
         if (! $final) {
             throw new LogicException('Only a final sheet or a finalized odontogram has versions.');
         }
-
-        [$type, $id] = $this->subjectKey($subject);
-        $existing = $this->versions->findVersion($type, $id, 1);
-
-        if ($existing !== null) {
-            return $existing;
-        }
-
-        // Review MEDIUM-C — the canonical text is what is stored, verbatim, and
-        // what the hash covers; nothing re-encodes it on the way in or out.
-        $snapshot = self::canonicalJson($this->snapshotOf($subject, $liveEncounterId));
-
-        return $this->versions->create([
-            'subject_type' => $type,
-            'subject_id' => $id,
-            'version' => 1,
-            'kind' => $kind,
-            'snapshot_schema_version' => self::SNAPSHOT_SCHEMA_VERSION,
-            'snapshot' => $snapshot,
-            'previous_hash' => null,
-            'hash' => $this->hashFor($type, $id, 1, $kind, null, $snapshot),
-            'created_by' => $actorId,
-            'created_at' => now(),
-        ]);
     }
 
     /** @return array{0: string, 1: int} */

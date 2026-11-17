@@ -78,6 +78,15 @@ class RmeAmendmentPolicy
         return $refusal === null ? Response::allow() : Response::deny($refusal);
     }
 
+    /**
+     * Approve and apply (rule 240 §7): the same checker rules as reject; a stale
+     * base is the service's refusal, so the page can say why.
+     */
+    public function approve(User $user, RmeAmendment $amendment): Response
+    {
+        return $this->reject($user, $amendment);
+    }
+
     private function amendments(): RmeAmendmentService
     {
         return app(RmeAmendmentService::class);

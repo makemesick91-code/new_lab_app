@@ -3,6 +3,8 @@
 namespace App\Modules\ClinicVisit\Services;
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Support\Collection;
 
@@ -19,8 +21,12 @@ use Illuminate\Support\Collection;
  */
 class ClinicVisitPrintDataBuilder
 {
+    public function __construct(
+        private readonly RmeRecordVersionService $versions,
+    ) {}
+
     /**
-     * @return array{visit: ClinicVisit, paidInvoice: ?RmeInvoice, payment: mixed, labCaseCandidates: Collection}
+     * @return array{visit: ClinicVisit, paidInvoice: ?RmeInvoice, payment: mixed, labCaseCandidates: Collection, amendmentCount: int}
      */
     public function build(ClinicVisit $clinicVisit): array
     {
@@ -57,6 +63,11 @@ class ClinicVisitPrintDataBuilder
             'paidInvoice' => $paidInvoice,
             'payment' => $payment,
             'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
+            // Rule 240 §7 (memo M3.3 PR5) — "Diamandemen n×" on the printed sheet:
+            // the applied amendments of a final sheet, counted from its versions.
+            'amendmentCount' => $clinicVisit->medicalRecord?->status === MedicalRecord::STATUS_FINAL
+                ? $this->versions->amendmentCount($clinicVisit->medicalRecord)
+                : 0,
         ];
     }
 }

@@ -3,8 +3,8 @@
      decision, and the actions the service would accept from this account
      (`$actions` from RmeAmendmentService::actionsFor()). A chart is shown tooth by
      tooth with every stored field and the changed rows marked
-     (RmeAmendmentService::chartDiff()). Approve-and-apply is M3.3 PR5 and has no
-     control here yet. --}}
+     (RmeAmendmentService::chartDiff()). Approve-and-apply (rule 240 §7) is offered
+     only when the service would accept it now. --}}
 @php
     use App\Modules\ClinicOversight\Support\OversightFormat;
     use App\Modules\RmeAmendment\Models\RmeRecordVersion;
@@ -41,6 +41,12 @@
                 @if ($amendment->decided_at !== null)
                     <div><dt class="text-ink-soft">Diputuskan</dt><dd>{{ OversightFormat::clinicalTime($amendment->decided_at, 'd/m/Y H:i') }} WITA — {{ $amendment->decider?->name }}</dd></div>
                     <div class="md:col-span-2"><dt class="text-ink-soft">Alasan keputusan</dt><dd class="whitespace-pre-line">{{ $amendment->decision_reason }}</dd></div>
+                @endif
+                @if ($amendment->applied_version !== null)
+                    <div>
+                        <dt class="text-ink-soft">Diterapkan sebagai</dt>
+                        <dd><a class="text-brand-700 hover:underline" data-amendment-applied-version href="{{ route($isChart ? 'rme.amendments.versions.chart.show' : 'rme.amendments.versions.sheet.show', [$amendment->subject_id, $amendment->applied_version]) }}">Versi {{ $amendment->applied_version }}</a></dd>
+                    </div>
                 @endif
                 @if ($amendment->cancelled_at !== null)
                     <div><dt class="text-ink-soft">Dibatalkan pengaju</dt><dd>{{ OversightFormat::clinicalTime($amendment->cancelled_at, 'd/m/Y H:i') }} WITA</dd></div>
@@ -142,12 +148,26 @@
 
         @if ($actions['can_reject'])
             <x-ui.card title="Keputusan Supervisor RME">
-                <form method="POST" action="{{ route('rme.amendments.reject', $amendment) }}" class="space-y-3" data-amendment-reject>
-                    @csrf
-                    <x-ui.textarea name="decision_reason" label="Alasan penolakan (10–1000 karakter)" rows="3" required :value="old('decision_reason')" />
-                    @error('amendment')<p class="text-sm text-danger">{{ $message }}</p>@enderror
-                    <x-ui.button type="submit" variant="danger">Tolak Amandemen</x-ui.button>
-                </form>
+                @error('amendment')<p class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    {{-- Rule 240 §7 — approving IS applying, in one transaction; offered
+                         only when the base is still the latest version. --}}
+                    @if ($actions['can_approve'])
+                        <form method="POST" action="{{ route('rme.amendments.approve', $amendment) }}" class="space-y-3" data-amendment-approve>
+                            @csrf
+                            <p class="text-sm text-ink-soft">Menyetujui menerapkan usulan di atas ke rekam medis sebagai versi baru. Rekam medis tetap final dan terkunci.</p>
+                            <x-ui.textarea name="decision_reason" id="approve_decision_reason" label="Catatan persetujuan (opsional, maks. 1000 karakter)" rows="3" />
+                            <x-ui.button type="submit" variant="primary">Setujui dan Terapkan</x-ui.button>
+                        </form>
+                    @elseif ($actions['stale'])
+                        <p class="text-sm text-warning" data-amendment-stale-notice>Rekam medis sudah memiliki versi yang lebih baru daripada versi dasar amandemen ini; amandemen ini tidak dapat diterapkan. Pengaju perlu mengajukan amandemen baru.</p>
+                    @endif
+                    <form method="POST" action="{{ route('rme.amendments.reject', $amendment) }}" class="space-y-3" data-amendment-reject>
+                        @csrf
+                        <x-ui.textarea name="decision_reason" id="reject_decision_reason" label="Alasan penolakan (10–1000 karakter)" rows="3" required :value="old('decision_reason')" />
+                        <x-ui.button type="submit" variant="danger">Tolak Amandemen</x-ui.button>
+                    </form>
+                </div>
             </x-ui.card>
         @endif
     </div>

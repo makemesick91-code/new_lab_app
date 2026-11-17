@@ -56,6 +56,20 @@ interface RmeAmendmentRepositoryInterface
     /** The amended record itself (a sheet or a chart), or null when it is gone. */
     public function findSubject(string $subjectType, int $subjectId): MedicalRecord|Odontogram|null;
 
+    /**
+     * Rule 240 §7 — apply the diagnosis part of an approved amendment to the
+     * locked sheet: soft-delete the removed rows (this sheet's only), then add the
+     * new ones. Only RmeAmendmentService::approve() calls it, inside its
+     * transaction; the normal diagnosis writes stay refused on a final sheet.
+     *
+     * @param  list<array{clinical_diagnosis_id: int, diagnosis_role: string, notes: ?string}>  $add
+     * @param  list<int>  $remove
+     */
+    public function applySheetDiagnoses(MedicalRecord $sheet, array $add, array $remove, int $diagnosedBy, int $createdBy): void;
+
+    /** @return Collection<int, \App\Models\User> accounts holding the permission (directly or by role), by id */
+    public function approverCandidates(string $permission): Collection;
+
     /** `mst_doctors.user_id` of a doctor, or null. */
     public function doctorUserId(?int $doctorId): ?int;
 

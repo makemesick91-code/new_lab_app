@@ -128,7 +128,7 @@ it('verifies the chain of a chart whose payload holds zero-fraction and negative
         ->and((float) data_get($v1->snapshot['tooth_map_payload'], $path))->toEqual($value)
         // The version reads back with the hash it was written with.
         ->and(app(RmeRecordVersionService::class)->hashFor(
-            $v1->subject_type, $v1->subject_id, $v1->version, $v1->kind, $v1->previous_hash, $v1->snapshotJson(),
+            $v1->subject_type, $v1->subject_id, $v1->version, $v1->kind, $v1->previous_hash, $v1->snapshotJson(), $v1->snapshot_schema_version,
         ))->toBe($v1->hash);
 })->with([
     'a zero-fraction float' => ['{"teeth": {}, "depth_mm": 5.0}', 'depth_mm', 5.0],

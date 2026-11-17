@@ -82,6 +82,11 @@ class RmeAmendmentActionRequest extends FormRequest
             return ['decision_reason' => ['required', ...$bounded]];
         }
 
+        // Approve-and-apply (rule 240 §7): an optional note, bounded like a reason.
+        if ($this->routeIs('rme.amendments.approve')) {
+            return ['decision_reason' => ['nullable', 'string', 'max:'.RmeAmendment::REASON_MAX]];
+        }
+
         return [];
     }
 
@@ -97,7 +102,9 @@ class RmeAmendmentActionRequest extends FormRequest
             'proposed.tooth_map_payload.array' => RmeAmendmentService::MESSAGE_TOOTH_MAP,
             'decision_reason.required' => 'Alasan penolakan wajib diisi.',
             'decision_reason.min' => 'Alasan penolakan minimal '.RmeAmendment::REASON_MIN.' karakter.',
-            'decision_reason.max' => 'Alasan penolakan maksimal '.RmeAmendment::REASON_MAX.' karakter.',
+            'decision_reason.max' => $this->routeIs('rme.amendments.approve')
+                ? RmeAmendmentService::MESSAGE_DECISION_NOTE
+                : 'Alasan penolakan maksimal '.RmeAmendment::REASON_MAX.' karakter.',
         ];
     }
 

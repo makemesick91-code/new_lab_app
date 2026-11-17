@@ -217,7 +217,7 @@ it('detects a broken hash chain', function () {
     $v1 = m33vVersions($sheet)->first();
 
     expect($service->verifyChain($sheet->fresh()))->toBeTrue()
-        ->and($v1->hash)->toBe($service->hashFor($v1->subject_type, $v1->subject_id, $v1->version, $v1->kind, $v1->previous_hash, $v1->snapshot));
+        ->and($v1->hash)->toBe($service->hashFor($v1->subject_type, $v1->subject_id, $v1->version, $v1->kind, $v1->previous_hash, $v1->snapshot, $v1->snapshot_schema_version));
 
     // A forged version 2 whose previous hash is not version 1's hash.
     DB::table('trx_rme_record_versions')->insert([
@@ -266,6 +266,8 @@ it('stores the snapshot as its canonical text and hashes the canonical JSON of t
             'kind' => $v1->kind,
             'previous_hash' => $v1->previous_hash,
             'snapshot' => $v1->snapshot,
+            // M3.3 PR5 — the schema version the snapshot was written under is hashed too.
+            'snapshot_schema_version' => $v1->snapshot_schema_version,
         ]), $flags)));
 });
 
@@ -275,7 +277,7 @@ it('stores the snapshot as its canonical text and hashes the canonical JSON of t
 function m33vInsertVersion(MedicalRecord $sheet, int $version, ?string $previousHash, array $snapshot, ?array $hashedSnapshot = null): string
 {
     $service = app(RmeRecordVersionService::class);
-    $hash = $service->hashFor(RmeRecordVersion::SUBJECT_MEDICAL_RECORD, $sheet->id, $version, RmeRecordVersion::KIND_AMENDMENT, $previousHash, $hashedSnapshot ?? $snapshot);
+    $hash = $service->hashFor(RmeRecordVersion::SUBJECT_MEDICAL_RECORD, $sheet->id, $version, RmeRecordVersion::KIND_AMENDMENT, $previousHash, $hashedSnapshot ?? $snapshot, 1);
 
     DB::table('trx_rme_record_versions')->insert([
         'subject_type' => RmeRecordVersion::SUBJECT_MEDICAL_RECORD,

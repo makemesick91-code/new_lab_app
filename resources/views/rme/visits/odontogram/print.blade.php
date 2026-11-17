@@ -111,6 +111,10 @@
             @if ($odontogram->isFinalized() && $odontogram->finalized_at)
                 ({{ $odontogram->finalized_at->format('d/m/Y H:i') }})
             @endif
+            {{-- Rule 240 §7 (memo M3.3 PR5) — a chart corrected by applied amendments says so. --}}
+            @if (($structured['amendment_count'] ?? 0) > 0)
+                &middot; <span data-amendment-count="{{ $structured['amendment_count'] }}">Diamandemen {{ $structured['amendment_count'] }}×</span>
+            @endif
             &middot; Odontogram #{{ $odontogram->id }} &mdash; Kunjungan {{ $clinicVisit->visit_number ?? '—' }}
         </span>
     </div>

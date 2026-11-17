@@ -21,7 +21,7 @@ use Illuminate\View\View;
  * queue, the detail page, cancel and reject. Thin: route permission →
  * RmeAmendmentPolicy → RmeAmendmentService, which re-decides everything inside
  * its transaction. Every page is `private, no-store` (route middleware).
- * Approve-and-apply is M3.3 PR5.
+ * Approve-and-apply and the version history pages are rule 240 §7 (M3.3 PR5).
  */
 class RmeAmendmentController extends Controller
 {
@@ -94,6 +94,37 @@ class RmeAmendmentController extends Controller
 
         return redirect()->route('rme.amendments.show', $amendment)
             ->with('success', 'Permintaan amandemen ditolak. Rekam medis tetap seperti semula.');
+    }
+
+    /** Approve AND apply (rule 240 §7) — one transaction in the service. */
+    public function approve(RmeAmendmentActionRequest $request, RmeAmendment $amendment): RedirectResponse
+    {
+        $this->authorize('approve', $amendment);
+
+        $applied = $this->amendments->approve($amendment, $request->user(), $request->validated('decision_reason'));
+
+        return redirect()->route('rme.amendments.show', $amendment)
+            ->with('success', 'Amandemen disetujui dan diterapkan sebagai versi '.$applied->applied_version.'. Rekam medis tetap final dan terkunci.');
+    }
+
+    public function sheetVersions(Request $request, MedicalRecord $medicalRecord): View
+    {
+        return view('rme.amendments.versions', $this->amendments->versionHistoryFor($request->user(), $medicalRecord));
+    }
+
+    public function chartVersions(Request $request, Odontogram $odontogram): View
+    {
+        return view('rme.amendments.versions', $this->amendments->versionHistoryFor($request->user(), $odontogram));
+    }
+
+    public function sheetVersion(Request $request, MedicalRecord $medicalRecord, int $version): View
+    {
+        return view('rme.amendments.version', $this->amendments->versionDetailFor($request->user(), $medicalRecord, $version));
+    }
+
+    public function chartVersion(Request $request, Odontogram $odontogram, int $version): View
+    {
+        return view('rme.amendments.version', $this->amendments->versionDetailFor($request->user(), $odontogram, $version));
     }
 
     private function form(Request $request, MedicalRecord|Odontogram $subject): View

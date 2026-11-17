@@ -1573,6 +1573,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');
             Route::post('amendments/{amendment}/reject', [RmeAmendmentController::class, 'reject'])
                 ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.reject');
+            // Rule 240 §7 (M3.3 PR5) — approve AND apply, one transaction.
+            Route::post('amendments/{amendment}/approve', [RmeAmendmentController::class, 'approve'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.approve');
         });
 
         Route::middleware('permission:request_rme_amendments')->group(function () {
@@ -1587,6 +1590,23 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('amendments/{amendment}/cancel', [RmeAmendmentController::class, 'cancel'])
                 ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.cancel');
         });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR5 (rule 240 §7) — the version
+    | history of a final sheet or a finalized chart, read like the record itself:
+    | the clinic-visit read permission here, the record's own `view` policy in
+    | RmeAmendmentService (404 outside its scope), private and no-store.
+    */
+    Route::middleware(['permission:view_clinic_visits|manage_clinic_visits', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('medical-records/{medicalRecord}/versions', [RmeAmendmentController::class, 'sheetVersions'])
+            ->whereNumber('medicalRecord')->name('amendments.versions.sheet');
+        Route::get('medical-records/{medicalRecord}/versions/{version}', [RmeAmendmentController::class, 'sheetVersion'])
+            ->whereNumber(['medicalRecord', 'version'])->name('amendments.versions.sheet.show');
+        Route::get('odontograms/{odontogram}/versions', [RmeAmendmentController::class, 'chartVersions'])
+            ->whereNumber('odontogram')->name('amendments.versions.chart');
+        Route::get('odontograms/{odontogram}/versions/{version}', [RmeAmendmentController::class, 'chartVersion'])
+            ->whereNumber(['odontogram', 'version'])->name('amendments.versions.chart.show');
     });
 
     /*

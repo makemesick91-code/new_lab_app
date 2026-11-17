@@ -14,6 +14,13 @@
 @if ($amendmentPanel !== null)
     <div data-amendment-panel>
         <x-ui.card title="Amandemen" description="Rekam medis final hanya dapat dikoreksi melalui amandemen dengan alasan tertulis yang disetujui Supervisor RME.">
+            {{-- Rule 240 §7 — the marker and the version history of the record. --}}
+            <p class="mb-3 text-sm text-ink-soft">
+                @if ($amendmentPanel['amendment_count'] > 0)
+                    <span class="font-semibold text-navy" data-amendment-count="{{ $amendmentPanel['amendment_count'] }}">Diamandemen {{ $amendmentPanel['amendment_count'] }}×</span> ·
+                @endif
+                <a class="text-brand-700 hover:underline" href="{{ route($amendmentPanel['is_chart'] ? 'rme.amendments.versions.chart' : 'rme.amendments.versions.sheet', $amendmentPanel['subject_id']) }}">Riwayat versi</a>
+            </p>
             @if ($amendmentPending !== null)
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-amendment-status="pending">
                     Permintaan amandemen #{{ $amendmentPending->id }} menunggu persetujuan Supervisor RME
