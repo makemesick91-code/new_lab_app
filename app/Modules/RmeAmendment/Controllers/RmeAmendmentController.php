@@ -13,6 +13,7 @@ use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\View\View;
 
 /**
@@ -21,7 +22,8 @@ use Illuminate\View\View;
  * queue, the detail page, cancel and reject. Thin: route permission →
  * RmeAmendmentPolicy → RmeAmendmentService, which re-decides everything inside
  * its transaction. Every page is `private, no-store` (route middleware).
- * Approve-and-apply and the version history pages are rule 240 §7 (M3.3 PR5).
+ * Approve-and-apply and the version history pages are rule 240 §7 (M3.3 PR5);
+ * the handwriting correction page and its image route are rule 240 §8 (M3.3 PR6).
  */
 class RmeAmendmentController extends Controller
 {
@@ -54,6 +56,26 @@ class RmeAmendmentController extends Controller
         $this->authorize('view', $amendment);
 
         return view('rme.amendments.show', $this->amendments->detailFor($amendment, $request->user()));
+    }
+
+    /**
+     * Rule 240 §8 — the correction page an amendment carries, for its requester
+     * or an approver in scope (404 otherwise), verified against its SHA-256 (404
+     * when absent or tampered). Private, no-store (route middleware), never sniffed.
+     */
+    public function correctionPage(Request $request, RmeAmendment $amendment): Response
+    {
+        $this->authorize('view', $amendment);
+
+        $bytes = $this->amendments->correctionPageImage($amendment, $request->user());
+        abort_if($bytes === null, 404);
+
+        return response($bytes, 200, [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'inline; filename="halaman-koreksi-'.$amendment->getKey().'.png"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store, max-age=0',
+        ]);
     }
 
     public function createForSheet(Request $request, MedicalRecord $medicalRecord): View
@@ -146,7 +168,14 @@ class RmeAmendmentController extends Controller
         $this->authorize('request', [RmeAmendment::class, $subject]);
         $this->amendments->assertMayRequest($subject, $request->user());
 
-        $amendment = $this->amendments->request($subject, $request->user(), (string) $request->validated('reason'), $request->proposal());
+        $amendment = $this->amendments->request(
+            $subject,
+            $request->user(),
+            (string) $request->validated('reason'),
+            $request->proposal(),
+            $request->correctionPage(),
+            $request->correctsPageNumber(),
+        );
 
         return redirect()->route('rme.amendments.show', $amendment)
             ->with('success', 'Permintaan amandemen diajukan dan menunggu persetujuan Supervisor RME. Rekam medis belum berubah.');

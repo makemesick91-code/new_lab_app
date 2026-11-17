@@ -6,6 +6,7 @@ namespace App\Modules\RmeAmendment\Models;
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicOversight\Support\OversightFormat;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,6 +33,12 @@ use LogicException;
  * all three; on PostgreSQL the trigger `trx_rme_amendments_guard` refuses them
  * for raw SQL too.
  *
+ * Rule 240 §8 (M3.3 PR6) — a sheet amendment may carry ONE handwriting
+ * correction page: its object key on the private clinical disk
+ * (`correction_page_path`, chosen by the server and never serialised with the
+ * row), the SHA-256 of its bytes and, optionally, the page of the patient's book
+ * it corrects. All three are part of the request and never change.
+ *
  * @property int $id
  * @property string $subject_type
  * @property int $subject_id
@@ -45,6 +52,9 @@ use LogicException;
  * @property int $requested_by
  * @property int|null $decided_by
  * @property string|null $decision_reason
+ * @property string|null $correction_page_path
+ * @property string|null $correction_page_sha256
+ * @property int|null $corrects_page_number
  */
 class RmeAmendment extends Model
 {
@@ -88,6 +98,10 @@ class RmeAmendment extends Model
         'proposed_content',
         'requested_by',
         'created_at',
+        // Rule 240 §8 — the correction page is part of the request.
+        'correction_page_path',
+        'correction_page_sha256',
+        'corrects_page_number',
     ];
 
     protected $table = 'trx_rme_amendments';
@@ -102,7 +116,13 @@ class RmeAmendment extends Model
         'reason',
         'proposed_content',
         'requested_by',
+        'correction_page_path',
+        'correction_page_sha256',
+        'corrects_page_number',
     ];
+
+    /** The object key never leaves the server (rule 121 §3): not in arrays, JSON or logs of the row. */
+    protected $hidden = ['correction_page_path'];
 
     protected static function booted(): void
     {
@@ -134,6 +154,7 @@ class RmeAmendment extends Model
             'proposed_content' => 'array',
             'requested_by' => 'integer',
             'decided_by' => 'integer',
+            'corrects_page_number' => 'integer',
             'cancelled_at' => 'datetime',
             'decided_at' => 'datetime',
         ];
@@ -142,6 +163,31 @@ class RmeAmendment extends Model
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;
+    }
+
+    /** Rule 240 §8 — does this amendment carry a handwriting correction page? */
+    public function hasCorrectionPage(): bool
+    {
+        return filled($this->correction_page_path) && filled($this->correction_page_sha256);
+    }
+
+    /**
+     * Rule 240 §8 — how an applied correction page is labelled wherever it is
+     * shown (workspace, print, version history): the amendment, when and by whom
+     * it was approved (clinic time, WITA). Null until it is applied.
+     */
+    public function correctionPageLabel(): ?string
+    {
+        if ($this->status !== self::STATUS_APPLIED || ! $this->hasCorrectionPage()) {
+            return null;
+        }
+
+        return sprintf(
+            'Halaman koreksi (amandemen #%d, disetujui %s WITA oleh %s)',
+            (int) $this->getKey(),
+            OversightFormat::clinicalTime($this->decided_at, 'd/m/Y H:i') ?? '—',
+            $this->decider?->name ?? '—',
+        );
     }
 
     public function statusLabel(): string

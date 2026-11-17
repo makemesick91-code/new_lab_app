@@ -1568,6 +1568,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware(['permission:request_rme_amendments|approve_rme_amendments', 'cache.headers:private;no_store;max_age=0'])->group(function () {
         Route::get('amendments/{amendment}', [RmeAmendmentController::class, 'show'])
             ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.show');
+        // Rule 240 §8 (M3.3 PR6) — the handwriting correction page an amendment
+        // carries: its requester or an approver in scope (404 otherwise), the
+        // object verified against its SHA-256, never its key.
+        Route::get('amendments/{amendment}/correction-page', [RmeAmendmentController::class, 'correctionPage'])
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.correction-page');
 
         Route::middleware('permission:approve_rme_amendments')->group(function () {
             Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');

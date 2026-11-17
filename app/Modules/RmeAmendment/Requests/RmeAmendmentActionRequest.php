@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\RmeAmendment\Requests;
 
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Http\FormRequest;
@@ -61,10 +62,15 @@ class RmeAmendmentActionRequest extends FormRequest
     {
         $bounded = ['string', 'min:'.RmeAmendment::REASON_MIN, 'max:'.RmeAmendment::REASON_MAX];
 
+        // Rule 240 §8 — an optional handwriting correction page (bounded at the
+        // edge like a page save, rule 237 §5; decoded and validated by the
+        // service) and the page of the book it corrects.
         if ($this->routeIs('rme.amendments.store-sheet')) {
             return [
                 'reason' => ['required', ...$bounded],
                 'proposed' => ['required', 'array'],
+                'handwriting_data' => ['nullable', 'string', 'max:'.HandwritingPayloadGuard::MAX_HANDWRITING_PAYLOAD_LENGTH],
+                'corrects_page_number' => ['nullable', 'integer', 'min:1', 'max:2147483647'],
             ];
         }
 
@@ -98,6 +104,11 @@ class RmeAmendmentActionRequest extends FormRequest
             'reason.min' => 'Alasan amandemen minimal '.RmeAmendment::REASON_MIN.' karakter.',
             'reason.max' => 'Alasan amandemen maksimal '.RmeAmendment::REASON_MAX.' karakter.',
             'proposed.required' => 'Usulan perubahan wajib diisi.',
+            'handwriting_data.string' => HandwritingPayloadGuard::MESSAGE_INVALID,
+            'handwriting_data.max' => HandwritingPayloadGuard::MESSAGE_TOO_LARGE,
+            'corrects_page_number.integer' => RmeAmendmentService::MESSAGE_CORRECTS_PAGE,
+            'corrects_page_number.min' => RmeAmendmentService::MESSAGE_CORRECTS_PAGE,
+            'corrects_page_number.max' => RmeAmendmentService::MESSAGE_CORRECTS_PAGE,
             'proposed.tooth_map_payload.required' => RmeAmendmentService::MESSAGE_TOOTH_MAP,
             'proposed.tooth_map_payload.array' => RmeAmendmentService::MESSAGE_TOOTH_MAP,
             'decision_reason.required' => 'Alasan penolakan wajib diisi.',
@@ -122,5 +133,24 @@ class RmeAmendmentActionRequest extends FormRequest
         $proposed = $this->input('proposed', []);
 
         return is_array($proposed) ? $proposed : [];
+    }
+
+    /**
+     * Rule 240 §8 — the drawn correction page as posted (the canvas data URI), or
+     * null when the doctor drew none. RmeAmendmentService decodes and validates it.
+     */
+    public function correctionPage(): ?string
+    {
+        $canvas = $this->input('handwriting_data');
+
+        return is_string($canvas) && $canvas !== '' ? $canvas : null;
+    }
+
+    /** Rule 240 §8 — the page of the book the correction names, validated as an integer above. */
+    public function correctsPageNumber(): ?int
+    {
+        $page = $this->validated('corrects_page_number');
+
+        return $page !== null ? (int) $page : null;
     }
 }

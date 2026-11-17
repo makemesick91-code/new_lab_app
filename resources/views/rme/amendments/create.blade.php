@@ -4,7 +4,8 @@
      record as it stands; the service keeps only what changes, validates it
      against the locked record and leaves the record untouched until PR5's
      approve-and-apply. Performed treatments and prescriptions are not amended
-     here (plan default 5). --}}
+     here (plan default 5). A sheet amendment may carry one handwriting
+     correction page (rule 240 §8, M3.3 PR6). --}}
 @php
     $subjectLabel = $isChart ? 'Odontogram' : 'Rekam Medis';
     $action = $isChart
@@ -178,6 +179,63 @@
                         </div>
                     </div>
                     @error('proposed.diagnoses.add')<p class="mt-2 text-sm text-danger">{{ $message }}</p>@enderror
+                </x-ui.card>
+
+                {{-- Rule 240 §8 (M3.3 PR6) — ONE handwriting correction page. It never
+                     replaces a page: once approved it is added to the patient's RM book
+                     as a new, sealed page. The canvas is posted only when drawn on; the
+                     server decodes, validates and stores it privately. A refused form
+                     does not restore the drawing (the canvas is never flashed). --}}
+                <x-ui.card title="Halaman koreksi tulisan tangan (opsional)" description="Tulis koreksi pada halaman baru. Halaman lama tidak diubah; setelah disetujui, halaman ini ditambahkan ke buku RM sebagai halaman koreksi yang terkunci.">
+                    <div data-correction-canvas
+                         x-data="{
+                            drawn: false, drawing: false, ctx: null,
+                            init() {
+                                const canvas = this.$refs.canvas;
+                                this.ctx = canvas.getContext('2d');
+                                this.reset();
+                                this.$el.closest('form').addEventListener('submit', () => {
+                                    this.$refs.data.value = this.drawn ? canvas.toDataURL('image/png') : '';
+                                });
+                            },
+                            reset() {
+                                const canvas = this.$refs.canvas;
+                                this.ctx.fillStyle = '#ffffff';
+                                this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                this.ctx.lineWidth = 2.5; this.ctx.lineCap = 'round'; this.ctx.lineJoin = 'round'; this.ctx.strokeStyle = '#111827';
+                                this.drawn = false;
+                            },
+                            point(event) {
+                                const canvas = this.$refs.canvas;
+                                const box = canvas.getBoundingClientRect();
+                                return [(event.clientX - box.left) * canvas.width / box.width, (event.clientY - box.top) * canvas.height / box.height];
+                            },
+                            start(event) { this.drawing = true; const [x, y] = this.point(event); this.ctx.beginPath(); this.ctx.moveTo(x, y); event.target.setPointerCapture(event.pointerId); },
+                            move(event) { if (! this.drawing) return; const [x, y] = this.point(event); this.ctx.lineTo(x, y); this.ctx.stroke(); this.drawn = true; },
+                            stop() { this.drawing = false; },
+                         }">
+                        <input type="hidden" name="handwriting_data" x-ref="data" value="">
+                        @error('handwriting_data')<p class="mb-2 text-sm text-danger">{{ $message }}</p>@enderror
+
+                        <canvas x-ref="canvas" width="900" height="1273"
+                                x-on:pointerdown="start($event)" x-on:pointermove="move($event)" x-on:pointerup="stop()" x-on:pointerleave="stop()"
+                                class="mx-auto block w-full cursor-crosshair touch-none rounded-lg border border-gray-400 bg-white"
+                                style="max-width:100%;height:auto;max-height:70vh;"></canvas>
+
+                        <div class="mt-3 flex flex-wrap items-end gap-4">
+                            <x-ui.button type="button" variant="secondary" x-on:click="reset()">Kosongkan Kanvas</x-ui.button>
+                            <div>
+                                <label for="corrects_page_number" class="mb-1 block text-sm font-medium text-ink">Mengoreksi halaman (opsional)</label>
+                                <select id="corrects_page_number" name="corrects_page_number" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                                    <option value="">— Tidak menunjuk halaman —</option>
+                                    @foreach ($current['book_pages'] as $bookPage)
+                                        <option value="{{ $bookPage['number'] }}" @selected((string) old('corrects_page_number') === (string) $bookPage['number'])>{{ $bookPage['label'] }}</option>
+                                    @endforeach
+                                </select>
+                                @error('corrects_page_number')<p class="mt-1 text-sm text-danger">{{ $message }}</p>@enderror
+                            </div>
+                        </div>
+                    </div>
                 </x-ui.card>
             @endif
 

@@ -597,7 +597,13 @@ it('answers "not found" before checking the reason when the account may not see 
 it('refuses a TRUNCATE of the amendment table (PostgreSQL trigger)', function () {
     m33aRequest(m33aSheet());
 
+    // Since M3.3 PR6 (rule 240 §8) `trx_medical_record_handwriting_pages.rme_amendment_id`
+    // references this table, so a plain TRUNCATE is refused by PostgreSQL's foreign-key
+    // rule before any trigger; CASCADE gets past that rule and must still be refused
+    // by the trigger (as for the version table, rule 240 §6.1).
     expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_amendments')))
+        ->toThrow(QueryException::class);
+    expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_amendments CASCADE')))
         ->toThrow(QueryException::class, 'immutable')
         ->and(RmeAmendment::query()->count())->toBe(1);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL trigger');

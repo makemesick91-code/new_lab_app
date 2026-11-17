@@ -55,6 +55,10 @@
                     <p class="handwriting-saved-at">
                         Halaman {{ $rmPage['page_number'] }} &mdash; Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}
                     </p>
+                    {{-- Rule 240 §8 (memo M3.3 PR6) — a page appended by an approved amendment says so. --}}
+                    @if (($rmPage['amendment_label'] ?? null) !== null)
+                        <p class="meta-line" data-amendment-page="{{ $rmPage['amendment_id'] }}">{{ $rmPage['amendment_label'] }}</p>
+                    @endif
                     {{-- DMS-RME-REVISION-PROGRAM-6 / P6-PDF-01 — a page that was recorded
                          but whose stored image is missing, unreadable or damaged prints an
                          honest notice, never an empty <img>. Nothing is fabricated. --}}

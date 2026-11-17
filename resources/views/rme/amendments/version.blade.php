@@ -90,6 +90,10 @@
                             <figure class="rounded border border-hairline p-2" data-version-page="{{ $page['page_number'] }}">
                                 <img src="{{ $page['url'] }}" alt="Halaman RM {{ $page['page_number'] }}" loading="lazy" class="w-full">
                                 <figcaption class="mt-1 text-xs text-ink-soft">Halaman {{ $page['page_number'] }} · SHA-256 {{ $page['sha256'] ?? '—' }}…</figcaption>
+                                {{-- Rule 240 §8 — a page appended by an approved amendment says so. --}}
+                                @if (($page['label'] ?? null) !== null)
+                                    <p class="mt-1 text-xs font-medium text-navy" data-version-amendment-page>{{ $page['label'] }}</p>
+                                @endif
                             </figure>
                         @endforeach
                     </div>

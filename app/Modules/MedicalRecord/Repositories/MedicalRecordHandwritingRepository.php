@@ -9,6 +9,8 @@ use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepositoryInterface
 {
@@ -140,7 +142,11 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
             'authored_clinic_visit_id' => $row->authored_clinic_visit_id !== null ? (int) $row->authored_clinic_visit_id : null,
             'sealed_at' => $row->sealed_at?->toIso8601String(),
             'sealed_by_medical_record_id' => $row->sealed_by_medical_record_id !== null ? (int) $row->sealed_by_medical_record_id : null,
-        ];
+        ] + ($row->getAttribute('rme_amendment_id') !== null
+            // Rule 240 §8 — only an amendment page carries the key, so every
+            // other page is described exactly as before.
+            ? ['rme_amendment_id' => (int) $row->getAttribute('rme_amendment_id')]
+            : []);
 
         $pages = [];
         foreach (MedicalRecordHandwriting::query()->whereIn('medical_record_id', $book)->get($columns) as $row) {
@@ -148,7 +154,7 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
                 $pages[] = $describe($row, 1);
             }
         }
-        foreach (MedicalRecordHandwritingPage::query()->whereIn('medical_record_id', $book)->get([...$columns, 'page_number']) as $row) {
+        foreach (MedicalRecordHandwritingPage::query()->whereIn('medical_record_id', $book)->get([...$columns, 'page_number', 'rme_amendment_id']) as $row) {
             if ($locked($row)) {
                 $pages[] = $describe($row, (int) $row->page_number);
             }
@@ -158,6 +164,48 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
             <=> [$b['medical_record_id'], $b['page_number'], $b['row_id']]);
 
         return $pages;
+    }
+
+    public function appendSealedAmendmentPage(MedicalRecord $book, array $page): MedicalRecordHandwritingPage
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new LogicException('An amendment page is appended only inside the approve transaction (rule 240 §8).');
+        }
+
+        foreach (['handwriting_path', 'handwriting_hash', 'authored_clinic_visit_id', 'sealed_by_medical_record_id', 'rme_amendment_id'] as $required) {
+            if (blank($page[$required] ?? null)) {
+                throw new LogicException("An amendment page needs its {$required} (rule 240 §8).");
+            }
+        }
+
+        // The seal and the amendment link are not mass-assignable: written here,
+        // once, with the row. The next number is read under the book's record
+        // lock, which the caller holds; UNIQUE(medical_record_id, page_number)
+        // is the backstop.
+        $row = new MedicalRecordHandwritingPage;
+        $row->forceFill([
+            'medical_record_id' => (int) $book->getKey(),
+            'clinic_visit_id' => (int) $book->clinic_visit_id,
+            'branch_id' => (int) $book->branch_id,
+            'doctor_id' => $book->clinicVisit()->withTrashed()->value('doctor_id'),
+            'page_number' => $this->nextPageNumber((int) $book->getKey()),
+            'handwriting_path' => (string) $page['handwriting_path'],
+            'handwriting_hash' => (string) $page['handwriting_hash'],
+            'saved_at' => now(),
+            'created_by' => $page['created_by'] ?? null,
+            'updated_by' => $page['updated_by'] ?? null,
+            'authored_clinic_visit_id' => (int) $page['authored_clinic_visit_id'],
+            'sealed_at' => now(),
+            'sealed_by_medical_record_id' => (int) $page['sealed_by_medical_record_id'],
+            'rme_amendment_id' => (int) $page['rme_amendment_id'],
+        ])->save();
+
+        return $row->refresh();
+    }
+
+    public function findAmendmentPage(int $amendmentId): ?MedicalRecordHandwritingPage
+    {
+        return MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendmentId)->first();
     }
 
     /**

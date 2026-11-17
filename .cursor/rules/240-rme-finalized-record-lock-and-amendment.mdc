@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. A correction is a supervised amendment (§6): the doctor of record or the finalizer requests it with a reason and the proposed change against the latest version, the requester may cancel it, a Supervisor RME who is neither the requester, the doctor of record nor the finalizer rejects it (approve-and-apply is M3.3 PR5); one pending per record; decided in the service under the locks, binding Super Admin. Approving IS applying (§7): one transaction under visit → subject → amendment locks, the checker re-decided, the base still the latest version, the proposal re-validated, the record changed while it stays final and locked, the next version chained, "Diamandemen n×" on prints and pages, a version history read like the record. Release constraint — the lock and the amendment path ship in the same release.
-globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php, resources/views/rme/amendments/**, tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php, tests/Feature/RME/OdontogramAmendmentTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php, tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php, tests/Feature/RME/OdontogramAmendmentApplyTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php, app/Modules/ClinicVisit/Services/ClinicVisitPrintDataBuilder.php, app/Modules/Odontogram/Services/OdontogramPrintFormatter.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. A correction is a supervised amendment (§6): the doctor of record or the finalizer requests it with a reason and the proposed change against the latest version, the requester may cancel it, a Supervisor RME who is neither the requester, the doctor of record nor the finalizer rejects it (approve-and-apply is M3.3 PR5); one pending per record; decided in the service under the locks, binding Super Admin. Approving IS applying (§7): one transaction under visit → subject → amendment locks, the checker re-decided, the base still the latest version, the proposal re-validated, the record changed while it stays final and locked, the next version chained, "Diamandemen n×" on prints and pages, a version history read like the record. A sheet amendment may carry ONE handwriting correction page (§8, M3.3 PR6): decoded with the canvas decoder and bounds plus a clean PNG structure, stored privately under a fresh server key with its SHA-256 as one unit with the row, verified on apply and on display, and appended on approval as the book's next page, sealed at once and stamped with the amendment — never in place of a page. Release constraint — the lock and the amendment path (PR1–PR6) ship in the same release.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php, resources/views/rme/amendments/**, tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php, tests/Feature/RME/OdontogramAmendmentTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php, tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php, tests/Feature/RME/OdontogramAmendmentApplyTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php, app/Modules/ClinicVisit/Services/ClinicVisitPrintDataBuilder.php, app/Modules/Odontogram/Services/OdontogramPrintFormatter.php, app/Modules/MedicalRecord/Services/HandwritingPayloadGuard.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingImageController.php, resources/views/rme/visits/partials/print-body.blade.php, tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php
 alwaysApply: false
 ---
 
@@ -9,7 +9,7 @@ alwaysApply: false
 Source: the internal memo of 2026-10-17 (M3.3) and the owner's written decision of 2026-11-17, recorded in
 `docs/sprints/dms-rme-comprehensive-closure-1.md` §2c; the plan, impact analysis and compatibility plan (with the six
 defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`
-§M3.3. Delivered in five PRs; each PR adds its section.
+§M3.3. Delivered in six PRs; each PR adds its section (§8 is M3.3 PR6, the handwriting amendment page).
 
 ## 0. Owner decision and release constraint (CG-22)
 
@@ -21,6 +21,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    no correction path is never deployed. Every M3.3 PR body states this constraint. The M3.3 PRs are one stacked
    series: they merge into the base back-to-back, and only after PR1–PR5 are ALL reviewed and green, so the base
    never carries the lock without the amendment path. Until then no PR of the series merges.
+3. **Decision (2026-11-17, "BUILD AMENDMENT PAGE FIRST", binding).** The handwriting amendment page (§8, M3.3 PR6)
+   joins the series: PR1–PR6 ship together, and no release carries the typed-only amendment path without it. The
+   finalized page seal and the immutable original stay — an original page image or row is never changed,
+   overwritten or deleted.
 
 ## 1. A final sheet and a finalized chart are locked (M3.3 PR1)
 
@@ -169,6 +173,9 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   token), `tests/Feature/RME/OdontogramAmendmentApplyTest.php` (existing `Odontogram` token) and
   `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php` (existing
   `RmeClinicalWriteAuthority` token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §7.9.
+- §8: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php` (existing `MedicalRecordFinalization` token)
+  and `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php` (existing
+  `RmeClinicalWriteAuthority` token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §8.9.
 - §6: `tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php` (existing `MedicalRecordFinalization` token),
   `tests/Feature/RME/OdontogramAmendmentTest.php` (existing `Odontogram` token) and
   `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php` (existing `RmeClinicalWriteAuthority`
@@ -301,7 +308,9 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    the object a committed row names; the only removal in that path is the uncommitted object of a failed save
    (`MedicalRecordHandwritingService::discardUncommitted()`), whose key no row references. A version therefore
    always points at objects that still exist. No other code path deletes handwriting objects (the public-disk
-   migration command removes a public copy only after a byte-identical private copy is verified).
+   migration command removes a public copy only after a byte-identical private copy is verified) — except the same
+   rule-224 compensation for an amendment's correction page (§8.3: `RmeAmendmentService` removes the object of a
+   request whose body failed, a fresh key no row names); an applied correction page's object is the page's object.
 
 ## 6. Supervised amendment — request, cancel, reject (M3.3 PR4)
 
@@ -375,7 +384,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
      form restores the posted teeth.
    - Unknown keys are refused at every level, and so is a proposal that changes nothing (for a chart: nothing that
      the before/after view would show as changed). Performed treatments and prescriptions are not amendable (plan
-     default 5); a handwriting "amendment page" is M3.3 PR5.
+     default 5); a handwriting correction page rides with a sheet amendment (§8, M3.3 PR6).
 5. **Cancel.** `cancel()` locks visit → subject → amendment (FOR UPDATE) and refuses unless the amendment is pending
    and the actor IS its requester (binds Super Admin).
 6. **Reject (plan defaults 1 and 6).** `reject()` bounds the decision reason, then inside the transaction: the
@@ -532,11 +541,118 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    bounded and optional), an out-of-scope approver 404 before validation, the version history (doctor of record
    and Supervisor RME read it; a stranger 404; no object key; page links through the page route), the RME print
    and sheet page markers.
-10. **Not in this PR: the handwriting "amendment page" item** (plan default 4: a page after the encounter only as
-    an amendment item). It needs the canvas decoder and bounds of rule 237 §5, a pending object on
-    `ClinicalEvidenceStorage` written with its amendment row as one unit (rule 224), a pending-page image route for
-    the checker, columns for the pending object, and the handwriting repository appending a sealed page stamped
-    with the amendment at apply — more than this PR's `app/` budget allows. It is a separate follow-up; until it
-    ships, a page can be added to the book only by a live, consented encounter (§4.4, AIR-RMC-07), never by an
-    amendment.
+10. **CLOSED by §8 (M3.3 PR6): the handwriting "amendment page" item** (plan default 4: a page after the encounter
+    only as an amendment item). PR5 deferred it for its `app/` budget; §8 delivers it — the canvas decoder and
+    bounds of rule 237 §5, a pending object on `ClinicalEvidenceStorage` written with its amendment row as one unit
+    (rule 224), a pending-page image route for the checker, columns for the pending object, and the handwriting
+    repository appending a sealed page stamped with the amendment at apply. A page reaches the book only by a live,
+    consented encounter (§4.4, AIR-RMC-07) or by an approved amendment (§8), never otherwise.
+
+## 8. Handwriting amendment page (M3.3 PR6)
+
+1. **Owner decision (2026-11-17, "BUILD AMENDMENT PAGE FIRST", §0.3).** A doctor who may request an amendment of a
+   final sheet (§6.3: doctor of record or finalizer, holding `request_rme_amendments`) may attach ONE new
+   handwriting correction page to it, with the amendment's written reason. A Supervisor RME approves (§7, maker ≠
+   checker through `decisionRefusal()`). On approval the page is appended to the patient's book as a NEW sealed
+   page. An original page — its row and its object — is never changed, overwritten or deleted. Charts carry no
+   correction page (`MESSAGE_CORRECTION_PAGE_SHEET_ONLY`).
+2. **Schema.** Migration `2026_11_17_600001_add_correction_page_to_rme_amendments_and_handwriting_pages` (additive):
+   `trx_rme_amendments.correction_page_path` (the object key; `$hidden` on the model, never rendered),
+   `correction_page_sha256`, `corrects_page_number` (optional); `trx_medical_record_handwriting_pages.rme_amendment_id`
+   (nullable, `trx_mrhp_rme_amendment_fk` restrict on delete, unique `trx_mrhp_rme_amendment_uq` — one page per
+   amendment). PostgreSQL CHECKs: `trx_rme_amd_correction_page_chk` (key and SHA-256 together, 64 lowercase hex,
+   a corrected page only with a page and ≥ 1), `trx_rme_amd_correction_subject_chk` (a sheet only),
+   `trx_mrhp_rme_amendment_sealed_chk` (an amendment page is sealed). The three amendment columns are REQUEST
+   columns (`RmeAmendment::REQUEST_COLUMNS`): the model refuses a change on every engine, and the migration
+   replaces `trx_rme_amendments_guard()` with the §6.1 body plus exactly these three comparisons (down() restores
+   it) — a pending row may still be cancelled, rejected or applied, nothing else of the request changes. The
+   unreleased PR4 migration is not edited. Only pages 2+ get the link: the amendment page is always the book's NEXT
+   page (`nextPageNumber()` ≥ 2), never page 1. Because the pages table now references `trx_rme_amendments`, a plain
+   TRUNCATE of it fails on the foreign key and `TRUNCATE … CASCADE` on the §6.1 trigger (the PR4 TRUNCATE test
+   was flipped to pin both, as §5.2's version-table test was in PR4).
+3. **Request** (`RmeAmendmentService::request(…, $correctionPage, $correctsPageNumber)`). After "not found", the
+   reason bounds and the requester rule, and BEFORE anything is written, the canvas is decoded by
+   `HandwritingPayloadGuard::decodeCanvas()` — the one canvas decoder, moved unchanged from
+   `MedicalRecordHandwritingController` (payload length, `data:` prefix, strict base64, PNG magic, rule 237 §5
+   declared-size and inflate bounds, the Sprint 59.1 blank guard) — then held to `assertCleanPng()` (signature, IHDR
+   first, every chunk complete with a valid CRC, no `tEXt`/`zTXt`/`iTXt`, no unknown critical chunk, nothing after
+   IEND: no polyglot). Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`, `MESSAGE_TOO_LARGE`,
+   `MESSAGE_BLANK`). A named page without a drawing is refused (`MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE`). Inside the
+   transaction, after visit → sheet locks, the requester re-decision and the one-pending check: the proposal may be
+   empty when a page rides with it (a page-only amendment, stored as `[]`; `allowEmpty` also at apply);
+   `corrects_page_number` must name a page of the patient's BOOK holding a stored drawing (`MESSAGE_CORRECTS_PAGE`;
+   page 1 is the legacy row, 2+ the pages table). Then, as one unit (rule 224): the object is written to
+   `ClinicalEvidenceStorage` under a fresh server key `handwritings/{branch}/{visit}/amendment_{YmdHis}_{16 hex}.png`
+   (the client never supplies one), then the row (in the savepoint of §6.4) with the key and the SHA-256 of the
+   bytes. A failure in the body — the raced one-pending index included — removes this call's object and only it; a
+   failure after the body (COMMIT, after-commit callbacks) keeps it, because the row may be committed. A second
+   pending request is refused before its object is written.
+4. **Approve and apply.** Inside §7's single transaction, after the visit → sheet → amendment locks, the checker
+   rules, the stale-base check and the proposal re-validation: the object is read back by
+   `HandwritingPayloadGuard::intactPng()` (present, a PNG, SHA-256 equal) — otherwise
+   `MESSAGE_CORRECTION_PAGE_INTEGRITY` and nothing is written — and re-run through today's canvas rules
+   (`MESSAGE_PROPOSAL_CHANGED`); then the patient's book (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`,
+   R7-1 — the record new pages are written on; the amended sheet when the patient has no book in the RME branches) is
+   locked with `lockForHandwriting()` — the record lock a page save takes — so the lock order is **visit → sheet →
+   amendment → book → page insert → version insert**; the named page must still be in the book. After the sheet's
+   text and diagnoses are applied, `MedicalRecordHandwritingRepositoryInterface::appendSealedAmendmentPage()` (only
+   inside a transaction) inserts the page as the book's next page on the book's visit, with the pending key and
+   SHA-256, `authored_clinic_visit_id` = the amended sheet's visit (the encounter), `sealed_at` = now,
+   `sealed_by_medical_record_id` = the amended sheet, `rme_amendment_id`, `created_by` = the requester (who drew it),
+   `updated_by` = the approver. Sealed at once: `pageSlotLock()` answers `LOCK_SEALED`, so no encounter — the live one
+   included — overwrites it (§4.2), and a later finalize never re-stamps it. The UNIQUE(record, page) index is the
+   backstop for the number. The approval data (approver, time) is the amendment's `decided_by` / `decided_at`.
+   `recordAmendment()` then writes the next version, whose snapshot lists the page through `lockedBookPages()` (object
+   key, SHA-256 and — on an amendment page only — `rme_amendment_id`; every other page is described exactly as
+   before, so earlier snapshots and hashes are unchanged); `verifyChain()` stays true. A page-only apply changes
+   nothing SATUSEHAT reads, so it refreshes no candidate.
+5. **Display and print.** The label `Halaman koreksi (amandemen #n, disetujui <d/m/Y H:i> WITA oleh <nama>)`
+   (`RmeAmendment::correctionPageLabel()`, null until applied) shows in the RM workspace (the active page,
+   `data-amendment-page`), the RME print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` /
+   `amendment_label` to an amendment page only) and the version history (`versionDetailFor()`). Images go only
+   through policy-gated, `private, no-store` routes, never an object key: the workspace and version pages link
+   `rme.handwriting-pages.image`, which serves an amendment page only when `intactPng()` verifies it (404 and an
+   ids-only warning otherwise); the print embeds only verified bytes, else "Gambar halaman ini tidak tersedia.". The
+   approver sees the pending page before approval on the detail page through `rme.amendments.correction-page`
+   (route permission `request_rme_amendments|approve_rme_amendments`, `RmeAmendmentPolicy::view` — the requester or
+   an approver in scope, 404 otherwise — and `RmeAmendmentService::correctionPageImage()`, verified, `nosniff`); a
+   tampered or missing object is not served and the approval is not offered (rule 135 mirror).
+6. **Rejected or cancelled.** The pending object is kept (committed evidence is never deleted, §5.9) and stays on
+   the amendment's own page, marked "tidak diterapkan"; it never becomes a book page (no row links it).
+7. **Audit (ids and digests only, CG-11).** `RME_AMENDMENT_REQUESTED` adds `correction_page_sha256` and
+   `corrects_page_number`; `RME_AMENDMENT_APPLIED` adds `correction_page_id`, `correction_page_number`,
+   `correction_page_medical_record_id` and `correction_page_sha256`. Never the key, the bytes or the image.
+8. **Three layers.** Store: the §6.7 route permission, `RmeAmendmentActionRequest::authorize()` (404 before any
+   validation for an account that may not see the record), `handwriting_data` bounded at the edge (string, ≤
+   `MAX_HANDWRITING_PAYLOAD_LENGTH`) and `corrects_page_number` an int4 ≥ 1, the policy's `request`, and the
+   service deciding everything again on the locked rows (binding Super Admin). Approve: §7 unchanged.
+9. **Tests (§3).** Request: the private object under a fresh server key with key and SHA-256 on the row, no key in
+   the row's array or the audit; non-PNG, SVG, GIF, non-base64, HTML after IEND, a script in a text chunk, a broken
+   CRC, oversized dimensions and payload, a blank canvas — all refused with nothing written; the corrected page
+   validated against the book (and refused without a page); a chart refused; the requester matrix (Super Admin who
+   is neither, a finalizer without the permission, a doctor who may not see the record — no object written; the
+   doctor of record and a permitted finalizer accepted). Apply: the page appended as the next page, sealed, stamped
+   and linked, the original rows and bytes unchanged, an overwrite through `MedicalRecordHandwritingService::save()`
+   refused as sealed, version 2 listing it with key and SHA-256 (the baseline not), `verifyChain()` true, the
+   audit; a page-only amendment; a later sheet appending to the patient's book stamped with its own encounter; a
+   tampered or missing object refused with nothing written; the checker matrix (requester, finalizer, Super Admin on
+   their own request) appending nothing. Concurrency: two approvals append one page; an approval after a cancel or a
+   reject appends none and keeps the object; a second request refused before writing; the raced one-pending index
+   refused in the savepoint with this call's object removed; rule 224 compensation keeping the earlier evidence.
+   Display: the label and verified print bytes, a tampered page printed as unavailable. Constraints: the model guard
+   on the three columns, one page per amendment; on PostgreSQL the trigger refusing raw changes, the CHECKs and the
+   constraint names, and the lock order visit → sheet → amendment → book → page → version. HTTP: front desk 403, a
+   treating doctor who is neither and Super Admin 403, a stranger 404 before the canvas is validated, form errors
+   for a bad canvas or page number with nothing written; the pending image private, no-store, `nosniff`, to the
+   requester and an in-scope approver only (out-of-scope approver: show, image, approve and reject 404; stranger 404;
+   front office 403), a tampered one 404 with no approval offered; after approval the label in the workspace, the
+   print (with the embedded bytes) and the version page, no object key anywhere, the page route serving verified
+   bytes and refusing a tampered object, the print saying so; a rejected correction never a book page, its object
+   kept and shown on the request as not applied.
+10. **Known limits (follow-ups, not in this PR's `app/` budget).** (a) The existing page route
+    `rme.handwriting-pages.image` keeps its pinned out-of-scope answer, 403 (`RmeClinicalDocumentReadScopeTest`,
+    `ClinicalEvidencePrivacyTest`); the routes this PR adds answer 404. (b) The clinic oversight viewer
+    (`oversight.rme.handwriting-pages.image`, `OversightClinicalRecordService`) shows an amendment page without its
+    label and streams it without the SHA-256 check. (c) The RME print of a visit prints that visit's own sheet's
+    pages (unchanged): a correction appended to a book held by an EARLIER sheet (R7-1) prints with that sheet.
 

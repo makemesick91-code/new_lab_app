@@ -8,12 +8,15 @@ use App\Models\User;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
@@ -26,6 +29,7 @@ use App\Modules\RmeAmendment\Notifications\RmeAmendmentNotification;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Satusehat\Services\SatusehatCandidateService;
 use App\Support\AccessControl\ActiveAccountResolver;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -37,6 +41,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the supervised
@@ -66,6 +71,16 @@ use Illuminate\Validation\ValidationException;
  * The proposal never touches the record: the sheet and the chart stay locked
  * (rule 240 §1) until PR5 applies an approved amendment. Audit rows carry ids and
  * the reason's length only (CG-11); the reason and the proposal stay on the row.
+ *
+ * Rule 240 §8 (M3.3 PR6) — a sheet amendment may carry ONE handwriting
+ * correction page. The request decodes and validates it (the handwriting canvas
+ * decoder and bounds, plus a clean PNG structure), then writes it to the private
+ * clinical disk under a fresh server key and inserts the row, as one unit (rule
+ * 224: a failure in the body removes only this call's object; a committed object
+ * is never deleted, a rejected or cancelled one is kept). Approving verifies the
+ * object's SHA-256, locks the patient's book after the amendment and appends the
+ * page to it as the NEXT page, sealed at once and stamped with the amendment and
+ * the amended encounter; the next version's snapshot lists it.
  */
 final class RmeAmendmentService
 {
@@ -154,6 +169,18 @@ final class RmeAmendmentService
 
     public const MESSAGE_DECISION_NOTE = 'Catatan persetujuan maksimal 1000 karakter.';
 
+    /** Rule 240 §8 — only a sheet amendment carries a handwriting correction page. */
+    public const MESSAGE_CORRECTION_PAGE_SHEET_ONLY = 'Halaman koreksi tulisan tangan hanya dapat diajukan pada amandemen rekam medis.';
+
+    public const MESSAGE_CORRECTS_PAGE = 'Halaman yang dikoreksi tidak ditemukan pada buku RM pasien ini.';
+
+    public const MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE = 'Halaman yang dikoreksi hanya dapat dipilih bersama halaman koreksi tulisan tangan.';
+
+    public const MESSAGE_CORRECTION_PAGE_INTEGRITY = 'Gambar halaman koreksi tidak lolos pemeriksaan integritas (SHA-256), sehingga amandemen ini tidak dapat diterapkan. Pengaju perlu mengajukan amandemen baru.';
+
+    /** The largest page number a book row can hold (int4). */
+    private const PAGE_NUMBER_MAX = 2147483647;
+
     /** The keys of a diagnosis row a proposal may add. */
     private const DIAGNOSIS_ROW_KEYS = ['clinical_diagnosis_id', 'diagnosis_role', 'notes'];
 
@@ -179,6 +206,9 @@ final class RmeAmendmentService
         private readonly AuditLogService $auditLog,
         private readonly DiagnosisRolloutService $diagnosisRollout,
         private readonly ActiveAccountResolver $accounts,
+        private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
+        private readonly HandwritingPayloadGuard $canvasGuard,
+        private readonly PatientRmWorkspaceResolver $workspace,
     ) {}
 
     // ─── Writes ─────────────────────────────────────────────────────────────
@@ -192,8 +222,13 @@ final class RmeAmendmentService
      *                                          and `diagnoses` (`add`, `remove`);
      *                                          chart: `summary_notes`, `additional_conditions`,
      *                                          `tooth_map_payload` (absent = unchanged)
+     * @param  string|null  $correctionPage  rule 240 §8 — a sheet only: ONE handwriting
+     *                                       correction page, the canvas as posted
+     *                                       (`data:image/png;base64,…`); with it the
+     *                                       proposal may change nothing else
+     * @param  int|null  $correctsPageNumber  the page of the patient's book it corrects
      */
-    public function request(MedicalRecord|Odontogram $subject, User $requester, string $reason, array $proposed): RmeAmendment
+    public function request(MedicalRecord|Odontogram $subject, User $requester, string $reason, array $proposed, ?string $correctionPage = null, ?int $correctsPageNumber = null): RmeAmendment
     {
         // "Not found" first, so an account that may not see the record learns
         // nothing from the order of the answers either.
@@ -201,65 +236,105 @@ final class RmeAmendmentService
         $reason = $this->boundedReason($reason, 'reason', self::MESSAGE_REASON);
         $this->assertRequester($subject, $requester);
 
-        return DB::transaction(function () use ($subject, $requester, $reason, $proposed): RmeAmendment {
-            $locked = $this->lockSubject($subject);
+        // Rule 240 §8 / rule 224 — validated in full before anything is written.
+        $page = $this->correctionPageInput($subject, $correctionPage, $correctsPageNumber);
 
-            // Re-decided on the locked row, binding Super Admin.
-            $this->assertRequester($locked, $requester);
-            [$type, $id] = $this->subjectKey($locked);
+        $writtenKey = null;
+        $bodyDone = false;
 
-            if ($this->amendments->pendingFor($type, $id) !== null) {
-                throw $this->refusal('amendment', self::MESSAGE_PENDING_EXISTS);
-            }
+        try {
+            return DB::transaction(function () use ($subject, $requester, $reason, $proposed, $page, $correctsPageNumber, &$writtenKey, &$bodyDone): RmeAmendment {
+                $locked = $this->lockSubject($subject);
 
-            $content = $locked instanceof Odontogram
-                ? $this->chartProposal($locked, $proposed)
-                : $this->sheetProposal($locked, $proposed);
+                // Re-decided on the locked row, binding Super Admin.
+                $this->assertRequester($locked, $requester);
+                [$type, $id] = $this->subjectKey($locked);
 
-            $base = $this->versions->latestFor($type, $id)
-                ?? $this->versionService->ensureBaseline($locked, (int) $requester->getKey(), $this->liveEncounterId($locked));
-
-            try {
-                // A savepoint: on PostgreSQL a unique violation aborts the
-                // transaction, so it is rolled back to here and refused cleanly.
-                $amendment = DB::transaction(fn (): RmeAmendment => $this->amendments->create([
-                    'subject_type' => $type,
-                    'subject_id' => $id,
-                    'branch_id' => (int) $locked->branch_id,
-                    'clinic_visit_id' => (int) $locked->clinic_visit_id,
-                    'base_version_id' => (int) $base->getKey(),
-                    'base_version' => (int) $base->version,
-                    'reason' => $reason,
-                    'proposed_content' => $content,
-                    'requested_by' => (int) $requester->getKey(),
-                ]));
-            } catch (QueryException $e) {
-                if (! $this->isPendingUniqueViolation($e)) {
-                    throw $e;
+                if ($this->amendments->pendingFor($type, $id) !== null) {
+                    throw $this->refusal('amendment', self::MESSAGE_PENDING_EXISTS);
                 }
 
-                throw $this->refusal('amendment', self::MESSAGE_PENDING_EXISTS);
+                $content = $locked instanceof Odontogram
+                    ? $this->chartProposal($locked, $proposed)
+                    : $this->sheetProposal($locked, $proposed, allowEmpty: $page !== null);
+
+                if ($page !== null && $correctsPageNumber !== null) {
+                    $this->assertBookPage($this->bookOf($locked), $correctsPageNumber, 'corrects_page_number', self::MESSAGE_CORRECTS_PAGE);
+                }
+
+                $base = $this->versions->latestFor($type, $id)
+                    ?? $this->versionService->ensureBaseline($locked, (int) $requester->getKey(), $this->liveEncounterId($locked));
+
+                // Rule 240 §8 — the object first (a fresh server key no row names
+                // yet), then the row; a failure from here to the end of the body
+                // removes this object and only this one.
+                $correction = [];
+                if ($page !== null) {
+                    $writtenKey = $this->correctionObjectKey($locked);
+                    ClinicalEvidenceStorage::disk()->put($writtenKey, $page);
+                    $correction = [
+                        'correction_page_path' => $writtenKey,
+                        'correction_page_sha256' => hash('sha256', $page),
+                        'corrects_page_number' => $correctsPageNumber,
+                    ];
+                }
+
+                try {
+                    // A savepoint: on PostgreSQL a unique violation aborts the
+                    // transaction, so it is rolled back to here and refused cleanly.
+                    $amendment = DB::transaction(fn (): RmeAmendment => $this->amendments->create([
+                        'subject_type' => $type,
+                        'subject_id' => $id,
+                        'branch_id' => (int) $locked->branch_id,
+                        'clinic_visit_id' => (int) $locked->clinic_visit_id,
+                        'base_version_id' => (int) $base->getKey(),
+                        'base_version' => (int) $base->version,
+                        'reason' => $reason,
+                        'proposed_content' => $content,
+                        'requested_by' => (int) $requester->getKey(),
+                    ] + $correction));
+                } catch (QueryException $e) {
+                    if (! $this->isPendingUniqueViolation($e)) {
+                        throw $e;
+                    }
+
+                    throw $this->refusal('amendment', self::MESSAGE_PENDING_EXISTS);
+                }
+
+                $this->auditLog->log(self::AUDIT_ENTITY, (int) $amendment->getKey(), self::AUDIT_REQUESTED, null, [
+                    'subject_type' => $type,
+                    'subject_id' => $id,
+                    'branch_id' => (int) $amendment->branch_id,
+                    'base_version' => (int) $amendment->base_version,
+                    'base_version_id' => (int) $amendment->base_version_id,
+                    'status' => RmeAmendment::STATUS_PENDING,
+                    'reason_length' => mb_strlen($reason),
+                ] + ($page !== null ? [
+                    // Ids and the digest only — never the key or the image (CG-11).
+                    'correction_page_sha256' => $correction['correction_page_sha256'],
+                    'corrects_page_number' => $correctsPageNumber,
+                ] : []), $requester);
+
+                $this->notifyAfterCommit(
+                    fn (): iterable => $this->approversFor($amendment, $locked),
+                    'Permintaan amandemen RME',
+                    'Permintaan amandemen #'.$amendment->getKey().' menunggu keputusan Anda.',
+                    $amendment,
+                );
+
+                $bodyDone = true;
+
+                return $amendment;
+            });
+        } catch (Throwable $e) {
+            // Only while the body had not finished: after it (the COMMIT, an
+            // after-commit callback) the row may be committed, so the object stays.
+            if ($writtenKey !== null && ! $bodyDone) {
+                $this->discardUncommitted($writtenKey);
             }
 
-            $this->auditLog->log(self::AUDIT_ENTITY, (int) $amendment->getKey(), self::AUDIT_REQUESTED, null, [
-                'subject_type' => $type,
-                'subject_id' => $id,
-                'branch_id' => (int) $amendment->branch_id,
-                'base_version' => (int) $amendment->base_version,
-                'base_version_id' => (int) $amendment->base_version_id,
-                'status' => RmeAmendment::STATUS_PENDING,
-                'reason_length' => mb_strlen($reason),
-            ], $requester);
-
-            $this->notifyAfterCommit(
-                fn (): iterable => $this->approversFor($amendment, $locked),
-                'Permintaan amandemen RME',
-                'Permintaan amandemen #'.$amendment->getKey().' menunggu keputusan Anda.',
-                $amendment,
-            );
-
-            return $amendment;
-        });
+            throw $e;
+        }
     }
 
     /** Withdraw a pending amendment — its requester only (identity, binds Super Admin). */
@@ -400,6 +475,21 @@ final class RmeAmendmentService
 
             $content = $this->revalidated($locked, $subject);
 
+            // Rule 240 §8 — the correction page: its object verified against the
+            // SHA-256 and today's canvas rules, then the patient's book locked
+            // (visit → sheet → amendment → book, the record lock a page save takes)
+            // and the corrected page, if named, still in it.
+            $book = null;
+            if ($subject instanceof MedicalRecord && $locked->hasCorrectionPage()) {
+                $this->verifiedCorrectionPage($locked);
+                $book = $this->medicalRecords->lockForHandwriting((int) $this->bookOf($subject)->getKey())
+                    ?? throw $this->refusal('amendment', self::MESSAGE_PROPOSAL_CHANGED);
+
+                if ($locked->corrects_page_number !== null) {
+                    $this->assertBookPage($book, (int) $locked->corrects_page_number, 'amendment', self::MESSAGE_PROPOSAL_CHANGED);
+                }
+            }
+
             $sheetRowWritten = false;
             if ($subject instanceof Odontogram) {
                 $subject = $this->odontograms->updatePlaceholder($subject, [
@@ -422,6 +512,20 @@ final class RmeAmendmentService
                 }
             }
 
+            // Appended as the book's NEXT page, sealed at once, stored on the book's
+            // visit and stamped with the amended encounter and this amendment —
+            // never in place of a page. Before the version, so its snapshot lists it.
+            $appended = $book !== null ? $this->handwritings->appendSealedAmendmentPage($book, [
+                'handwriting_path' => $locked->correction_page_path,
+                'handwriting_hash' => $locked->correction_page_sha256,
+                'authored_clinic_visit_id' => (int) $subject->clinic_visit_id,
+                'sealed_by_medical_record_id' => (int) $subject->getKey(),
+                'rme_amendment_id' => (int) $locked->getKey(),
+                // Drawn by the requester; written by the approver's decision.
+                'created_by' => (int) $locked->requested_by,
+                'updated_by' => (int) $approver->getKey(),
+            ]) : null;
+
             $version = $this->versionService->recordAmendment($subject, $latest, (int) $approver->getKey(), $this->liveEncounterId($subject));
 
             // Rule 240 §7.3 — every apply refreshes the visit's SATUSEHAT candidate
@@ -433,7 +537,9 @@ final class RmeAmendmentService
             // apply (as MedicalRecordDiagnosisService does), for a chart (it
             // feeds the dental readiness), and whenever that observer is switched
             // off (`satusehat.candidate.auto_generate`, which it reads itself).
-            if (! $sheetRowWritten || ! (bool) config('satusehat.candidate.auto_generate', true)) {
+            // A correction page alone changes nothing SATUSEHAT reads (rule 240 §8).
+            $recordChanged = $subject instanceof Odontogram || ($content['fields'] ?? []) !== [] || ($content['diagnoses'] ?? []) !== [];
+            if ($recordChanged && (! $sheetRowWritten || ! (bool) config('satusehat.candidate.auto_generate', true))) {
                 $this->refreshSatusehatCandidateAfterCommit((int) $subject->clinic_visit_id, $approver);
             }
 
@@ -456,7 +562,13 @@ final class RmeAmendmentService
                 'applied_version' => (int) $version->version,
                 'applied_version_id' => (int) $version->getKey(),
                 'decision_reason_length' => $note !== null ? mb_strlen($note) : 0,
-            ], $approver);
+            ] + ($appended !== null ? [
+                // Ids and the digest only — never the key or the image (CG-11).
+                'correction_page_id' => (int) $appended->getKey(),
+                'correction_page_number' => (int) $appended->page_number,
+                'correction_page_medical_record_id' => (int) $appended->medical_record_id,
+                'correction_page_sha256' => $appended->handwriting_hash,
+            ] : []), $approver);
 
             $this->notifyAfterCommit(
                 fn (): iterable => $this->requesterOf($locked),
@@ -583,6 +695,31 @@ final class RmeAmendmentService
 
     // ─── Reads ──────────────────────────────────────────────────────────────
 
+    /**
+     * Rule 240 §8 — the bytes of an amendment's correction page, for its
+     * requester or an approver in scope (otherwise "not found"); null when the
+     * amendment carries none or the object is absent or fails its SHA-256 check.
+     */
+    public function correctionPageImage(RmeAmendment $amendment, User $user): ?string
+    {
+        if (! $this->mayView($user, $amendment)) {
+            throw (new ModelNotFoundException)->setModel(RmeAmendment::class, [(int) $amendment->getKey()]);
+        }
+
+        if (! $amendment->hasCorrectionPage()) {
+            return null;
+        }
+
+        $bytes = HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256);
+        if ($bytes === null) {
+            Log::warning('An RME amendment correction page is missing or failed its integrity check; not served.', [
+                'rme_amendment_id' => (int) $amendment->getKey(),
+            ]);
+        }
+
+        return $bytes;
+    }
+
     public function find(int $id): ?RmeAmendment
     {
         return $this->amendments->find($id);
@@ -669,6 +806,15 @@ final class RmeAmendmentService
                 'label' => $this->diagnosisLabel($masters->get((int) $diagnosis->clinical_diagnosis_id)),
                 'role' => $diagnosis->diagnosis_role,
             ])->values()->all(),
+            // Rule 240 §8 — the pages of the patient's book a correction may name.
+            'book_pages' => $this->bookOf($subject)->orderedHandwritingPages()
+                ->filter(fn (array $page): bool => (bool) $page['has_content'])
+                ->map(fn (array $page): array => [
+                    'number' => (int) $page['page_number'],
+                    'label' => 'Halaman '.$page['page_number'].(isset($page['amendment_id']) ? ' (halaman koreksi)' : ''),
+                ])
+                ->values()
+                ->all(),
         ];
     }
 
@@ -691,7 +837,14 @@ final class RmeAmendmentService
             'subject' => $subject,
             'latest_version' => $latest?->version,
             'actions' => $subject !== null ? $this->actionsFor($amendment, $user, $subject) : ['can_cancel' => false, 'can_reject' => false, 'can_approve' => false, 'stale' => false, 'chain_broken' => false],
+            'correction_page' => $this->correctionPageDetail($amendment),
         ];
+
+        // Rule 135 — a correction page that fails its integrity check would be
+        // refused by approve(), so the approval is not offered.
+        if ($detail['correction_page'] !== null && ! $detail['correction_page']['intact'] && $amendment->isPending()) {
+            $detail['actions']['can_approve'] = false;
+        }
 
         if ($amendment->subject_type === RmeRecordVersion::SUBJECT_ODONTOGRAM) {
             return $detail + [
@@ -795,11 +948,140 @@ final class RmeAmendmentService
                     ? route('rme.handwritings.image', (int) $page['row_id'])
                     : route('rme.handwriting-pages.image', (int) $page['row_id']),
                 'sha256' => isset($page['sha256']) ? substr((string) $page['sha256'], 0, 12) : null,
+                // Rule 240 §8 — an appended correction page says which amendment wrote it.
+                'label' => isset($page['rme_amendment_id'])
+                    ? $this->amendments->find((int) $page['rme_amendment_id'])?->loadMissing('decider:id,name')->correctionPageLabel()
+                    : null,
             ], $snapshot['pages'] ?? []),
         ];
     }
 
     // ─── Internals ──────────────────────────────────────────────────────────
+
+    /**
+     * Rule 240 §8 — the correction page a request carries, decoded and validated
+     * before anything is written: a sheet only; the handwriting canvas decoder
+     * (payload, PNG, declared size and inflate bounds, the blank guard) and a
+     * clean PNG structure. Null when none is given (then no page may be named).
+     */
+    private function correctionPageInput(MedicalRecord|Odontogram $subject, ?string $canvas, ?int $correctsPageNumber): ?string
+    {
+        if ($canvas === null || $canvas === '') {
+            if ($correctsPageNumber !== null) {
+                throw $this->refusal('corrects_page_number', self::MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE);
+            }
+
+            return null;
+        }
+
+        if ($subject instanceof Odontogram) {
+            throw $this->refusal('handwriting_data', self::MESSAGE_CORRECTION_PAGE_SHEET_ONLY);
+        }
+
+        $png = $this->canvasGuard->decodeCanvas($canvas);
+        $this->canvasGuard->assertCleanPng($png);
+
+        return $png;
+    }
+
+    /**
+     * Rule 240 §8 — the stored correction object as approve() applies it: present,
+     * its SHA-256 the recorded one, and still a canvas today's rules accept.
+     */
+    private function verifiedCorrectionPage(RmeAmendment $amendment): string
+    {
+        $bytes = HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256);
+
+        if ($bytes === null) {
+            throw $this->refusal('amendment', self::MESSAGE_CORRECTION_PAGE_INTEGRITY);
+        }
+
+        try {
+            $this->canvasGuard->assertCleanPng($this->canvasGuard->decodeCanvas('data:image/png;base64,'.base64_encode($bytes)));
+        } catch (ValidationException) {
+            throw $this->refusal('amendment', self::MESSAGE_PROPOSAL_CHANGED);
+        }
+
+        return $bytes;
+    }
+
+    /**
+     * The patient's handwriting book (R7-1): the record new pages are written
+     * on. The amended sheet itself when the patient has no book in the RME
+     * branches (a sheet whose branch left RME).
+     */
+    private function bookOf(MedicalRecord $sheet): MedicalRecord
+    {
+        return $this->workspace->canonicalMedicalRecord((int) $sheet->patient_id) ?? $sheet;
+    }
+
+    /** The named page holds a stored drawing in this book (page 1: the legacy row; 2+: the pages table). */
+    private function assertBookPage(MedicalRecord $book, int $pageNumber, string $key, string $message): void
+    {
+        if ($pageNumber < 1 || $pageNumber > self::PAGE_NUMBER_MAX) {
+            throw $this->refusal($key, $message);
+        }
+
+        $row = $pageNumber === 1
+            ? $this->handwritings->findByMedicalRecordId((int) $book->getKey())
+            : $this->handwritings->findPageByMedicalRecordIdAndPage((int) $book->getKey(), $pageNumber);
+
+        if ($row === null || blank($row->handwriting_path)) {
+            throw $this->refusal($key, $message);
+        }
+    }
+
+    /** A fresh server key on the private clinical disk; the client never supplies one. */
+    private function correctionObjectKey(MedicalRecord $sheet): string
+    {
+        return sprintf(
+            'handwritings/%d/%d/amendment_%s_%s.png',
+            (int) $sheet->branch_id,
+            (int) $sheet->clinic_visit_id,
+            now()->format('YmdHis'),
+            bin2hex(random_bytes(8)),
+        );
+    }
+
+    /**
+     * Best effort, rule 224: the key is this call's own and no committed row
+     * names it, so a failed removal costs one unreferenced private object.
+     */
+    private function discardUncommitted(string $key): void
+    {
+        try {
+            ClinicalEvidenceStorage::disk()->delete($key);
+        } catch (Throwable $e) {
+            Log::warning('An uncommitted clinical evidence object could not be removed.', ['type' => $e::class]);
+        }
+    }
+
+    /**
+     * Rule 240 §8 — the correction page on the amendment's own page: a link to
+     * the policy-gated image route (never the key), its digest, whether the
+     * stored object still verifies, and — once applied — the book page it became.
+     *
+     * @return array{url: string, sha256: string, corrects_page_number: ?int, intact: bool, applied: bool, page_number: ?int, label: ?string}|null
+     */
+    private function correctionPageDetail(RmeAmendment $amendment): ?array
+    {
+        if (! $amendment->hasCorrectionPage()) {
+            return null;
+        }
+
+        $applied = $amendment->status === RmeAmendment::STATUS_APPLIED;
+        $page = $applied ? $this->handwritings->findAmendmentPage((int) $amendment->getKey()) : null;
+
+        return [
+            'url' => route('rme.amendments.correction-page', $amendment),
+            'sha256' => substr((string) $amendment->correction_page_sha256, 0, 12),
+            'corrects_page_number' => $amendment->corrects_page_number,
+            'intact' => HandwritingPayloadGuard::intactPng($amendment->correction_page_path, $amendment->correction_page_sha256) !== null,
+            'applied' => $applied,
+            'page_number' => $page !== null ? (int) $page->page_number : null,
+            'label' => $page !== null ? $amendment->correctionPageLabel() : null,
+        ];
+    }
 
     /**
      * The stored proposal, re-validated against the locked record under today's
@@ -814,7 +1096,7 @@ final class RmeAmendmentService
         try {
             $content = $subject instanceof Odontogram
                 ? $this->chartProposal($subject, $stored)
-                : $this->sheetProposal($subject, $stored);
+                : $this->sheetProposal($subject, $stored, allowEmpty: $amendment->hasCorrectionPage());
         } catch (ValidationException $e) {
             throw $this->refusal('amendment', collect($e->errors())->flatten()->implode(' '));
         }
@@ -839,7 +1121,7 @@ final class RmeAmendmentService
                 if ($candidate !== null) {
                     app(SatusehatCandidateService::class)->refresh($candidate, $actor);
                 }
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Log::warning('SATUSEHAT candidate refresh failed after an RME amendment was applied', [
                     'clinic_visit_id' => $clinicVisitId,
                     'error' => $e::class,
@@ -865,7 +1147,7 @@ final class RmeAmendmentService
                 foreach ($recipients() as $recipient) {
                     try {
                         $recipient->notify(new RmeAmendmentNotification($title, $message, $url, $amendmentId));
-                    } catch (\Throwable $e) {
+                    } catch (Throwable $e) {
                         Log::warning('RME amendment notification failed; the amendment stands.', [
                             'rme_amendment_id' => $amendmentId,
                             'recipient_id' => (int) $recipient->getKey(),
@@ -873,7 +1155,7 @@ final class RmeAmendmentService
                         ]);
                     }
                 }
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Log::warning('RME amendment notification routing failed; the amendment stands.', [
                     'rme_amendment_id' => $amendmentId,
                     'error' => $e::class,
@@ -1014,8 +1296,11 @@ final class RmeAmendmentService
         return [$locked, $lockedSubject];
     }
 
-    /** @return array<string, mixed> only what changes, never an empty proposal */
-    private function sheetProposal(MedicalRecord $sheet, array $proposed): array
+    /**
+     * @param  bool  $allowEmpty  rule 240 §8 — a correction page is the change
+     * @return array<string, mixed> only what changes; empty only when allowed
+     */
+    private function sheetProposal(MedicalRecord $sheet, array $proposed, bool $allowEmpty = false): array
     {
         $this->assertKeys($proposed, ['fields', 'diagnoses'], 'proposed');
         $fields = $this->arrayPart($proposed, 'fields');
@@ -1050,7 +1335,7 @@ final class RmeAmendmentService
         $diagnoses = $this->diagnosisProposal($sheet, $this->arrayPart($proposed, 'diagnoses'));
         $content = array_filter(['fields' => $changed, 'diagnoses' => $diagnoses], fn (array $part): bool => $part !== []);
 
-        if ($content === []) {
+        if ($content === [] && ! $allowEmpty) {
             throw $this->refusal('proposed', self::MESSAGE_NO_CHANGE);
         }
 

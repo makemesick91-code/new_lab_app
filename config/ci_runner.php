@@ -1712,6 +1712,17 @@ return [
         'tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php',
         'tests/Feature/RME/OdontogramAmendmentApplyTest.php',
         'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php',
+        // Same rule, §8 (M3.3 PR6) — the handwriting amendment page: one correction page per sheet
+        // amendment, decoded with the canvas decoder and bounds plus a clean PNG structure (no
+        // polyglot), stored privately under a fresh server key with its SHA-256 as one unit with the
+        // row (rule 224 compensation), verified on apply and on display, appended on approval as the
+        // book's next page sealed at once and stamped with the amendment (visit → sheet → amendment →
+        // book), the original pages unchanged, the next version listing it, labelled in the workspace,
+        // the print and the version history, the pending image policy-gated (404 out of scope).
+        // Selected by the existing `MedicalRecordFinalization` and `RmeClinicalWriteAuthority` tokens in
+        // BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

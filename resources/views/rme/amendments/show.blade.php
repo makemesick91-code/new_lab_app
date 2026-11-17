@@ -4,7 +4,8 @@
      (`$actions` from RmeAmendmentService::actionsFor()). A chart is shown tooth by
      tooth with every stored field and the changed rows marked
      (RmeAmendmentService::chartDiff()). Approve-and-apply (rule 240 §7) is offered
-     only when the service would accept it now. --}}
+     only when the service would accept it now. A sheet amendment's handwriting
+     correction page shows through its policy-gated image route (rule 240 §8). --}}
 @php
     use App\Modules\ClinicOversight\Support\OversightFormat;
     use App\Modules\RmeAmendment\Models\RmeRecordVersion;
@@ -140,6 +141,38 @@
                 </div>
             @endif
         </x-ui.card>
+
+        {{-- Rule 240 §8 (M3.3 PR6) — the handwriting correction page, through the
+             policy-gated, no-store image route (never its object key). Once applied
+             it is a sealed page of the book; a rejected or cancelled one is kept on
+             the request only and never becomes a book page. --}}
+        @if ($correction_page !== null)
+            <x-ui.card title="Halaman koreksi tulisan tangan">
+                <div class="space-y-2 text-sm" data-correction-page>
+                    <p class="text-ink-soft">
+                        @if ($correction_page['corrects_page_number'] !== null)
+                            Halaman baru yang mengoreksi halaman {{ $correction_page['corrects_page_number'] }} buku RM.
+                        @else
+                            Halaman baru pada buku RM.
+                        @endif
+                        Halaman lama tidak diubah. SHA-256 {{ $correction_page['sha256'] }}…
+                    </p>
+                    @if ($correction_page['page_number'] !== null)
+                        <p class="font-medium text-navy" data-correction-page-applied="{{ $correction_page['page_number'] }}">Ditambahkan ke buku RM sebagai halaman {{ $correction_page['page_number'] }} — {{ $correction_page['label'] }}</p>
+                    @elseif (! $amendment->isPending())
+                        <p class="text-ink-soft" data-correction-page-not-applied>Halaman ini tidak diterapkan ke buku RM.</p>
+                    @endif
+                    @if ($correction_page['intact'])
+                        <img src="{{ $correction_page['url'] }}" alt="Halaman koreksi amandemen #{{ $amendment->id }}" loading="lazy"
+                             class="mx-auto block w-full max-w-md rounded border border-hairline" style="aspect-ratio:900/1273;object-fit:contain;">
+                    @else
+                        <p class="rounded border border-danger bg-danger-50 px-3 py-2 text-danger" data-correction-page-tampered>
+                            Gambar halaman koreksi tidak tersedia atau tidak lolos pemeriksaan integritas (SHA-256); amandemen ini tidak dapat diterapkan.
+                        </p>
+                    @endif
+                </div>
+            </x-ui.card>
+        @endif
 
         @if ($actions['can_cancel'])
             <x-ui.card title="Batalkan permintaan">

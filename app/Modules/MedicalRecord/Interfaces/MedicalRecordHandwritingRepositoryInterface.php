@@ -2,6 +2,7 @@
 
 namespace App\Modules\MedicalRecord\Interfaces;
 
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 
@@ -70,9 +71,27 @@ interface MedicalRecordHandwritingRepositoryInterface
      * stamp), whether or not a finalize covers it; or written by an encounter
      * other than `$liveEncounterId` (null: every stamped page). Object
      * keys and SHA-256 only, never bytes; an inline data-URI page reports no key.
-     * Ordered by record, page, row.
+     * An amendment page (rule 240 §8) also names its `rme_amendment_id`; no other
+     * page carries the key. Ordered by record, page, row.
      *
      * @return list<array<string, mixed>>
      */
     public function lockedBookPages(int $patientId, ?int $liveEncounterId = null): array;
+
+    /**
+     * Rule 240 §8 (memo M3.3 PR6) — append an approved handwriting correction to
+     * the book as its NEXT page (pages table, never page 1, never in place of a
+     * page), sealed at once and stamped with the amendment. Only inside the
+     * approve transaction, under the book record's lock (LogicException
+     * otherwise). The row is stored on the book's visit; `$page` names
+     * `handwriting_path`, `handwriting_hash`, `authored_clinic_visit_id` (the
+     * amended encounter), `sealed_by_medical_record_id` (the amended sheet),
+     * `rme_amendment_id`, `created_by` and `updated_by`.
+     *
+     * @param  array<string, mixed>  $page
+     */
+    public function appendSealedAmendmentPage(MedicalRecord $book, array $page): MedicalRecordHandwritingPage;
+
+    /** Rule 240 §8 — the book page an applied amendment appended, if any. */
+    public function findAmendmentPage(int $amendmentId): ?MedicalRecordHandwritingPage;
 }

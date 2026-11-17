@@ -397,6 +397,14 @@
                         @endif
                     </figcaption>
 
+                    {{-- Rule 240 §8 (M3.3 PR6) — a page appended by an approved amendment:
+                         which amendment, approved when (WITA) and by whom. --}}
+                    @if (($activeRmPage['amendment_label'] ?? null) !== null)
+                        <p class="mb-2 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $activeRmPage['amendment_id'] }}">
+                            {{ $activeRmPage['amendment_label'] }}
+                        </p>
+                    @endif
+
                     @if ($activePageLocked)
                         {{-- Rule 240 §4 — the service's own reason (sealed, or written by
                              another encounter), pinned by MedicalRecordFinalizationPageSealTest. --}}

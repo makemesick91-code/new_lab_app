@@ -193,7 +193,14 @@ it('HW-08 keeps the payload bound in the request rules and above the page canvas
         ->and(1273)->toBeLessThanOrEqual(HandwritingPayloadGuard::MAX_HANDWRITING_DIMENSION);
 
     $source = (string) file_get_contents((new ReflectionClass(MedicalRecordHandwritingController::class))->getFileName());
+    // Rule 240 §8 (M3.3 PR6) — the canvas decoder moved, unchanged, from the
+    // controller into HandwritingPayloadGuard::decodeCanvas(), which the
+    // amendment correction page shares; the controller calls it, and the
+    // decoder still bounds the payload and the PNG before the blank check.
+    $guard = (string) file_get_contents((new ReflectionClass(HandwritingPayloadGuard::class))->getFileName());
     expect($source)->toContain("'max:'.HandwritingPayloadGuard::MAX_HANDWRITING_PAYLOAD_LENGTH")
-        ->and($source)->toContain('$this->payloadGuard->assertPayloadLength($raw)')
-        ->and($source)->toContain('$this->payloadGuard->assertBoundedPng($decoded)');
+        ->and($source)->toContain('$this->payloadGuard->decodeCanvas(')
+        ->and($guard)->toContain('$this->assertPayloadLength($raw)')
+        ->and($guard)->toContain('$this->assertBoundedPng($decoded)')
+        ->and(strpos($guard, '$this->assertBoundedPng($decoded)'))->toBeLessThan(strpos($guard, '$this->isBlankCanvas($decoded)'));
 });

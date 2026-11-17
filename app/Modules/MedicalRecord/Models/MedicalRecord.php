@@ -6,7 +6,9 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
 use Database\Factories\MedicalRecordFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -188,18 +190,53 @@ class MedicalRecord extends Model
             'has_content' => $legacy !== null && filled($legacy->handwriting_path),
         ]]);
 
-        foreach ($this->handwritingPages()->get() as $page) {
-            $pages->push([
+        $rows = $this->handwritingPages()->get();
+
+        // Rule 240 §8 (memo M3.3 PR6) — an amendment page carries its label (the
+        // amendment, approved when and by whom), read in one query.
+        $amendmentIds = $rows->pluck('rme_amendment_id')->filter()->map(fn ($id): int => (int) $id)->values()->all();
+        $amendments = $amendmentIds === [] ? collect() : RmeAmendment::query()
+            ->with('decider:id,name')
+            ->whereKey($amendmentIds)
+            ->get()
+            ->keyBy(fn (RmeAmendment $amendment): int => (int) $amendment->getKey());
+
+        foreach ($rows as $page) {
+            $amendmentId = $page->getAttribute('rme_amendment_id');
+
+            $entry = [
                 'page_number' => $page->page_number,
                 'is_legacy' => false,
-                'preview_url' => $embedBinary ? $page->previewDataUri() : $page->previewUrl(),
+                'preview_url' => match (true) {
+                    ! $embedBinary => $page->previewUrl(),
+                    // The print embeds an amendment page only when its bytes match
+                    // the recorded SHA-256; a tampered one prints the honest "not
+                    // available" notice. (The page route verifies the same.)
+                    $amendmentId !== null => self::verifiedDataUri($page),
+                    default => $page->previewDataUri(),
+                },
                 'saved_at' => $page->saved_at,
                 'revision' => self::handwritingRevision($page->handwriting_path),
                 'has_content' => filled($page->handwriting_path),
-            ]);
+            ];
+
+            if ($amendmentId !== null) {
+                $entry['amendment_id'] = (int) $amendmentId;
+                $entry['amendment_label'] = $amendments->get((int) $amendmentId)?->correctionPageLabel();
+            }
+
+            $pages->push($entry);
         }
 
         return $pages;
+    }
+
+    /** Rule 240 §8 — an amendment page's bytes for print, only when they verify. */
+    private static function verifiedDataUri(MedicalRecordHandwritingPage $page): ?string
+    {
+        $bytes = HandwritingPayloadGuard::intactPng($page->handwriting_path, $page->handwriting_hash);
+
+        return $bytes !== null ? 'data:image/png;base64,'.base64_encode($bytes) : null;
     }
 
     protected static function newFactory(): MedicalRecordFactory
