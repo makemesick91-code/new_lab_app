@@ -116,4 +116,10 @@ interface RmeAmendmentRepositoryInterface
      * @return Collection<int, ClinicalDiagnosis> keyed by id
      */
     public function clinicalDiagnoses(array $ids): Collection;
+
+    /**
+     * Rule 240 §6.11 — one key of the payload (`new_values`) that the latest audit
+     * row of an amendment recorded for an action (sys_audit_logs), or null.
+     */
+    public function auditedValue(int $amendmentId, string $entityType, string $action, string $key): mixed;
 }

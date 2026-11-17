@@ -272,7 +272,9 @@ it('audits RME_AMENDMENT_APPLIED with ids and lengths only', function () {
 
     $audit = AuditLog::query()->where('entity_type', RmeAmendmentService::AUDIT_ENTITY)->where('action', RmeAmendmentService::AUDIT_APPLIED)->sole();
     expect((int) $audit->entity_id)->toBe((int) $amendment->id)
-        ->and(array_keys($audit->new_values))->toEqualCanonicalizing(['subject_type', 'subject_id', 'branch_id', 'status', 'requested_by', 'base_version', 'applied_version', 'applied_version_id', 'decision_reason_length'])
+        // Rule 240 §6.11 — `visit_ptm_state` is the amended visit's PTM as a code, no personal data.
+        ->and(array_keys($audit->new_values))->toEqualCanonicalizing(['subject_type', 'subject_id', 'branch_id', 'status', 'requested_by', 'base_version', 'applied_version', 'applied_version_id', 'decision_reason_length', 'visit_ptm_state'])
+        ->and($audit->new_values['visit_ptm_state'])->toBeIn(['executed', 'patient_only', 'none', 'voided'])
         ->and(json_encode($audit->toArray()))->not->toContain('m3ap rahasia')
         ->and(json_encode($audit->toArray()))->not->toContain('ireversibel');
 });

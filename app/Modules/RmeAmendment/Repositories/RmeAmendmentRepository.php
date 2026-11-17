@@ -7,6 +7,7 @@ namespace App\Modules\RmeAmendment\Repositories;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
@@ -236,5 +237,17 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
         }
 
         return ClinicalDiagnosis::query()->whereKey($ids)->get()->keyBy('id');
+    }
+
+    public function auditedValue(int $amendmentId, string $entityType, string $action, string $key): mixed
+    {
+        $row = AuditLog::query()
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $amendmentId)
+            ->where('action', $action)
+            ->latest('id')
+            ->first(['id', 'new_values']);
+
+        return $row?->new_values[$key] ?? null;
     }
 }

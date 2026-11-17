@@ -10,9 +10,11 @@
 | exists, so neither its request nor its approve-and-apply consults the PTM. What
 | stays: append-only versions, the immutable original, the doctor as requester, a
 | separate Supervisor RME as approver, the written reason and the audit trail. The
-| amended visit's PTM, as its persisted consent evidence records it, is shown on
-| the detail page for INFORMATION only — executed, patient signature only, none,
-| or voided — decided in RmeAmendmentService::detailFor(), never in Blade. No
+| amended visit's PTM, as its persisted consent evidence records it — executed,
+| patient signature only, none, or voided — is recorded as a code in the request
+| and the apply audit (`visit_ptm_state`) and shown on the detail page for
+| INFORMATION only: the current state, plus the state at request when it differs
+| — decided in RmeAmendmentService::detailFor(), never in Blade. No
 | consent row is ever created or changed: a historical consent is never made up.
 | A new medical act goes through the examination workflow and the PTM instead.
 |
@@ -26,7 +28,9 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
@@ -121,6 +125,17 @@ function m33ptConsents(ClinicVisit $visit): array
         ->map(fn (RmeVisitConsent $consent): array => $consent->getAttributes())->all();
 }
 
+/** The `visit_ptm_state` an amendment audit row recorded (one row per action). */
+function m33ptAuditedPtm(RmeAmendment $amendment, string $action): mixed
+{
+    return AuditLog::query()
+        ->where('entity_type', RmeAmendmentService::AUDIT_ENTITY)
+        ->where('entity_id', $amendment->id)
+        ->where('action', $action)
+        ->sole()
+        ->new_values['visit_ptm_state'] ?? null;
+}
+
 $m33ptStates = [
     'executed' => ['executed', 'Lengkap'],
     'patient signature only' => ['patient_only', 'Hanya tanda tangan pasien'],
@@ -137,9 +152,12 @@ it('requests and applies a sheet amendment whatever the visit PTM, shows that PT
     // No PTM gate on the request (the doctor of record) …
     $amendment = $service->request($sheet, $this->doctorUser, 'm33pt koreksi diagnosis kerja', ['fields' => ['assessment' => 'm33pt pulpitis ireversibel']]);
 
+    // … the state is recorded, as a code, in the request audit …
+    expect(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_REQUESTED))->toBe($ptm);
+
     // … the Supervisor RME sees the recorded PTM, decided by the service …
     expect($service->detailFor($amendment, $this->supervisor)['original_ptm'])
-        ->toMatchArray(['state' => $ptm])
+        ->toMatchArray(['state' => $ptm, 'at_request' => null])
         ->and($service->detailFor($amendment, $this->supervisor)['actions']['can_approve'])->toBeTrue();
 
     $this->actingAs($this->supervisor)
@@ -148,6 +166,7 @@ it('requests and applies a sheet amendment whatever the visit PTM, shows that PT
         ->assertSee('data-amendment-original-ptm="'.$ptm.'"', false)
         ->assertSee($label)
         ->assertSee('informasi')
+        ->assertDontSee('data-amendment-original-ptm-at-request', false)
         ->assertSee('data-amendment-approve', false);
 
     // … and no PTM gate on approve-and-apply either.
@@ -156,6 +175,7 @@ it('requests and applies a sheet amendment whatever the visit PTM, shows that PT
     expect($applied->status)->toBe(RmeAmendment::STATUS_APPLIED)
         ->and($sheet->fresh()->assessment)->toBe('m33pt pulpitis ireversibel')
         ->and($sheet->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_APPLIED))->toBe($ptm)
         ->and(m33ptConsents($visit))->toBe($consents);
 
     // The applied amendment still shows the same recorded PTM, read-only.
@@ -184,6 +204,8 @@ it('shows the recorded PTM of the amended chart visit and applies the chart amen
         ->assertSee($label);
 
     expect($service->approve($amendment, $this->supervisor)->status)->toBe(RmeAmendment::STATUS_APPLIED)
+        ->and(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_REQUESTED))->toBe($ptm)
+        ->and(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_APPLIED))->toBe($ptm)
         ->and(m33ptConsents($visit))->toBe($consents);
 })->with($m33ptStates);
 
@@ -202,4 +224,52 @@ it('names the live consent, not an earlier voided one, once the visit was re-sig
 
     expect(app(RmeAmendmentService::class)->detailFor($amendment, $this->supervisor)['original_ptm']['state'])
         ->toBe('patient_only');
+});
+
+it('shows the state recorded at request beside the current one after a supervised void, records both in the audits, and writes no consent', function () {
+    // The examination is still running, so its executed PTM can be voided by a
+    // supervisor between the request and the decision (rule 237 §14.2).
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'clinic_room_id' => $this->room->id,
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+    $consent = rmeSignedConsentFor($visit);
+    $sheet = m33ptSheet($visit);
+    $service = app(RmeAmendmentService::class);
+
+    $amendment = $service->request($sheet, $this->doctorUser, 'm33pt koreksi diagnosis kerja', ['fields' => ['assessment' => 'm33pt koreksi setelah void']]);
+
+    expect(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_REQUESTED))->toBe('executed')
+        ->and($service->detailFor($amendment, $this->supervisor)['original_ptm'])
+        ->toMatchArray(['state' => 'executed', 'at_request' => null]);
+
+    app(RmeVisitConsentService::class)->void(
+        $consent->fresh(),
+        userWith(['view_clinic_visits', 'view_rme_consents', 'void_rme_consents']),
+        'm33pt identitas pemberi persetujuan keliru',
+    );
+    $consents = m33ptConsents($visit);
+
+    expect($service->detailFor($amendment, $this->supervisor)['original_ptm'])
+        ->toMatchArray(['state' => 'voided'])
+        ->and($service->detailFor($amendment, $this->supervisor)['original_ptm']['at_request'])
+        ->toMatchArray(['state' => 'executed']);
+
+    $this->actingAs($this->supervisor)
+        ->get(route('rme.amendments.show', $amendment))
+        ->assertOk()
+        ->assertSee('data-amendment-original-ptm="voided"', false)
+        ->assertSee('data-amendment-original-ptm-at-request="executed"', false)
+        ->assertSeeInOrder(['PTM tercatat telah dibatalkan', 'Lengkap'])
+        ->assertSee('data-amendment-approve', false);
+
+    // The decision reads neither: it applies, and its audit records the state now.
+    expect($service->approve($amendment, $this->supervisor, 'm33pt sesuai catatan klinis')->status)->toBe(RmeAmendment::STATUS_APPLIED)
+        ->and(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_APPLIED))->toBe('voided')
+        ->and(m33ptAuditedPtm($amendment, RmeAmendmentService::AUDIT_REQUESTED))->toBe('executed')
+        ->and(m33ptConsents($visit))->toBe($consents)
+        ->and(RmeVisitConsent::query()->where('clinic_visit_id', $visit->id)->count())->toBe(1);
 });

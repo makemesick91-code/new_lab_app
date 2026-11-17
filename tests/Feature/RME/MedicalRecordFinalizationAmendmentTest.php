@@ -422,8 +422,10 @@ it('writes audit rows with ids and the reason length only — never the reason o
     $requested = m33aAudits(RmeAmendmentService::AUDIT_REQUESTED)[0];
     $rejected = m33aAudits(RmeAmendmentService::AUDIT_REJECTED)[0];
 
-    expect(array_keys($requested->new_values))->toEqualCanonicalizing(['subject_type', 'subject_id', 'branch_id', 'base_version', 'base_version_id', 'status', 'reason_length'])
+    // Rule 240 §6.11 — `visit_ptm_state` is the amended visit's PTM as a code, no personal data.
+    expect(array_keys($requested->new_values))->toEqualCanonicalizing(['subject_type', 'subject_id', 'branch_id', 'base_version', 'base_version_id', 'status', 'reason_length', 'visit_ptm_state'])
         ->and($requested->new_values['reason_length'])->toBe(mb_strlen(m33aReason()))
+        ->and($requested->new_values['visit_ptm_state'])->toBeIn(['executed', 'patient_only', 'none', 'voided'])
         ->and(array_keys($rejected->new_values))->toEqualCanonicalizing(['subject_type', 'subject_id', 'branch_id', 'status', 'requested_by', 'decision_reason_length']);
 
     $all = json_encode(AuditLog::query()->where('entity_type', RmeAmendmentService::AUDIT_ENTITY)->get()->toArray());

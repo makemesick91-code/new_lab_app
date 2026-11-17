@@ -47,12 +47,16 @@
                 <div class="md:col-span-2"><dt class="text-ink-soft">Alasan</dt><dd class="whitespace-pre-line">{{ $amendment->reason }}</dd></div>
                 @if (($original_ptm ?? null) !== null)
                     {{-- Rule 240 §6.11 (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate,
-                         record it") — the amended visit's recorded PTM, read-only and for
-                         information: decided by RmeAmendmentService::detailFor(); it gates nothing. --}}
+                         record it") — the amended visit's current recorded PTM, read-only and for
+                         information, and the state recorded at request when it differs: both
+                         decided by RmeAmendmentService::detailFor(); neither gates anything. --}}
                     <div class="md:col-span-2" data-amendment-original-ptm="{{ $original_ptm['state'] }}">
-                        <dt class="text-ink-soft">PTM kunjungan yang diamandemen (informasi)</dt>
+                        <dt class="text-ink-soft">PTM kunjungan yang diamandemen — status tercatat saat ini (informasi)</dt>
                         <dd>
                             {{ $original_ptm['label'] }}
+                            @if ($original_ptm['at_request'] !== null)
+                                <span class="mt-1 block" data-amendment-original-ptm-at-request="{{ $original_ptm['at_request']['state'] }}">Tercatat saat amandemen diajukan: {{ $original_ptm['at_request']['label'] }}</span>
+                            @endif
                             <span class="mt-1 block text-xs text-ink-soft">{{ $original_ptm['note'] }}</span>
                         </dd>
                     </div>

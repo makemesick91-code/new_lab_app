@@ -453,16 +453,22 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
     supervised amendment corrects a record that already exists, so it stays OUTSIDE the PTM gate (rule 241 §2.3):
     `request()`, `cancel()`, `reject()`, `approve()` and `actionsFor()` never consult the consent. What stays: the
     append-only versions and the immutable original (§5), the doctor as requester (§6.3), a separate Supervisor RME
-    as approver (§6.6, §7), the written reason and the audit trail (§6.8). The original PTM state is recorded for
-    information: the detail page shows the amended visit's PTM as its persisted consent evidence records it —
-    `executed`, `patient_only` (the patient's signature, no doctor countersignature), `none`, or `voided` (no live
-    consent, a voided one in its history) — read-only. `RmeAmendmentService::detailFor()` decides it
-    (`original_ptm`, from `RmeVisitConsentService::ptmStateFor()` and `historyFor()`); the Blade only renders it
-    (`data-amendment-original-ptm`). No consent row is created, changed or back-dated for an amendment, and a
-    historical consent is never made up. A NEW medical act is not an amendment: it takes the examination workflow
-    and the PTM. Tests: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php` — a sheet and a chart
-    amendment requested, shown and applied in each of the four states with every consent row of the visit
-    unchanged; a re-signed visit names its live consent, not the voided one.
+    as approver (§6.6, §7), the written reason and the audit trail (§6.8). The original PTM state is RECORDED for
+    information: `RME_AMENDMENT_REQUESTED` and `RME_AMENDMENT_APPLIED` carry `visit_ptm_state`, the amended visit's
+    PTM at that moment as its persisted consent evidence records it — `executed`, `patient_only` (the patient's
+    signature, no doctor countersignature), `none`, or `voided` (no live consent, a voided one in its history); a
+    code, no personal data (`RmeAmendmentService::ptmCodeOf()`, from `RmeVisitConsentService::ptmStateFor()` and
+    `historyFor()`). The detail page shows, read-only, the visit's CURRENT recorded PTM and, when the state recorded
+    at request differs (e.g. a supervised void in between), that one beside it; an amendment requested before the
+    audit carried it shows the current state only. `RmeAmendmentService::detailFor()` decides both (`original_ptm`:
+    `state`, `at_request`); the Blade only renders them (`data-amendment-original-ptm`,
+    `data-amendment-original-ptm-at-request`). No decision reads either value. No consent row is created, changed or
+    back-dated for an amendment, and a historical consent is never made up. A NEW medical act is not an amendment:
+    it takes the examination workflow and the PTM. Tests: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php`
+    — a sheet and a chart amendment requested, shown and applied in each of the four states, both audits carrying
+    the state and every consent row of the visit unchanged; a supervised void between request and decision shown as
+    both values, the apply audit recording `voided` and the request audit `executed`; a re-signed visit names its
+    live consent, not the voided one.
 
 ## 7. Approve and apply (M3.3 PR5)
 

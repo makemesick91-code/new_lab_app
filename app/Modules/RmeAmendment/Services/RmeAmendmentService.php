@@ -231,6 +231,9 @@ final class RmeAmendmentService
         self::ORIGINAL_PTM_VOIDED => 'PTM tercatat telah dibatalkan (void); tidak ada PTM yang berlaku.',
     ];
 
+    /** The audit payload key (request and apply) that records the visit's PTM code. */
+    private const AUDIT_PTM_STATE = 'visit_ptm_state';
+
     private const ORIGINAL_PTM_NOTE = 'Hanya informasi: amandemen mengoreksi rekam medis yang sudah ada, sehingga tidak memerlukan PTM dan status ini tidak menghalangi keputusan. Tindakan medis baru dicatat melalui pemeriksaan dan PTM.';
 
     public function __construct(
@@ -349,6 +352,8 @@ final class RmeAmendmentService
                     'base_version_id' => (int) $amendment->base_version_id,
                     'status' => RmeAmendment::STATUS_PENDING,
                     'reason_length' => mb_strlen($reason),
+                    // Rule 240 §6.11 — the visit's PTM now, a code; nothing decides on it.
+                    self::AUDIT_PTM_STATE => $this->ptmCodeOf($amendment->clinicVisit),
                 ] + ($page !== null ? [
                     // Ids and the digest only — never the key or the image (CG-11).
                     'correction_page_sha256' => $correction['correction_page_sha256'],
@@ -602,6 +607,8 @@ final class RmeAmendmentService
                 'applied_version' => (int) $version->version,
                 'applied_version_id' => (int) $version->getKey(),
                 'decision_reason_length' => $note !== null ? mb_strlen($note) : 0,
+                // Rule 240 §6.11 — the visit's PTM now, a code; this decision did not read it.
+                self::AUDIT_PTM_STATE => $this->ptmCodeOf($locked->clinicVisit),
             ] + ($appended !== null ? [
                 // Ids and the digest only — never the key or the image (CG-11).
                 'correction_page_id' => (int) $appended->getKey(),
@@ -919,29 +926,53 @@ final class RmeAmendmentService
      * PTM, for INFORMATION only. An amendment corrects a record that already
      * exists, so it stays outside the PTM gate (rule 241 §2.3): request(),
      * cancel(), reject(), approve() and actionsFor() never consult it, and
-     * nothing here creates or changes a consent row. `executed` and
-     * `patient_only` (the patient's signature, no doctor countersignature) are the
-     * live consent's (RmeVisitConsentService::ptmStateFor()); with no live
-     * consent, a voided one in the visit's history is `voided`, none at all
-     * `none`.
+     * nothing here creates or changes a consent row. `state` is the visit's
+     * CURRENT recorded PTM; `at_request` is the code the request audit recorded
+     * (`visit_ptm_state`), given only when it differs (e.g. a supervised void in
+     * between) and null for an amendment requested before it was recorded.
      *
-     * @return array{state: string, label: string, note: string}|null  null when the visit is gone
+     * @return array{state: string, label: string, note: string, at_request: array{state: string, label: string}|null}|null  null when the visit is gone
      */
     private function originalPtmFor(RmeAmendment $amendment): ?array
     {
-        $visit = $amendment->clinicVisit;
+        $current = $this->ptmCodeOf($amendment->clinicVisit);
 
+        if ($current === null) {
+            return null;
+        }
+
+        $atRequest = $this->amendments->auditedValue((int) $amendment->getKey(), self::AUDIT_ENTITY, self::AUDIT_REQUESTED, self::AUDIT_PTM_STATE);
+        $atRequest = is_string($atRequest) && isset(self::ORIGINAL_PTM_LABELS[$atRequest]) ? $atRequest : null;
+
+        return [
+            'state' => $current,
+            'label' => self::ORIGINAL_PTM_LABELS[$current],
+            'note' => self::ORIGINAL_PTM_NOTE,
+            'at_request' => $atRequest !== null && $atRequest !== $current
+                ? ['state' => $atRequest, 'label' => self::ORIGINAL_PTM_LABELS[$atRequest]]
+                : null,
+        ];
+    }
+
+    /**
+     * Rule 240 §6.11 — a visit's PTM as its persisted consent evidence records it,
+     * as a code (no personal data): `executed` and `patient_only` (the patient's
+     * signature, no doctor countersignature) are the live consent's
+     * (RmeVisitConsentService::ptmStateFor()); with no live consent, a voided one
+     * in the visit's history is `voided`, none at all `none`. Null for no visit.
+     * Read only — for the audits and the page, never for a decision.
+     */
+    private function ptmCodeOf(?ClinicVisit $visit): ?string
+    {
         if ($visit === null) {
             return null;
         }
 
-        $state = match ($this->consents->ptmStateFor($visit)) {
+        return match ($this->consents->ptmStateFor($visit)) {
             RmeVisitConsentService::PTM_EXECUTED => self::ORIGINAL_PTM_EXECUTED,
             RmeVisitConsentService::PTM_AWAITING_DOCTOR => self::ORIGINAL_PTM_PATIENT_ONLY,
             default => $this->consents->historyFor($visit)->isEmpty() ? self::ORIGINAL_PTM_NONE : self::ORIGINAL_PTM_VOIDED,
         };
-
-        return ['state' => $state, 'label' => self::ORIGINAL_PTM_LABELS[$state], 'note' => self::ORIGINAL_PTM_NOTE];
     }
 
     /**
