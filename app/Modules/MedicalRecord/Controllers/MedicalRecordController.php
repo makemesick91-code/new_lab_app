@@ -417,6 +417,19 @@ class MedicalRecordController extends Controller
         $prevRmPage = $activePageNumber > 1 ? $activePageNumber - 1 : null;
         $nextRmPage = $activePageNumber < $totalRmPages ? $activePageNumber + 1 : null;
 
+        // Rule 243 §2.5 (PR A1b, rule 135 mirror) — each control is gated on the
+        // ability of the record it WRITES, decided here and not in Blade: a page
+        // of the patient's BOOK on `appendPage` (patient-level), an in-place page
+        // of a per-visit sheet on `update` of that sheet, "+ Tambah Lembar RM" on
+        // `create` for the visit it creates on. With the encounter scope OFF
+        // these answer exactly what `update` on the active sheet answered.
+        $viewer = $request->user();
+        $handwritingIsBook = $handwritingRecord !== null
+            && (int) $handwritingRecord->getKey() === (int) $handwritingFormRecord->getKey();
+        $canEditHandwritingTarget = $viewer?->can($handwritingIsBook ? 'appendPage' : 'update', $handwritingFormRecord) ?? false;
+        $canAddSheet = $addSheetVisit !== null
+            && ($viewer?->can('create', [MedicalRecord::class, $addSheetVisit]) ?? false);
+
         return view('rme.visits.medical-record.show', [
             'clinicVisit' => $activeVisit,
             'medicalRecord' => $medicalRecord,
@@ -448,6 +461,8 @@ class MedicalRecordController extends Controller
             'editorFormAction' => $editorFormAction,
             'editorPageNumber' => $editorPageNumber,
             'editorRevision' => $editorRevision,
+            'canEditHandwritingTarget' => $canEditHandwritingTarget,
+            'canAddSheet' => $canAddSheet,
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),

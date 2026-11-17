@@ -11,6 +11,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -106,7 +107,7 @@ class MedicalRecordHandwritingController extends Controller
         $decoded = $this->payloadGuard->decodeCanvas($request->input('handwriting_data'));
 
         $saved = $handwritingService->save(
-            function () use ($needsCanonicalDraft, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
+            function () use ($needsCanonicalDraft, $isNewCanonicalPage, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
                 if (! $needsCanonicalDraft) {
                     // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) —
                     // re-decided inside the save transaction, locking the encounter's
@@ -115,6 +116,15 @@ class MedicalRecordHandwritingController extends Controller
                     // canonical-draft path below asserts the same inside
                     // getOrCreateCanonicalMedicalRecord().
                     $encounter = $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+
+                    // Rule 243 §2.5 (PR A1b) — an in-place page of a per-visit
+                    // sheet is that sheet's content: with the encounter scope ON
+                    // only the doctor of its own visit, in service, past any policy
+                    // (an unlocked read of the sheet's visit; lock order kept). A
+                    // book page stays patient-level (appendPage).
+                    if (! $isNewCanonicalPage) {
+                        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, Auth::user());
+                    }
 
                     // Rule 240 §4 — the authorized encounter is the page's author.
                     return [$medicalRecord, $clinicVisit, $encounter];

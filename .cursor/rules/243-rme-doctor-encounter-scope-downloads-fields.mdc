@@ -163,17 +163,28 @@ added by their own PRs.
    book page) and the third layer then requires the live encounter to be the doctor's own. Third layer (re-asserted
    in the services, past `Gate::before`): `RmeVisitConsentService::actorMayWorkOnEncounter()` (RME book, odontogram,
    performed treatments) and `assertOperatorWithinScope()` (consent sign/void), and
-   `PrescriptionAuthoringAuthority::permits()`; for a non-book SHEET (PR A1b)
-   `MedicalRecordSheetWriteScope::assertWritable()`, called after the RME authoring gate by `MedicalRecordService`
-   (`updateDraft`, `finalize`, which now take an explicit actor, defaulting to the authenticated one),
-   `MedicalRecordDiagnosisService` (`record`, `makePrimary`, `remove` — inside the transaction on the LOCKED sheet
-   where it locks one) and `DiagnosisRolloutService::grantOverride`, with the same 403 messages
-   (`AuthorizationException`). `MedicalRecordSheetWriteScope::followsItsVisit()` is the one definition of "not the
-   book", shared with `MedicalRecordPolicy`. With the flag OFF all of these answer exactly as before (`appendPage` =
-   the old `update`; the sheet assertion is a no-op).
-6. **Lists mirror records.** `applyVisitScopeForUser()` = own visits OR (non-pre-exam AND an own in-service encounter
-   with that patient); `applyPatientScopeForUser()` = patients with an own in-service encounter. The correlated
-   subquery uses the window's SQL twin, never a re-derivation. The uncalled `applyMedicalRecordScopeForUser()` was
+   `PrescriptionAuthoringAuthority::permits()`; and for a SHEET's typed content (PR A1b)
+   `MedicalRecordSheetWriteScope::assertWritable()` — the ANCHOR rule: every sheet, the book included, is typed-written
+   only by the doctor of its own visit while in service — called after the RME authoring gate by `MedicalRecordService`
+   (`updateDraft`, `finalize`, which take an explicit actor defaulting to the authenticated one; `finalized_by` records
+   it), `MedicalRecordDiagnosisService` (`record`, `makePrimary`, `remove` — inside the transaction on the LOCKED sheet
+   where it locks one), `DiagnosisRolloutService::grantOverride`, and the in-place page save of a per-visit sheet
+   (`MedicalRecordHandwritingController`, inside the save transaction, after the authoring gate; lock order kept), with
+   the same 403 messages (`AuthorizationException`). `startBook()` with typed content applies the same rule to the
+   locked canonical visit it would anchor to (`assertTypedWriteOn()`), so typed content is never written onto another
+   doctor's visit; a book started without typed content (the handwriting book) is allowed as before — chosen over
+   silently dropping the typed fields. Appending a book page is the one patient-level write (`appendPage`).
+   `MedicalRecordSheetWriteScope::followsItsVisit()` is the one definition of "not the book" for reads, shared with
+   `MedicalRecordPolicy` (the book id is memoised per routed request once found). The workspace controls mirror these
+   abilities, computed in `MedicalRecordController` (rule 135): the handwriting editor on `appendPage` for a book page
+   and on `update` for an in-place sheet page, "+ Tambah Lembar RM" on `create` for its target visit, the diagnosis
+   form on `update` of the sheet it writes. With the flag OFF all of these answer exactly as before (`appendPage` =
+   the old `update`; the sheet assertions are no-ops).
+6. **Lists: scoped now, and what waits for A3.** Scoped now and mirroring their per-record checks:
+   `applyVisitScopeForUser()` = own visits OR (non-pre-exam AND an own in-service encounter with that patient) — the
+   visit list, room worklist and patient queue; `applyPatientScopeForUser()` = patients with an own in-service
+   encounter — patient search, cross-branch lookup, the unified medical-record index and the legacy lookups. The
+   correlated subquery uses the window's SQL twin, never a re-derivation. The uncalled `applyMedicalRecordScopeForUser()` was
    removed rather than left as an unmirrored list scope. Histories (PR A1b): `ClinicVisitService::patientVisitHistory()`
    takes the viewer explicitly (rule 199's explicit-actor pattern; the visit page, the workspace and the prior-visit
    picker pass it) and, with the flag ON, keeps only the visits `doctorCanAccessVisit()` admits — so the visit page's
@@ -194,6 +205,19 @@ added by their own PRs.
    encounter (pinned by a test) and is closed only by M3.3 PR2's page seal / author stamp (rule 240 §4).
    The items recorded open in A1 (service-level sheet re-assertion, history scoping, the access panel, the picker
    status) are closed by PR A1b.
+   **Not yet scoped (A3), each a precondition for turning the flag ON:** the workspace sheet navigation and document
+   rail (`PatientRmWorkspaceResolver::sheetsForPatient`, `RmeWorkspaceDocumentPresenter`); the book page sequence
+   (`PatientRmWorkspaceResolver::orderedHandwritingBookForPatient` — the book is patient-level, its pages are not yet
+   filtered by their authoring visit); the consent banner (`activeEncounter`, `MedicalRecordController::show`); the
+   unified RM pages (`UnifiedMedicalRecordIndexRepository::nativeRecordsForPatient`, `latestNativeRecordsFor`); the
+   prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`); the prev/next visit arrows
+   (`ClinicVisitRepository::adjacentVisitsForPatient`); and the visit page's follow-up links
+   (`rme/visits/show.blade.php`, "Kunjungan Kontrol"). The per-record checks behind each of these already refuse (404);
+   only the listing can still name another doctor's visit. Pre-existing finding, deliberately NOT fixed here: the
+   prescription page reads `$adjacentVisits['prev']` while the repository returns `'previous'`, so its previous-visit
+   arrow never renders. Correcting the key alone would expose the arrows' unscoped visit (all RME branches —
+   `RmeClinicalDocumentReadScopeTest` "keeps another branch's prescriptions out of the front desk's history list"
+   then fails), so it belongs with the A3 arrow scoping (branch read scope and encounter scope together).
 9. **Tests.** `tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php` (A1) and
    `tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php` (A1b) (critical-gate token `DoctorPatientScope`,
    declared in `critical_gate_mandatory_suites`); the existing doctor-scope suites run unchanged with the flag OFF.

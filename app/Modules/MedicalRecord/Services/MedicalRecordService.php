@@ -460,10 +460,31 @@ class MedicalRecordService
                 return [$book, false];
             }
 
+            // Rule 243 §2.5 (PR A1b) — typed content on the new book belongs to
+            // its anchor (the locked canonical visit), so with the encounter scope
+            // ON it needs that visit's writer, exactly like updateDraft(). A book
+            // started WITHOUT typed content is the patient-level handwriting book
+            // and is allowed as before; nothing typed is ever silently dropped.
+            if ($this->hasTypedContent($data)) {
+                $this->sheetScope->assertTypedWriteOn($target, $actor);
+            }
+
             $sheet = $this->createDraftOn($target, (int) $actor->getKey(), $data, adoptExisting: true, actor: $actor);
 
             return [$sheet, $sheet->wasRecentlyCreated];
         });
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function hasTypedContent(array $data): bool
+    {
+        foreach (['subjective', 'objective', 'assessment', 'plan', 'notes'] as $field) {
+            if (filled($data[$field] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** R7-1 — step 2 of the book selector, read through this service's repository. */

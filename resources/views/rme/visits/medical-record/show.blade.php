@@ -20,7 +20,10 @@
         // consented the editor, the "+ Tambah Halaman RM" control and the
         // diagnosis forms opened onto a write the service refuses.
         $canAuthorRmeNow = (bool) ($canAuthorRme ?? false);
-        $canEditHandwriting = $canUpdate && $canAuthorRmeNow;
+        // Rule 243 §2.5 — the editor is gated on the ability of the record it
+        // writes (the book: appendPage; an in-place sheet page: update), computed
+        // in the controller.
+        $canEditHandwriting = ($canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
         $savedHandwriting = $medicalRecord->latestHandwriting();
         $hasHandwriting = $hasRequiredHandwriting ?? false;
         $hasLegacySoap = filled($medicalRecord->subjective)
@@ -986,8 +989,11 @@
         {{-- FIX-PRE-68-45 Scope A — relocated "Buku RM Pasien" sheet navigation
              (Sprint 64.0). Moved below the handwriting canvas so the doctor sees
              the handwritten RME first; sheet switching still works as before. --}}
+        {{-- Rule 243 §2.5 — "+ Tambah Lembar RM" follows `create` on the visit it
+             creates on (computed in the controller), not `update` of the active
+             sheet, which for a returning patient is the book. --}}
         @include('rme.visits.partials.rm-sheet-nav', [
-            'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
+            'canEdit' => $canAddSheet ?? (auth()->user()?->can('update', $medicalRecord) ?? false),
         ])
 
         {{-- LEGACY-RME-PDF-HISTORY-1 — the patient's full RME history (native +

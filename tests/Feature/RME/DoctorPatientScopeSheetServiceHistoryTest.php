@@ -32,6 +32,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\MedicalRecordDiagnosisService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
@@ -296,4 +297,140 @@ it('answers the prior-visit picker with 404 for a patient out of scope, 403 with
 
     dpshFlag(false);
     $this->actingAs($a)->getJson(route('rme.visits.patient-options', ['patient_id' => $stranger->id]))->assertForbidden();
+});
+
+/*
+|--------------------------------------------------------------------------
+| 3 — review of A1b: the workspace controls, the book's typed fields, the
+|     in-place page save, the picker, the explicit actor, exempt roles
+|--------------------------------------------------------------------------
+*/
+
+function dpshPage(MedicalRecord $sheet, int $number, Doctor $author): MedicalRecordHandwritingPage
+{
+    return MedicalRecordHandwritingPage::query()->create([
+        'medical_record_id' => $sheet->id,
+        'clinic_visit_id' => $sheet->clinic_visit_id,
+        'branch_id' => $sheet->branch_id,
+        'doctor_id' => $author->id,
+        'page_number' => $number,
+        'handwriting_path' => sprintf('rme/handwriting/dpsh-%d-%d.png', $sheet->id, $number),
+        'handwriting_hash' => str_repeat('f', 64),
+        'saved_at' => now(),
+    ]);
+}
+
+it('renders the book editor and the add-sheet control for the doctor\'s own consented encounter', function (bool $on) {
+    dpshFlag($on);
+    $a = test()->dpshUserA;
+    $bookVisit = dpshCompleted(test()->dpshDoctorB, '2025-01-01 03:00:00');
+    dpshSheet($bookVisit); // the book, anchored to doctor B's first visit
+    $aVisit = dpshVisit(test()->dpshDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    rmeSignedConsentFor($aVisit);
+
+    $html = $this->followingRedirects()
+        ->actingAs($a)
+        ->get(route('rme.visits.medical-record.show', $aVisit))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('id="handwriting-form"')
+        ->and($html)->toContain(route('rme.visits.medical-record.store', $aVisit));
+})->with(['flag ON' => [true], 'flag OFF' => [false]]);
+
+it('holds the book\'s typed fields and diagnoses to its anchor visit in the services', function () {
+    dpshFlag(true);
+    $f = dpshFixture();
+    $a = test()->dpshUserA;
+    $this->actingAs($a);
+
+    $update = dpshRefusal(fn () => app(MedicalRecordService::class)->updateDraft($f['book'], ['notes' => 'pada buku'], $a));
+    $diagnose = dpshRefusal(fn () => app(MedicalRecordDiagnosisService::class)->record($f['book'], [
+        'clinical_diagnosis_id' => ClinicalDiagnosis::factory()->create()->id,
+        'diagnosis_role' => MedicalRecordDiagnosis::ROLE_PRIMARY,
+    ], $a));
+
+    expect($update)->toContain('ditangani dokter lain')
+        ->and($diagnose)->toContain('ditangani dokter lain')
+        ->and($f['book']->fresh()->notes)->toBeNull();
+});
+
+it('refuses to start the book with typed fields on another doctor\'s visit, and starts it without them', function () {
+    dpshFlag(true);
+    $a = test()->dpshUserA;
+    $this->actingAs($a);
+    $bFirst = dpshCompleted(test()->dpshDoctorB, '2025-01-01 03:00:00'); // canonical visit, no sheet yet
+    $aVisit = dpshVisit(test()->dpshDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    rmeSignedConsentFor($aVisit);
+
+    $refused = dpshRefusal(fn () => app(MedicalRecordService::class)->startBook($aVisit, $a, ['subjective' => 'keluhan']));
+
+    expect($refused)->toContain('ditangani dokter lain')
+        ->and(MedicalRecord::query()->where('patient_id', test()->dpshPatient->id)->exists())->toBeFalse();
+
+    [$book, $created] = app(MedicalRecordService::class)->startBook($aVisit, $a, []);
+
+    expect($created)->toBeTrue()
+        ->and((int) $book->clinic_visit_id)->toBe((int) $bFirst->id)
+        ->and($book->subjective)->toBeNull();
+});
+
+it('refuses an in-place page save on another doctor\'s sheet even past the policy', function () {
+    dpshFlag(true);
+    $f = dpshFixture();
+    $a = test()->dpshUserA;
+    dpshPage($f['bSheet'], 2, test()->dpshDoctorB);
+    dpshPage($f['bSheet'], 3, test()->dpshDoctorB);
+    Gate::before(fn () => true);
+
+    $this->actingAs($a)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$f['bVisit'], $f['bSheet']]), [
+            'handwriting_data' => validPodSignatureData(),
+            'page_number' => 2,
+        ])
+        ->assertForbidden();
+
+    expect(MedicalRecordHandwritingPage::query()->where('medical_record_id', $f['bSheet']->id)->where('page_number', 2)->value('handwriting_path'))
+        ->toBe(sprintf('rme/handwriting/dpsh-%d-2.png', $f['bSheet']->id));
+});
+
+it('filters the prior-visit picker to what the doctor may read', function () {
+    dpshFlag(true);
+    $a = test()->dpshUserA;
+    $own = dpshVisit(test()->dpshDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    $bHistory = dpshCompleted(test()->dpshDoctorB, '2026-10-01 03:00:00');
+    $bWaiting = dpshVisit(test()->dpshDoctorB, ClinicVisit::STATUS_WAITING);
+
+    $ids = collect($this->actingAs($a)
+        ->getJson(route('rme.visits.patient-options', ['patient_id' => test()->dpshPatient->id]))
+        ->assertOk()
+        ->json('visits'))->pluck('id')->all();
+
+    expect($ids)->toContain($own->id)
+        ->and($ids)->toContain($bHistory->id)
+        ->and($ids)->not->toContain($bWaiting->id);
+});
+
+it('records the explicit actor as the finalizer', function () {
+    dpshFlag(true);
+    $f = dpshFixture();
+    $a = test()->dpshUserA;
+    dpshPage($f['aSheet'], 2, test()->dpshDoctorA);
+
+    $this->actingAs(test()->dpshUserB); // the session is someone else
+    $finalized = app(MedicalRecordService::class)->finalize($f['aSheet'], $a);
+
+    expect($finalized->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and((int) $finalized->finalized_by)->toBe((int) $a->id);
+});
+
+it('keeps Supervisor RME exempt from the sheet rule in the services', function () {
+    dpshFlag(true);
+    $f = dpshFixture();
+    $supervisor = rmeClinicalAuthor();
+    $this->actingAs($supervisor);
+
+    app(MedicalRecordService::class)->updateDraft($f['bSheet'], ['notes' => 'oleh supervisor'], $supervisor);
+
+    expect($f['bSheet']->fresh()->notes)->toBe('oleh supervisor');
 });
