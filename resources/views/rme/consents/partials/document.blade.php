@@ -38,6 +38,12 @@
     // as it did, also beside a countersignature.
     $doctorCountersignature = $doctorCountersignature ?? null;
     $doctorCountersignaturePending = (bool) ($doctorCountersignaturePending ?? false);
+
+    // Rule 241 §6 — v2026.2 answers clause 9 (publication) separately; the
+    // snapshot says so. A version without it (2026.1 and older) renders byte for
+    // byte as before: the addition below is a column-0 directive that emits
+    // nothing (pinned against tests/Fixtures/rme-consent-document-pre-v2026-2.blade.php.txt).
+    $publicationClause = $snapshot['publication_clause'] ?? null;
 @endphp
 
 <div class="consent-document">
@@ -135,6 +141,11 @@
                             Jawaban: {{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}
                         </span>
                     @endif
+@if ($publicationClause !== null && (int) $number === (int) $publicationClause)
+                        <span class="consent-documentation-answer">
+                            Jawaban: {{ $consent->publication_consent === null ? '—' : ($consent->publication_consent ? 'YA' : 'TIDAK') }}
+                        </span>
+@endif
                 </td>
             </tr>
         @endforeach

@@ -1665,6 +1665,12 @@ return [
         // tokens in BOTH critical variants.
         'tests/Feature/RME/RmeVisitConsentTwoSignatureGateTest.php',
         'tests/Feature/RME/RmeOdontogramTwoSignatureGateTest.php',
+        // DMS memo M4.4, PTM PR3 (rule 241 §6) — consent template v2026.2 (clause 8 documentation /
+        // clause 9 publication) built INACTIVE: selected only with the risky flag on AND approved
+        // wording (draft refused and logged without patient data), both answers explicit, a stale
+        // page refused, historical consents byte for byte, clause 9 gating nothing. Selected by the
+        // existing `RmeVisitConsent` token in BOTH critical variants.
+        'tests/Feature/RME/RmeVisitConsentTemplateVersionSplitTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

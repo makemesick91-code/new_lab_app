@@ -46,6 +46,9 @@ class StoreRmeVisitConsentRequest extends FormRequest
 
         return [
             'template_code' => ['required', 'string', Rule::in($templates)],
+            // Rule 241 §6 — the version the capture page showed. Optional; when
+            // given, the service refuses it unless it is the version in force.
+            'template_version' => ['nullable', 'string', 'max:20'],
 
             'consenter_relationship' => ['required', 'string', Rule::in($relationships)],
             // Identity of the person signing. Required only when somebody other
@@ -66,6 +69,10 @@ class StoreRmeVisitConsentRequest extends FormRequest
             // Clause 8 — explicit YA/TIDAK. `present` + `boolean` rather than
             // `required`, because `required` rejects the legitimate answer "0".
             'documentation_consent' => ['present', 'boolean'],
+            // Rule 241 §6 — clause 9 (publication) on v2026.2 only. Its presence
+            // depends on the version the SERVICE selects, so the service requires
+            // it (or refuses it on a version without clause 9); here it is bound.
+            'publication_consent' => ['nullable', 'boolean'],
 
             // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — the signature
             // payload bound at the edge, in characters of the data URI; the
@@ -89,6 +96,7 @@ class StoreRmeVisitConsentRequest extends FormRequest
             'medical_action.required' => 'Tindakan medis yang disetujui wajib diisi.',
             'documentation_consent.present' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
             'documentation_consent.boolean' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
+            'publication_consent.boolean' => 'Persetujuan publikasi/promosi harus dipilih YA atau TIDAK.',
             'consenter_signature.required' => 'Tanda tangan pemberi persetujuan wajib diisi.',
             'consenter_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
             'doctor_signature.prohibited' => RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE,

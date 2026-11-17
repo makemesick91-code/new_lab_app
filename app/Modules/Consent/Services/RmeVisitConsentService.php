@@ -16,6 +16,7 @@ use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Services\Foundation\FeatureFlagService;
 use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
@@ -123,6 +124,27 @@ class RmeVisitConsentService
 
     public const MESSAGE_FINISH_AWAITING_DOCTOR = 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani dokter. Dokter yang menangani menandatanganinya dari Ruang Perawatan.';
 
+    /*
+     * DMS memo M4.4, PTM plan PR3 (rule 241 §6) — consent template v2026.2,
+     * built INACTIVE. A new consent is signed on the candidate version only
+     * while the risky flag is on AND its wording is approved (owner decision:
+     * the final clause 8/9 wording is pending, so activation is blocked on it).
+     */
+    public const TEMPLATE_CANDIDATE_FLAG = 'rme.consent_template_v2026_2';
+
+    public const WORDING_APPROVED = 'approved';
+
+    public const TEMPLATE_REFUSAL_WORDING_NOT_APPROVED = 'wording_not_approved';
+
+    public const TEMPLATE_REFUSAL_DRAFT_MARKER = 'draft_marker_present';
+
+    public const TEMPLATE_REFUSAL_DEFINITION_INVALID = 'definition_invalid';
+
+    public const MESSAGE_TEMPLATE_VERSION_CHANGED = 'Isi form persetujuan sudah berubah sejak halaman ini dibuka. Muat ulang halaman, bacakan kembali isi persetujuan kepada pasien, lalu ambil tanda tangannya.';
+
+    /** The clause-8 message of every version without a separate clause 9 (unchanged). */
+    public const MESSAGE_DOCUMENTATION_ANSWER = 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.';
+
     public function __construct(
         private readonly RmeVisitConsentRepositoryInterface $consents,
         private readonly RmeVisitConsentNumberGeneratorService $numbers,
@@ -131,6 +153,7 @@ class RmeVisitConsentService
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly AuditLogService $auditLog,
         private readonly DoctorIdentityResolver $doctorIdentity,
+        private readonly FeatureFlagService $flags,
     ) {}
 
     /*
@@ -263,19 +286,33 @@ class RmeVisitConsentService
     }
 
     /**
+     * The forms a NEW consent may be signed on, each in the version
+     * templateForNewConsent() selects — what the capture page shows is what
+     * sign() will snapshot.
+     *
      * @return array<string, array<string, mixed>>
      */
     public function availableTemplates(): array
     {
-        return (array) config('rme_consent.templates', []);
+        $templates = [];
+
+        foreach (array_keys((array) config('rme_consent.templates', [])) as $code) {
+            $templates[$code] = $this->templateForNewConsent((string) $code);
+        }
+
+        return $templates;
     }
 
     /**
+     * The CURRENT definition of a form.
+     *
      * @return array<string, mixed>
      */
     public function template(string $code): array
     {
-        $template = config('rme_consent.templates.'.$code);
+        // Indexed directly: a code is a literal key, never a config path
+        // (a dotted code must not reach inside a definition).
+        $template = ((array) config('rme_consent.templates', []))[$code] ?? null;
 
         if (! is_array($template)) {
             throw ValidationException::withMessages([
@@ -284,6 +321,86 @@ class RmeVisitConsentService
         }
 
         return $template;
+    }
+
+    /**
+     * Rule 241 §6 — the version a NEW consent of this form is signed on.
+     *
+     * The candidate (v2026.2) is selected only when BOTH hold: the risky flag
+     * `rme.consent_template_v2026_2` is on (FeatureFlagService, captured at
+     * config build) AND the candidate is activatable — wording_status exactly
+     * `approved`, no draft marker left in its text, a sound definition. Anything
+     * else returns the current template, exactly as before. A refusal while the
+     * flag is on is logged with the form code, the version and the reason only.
+     * Historical consents never pass through here: they render their snapshot.
+     *
+     * @return array<string, mixed>
+     */
+    public function templateForNewConsent(string $code): array
+    {
+        $current = $this->template($code);
+        $candidate = ((array) config('rme_consent.candidate_templates', []))[$code] ?? null;
+
+        if (! is_array($candidate) || ! $this->flags->enabled(self::TEMPLATE_CANDIDATE_FLAG)) {
+            return $current;
+        }
+
+        $refusal = $this->candidateActivationRefusal($code, $candidate, $current);
+
+        if ($refusal !== null) {
+            Log::warning('RME consent template v2026.2 activation refused while its flag is on; new consents keep the current template.', [
+                'template_code' => $code,
+                'candidate_version' => is_scalar($candidate['version'] ?? null) ? (string) $candidate['version'] : '',
+                'reason' => $refusal,
+            ]);
+
+            return $current;
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * Why a candidate version may not be signed on (fail closed), or null.
+     *
+     * @param  array<string, mixed>  $candidate
+     * @param  array<string, mixed>  $current
+     */
+    private function candidateActivationRefusal(string $code, array $candidate, array $current): ?string
+    {
+        // Exactly `approved`: the wording is a product decision (rule 100 §4).
+        if (($candidate['wording_status'] ?? null) !== self::WORDING_APPROVED) {
+            return self::TEMPLATE_REFUSAL_WORDING_NOT_APPROVED;
+        }
+
+        $markers = array_values(array_filter([(string) config('rme_consent.draft_marker', ''), '[DRAF']));
+        $texts = array_merge(
+            [$candidate['title'] ?? null, $candidate['consent_statement'] ?? null, $candidate['clauses_intro'] ?? null, $candidate['declaration'] ?? null, $candidate['location'] ?? null],
+            is_array($candidate['clauses'] ?? null) ? array_values($candidate['clauses']) : [],
+            is_array($candidate['signature_labels'] ?? null) ? array_values($candidate['signature_labels']) : [],
+        );
+
+        foreach ($texts as $text) {
+            foreach ($markers as $marker) {
+                if (is_string($text) && str_contains($text, $marker)) {
+                    return self::TEMPLATE_REFUSAL_DRAFT_MARKER;
+                }
+            }
+        }
+
+        $clauses = $candidate['clauses'] ?? null;
+        $documentation = $candidate['documentation_clause'] ?? null;
+        $publication = $candidate['publication_clause'] ?? null;
+        $version = $candidate['version'] ?? null;
+
+        $sound = ($candidate['code'] ?? null) === $code
+            && is_string($candidate['title'] ?? null)
+            && is_string($version) && $version !== '' && $version !== (string) ($current['version'] ?? '')
+            && is_array($clauses)
+            && is_int($documentation) && is_int($publication) && $documentation !== $publication
+            && is_string($clauses[$documentation] ?? null) && is_string($clauses[$publication] ?? null);
+
+        return $sound ? null : self::TEMPLATE_REFUSAL_DEFINITION_INVALID;
     }
 
     /*
@@ -731,23 +848,36 @@ class RmeVisitConsentService
     {
         $this->assertSignable($visit);
 
-        $template = $this->template((string) ($data['template_code'] ?? ''));
+        // Rule 241 §6 — the version is the server's choice (flag + approved
+        // wording), never the request's.
+        $template = $this->templateForNewConsent((string) ($data['template_code'] ?? ''));
+        $publicationClause = $template['publication_clause'] ?? null;
+
+        // The person must have read the version being signed. The capture page
+        // posts the version it showed; a page rendered before the version in
+        // force changed (or a crafted one) is refused, as is a clause-9 answer
+        // filed on a version that has no clause 9.
+        $shownVersion = $data['template_version'] ?? null;
+        $answeredClause9 = array_key_exists('publication_consent', $data) && $data['publication_consent'] !== null && $data['publication_consent'] !== '';
+
+        if (($shownVersion !== null && $shownVersion !== '' && (! is_scalar($shownVersion) || (string) $shownVersion !== (string) $template['version']))
+            || ($publicationClause === null && $answeredClause9)) {
+            throw ValidationException::withMessages([
+                'template_code' => self::MESSAGE_TEMPLATE_VERSION_CHANGED,
+            ]);
+        }
 
         // Clause 8 must be an explicit choice. A missing value is not "no", and
-        // it is certainly not "yes" — it is an incomplete consent.
-        if (! array_key_exists('documentation_consent', $data) || $data['documentation_consent'] === null || $data['documentation_consent'] === '') {
-            throw ValidationException::withMessages([
-                'documentation_consent' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
-            ]);
-        }
+        // it is certainly not "yes" — it is an incomplete consent. On v2026.2
+        // clause 8 is clinical documentation only and clause 9 (publication)
+        // is a second, equally explicit answer.
+        $documentationConsent = $this->explicitAnswer($data, 'documentation_consent', $publicationClause === null
+            ? self::MESSAGE_DOCUMENTATION_ANSWER
+            : 'Persetujuan dokumentasi klinis (poin '.$template['documentation_clause'].') harus dipilih YA atau TIDAK.');
 
-        $documentationConsent = filter_var($data['documentation_consent'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
-        if ($documentationConsent === null) {
-            throw ValidationException::withMessages([
-                'documentation_consent' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
-            ]);
-        }
+        $publicationConsent = $publicationClause === null
+            ? null
+            : $this->explicitAnswer($data, 'publication_consent', 'Persetujuan publikasi/promosi (poin '.$publicationClause.') harus dipilih YA atau TIDAK.');
 
         // DMS memo M1.1–M1.3 PR2 (rule 241 §4; review LOW-1) — the capture takes
         // the patient's signature only. The legacy optional doctor drawing is
@@ -802,6 +932,7 @@ class RmeVisitConsentService
                 $data,
                 $template,
                 $documentationConsent,
+                $publicationConsent,
                 $consenterSignature,
                 $patient,
                 $relationship,
@@ -809,7 +940,7 @@ class RmeVisitConsentService
                 &$written,
                 &$bodyDone,
             ): RmeVisitConsent {
-                $consent = $this->signWithinTransaction($visit, $operator, $data, $template, $documentationConsent, $consenterSignature, $patient, $relationship, $isSelf, $written);
+                $consent = $this->signWithinTransaction($visit, $operator, $data, $template, $documentationConsent, $publicationConsent, $consenterSignature, $patient, $relationship, $isSelf, $written);
                 $bodyDone = true;
 
                 return $consent;
@@ -834,6 +965,7 @@ class RmeVisitConsentService
         array $data,
         array $template,
         bool $documentationConsent,
+        ?bool $publicationConsent,
         string $consenterSignature,
         $patient,
         string $relationship,
@@ -923,6 +1055,8 @@ class RmeVisitConsentService
             'treatment_summary' => $data['treatment_summary'] ?? null,
 
             'documentation_consent' => $documentationConsent,
+            // Rule 241 §6 — clause 9 (v2026.2 only; null on a version without it).
+            'publication_consent' => $publicationConsent,
 
             'consenter_signature_path' => $consenterPath,
             // Rule 241 §4 — no doctor drawing on a new capture (column kept for
@@ -1608,7 +1742,7 @@ class RmeVisitConsentService
      */
     private function snapshot(array $template): array
     {
-        return [
+        $snapshot = [
             'code' => $template['code'],
             'version' => $template['version'],
             'title' => $template['title'],
@@ -1620,5 +1754,34 @@ class RmeVisitConsentService
             'signature_labels' => $template['signature_labels'] ?? [],
             'location' => $template['location'] ?? null,
         ];
+
+        // Rule 241 §6 — only a version with a separate clause 9 adds the key, so
+        // a 2026.1 snapshot keeps exactly the shape it always had.
+        if (isset($template['publication_clause'])) {
+            $snapshot['publication_clause'] = $template['publication_clause'];
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * An explicit YA/TIDAK answer: missing, null and blank are not "no" (and
+     * certainly not "yes"), and anything that is not a boolean is refused.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function explicitAnswer(array $data, string $key, string $message): bool
+    {
+        if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
+            throw ValidationException::withMessages([$key => $message]);
+        }
+
+        $answer = filter_var($data[$key], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if ($answer === null) {
+            throw ValidationException::withMessages([$key => $message]);
+        }
+
+        return $answer;
     }
 }
