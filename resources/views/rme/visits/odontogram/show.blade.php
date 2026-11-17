@@ -141,6 +141,9 @@
             <p class="text-sm text-gray-600">{{ $odontogramFinalizedLine }}</p>
         @endif
 
+        {{-- Rule 240 §6 (memo M3.3 PR4) — amendment status and the request offer. --}}
+        @include('rme.amendments.partials.record-panel')
+
         {{-- Header --}}
         <x-ui.page-header
             title="Odontogram"

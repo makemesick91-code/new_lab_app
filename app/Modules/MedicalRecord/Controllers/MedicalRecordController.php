@@ -26,6 +26,7 @@ use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -465,6 +466,9 @@ class MedicalRecordController extends Controller
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
+            // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a final sheet
+            // (null on a draft); the request offer is the service's own answer.
+            'amendmentPanel' => app(RmeAmendmentService::class)->panelFor($activeSheet, $request->user()),
             // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the treating
             // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
             // while the capability is OFF, so the page renders exactly as before.

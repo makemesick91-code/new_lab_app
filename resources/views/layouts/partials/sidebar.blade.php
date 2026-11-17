@@ -453,6 +453,18 @@
                     </div>
                 @endcanany
             @endif
+            {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — the
+                 supervisor queue of amendment requests. Courtesy only: the route
+                 permission, RmeAmendmentPolicy and RmeAmendmentService decide. --}}
+            @can('approve_rme_amendments')
+                <div>
+                    <p class="menu-group-title pt-2">Amandemen RME</p>
+                    <div class="mt-1 space-y-1">
+                        <a href="{{ route('rme.amendments.index') }}" data-sidebar-link="rme-amendments"
+                           class="menu-subitem {{ request()->routeIs('rme.amendments.*') ? $linkActive : $linkIdle }}">Antrean Amandemen</a>
+                    </div>
+                </div>
+            @endcan
             {{-- FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — refund payouts. Courtesy
                  only: the designation, branch and settler != approver rules are
                  enforced by the service. --}}

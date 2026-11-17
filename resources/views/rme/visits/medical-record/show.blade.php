@@ -160,6 +160,9 @@
             </x-ui.alert>
         @endif
 
+        {{-- Rule 240 §6 (memo M3.3 PR4) — amendment status and the request offer. --}}
+        @include('rme.amendments.partials.record-panel')
+
         @if ($clinicVisit->isFollowUpVisit())
             <x-ui.alert variant="info">
                 <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}

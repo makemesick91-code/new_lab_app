@@ -115,6 +115,11 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage_rme_consents',
     // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — the supervised consent void.
     'void_rme_consents',
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the checker of a
+    // supervised amendment of a final record. Deliberately NOT request_rme_amendments:
+    // this tier never files an amendment, and the service refuses it as the
+    // requester or the doctor of record of the amendment it decides.
+    'approve_rme_amendments',
     // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
     // assignment/transfer and temporary branch cover, plus the manual session
     // release that ends a login session and nothing else.

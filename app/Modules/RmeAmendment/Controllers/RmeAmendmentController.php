@@ -1,0 +1,118 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Modules\RmeAmendment\Controllers;
+
+use App\Http\Controllers\Controller;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Requests\RmeAmendmentActionRequest;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the supervised
+ * amendment pages: the request form of a final sheet or chart, the supervisor
+ * queue, the detail page, cancel and reject. Thin: route permission →
+ * RmeAmendmentPolicy → RmeAmendmentService, which re-decides everything inside
+ * its transaction. Every page is `private, no-store` (route middleware).
+ * Approve-and-apply is M3.3 PR5.
+ */
+class RmeAmendmentController extends Controller
+{
+    use AuthorizesRequests;
+
+    public function __construct(
+        private readonly RmeAmendmentService $amendments,
+    ) {}
+
+    public function index(Request $request): View
+    {
+        $this->authorize('viewAny', RmeAmendment::class);
+
+        $status = in_array($request->query('status'), RmeAmendment::STATUSES, true) ? (string) $request->query('status') : null;
+
+        return view('rme.amendments.index', [
+            'rows' => $this->amendments->queueFor($request->user(), $status),
+            'counts' => $this->amendments->statusCountsFor($request->user()),
+            'status' => $status,
+        ]);
+    }
+
+    public function show(Request $request, RmeAmendment $amendment): View
+    {
+        $this->authorize('view', $amendment);
+
+        return view('rme.amendments.show', $this->amendments->detailFor($amendment, $request->user()));
+    }
+
+    public function createForSheet(Request $request, MedicalRecord $medicalRecord): View
+    {
+        return $this->form($request, $medicalRecord);
+    }
+
+    public function createForChart(Request $request, Odontogram $odontogram): View
+    {
+        return $this->form($request, $odontogram);
+    }
+
+    public function storeForSheet(RmeAmendmentActionRequest $request, MedicalRecord $medicalRecord): RedirectResponse
+    {
+        return $this->store($request, $medicalRecord);
+    }
+
+    public function storeForChart(RmeAmendmentActionRequest $request, Odontogram $odontogram): RedirectResponse
+    {
+        return $this->store($request, $odontogram);
+    }
+
+    public function cancel(Request $request, RmeAmendment $amendment): RedirectResponse
+    {
+        $this->authorize('cancel', $amendment);
+
+        $this->amendments->cancel($amendment, $request->user());
+
+        return redirect()->route('rme.amendments.show', $amendment)
+            ->with('success', 'Permintaan amandemen dibatalkan. Rekam medis tetap seperti semula.');
+    }
+
+    public function reject(RmeAmendmentActionRequest $request, RmeAmendment $amendment): RedirectResponse
+    {
+        $this->authorize('reject', $amendment);
+
+        $this->amendments->reject($amendment, $request->user(), (string) $request->validated('decision_reason'));
+
+        return redirect()->route('rme.amendments.show', $amendment)
+            ->with('success', 'Permintaan amandemen ditolak. Rekam medis tetap seperti semula.');
+    }
+
+    private function form(Request $request, MedicalRecord|Odontogram $subject): View
+    {
+        $this->authorize('request', [RmeAmendment::class, $subject]);
+        // Binds Super Admin too (Gate::before skips the policy): the same answer
+        // the service would give on submit, including "one already pending".
+        $this->amendments->assertMayRequest($subject, $request->user());
+
+        return view('rme.amendments.create', [
+            'subject' => $subject,
+            'isChart' => $subject instanceof Odontogram,
+            'current' => $this->amendments->requestFormFor($subject),
+        ]);
+    }
+
+    private function store(RmeAmendmentActionRequest $request, MedicalRecord|Odontogram $subject): RedirectResponse
+    {
+        $this->authorize('request', [RmeAmendment::class, $subject]);
+        $this->amendments->assertMayRequest($subject, $request->user());
+
+        $amendment = $this->amendments->request($subject, $request->user(), (string) $request->validated('reason'), $request->proposal());
+
+        return redirect()->route('rme.amendments.show', $amendment)
+            ->with('success', 'Permintaan amandemen diajukan dan menunggu persetujuan Supervisor RME. Rekam medis belum berubah.');
+    }
+}

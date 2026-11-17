@@ -14,6 +14,7 @@ use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -207,6 +208,11 @@ class OdontogramController extends Controller
                 .'.';
         }
 
+        // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a finalized chart
+        // (null on a draft or an unsaved chart); the request offer is the
+        // service's own answer, so it binds Super Admin like the service does.
+        $amendmentPanel = app(RmeAmendmentService::class)->panelFor($odontogram, $request->user());
+
         return view('rme.visits.odontogram.show', compact(
             'clinicVisit',
             'odontogram',
@@ -221,6 +227,7 @@ class OdontogramController extends Controller
             'odontogramLockedNotice',
             'odontogramReadOnlyNotice',
             'odontogramFinalizedLine',
+            'amendmentPanel',
         ));
     }
 

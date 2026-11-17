@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. Release constraint — the lock and the amendment path ship in the same release.
-globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. A correction is a supervised amendment (§6): the doctor of record or the finalizer requests it with a reason and the proposed change against the latest version, the requester may cancel it, a Supervisor RME who is neither the requester nor the doctor of record rejects it (approve-and-apply is M3.3 PR5); one pending per record; decided in the service under the locks, binding Super Admin. Release constraint — the lock and the amendment path ship in the same release.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php, resources/views/rme/amendments/**, tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php, tests/Feature/RME/OdontogramAmendmentTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php
 alwaysApply: false
 ---
 
@@ -111,7 +111,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 - **Unchanged:** rule 219 (performed treatments), rule 237 §9 (signed prescriptions), rule 237 §15 (handwriting page
   revision).
 
-## 3. Tests and CI selection (§1, §4, §5)
+## 3. Tests and CI selection (§1, §4, §5, §6)
 
 - `tests/Feature/RME/MedicalRecordFinalizationLockTest.php` (selected by the existing `MedicalRecordFinalization`
   token) and `tests/Feature/RME/OdontogramFinalizedLockTest.php` (existing `Odontogram` token), in BOTH critical-gate
@@ -165,6 +165,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   pages `pageSlotLock()` locks for the amending encounter, an unstamped page no finalize covers included; reads
   authorized like the record; no snapshot content in any log message or `sys_audit_logs` row; visit → subject lock
   → version insert (PostgreSQL).
+- §6: `tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php` (existing `MedicalRecordFinalization` token),
+  `tests/Feature/RME/OdontogramAmendmentTest.php` (existing `Odontogram` token) and
+  `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php` (existing `RmeClinicalWriteAuthority`
+  token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §6.9.
 
 ## 4. Handwriting pages sealed on finalize (M3.3 PR2)
 
@@ -285,3 +289,83 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    (`MedicalRecordHandwritingService::discardUncommitted()`), whose key no row references. A version therefore
    always points at objects that still exist. No other code path deletes handwriting objects (the public-disk
    migration command removes a public copy only after a byte-identical private copy is verified).
+
+## 6. Supervised amendment — request, cancel, reject (M3.3 PR4)
+
+1. **The table.** `trx_rme_amendments` (migration `2026_11_17_400001_create_trx_rme_amendments_table`, additive): the
+   subject (`subject_type` = `RmeRecordVersion::SUBJECT_*`, `subject_id`), its `branch_id`, `clinic_visit_id` and
+   `patient_id` (copied from the subject by the service, never from a request), `base_version_id` /
+   `base_version` (the version the request was made against), `status`, `reason` (10–1000 characters),
+   `proposed_content` (`json`, read back in the order written), `requested_by`, `cancelled_at`, `decided_by`,
+   `decided_at`, `decision_reason`, timestamps (technical instants, UTC; pages render WITA). Constraint names
+   `trx_rme_amd_*` (≤ 63 characters). A partial unique index `trx_rme_amd_one_pending_uq` (both engines) keeps one
+   `pending` amendment per subject. PostgreSQL CHECKs: subject types, statuses, `base_version >= 1`, the reason
+   bounds, maker ≠ checker `trx_rme_amd_maker_checker_chk` (`decided_by IS NULL OR decided_by <> requested_by`), and
+   the shape of each status (pending: nothing decided; cancelled: `cancelled_at`, no `decided_by`; rejected/applied:
+   `decided_by` and `decided_at`; rejected: a bounded `decision_reason`). `down()` refuses while a row exists.
+2. **State machine.** `pending` → `cancelled` (the requester), `rejected` (a checker, with a written reason) or
+   `applied` (M3.3 PR5: approve and apply in one transaction). Every other transition is refused ("no longer
+   pending"). A cancel sets `cancelled_at` and never `decided_by`, so the CHECK holds.
+3. **Requester (plan default 2).** `RmeAmendmentService::requestRefusal()`, in order: the subject is a final sheet or
+   a finalized chart; the account holds `request_rme_amendments`; it IS the doctor of record (the sheet's
+   `doctor_id`, for a chart the chart visit's `doctor_id`, → `mst_doctors.user_id`) or the finalizer
+   (`finalized_by`); and it may `view` the subject (MedicalRecordPolicy / OdontogramPolicy). Identity, not role: a
+   Super Admin who is neither is refused, one who finalized the record may request. A finalizer without the
+   permission (e.g. a Supervisor RME) may not request. A doctor row with no linked account leaves only the finalizer
+   (a departed doctor's record waits).
+4. **Request.** `RmeAmendmentService::request()` bounds the reason (trimmed), asks the requester rule, then inside
+   one transaction: locks the subject's visit (FOR NO KEY UPDATE), then the subject row (sheet: FOR NO KEY UPDATE via
+   `lockForHandwriting`; chart: FOR UPDATE via `findByClinicVisitForUpdate`), re-decides the requester rule on the
+   locked row, refuses a second pending amendment, validates the proposal against the locked record, takes the
+   latest version as the base (or `ensureBaseline()` for a record finalized before this rule, naming the patient's
+   live encounter from `ActiveEncounterResolver`), and inserts the row inside a savepoint: a unique violation of
+   `trx_rme_amd_one_pending_uq` (a raced check) is rolled back to the savepoint and refused cleanly with the
+   "already pending" message. Nothing in the record changes; the §1 lock keeps refusing direct edits.
+   - *Sheet proposal:* `fields` — only the SOAP fields and notes (`SHEET_FIELDS`), each ≤ 10 000 characters, line
+     endings normalised, empty = null; only the fields that differ are stored. `diagnoses` — `remove` (ids of THIS
+     sheet's diagnoses) and `add` (≤ 10 rows: an ACTIVE master, a valid role, notes ≤ 500, not already on the sheet
+     unless removed in the same proposal); at most one primary after the change.
+   - *Chart proposal:* the whole proposed chart (`summary_notes`, `additional_conditions`, `tooth_map_payload`;
+     an absent key keeps the current value), validated with the rules of a chart save (FDI numbers, statuses,
+     conditions, lengths).
+   - Unknown keys and a proposal that changes nothing are refused. Performed treatments and prescriptions are not
+     amendable (plan default 5); a handwriting "amendment page" is M3.3 PR5.
+5. **Cancel.** `cancel()` locks visit → subject → amendment (FOR UPDATE) and refuses unless the amendment is pending
+   and the actor IS its requester (binds Super Admin).
+6. **Reject (plan defaults 1 and 6).** `reject()` bounds the decision reason, then inside the transaction: the
+   account holds `approve_rme_amendments` (Supervisor RME; Super Admin through Gate::before); visit → subject →
+   amendment are locked; the amendment's branch is inside the account's scope (`RmeWorkingBranchScope::allows()`)
+   and the account may `view` the subject — otherwise "not found" (404); the amendment is pending; the account is
+   not the requester (`MESSAGE_SELF_DECISION`) and not the doctor of record (`MESSAGE_DOCTOR_OF_RECORD`), both
+   decided on the locked rows, binding Super Admin. A stale base version is not checked on reject (nothing is
+   written to the record); M3.3 PR5 must refuse an approval whose base is no longer the latest version.
+7. **Three layers and the pages.** Routes (`rme.amendments.*`): `permission:request_rme_amendments|approve_rme_amendments`
+   and `cache.headers:private;no_store;max_age=0` on the group; the queue and reject need `approve_rme_amendments`,
+   the request form, store and cancel need `request_rme_amendments`. `RmeAmendmentPolicy` (registered in
+   RepositoryServiceProvider): `viewAny` (approve permission), `view` (the requester, or an approver whose branch
+   scope covers it, and who may view the subject — else `denyAsNotFound`), `request`, `cancel`, `reject` (each with
+   the service's own refusal). The controller is thin and calls `assertMayRequest()` before the form and the store,
+   so a Super Admin who is neither gets 403 there too. The supervisor queue lists the approver's list scope
+   (`RmeWorkingBranchScope::resolve()`), pending first. The detail page shows the base version beside the proposal
+   and only the actions `actionsFor()` allows; there is no approve control until PR5. The final sheet and chart
+   pages render an "Amandemen" block (`RmeAmendmentService::panelFor()`: pending status, recent amendments, links
+   only for an account that may open them) and "Ajukan Amandemen" only when the service would accept this account
+   now (rule 135 mirror). The sidebar link is gated by `approve_rme_amendments`.
+8. **Audit.** `sys_audit_logs`, entity `trx_rme_amendments`: `RME_AMENDMENT_REQUESTED` (subject, branch, base
+   version and id, status, `reason_length`), `RME_AMENDMENT_CANCELLED` (subject, branch, status),
+   `RME_AMENDMENT_REJECTED` (subject, branch, status, `requested_by`, `decision_reason_length`). Ids and lengths
+   only — never the reason, the decision reason or the proposed content (CG-11). Database notifications to the
+   approvers move to M3.3 PR5 (the `app/` file budget of this PR).
+9. **Tests (§3).** Request by the doctor of record and by the finalizer; another doctor, a Super Admin who is neither
+   and a finalizer without the permission refused; draft refused; reason bounds; the proposal rules; base = latest
+   version, a baseline only when none exists; one pending (service, and the partial unique index raced through a
+   repository double — refused inside a savepoint, the connection still usable); cancel and reject matrices
+   (requester, doctor of record also holding Supervisor RME, Super Admin on their own request refused, otherwise
+   allowed); the lock still refusing direct edits; audit ids-only; the PostgreSQL CHECK refusing
+   `decided_by = requested_by` on a raw insert, the constraint names, visit → sheet → amendment order; the HTTP role
+   matrix (Front Office, Kasir, Admin Klinik, Perawat, another doctor, Supervisor RME: 403); a context-bound approver
+   seeing only its branch (queue, detail and reject 404 outside it); a requester seeing only their own amendment;
+   `private, no-store`; the sheet and chart pages offering the request only to the doctor of record.
+10. **Deploy.** The two permissions are new: run `PermissionSeeder`, then `RoleSeeder`, then
+    `permission:cache-reset` (CG-15). Doctor gains `request_rme_amendments`; Supervisor RME gains
+    `approve_rme_amendments`; Super Admin through '*'.

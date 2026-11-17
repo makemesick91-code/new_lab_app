@@ -358,7 +358,12 @@ it('refuses a TRUNCATE of the version table in PostgreSQL', function () {
     [, $sheet] = m33vSheet();
     m33vFinalize($sheet);
 
+    // Since M3.3 PR4 `trx_rme_amendments.base_version_id` references this table, so a
+    // plain TRUNCATE is refused by PostgreSQL's foreign-key rule before any trigger;
+    // CASCADE gets past that rule and must still be refused by the trigger.
     expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_record_versions')))
+        ->toThrow(QueryException::class);
+    expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_record_versions CASCADE')))
         ->toThrow(QueryException::class, 'immutable');
 
     expect(m33vVersions($sheet))->toHaveCount(1);

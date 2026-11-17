@@ -123,6 +123,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\RmeAmendment\Controllers\RmeAmendmentController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeController;
@@ -1551,6 +1552,40 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
                 ->whereNumber('refundRequest')->name('refund-requests.approve');
             Route::post('refund-requests/{refundRequest}/reject', [RmeRefundRequestController::class, 'reject'])
                 ->whereNumber('refundRequest')->name('refund-requests.reject');
+        });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — the supervised
+    | amendment of a final sheet or a finalized odontogram. Three layers: the route
+    | permission (request_rme_amendments: Doctor; approve_rme_amendments:
+    | Supervisor RME; Super Admin via '*'), RmeAmendmentPolicy (an amendment the
+    | account may not see answers 404), and RmeAmendmentService, which re-decides
+    | requester identity, branch scope and maker != checker inside the
+    | transaction (binding Super Admin). Every page is private, no-store. Approve
+    | and apply is M3.3 PR5.
+    */
+    Route::middleware(['permission:request_rme_amendments|approve_rme_amendments', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('amendments/{amendment}', [RmeAmendmentController::class, 'show'])
+            ->whereNumber('amendment')->name('amendments.show');
+
+        Route::middleware('permission:approve_rme_amendments')->group(function () {
+            Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');
+            Route::post('amendments/{amendment}/reject', [RmeAmendmentController::class, 'reject'])
+                ->whereNumber('amendment')->name('amendments.reject');
+        });
+
+        Route::middleware('permission:request_rme_amendments')->group(function () {
+            Route::get('medical-records/{medicalRecord}/amendments/create', [RmeAmendmentController::class, 'createForSheet'])
+                ->whereNumber('medicalRecord')->name('amendments.create-sheet');
+            Route::post('medical-records/{medicalRecord}/amendments', [RmeAmendmentController::class, 'storeForSheet'])
+                ->whereNumber('medicalRecord')->name('amendments.store-sheet');
+            Route::get('odontograms/{odontogram}/amendments/create', [RmeAmendmentController::class, 'createForChart'])
+                ->whereNumber('odontogram')->name('amendments.create-chart');
+            Route::post('odontograms/{odontogram}/amendments', [RmeAmendmentController::class, 'storeForChart'])
+                ->whereNumber('odontogram')->name('amendments.store-chart');
+            Route::post('amendments/{amendment}/cancel', [RmeAmendmentController::class, 'cancel'])
+                ->whereNumber('amendment')->name('amendments.cancel');
         });
     });
 
