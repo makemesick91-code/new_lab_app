@@ -1,0 +1,137 @@
+---
+description: Internal memo M4.4 / M1.x (rule 242) — clinical photos of an encounter, built behind the risky flag rme.clinical_photos (default OFF; turning it on is a separate owner decision). §1–§8 (PTM PR4a, backend) — with the flag off every photo route answers 404 to the accounts holding its permission and the service refuses. Upload: Doctor or Perawat only (a service allowlist, so Super Admin is bound), on the live in_progress encounter they may work on, only while its PTM is EXECUTED (rule 241 §2) and its clinical-documentation answer is YA (2026.1 the combined clause 8, v2026.2 clause 8); clause 9 never gates or permits. Validated before any write (JPEG/PNG sniffed from the bytes, byte, edge and pixel bounds from the header), re-encoded as JPEG (EXIF/GPS stripped, orientation applied, long edge 2560), stored only through ClinicalEvidenceStorage under a fresh random key; row and object one unit with the visit row locked first (rule 224); audit ids only. Read: the image route only (private, no-store, nosniff, each view audited), clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope, 404 out of scope; never Front Office, Kasir or Admin Klinik even with a runtime grant. No delete path.
+globs: app/Modules/ClinicalPhoto/**, database/migrations/2026_11_18_100001_create_trx_rme_clinical_photos_table.php, tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php
+alwaysApply: false
+---
+
+# Clinical photos (rule 242)
+
+Source: the internal memo of 2026-10-17 (M4.4, M1.x), the section "M1.1–M1.3 + M4.4" of the
+DMS-RME-COMPREHENSIVE-CLOSURE-1 memo implementation plan (PR split item 4) and the owner's decisions of 2026-11-17
+(sprint record `docs/sprints/dms-rme-comprehensive-closure-1.md`). Builds on rule 241 (the PTM double signature and template v2026.2), rule 121 (private evidence disk),
+rule 224 (row + object one unit) and rule 227 §1 (clinical-document read scope). Delivered in PRs; each adds its
+section. The gallery UI is a separate PR.
+
+## 0. Owner decisions (CG-22)
+
+- Plan defaults accepted (2026-11-17), including: Doctor and Perawat upload; the cleaned JPEG is kept plus the
+  original's SHA-256, never the original (open question 4: it would keep GPS); the read scope never includes Front
+  Office, Kasir or Admin Klinik; a void with a reason, no delete path.
+- "Photos flag OFF": the capability ships dormant. Turning `rme.clinical_photos` on in production is a separate owner
+  decision (environment override, config cache rebuilt as the runtime user), a WATCH posture.
+- Rule 241 §6.6: no role gains automatic access to photos; upload needs the executed consent with
+  `allowsClinicalDocumentation()`.
+
+## 1. The flag (CG-08, rule 92)
+
+`rme.clinical_photos` in `config/feature_flags.php`: `high`, default OFF, `FEATURE_RME_CLINICAL_PHOTOS`, captured at
+config build, read only through `FeatureFlagService` (`RmeClinicalPhotoService::enabled()`). While it is off:
+`StoreRmeClinicalPhotoRequest::authorize()` and `RmeClinicalPhotoController::image()` answer 404 before the policy (so
+Super Admin too), `RmeClinicalPhotoPolicy::upload` denies as not found, `upload()` and `imageFor()` throw
+`NotFoundHttpException`, `visibleForVisit()` returns nothing and `uploadRefusal()` names it. An account without the
+route's permission is refused 403 by the route middleware first, as on every flagged route. Rollback: the flag off;
+nothing is deleted.
+
+## 2. Who uploads (the account side)
+
+`RmeClinicalPhotoService::uploadAccountRefusal()`, asked by the policy and again by the service, in order:
+
+1. the permission `upload_rme_clinical_photos` (seeded to Doctor and Perawat; Super Admin through `*`);
+2. the role allowlist `UPLOAD_ROLES` = Doctor, Perawat. Decided in the service, so it binds Super Admin (who passes
+   every permission and policy through `Gate::before`), Supervisor RME, Owner, and Front Office, Kasir or Admin Klinik
+   even with a runtime grant. A Doctor or Perawat who also holds a front-desk role keeps the clinical authority;
+3. the visit's working branch (`RmeWorkingBranchScope::allows()`) and the doctor-patient scope
+   (`DoctorPatientScopeService::doctorCanAccessVisit()`).
+
+Refusals are `AuthorizationException` (403) with `MESSAGE_UPLOAD_PERMISSION`, `MESSAGE_UPLOAD_ROLE`,
+`MESSAGE_UPLOAD_SCOPE`.
+
+## 3. The encounter authority (state side) and the consent gating decision
+
+`RmeVisitConsentService::assertClinicalPhotoAuthoringAllowed(ClinicVisit, User)`, beside the other single authorities
+of rule 241 §2.2, in order:
+
+1. the patient has ONE current `in_progress` encounter (`ActiveEncounterResolver`), else
+   `MESSAGE_PHOTO_NOT_IN_EXAMINATION`;
+2. the actor may work on it (`actorMayWorkOnEncounter`: never the front-desk tier, a clinical role,
+   `manage_clinic_visits`, working branch, doctor room, doctor-patient scope), else `MESSAGE_PHOTO_ACTOR` (403);
+3. the visit IS that encounter (a queued, finished, cancelled or earlier visit is history), else
+   `MESSAGE_PHOTO_NOT_IN_EXAMINATION`;
+4. its consent is EXECUTED (patient + treating-doctor countersignature), else `MESSAGE_PHOTO_AWAITING_PATIENT` /
+   `MESSAGE_PHOTO_AWAITING_DOCTOR`; a supervised void reopens the gate;
+5. **the consent gating decision**: that live consent's `RmeVisitConsent::allowsClinicalDocumentation()` is true, else
+   `MESSAGE_PHOTO_DOCUMENTATION_REFUSED`. On 2026.1 it is the single combined clause-8 answer
+   (documentation/publication); on v2026.2 it is clause 8 (clinical documentation). Both are
+   `documentation_consent === true`; a null or TIDAK answer fails closed. Clause 9 (`publication_consent`,
+   `allowsPublication()`) is never read: refusing publication never blocks a photo, and agreeing to it never permits
+   one. TVS-09 (rule 241 §6.5) keeps pinning the clause-9 readers; this rule adds none.
+
+The PTM is read through `ptmStateFor()`, not the private gate helper, so these refusals are this authority's own.
+Inside a write transaction the visit row is locked FIRST (`lockForStatusDecision`, FOR NO KEY UPDATE: the lock of
+`sign()`, `void()`, `countersign()` and `transitionStatus()`) and 1, 4 and 5 are decided again on it, so a void or a
+finish committed meanwhile refuses and a later one waits. State refusals are `ValidationException` on `photo` (422).
+
+## 4. Validation and storage (rule 121, rule 224)
+
+`RmeClinicalPhotoService::upload()` order: the flag; §2 (403); §3 unlocked (so a refused upload is never decoded:
+authorization before validation, rule 237); the byte bound from the upload's size; `ClinicalPhotoNormalizer`; then one
+transaction.
+
+1. **Normalizer** (`app/Modules/ClinicalPhoto/Support/ClinicalPhotoNormalizer.php`), before any write: at most
+   15 MB; the type sniffed from the bytes (JPEG or PNG magic; GIF, SVG, HTML, PHP, anything else refused) and the
+   header must agree; edges 64–8000 px and at most 25 MP read from the HEADER before decoding (decompression-bomb
+   guard); decoded with GD (no GD: refused, the original is never stored instead); drawn onto a fresh opaque canvas,
+   long edge at most 2560, EXIF orientation applied, encoded JPEG (quality 85); the output must decode again. Only
+   pixels cross, so EXIF, GPS, comments and a polyglot's payload are gone. The request rules (`file`, `max`, `mimes`,
+   `mimetypes`) are the outer shape only.
+2. **The unit.** Inside `DB::transaction`: §3 under the lock; the object written through
+   `ClinicalEvidenceStorage::disk()` at `rme-clinical-photos/<clinic YYYY/MM>/<32 hex>.jpg` (fresh random key, never
+   request input); the row inserted (`trx_rme_clinical_photos`: visit, patient and branch copied from the LOCKED visit,
+   the consent that allowed it, uploader, clinic-time `uploaded_at`, key, size, dimensions, SHA-256 of the stored bytes
+   and of the original); the audit. A failure before the body finished removes only this call's object; after it the
+   object is kept (rule 224 §1a). Never a public disk, never `storeAs`.
+3. **The row is evidence.** `RmeClinicalPhoto` hides `photo_path` and `original_sha256`, throws on delete, and on any
+   update other than the void columns (`voided_at`, `voided_by`, `void_reason`, once). The migration is additive,
+   every foreign key `restrictOnDelete`, `photo_path` UNIQUE; `down()` refuses while rows exist.
+
+## 5. Reads
+
+1. **One route.** `rme.clinical-photos.image` (`GET rme/clinical-photos/{clinicalPhoto}/image`,
+   `permission:view_rme_clinical_photos`, `cache.headers:private;no_store;max_age=0`, `{clinicalPhoto}` constrained
+   per route to `DatabaseRouteKey::PATTERN`: a non-canonical id is a 404, never a 500). The response is the stored
+   JPEG with `Content-Type: image/jpeg`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`,
+   `Content-Disposition: inline; filename="foto-klinis-<id>.jpg"`; the object key never leaves the server.
+2. **Scope.** `RmeClinicalPhotoService::mayViewVisit()`: the flag; `view_rme_clinical_photos` (seeded to Doctor,
+   Perawat, Supervisor RME; not Owner); a `READ_ROLES` role (`RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES`:
+   the clinical roles and Owner, so Front Office, Kasir and Admin Klinik never read, even with a runtime grant);
+   `RmeWorkingBranchScope::allowsClinicalDocument()` (rule 227 §1); `DoctorPatientScopeService::doctorCanAccessVisit()`,
+   which is also where the doctor encounter scope of rule 243 §2 applies while its flag is ON. The policy denies as
+   not found; the service re-asserts it (binds Super Admin). Reads are never consent-gated (AIR-RMC-09).
+3. **Honest.** A missing, unreadable or non-JPEG object is a 404 (logged without the key), never an empty image.
+4. **Audit.** Each successful view writes `RME_CLINICAL_PHOTO_VIEWED` with `clinic_visit_id` only.
+5. **Lists.** `visibleForVisit(ClinicVisit, ?User)`: one scope decision, then one query for the photos and one for
+   their uploaders, oldest first; nothing for a viewer out of scope.
+
+## 6. Audit
+
+`RME_CLINICAL_PHOTO_UPLOADED` (entity `trx_rme_clinical_photos`, the photo id) with `clinic_visit_id` and
+`rme_visit_consent_id` only; `RME_CLINICAL_PHOTO_VIEWED` with `clinic_visit_id` only. Never a key, hash, name or
+identity number.
+
+## 7. For the UI (PR5)
+
+The controller (never Blade) asks `RmeClinicalPhotoService::uploadRefusal($visit, $user)` (null = may upload; else the
+message to show; read-only), `canUpload()` and `visibleForVisit()`, and renders each photo through
+`route('rme.clinical-photos.image', $photo)`. Upload posts `photo` to `rme.visits.clinical-photos.store` (201 JSON
+`{id}` for XHR, else a redirect back with `status`). Nothing renders while the flag is off.
+
+## 8. Deploy
+
+`php artisan migrate --force` (additive) after the runner's backup, then `PermissionSeeder`, then `RoleSeeder`, then
+`permission:cache-reset` (CG-15). The flag stays OFF. Photos are not in the database-only daily backup (memo M6.2): a
+backup of the clinical evidence disk is a precondition of turning the flag on. nginx and PHP-FPM already admit 15 MB.
+
+Tests: `tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php` and
+`tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php` (token `ClinicalEvidence`, both declared in
+`critical_gate_mandatory_suites`). The lock order and the re-decision under the lock are proven in-process; a
+multi-process PostgreSQL race suite is not part of this PR.

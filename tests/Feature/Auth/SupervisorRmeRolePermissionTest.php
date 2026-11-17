@@ -125,6 +125,9 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // this tier never files an amendment, and the service refuses it as the
     // requester, the doctor of record or the finalizer of the record it decides.
     'approve_rme_amendments',
+    // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos (flag OFF);
+    // upload stays Doctor and Perawat.
+    'view_rme_clinical_photos',
     // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
     // assignment/transfer and temporary branch cover, plus the manual session
     // release that ends a login session and nothing else.

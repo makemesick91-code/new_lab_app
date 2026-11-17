@@ -1801,6 +1801,15 @@ return [
         // visit's recorded PTM shown for information only, no consent row created or changed. Selected by the
         // existing `MedicalRecordFinalization` token in BOTH critical variants.
         'tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php',
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos behind the risky flag
+        // rme.clinical_photos (OFF ⇒ 404 and refused): Doctor/Perawat only (binds Super Admin), the
+        // live encounter, an EXECUTED PTM with clinical documentation YA (clause 9 never read), the
+        // image validated and re-encoded before any write (EXIF/GPS stripped), row + object one unit
+        // under the visit lock, private no-store reads in the clinical scope (never Front Office,
+        // Kasir or Admin Klinik), audit ids only. Selected by the existing `ClinicalEvidence` token
+        // in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php',
+        'tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

@@ -324,6 +324,9 @@ class RoleSeeder extends Seeder
             // supervised amendment of a final record; only as its doctor of record
             // or finalizer (RmeAmendmentService). Never the approve permission.
             'request_rme_amendments',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos (flag OFF).
+            'upload_rme_clinical_photos',
+            'view_rme_clinical_photos',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
             // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency
@@ -528,6 +531,9 @@ class RoleSeeder extends Seeder
             'view_clinic_visits',
             'manage_clinic_visits',
             'complete_rme_examination',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos (flag OFF).
+            'upload_rme_clinical_photos',
+            'view_rme_clinical_photos',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
             // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
@@ -608,6 +614,9 @@ class RoleSeeder extends Seeder
             // supervised amendment; never the maker (no request_rme_amendments), never
             // on a record it is the doctor of or finalized (RmeAmendmentService).
             'approve_rme_amendments',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos only;
+            // upload is Doctor and Perawat (flag OFF).
+            'view_rme_clinical_photos',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',
