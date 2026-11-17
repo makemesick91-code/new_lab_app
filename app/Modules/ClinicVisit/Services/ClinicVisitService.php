@@ -468,19 +468,59 @@ class ClinicVisitService
     }
 
     /**
-     * Previous/next visit for the same patient (chronological), used for the
-     * prev/next arrow navigation on the RM and Odontogram pages. Scoped to the
-     * active RME branch set, mirroring patientVisitHistory access (Sprint 59).
+     * Previous/next visit for the same patient (chronological), for the
+     * prev/next arrows on the prescription and odontogram pages (Sprint 59).
      *
+     * DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1 (rule 227 §1.8c) — decided per
+     * VIEWER. It used to answer over every RME branch for everyone, so a front
+     * desk or cashier account working at branch A was shown a link and a title
+     * naming the patient's branch-B visit, whose page refuses it (rule 228 §5),
+     * and a doctor an ACTIVE visit of another room (rule 138). Now:
+     *  - the viewer is judged as its PERSISTED row (rule 199 §C); an unusable
+     *    account gets no arrows;
+     *  - the anchor is re-asserted with the page's own ability: a viewer who may
+     *    not open it gets no arrows, never its own branch's neighbours;
+     *  - candidates are read only in the viewer's clinical-document branches
+     *    ({@see RmeWorkingBranchScope::clinicalDocumentBranchIdsFor()}, within
+     *    the RME set), and each one offered must pass the same page ability, so
+     *    the doctor patient and room scopes apply exactly as on the page;
+     *  - the NEAREST visit the viewer may open is offered; one it may not open
+     *    is skipped and never named, so an arrow reveals nothing the viewer
+     *    could not open anyway.
+     *
+     * `$pageAbility` on `$pageModel` is the ability the target page authorizes
+     * (`viewForVisit` on RmePrescription, `create` on Odontogram), asked of the
+     * policy, never restated here.
+     *
+     * @param  class-string  $pageModel
      * @return array{previous: ?ClinicVisit, next: ?ClinicVisit}
      */
-    public function adjacentVisits(ClinicVisit $visit, bool $requireMedicalRecord = false): array
-    {
-        return $this->visits->adjacentVisitsForPatient(
+    public function adjacentVisits(
+        ClinicVisit $visit,
+        User $viewer,
+        string $pageAbility,
+        string $pageModel,
+        bool $requireMedicalRecord = false,
+    ): array {
+        $none = ['previous' => null, 'next' => null];
+        $account = $this->actors->resolveUsable($viewer);
+
+        if ($account === null) {
+            return $none;
+        }
+
+        $mayOpen = fn (ClinicVisit $target): bool => $account->can($pageAbility, [$pageModel, $target]);
+
+        if (! $mayOpen($visit)) {
+            return $none;
+        }
+
+        $branchIds = array_values(array_intersect(
+            $this->workingBranchScope->clinicalDocumentBranchIdsFor($account),
             $this->branches->rmeEnabledIds(),
-            $visit,
-            $requireMedicalRecord,
-        );
+        ));
+
+        return $this->visits->adjacentVisitsForPatient($branchIds, $visit, $requireMedicalRecord, $mayOpen);
     }
 
     /**

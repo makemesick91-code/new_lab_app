@@ -104,6 +104,10 @@ change what the shared resolver answers for null.
 15. `patientVisitHistory()` / `adjacentVisits()` stay cross-branch BY DESIGN: their
     callers authorize the anchor visit first (patient-centric RM workspace,
     archive reads cross-branch, owner decision O3). Do not narrow them.
+    **[SUPERSEDED IN PART by rule 227 §1.8c — DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1:
+    `adjacentVisits()` is no longer cross-branch for every viewer. It takes the explicit
+    viewer and the target page's ability and offers only the nearest visit that viewer
+    may open. `patientVisitHistory()` is unchanged.]**
 16. The prior-visit picker (`patientVisitOptions`) is REGISTRATION-only: `create`
     + `PatientSelectorSearchService::isSelectable()` — the same boundary the
     submit re-asserts. It is NOT narrowed to the registrar's working branch,

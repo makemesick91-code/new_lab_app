@@ -58,8 +58,15 @@ class OdontogramController extends Controller
 
         // Prev/next arrow navigation across the patient's visits. Scoped to the
         // visit, not to the odontogram, so it is unaffected by whether this
-        // visit has been charted yet (Sprint 59).
-        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
+        // visit has been charted yet (Sprint 59). Only a visit whose odontogram
+        // page this viewer may open (the `create` ability authorized above) is
+        // offered (DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1, rule 227 §1.8c).
+        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits(
+            $clinicVisit,
+            $request->user(),
+            'create',
+            Odontogram::class,
+        );
 
         // Sprint 63.1.1 — read-only saved-result table rendered below the visual
         // preview. Reuses the Sprint 63.1 print formatter row-building logic so the
