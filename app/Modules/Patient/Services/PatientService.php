@@ -58,6 +58,16 @@ class PatientService
     public const PAPER_CARD_REASON_OTHER = 'LAINNYA';
 
     /**
+     * Rule 244 §4.3 (PR-3b review B1) — a note is valid UTF-8 without control
+     * characters (tab, line feed and carriage return allowed). With `u`, invalid
+     * UTF-8 fails the match too.
+     */
+    public const PAPER_CARD_NOTE_PATTERN = '/^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]*$/u';
+
+    /** Rule 244 §4.3 (PR-3b review B8) — a read of the stored notes; ids only. */
+    public const AUDIT_PAPER_CARD_REASON_VIEWED = 'PATIENT_RM_PAPER_CARD_REASON_VIEWED';
+
+    /**
      * Rule 244 §4.3 (owner decision 2026-11-17, "PAPER-CARD REASON: store text,
      * restricted") — the one permission that READS a stored paper-card reason:
      * Supervisor RME and Owner; Super Admin through Gate::before.
@@ -234,6 +244,13 @@ class PatientService
             throw ValidationException::withMessages(['paper_card_reason_note' => 'Catatan wajib diisi untuk alasan Lainnya.']);
         }
 
+        // PR-3b review B1 — checked here too, so it binds Super Admin and any
+        // caller: invalid UTF-8 or a control character would make the database
+        // refuse the insert with an error that carries the note.
+        if ($reasonNote !== null && (! mb_check_encoding($reasonNote, 'UTF-8') || preg_match(self::PAPER_CARD_NOTE_PATTERN, $reasonNote) !== 1)) {
+            throw ValidationException::withMessages(['paper_card_reason_note' => 'Catatan berisi karakter yang tidak valid.']);
+        }
+
         if ($reasonNote !== null && (mb_strlen($reasonNote) < self::PAPER_CARD_REASON_MIN || mb_strlen($reasonNote) > self::PAPER_CARD_REASON_MAX)) {
             throw ValidationException::withMessages([
                 'paper_card_reason_note' => sprintf('Catatan %d sampai %d karakter.', self::PAPER_CARD_REASON_MIN, self::PAPER_CARD_REASON_MAX),
@@ -339,7 +356,9 @@ class PatientService
      * Re-asserts {@see self::PAPER_CARD_REASON_READ_PERMISSION} (403; Super Admin
      * passes through Gate::before) and the actor's working-branch scope (CG-05):
      * a patient outside it is 404, so the reader does not even learn a reason
-     * exists. Only rows inside the scope are returned.
+     * exists. Only rows inside the scope are returned: the patient's own and,
+     * read only, those of patients merged INTO it (PR-3b review B4). A read that
+     * returns rows is audited with ids only (review B8).
      *
      * @return Collection<int, PatientRmPaperCardRegistration>
      */
@@ -351,7 +370,18 @@ class PatientService
             throw new NotFoundHttpException;
         }
 
-        return $this->paperCardRegistrations->forPatient((int) $patient->getKey(), $this->workingBranchScope->branchIdsFor($actor));
+        $registrations = $this->paperCardRegistrations->forPatient((int) $patient->getKey(), $this->workingBranchScope->branchIdsFor($actor));
+
+        // PR-3b review B8 — who read the notes, and which rows: ids only.
+        if ($registrations->isNotEmpty()) {
+            $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_PAPER_CARD_REASON_VIEWED, null, [
+                'patient_id' => (int) $patient->getKey(),
+                'actor_user_id' => (int) $actor->getKey(),
+                'registration_ids' => $registrations->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            ], $actor);
+        }
+
+        return $registrations;
     }
 
     /**

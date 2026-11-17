@@ -80,6 +80,10 @@ class StorePatientRequest extends FormRequest
             'paper_card_reason_note' => [
                 'nullable', 'required_if:paper_card_reason_code,'.PatientService::PAPER_CARD_REASON_OTHER, 'string',
                 'min:'.PatientService::PAPER_CARD_REASON_MIN, 'max:'.PatientService::PAPER_CARD_REASON_MAX,
+                // PR-3b review B1 — valid UTF-8 without control characters (tab,
+                // line feed and carriage return allowed): the database would
+                // refuse anything else, and its error carries the value.
+                'regex:'.PatientService::PAPER_CARD_NOTE_PATTERN,
             ],
             'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
             'name' => ['required', 'string', 'max:150'],
@@ -128,6 +132,7 @@ class StorePatientRequest extends FormRequest
             'paper_card_reason_note.required_if' => 'Catatan wajib diisi untuk alasan Lainnya.',
             'paper_card_reason_note.min' => 'Catatan minimal :min karakter.',
             'paper_card_reason_note.max' => 'Catatan maksimal :max karakter.',
+            'paper_card_reason_note.regex' => 'Catatan berisi karakter yang tidak valid.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ];
     }

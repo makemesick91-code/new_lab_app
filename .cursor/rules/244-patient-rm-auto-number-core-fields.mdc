@@ -253,7 +253,8 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    - **Entry.** `paper_card_reason_code` is one of config `patient.paper_card_reasons` (code => Indonesian label:
      `KARTU_LAMA_PASIEN_LAMA` "Pasien lama membawa kartu berobat kertas", `MIGRASI_ARSIP_KERTAS` "Migrasi arsip rekam
      medis kertas", `LAINNYA` "Lainnya (wajib catatan)"; a used code is never renamed or removed, new ones are added);
-     `paper_card_reason_note` is optional, 10–500 characters after trim, REQUIRED for `LAINNYA` (blank = none).
+     `paper_card_reason_note` is optional, 10–500 characters after trim, REQUIRED for `LAINNYA` (blank = none), valid
+     UTF-8 without control characters (tab, line feed, carriage return allowed; `PAPER_CARD_NOTE_PATTERN`, review B1).
      Checked by `StorePatientRequest` and again in `createWithPaperCardNumber()` (binds Super Admin). Whoever may
      register the paper card (`register_patient_paper_card_rm` + `manage patients`) enters it; the form warns not to
      write identity data (NIK, name, address, phone) in the note.
@@ -262,10 +263,14 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
      `trx_prpcr_patient_fk`, `trx_prpcr_branch_fk`, `trx_prpcr_actor_fk` (all RESTRICT), indexes
      `trx_prpcr_patient_idx`, `trx_prpcr_branch_created_idx`. Written by
      `PatientRmPaperCardRegistrationRepositoryInterface::record()` inside the claim's transaction (it refuses to run
-     outside one), so a refused claim (taken, claim cap, KTP) stores no reason.
+     outside one), so a refused claim (taken, claim cap, KTP) stores no reason. A database failure on that insert is
+     rethrown as a `RuntimeException` with no value and no previous exception (review B1: the driver error carries the
+     bindings, the note among them, and a reported exception reaches `laravel.log`); the request answers 500.
    - **Retention.** Immutable for the life of the patient record: no `updated_at`; the model
      (`PatientRmPaperCardRegistration`) throws on update and delete; the repository offers no update or delete; the
-     foreign keys RESTRICT (patients and users are soft-deleted, so the row survives them). A patient merge leaves the
+     foreign keys RESTRICT (patients and users are soft-deleted, so the row survives them); on PostgreSQL the
+     `trx_prpcr_no_update_delete` and `trx_prpcr_no_truncate` triggers (function `trx_prpcr_refuse_change()`, same
+     migration) refuse UPDATE, DELETE and TRUNCATE for every code path (review B5). A patient merge leaves the
      row on the patient it was registered for (`PatientOwnedRecordRegistry::PRESERVE`, like the RM alias source: that
      patient keeps the number). There is no change path today; any future correction MUST append a NEW row with its
      own audit row — never edit or delete a row.
@@ -278,8 +283,12 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
      (`{patient}` = `DatabaseRouteKey::PATTERN`; codes and notes). `PatientPolicy::viewAnyPaperCardRegistrations` /
      `viewPaperCardRegistrations`, then `PatientService::paperCardRegistrationList()` /
      `paperCardRegistrationsFor()` re-assert the permission (403) and the working-branch scope (CG-05,
-     `RmeWorkingBranchScope`): a patient outside it is **404**, and only rows inside it are returned. Linked from the
-     sidebar and the patient edit page under `@can` only.
+     `RmeWorkingBranchScope`): a patient outside it is **404**, and only rows inside it are returned. The per-patient
+     page binds a soft-deleted patient too (`withTrashed()`, review B3: the list links to it) and also lists, read only
+     and labelled "Dari pasien yang digabungkan", the rows of patients merged INTO it (`merged_into_patient_id`, one
+     level, same branch filter; review B4). Each read that returns rows writes a `PATIENT_RM_PAPER_CARD_REASON_VIEWED`
+     audit row with `patient_id`, `actor_user_id`, `registration_ids` only (review B8). Linked from the sidebar and the
+     patient edit page under `@can` only.
    - **Privacy.** The `PATIENT_RM_PAPER_CARD_REGISTERED` audit row (same transaction) carries exactly `patient_id`,
      `branch_id`, `actor_user_id`, `registration_id`, `reason_code` — never the note, the number, the year or the
      sequence. The note is never logged, never part of a general export (no export reads the table), and never
@@ -317,7 +326,8 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
    cap) — token `FrontOffice`, both declared in `critical_gate_mandatory_suites`; LP-10, LP-13 and LP-14 (format
    capacity, review L1) in the `LegacyPatient` suite; the two claim-cap races (PostgreSQL, two connections) in the
    `ClinicVisitRegistrationConcurrency` suite; `tests/Feature/Patient/FrontOfficePatientRmPaperCardReasonTest.php`
-   (PR-01..PR-20, PR-3b: entry, read/deny matrix, 404 scope, immutability, privacy; token `FrontOffice`, declared);
+   (PR-01..PR-28, PR-3b: entry, read/deny matrix, 404 scope, immutability, privacy; PR-21..PR-28 are review B1, B3,
+   B4, B5, B8; token `FrontOffice`, declared);
    review I1 (the Master Data KTP capture branch resolved directly, patient
    branch ≠ working branch) in `PatientKtpArchiveBranchIsolationTest` (token `PatientKtp`). The legacy CSV suites
    commit through `legacyPatientCommitterId()` (tests/Pest.php), an account holding the permission and

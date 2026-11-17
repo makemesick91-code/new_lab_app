@@ -351,8 +351,12 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     Route::middleware(['permission:view_patient_rm_paper_card_reasons', 'cache.headers:private;no_store;max_age=0'])->group(function () {
         Route::get('patients/paper-card-registrations', [PatientController::class, 'paperCardRegistrations'])
             ->name('patients.paper-card-registrations.index');
+        // PR-3b review B3 — a soft-deleted patient keeps its reason (and the
+        // list links to it), so the binding includes trashed rows; the branch
+        // scope is unchanged.
         Route::get('patients/{patient}/paper-card-registrations', [PatientController::class, 'paperCardRegistrationsForPatient'])
             ->where('patient', DatabaseRouteKey::PATTERN)
+            ->withTrashed()
             ->name('patients.paper-card-registrations.show');
     });
 

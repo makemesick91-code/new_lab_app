@@ -40,6 +40,7 @@ use Database\Seeders\BranchSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -449,4 +450,166 @@ it('PR-20 creates the table additively with named foreign keys, no updated_at, p
 
         expect($names)->toBe(['trx_prpcr_actor_fk', 'trx_prpcr_branch_fk', 'trx_prpcr_patient_fk']);
     }
+});
+
+// =============================================================================
+// Review of f98c2c0e: B1 (the note in laravel.log), B3, B4, B5, B8
+// =============================================================================
+
+/** Every log line written while `$action` runs: message, context and the exception as it would be printed. */
+function fprrLogLines(callable $action): string
+{
+    $lines = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$lines): void {
+        $exception = $event->context['exception'] ?? null;
+        $lines[] = $event->message.' '.json_encode(array_diff_key($event->context, ['exception' => true]))
+            .($exception instanceof Throwable ? ' '.$exception : '');
+    });
+
+    $action();
+
+    return implode("\n", $lines);
+}
+
+it('PR-21 refuses a note with invalid UTF-8 or control characters over HTTP (422), writing nothing and logging nothing (review B1)', function (string $note): void {
+    $logged = fprrLogLines(function () use ($note): void {
+        $this->actingAs($this->supervisor)
+            ->post(route('settings.patients.store'), fprrPayload(['name' => 'Pasien Catatan Rusak', 'paper_card_reason_note' => $note]))
+            ->assertSessionHasErrors('paper_card_reason_note');
+    });
+
+    expect(Patient::query()->where('name', 'Pasien Catatan Rusak')->exists())->toBeFalse()
+        ->and(PatientRmPaperCardRegistration::query()->count())->toBe(0)
+        ->and($logged)->not->toContain('zx81q');
+})->with([
+    'invalid UTF-8' => ["Catatan uji zx81q rusak \xff\xfe kertas"],
+    'NUL byte' => ["Catatan uji zx81q nol \0 kertas lama"],
+    'bell control character' => ["Catatan uji zx81q bel \x07 kertas lama"],
+]);
+
+it('PR-22 refuses the same notes in the service, binding Super Admin (review B1)', function (string $note): void {
+    expect(fn () => fprrRegister(superAdmin(), ['paper_card_reason_note' => $note]))
+        ->toThrow(ValidationException::class);
+
+    expect(PatientRmPaperCardRegistration::query()->count())->toBe(0);
+})->with([
+    'invalid UTF-8' => ["Catatan uji zx81q rusak \xff\xfe kertas"],
+    'NUL byte' => ["Catatan uji zx81q nol \0 kertas lama"],
+]);
+
+it('PR-23 turns a database failure on the insert into an error that carries no value and no driver exception (review B1)', function (): void {
+    $caught = null;
+
+    try {
+        DB::transaction(fn () => app(PatientRmPaperCardRegistrationRepositoryInterface::class)->record([
+            'patient_id' => 987654321, // no such patient: the foreign key refuses the insert
+            'branch_id' => (int) $this->sunu->id,
+            'year' => 2025,
+            'reason_code' => 'LAINNYA',
+            'reason_note' => FPRR_NOTE,
+            'actor_user_id' => (int) $this->supervisor->id,
+        ]));
+    } catch (Throwable $e) {
+        $caught = $e;
+    }
+
+    expect($caught)->not->toBeNull()
+        ->and($caught)->not->toBeInstanceOf(QueryException::class)
+        ->and($caught->getPrevious())->toBeNull()
+        ->and((string) $caught)->not->toContain('zx81q');
+});
+
+it('PR-24 answers a failed insert with a 500 whose log line never contains the note (PostgreSQL; review B1)', function (): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Needs a database that enforces the reason_code column width.');
+    }
+
+    // A configured code wider than the column (40): only the database refuses it.
+    $tooWide = str_repeat('X', 41);
+    config()->set('patient.paper_card_reasons', config('patient.paper_card_reasons') + [$tooWide => 'Kode terlalu panjang']);
+
+    $logged = fprrLogLines(function () use ($tooWide): void {
+        $this->actingAs($this->supervisor)
+            ->post(route('settings.patients.store'), fprrPayload(['name' => 'Pasien Gagal Simpan', 'paper_card_reason_code' => $tooWide]))
+            ->assertStatus(500);
+    });
+
+    expect($logged)->toContain('could not be stored')
+        ->and($logged)->not->toContain('zx81q')
+        ->and(Patient::query()->where('name', 'Pasien Gagal Simpan')->exists())->toBeFalse();
+});
+
+it('PR-25 opens the page of a soft-deleted patient, whose reason the list still links to (review B3)', function (): void {
+    $patient = fprrRegister($this->supervisor);
+    $patient->delete();
+
+    $this->actingAs($this->supervisor)->get(route('settings.patients.paper-card-registrations.index'))
+        ->assertOk()
+        ->assertSee(fprrShowUrl($patient), false);
+
+    $this->actingAs($this->supervisor)->get(fprrShowUrl($patient))->assertOk()->assertSee(FPRR_NOTE);
+
+    $atLandak = fprrUser('Front Office', $this->landak);
+    $atLandak->givePermissionTo(FPRR_READ);
+    $this->actingAs($atLandak)->get(fprrShowUrl($patient))->assertNotFound();
+});
+
+it('PR-26 also shows, read only and labelled, the reasons of patients merged INTO this one, inside the branch scope (review B4)', function (): void {
+    $source = fprrRegister($this->supervisor, ['name' => 'Pasien Sumber Gabung']);
+    $canonical = Patient::factory()->create(['branch_id' => $this->sunu->id, 'medical_record_number' => 'DG-SPN4-2026-0091']);
+    // Fixture: the merge pointer as the merge service leaves it (the row itself stays on the source).
+    DB::table('mst_patients')->where('id', $source->id)->update(['merged_into_patient_id' => $canonical->id]);
+
+    $this->actingAs($this->supervisor)->get(fprrShowUrl($canonical))
+        ->assertOk()
+        ->assertSee(FPRR_NOTE)
+        ->assertSee('Dari pasien yang digabungkan')
+        ->assertSee($source->medical_record_number);
+
+    expect((int) PatientRmPaperCardRegistration::query()->sole()->patient_id)->toBe((int) $source->id);
+
+    // A reader outside the source row's branch does not see it on the canonical page.
+    $canonicalAtLandak = Patient::factory()->create(['branch_id' => $this->landak->id, 'medical_record_number' => 'DG-LDK2-2026-0092']);
+    DB::table('mst_patients')->where('id', $source->id)->update(['merged_into_patient_id' => $canonicalAtLandak->id]);
+    $atLandak = fprrUser('Front Office', $this->landak);
+    $atLandak->givePermissionTo(FPRR_READ);
+
+    $this->actingAs($atLandak)->get(fprrShowUrl($canonicalAtLandak))
+        ->assertOk()
+        ->assertDontSee(FPRR_NOTE);
+});
+
+it('PR-27 refuses UPDATE, DELETE and TRUNCATE in the database itself (PostgreSQL trigger; review B5)', function (string $statement): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('The immutability trigger is PostgreSQL-only; the model guard covers SQLite.');
+    }
+
+    fprrRegister($this->supervisor);
+    $refused = false;
+
+    try {
+        DB::transaction(fn () => DB::statement($statement));
+    } catch (QueryException $e) {
+        $refused = str_contains($e->getMessage(), 'append-only');
+    }
+
+    expect($refused)->toBeTrue()
+        ->and(PatientRmPaperCardRegistration::query()->sole()->reason_note)->toBe(FPRR_NOTE);
+})->with([
+    'update' => ["UPDATE trx_patient_rm_paper_card_registrations SET reason_note = 'diubah'"],
+    'delete' => ['DELETE FROM trx_patient_rm_paper_card_registrations'],
+    'truncate' => ['TRUNCATE trx_patient_rm_paper_card_registrations'],
+]);
+
+it('PR-28 audits each read of the notes with ids only (review B8)', function (): void {
+    $patient = fprrRegister($this->supervisor);
+    $owner = userInRole('Owner');
+
+    $this->actingAs($owner)->get(fprrShowUrl($patient))->assertOk();
+
+    $log = AuditLog::query()->where('action', PatientService::AUDIT_PAPER_CARD_REASON_VIEWED)->sole();
+
+    expect(array_keys($log->new_values))->toEqualCanonicalizing(['patient_id', 'actor_user_id', 'registration_ids'])
+        ->and((int) $log->new_values['actor_user_id'])->toBe((int) $owner->id)
+        ->and(json_encode($log->new_values))->not->toContain('zx81q');
 });

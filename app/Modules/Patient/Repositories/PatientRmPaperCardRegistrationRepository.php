@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Modules\Patient\Repositories;
 
 use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
+use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use LogicException;
+use RuntimeException;
 
 class PatientRmPaperCardRegistrationRepository implements PatientRmPaperCardRegistrationRepositoryInterface
 {
@@ -18,7 +21,15 @@ class PatientRmPaperCardRegistrationRepository implements PatientRmPaperCardRegi
             throw new LogicException('A paper-card registration is recorded only inside the claim transaction.');
         }
 
-        return PatientRmPaperCardRegistration::query()->create($attributes);
+        try {
+            return PatientRmPaperCardRegistration::query()->create($attributes);
+        } catch (QueryException) {
+            // PR-3b review B1 — the driver error carries the SQL bindings, the
+            // note among them, and a reported exception lands in the log. It is
+            // replaced by one with no value and no previous exception; the
+            // caller's transaction rolls the registration back.
+            throw new RuntimeException('The paper-card registration could not be stored.');
+        }
     }
 
     public function forPatient(int $patientId, array $branchIds): Collection
@@ -27,9 +38,14 @@ class PatientRmPaperCardRegistrationRepository implements PatientRmPaperCardRegi
             return new Collection;
         }
 
+        // PR-3b review B4 — the patient's own rows and, read only, those of
+        // patients merged INTO it (the rows themselves stay on the source).
         return PatientRmPaperCardRegistration::query()
-            ->with(['actor:id,name', 'branch:id,code,name'])
-            ->where('patient_id', $patientId)
+            ->with(['actor:id,name', 'branch:id,code,name', 'patient:id,name,medical_record_number'])
+            ->where(function ($query) use ($patientId): void {
+                $query->where('patient_id', $patientId)
+                    ->orWhereIn('patient_id', Patient::withTrashed()->select('id')->where('merged_into_patient_id', $patientId));
+            })
             ->whereIn('branch_id', array_values($branchIds))
             ->orderBy('id')
             ->get();

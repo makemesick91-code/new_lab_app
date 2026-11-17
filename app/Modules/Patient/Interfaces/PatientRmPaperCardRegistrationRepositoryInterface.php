@@ -19,6 +19,8 @@ interface PatientRmPaperCardRegistrationRepositoryInterface
 {
     /**
      * Append one registration inside the caller's open transaction (the claim's).
+     * A database failure surfaces as an exception that carries no value and no
+     * driver exception (the bindings hold the note).
      *
      * @param  array{patient_id: int, branch_id: int, year: int, reason_code: string, reason_note: ?string, actor_user_id: int}  $attributes
      */
@@ -26,7 +28,8 @@ interface PatientRmPaperCardRegistrationRepositoryInterface
 
     /**
      * A patient's registrations inside the given branches, oldest first, with
-     * their actor and branch.
+     * their actor, branch and patient — the patient's own and those of patients
+     * merged INTO it (read only; the rows stay on the source).
      *
      * @param  array<int, int>  $branchIds
      * @return Collection<int, PatientRmPaperCardRegistration>

@@ -11,6 +11,9 @@
         </div>
         @forelse ($registrations as $registration)
             <dl class="grid grid-cols-1 gap-2 rounded-md border border-gray-200 p-4 text-sm sm:grid-cols-2">
+                @if ((int) $registration->patient_id !== (int) $patient->id)
+                    <div class="sm:col-span-2 rounded bg-gray-50 px-2 py-1 text-xs text-gray-600">Dari pasien yang digabungkan: <span class="font-mono">{{ $registration->patient?->medical_record_number }}</span> (hanya baca)</div>
+                @endif
                 <div><dt class="text-gray-500">Waktu (WITA)</dt><dd class="text-gray-800">{{ $registration->created_at?->copy()->setTimezone($clinicalTimezone)->format('d/m/Y H:i') }}</dd></div>
                 <div><dt class="text-gray-500">Cabang</dt><dd class="text-gray-800">{{ $registration->branch?->code }} — {{ $registration->branch?->name }}</dd></div>
                 <div><dt class="text-gray-500">Tahun pada kartu</dt><dd class="text-gray-800">{{ $registration->year }}</dd></div>

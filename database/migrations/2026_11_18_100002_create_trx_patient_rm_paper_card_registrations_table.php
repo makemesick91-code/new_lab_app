@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /*
@@ -18,6 +19,11 @@ use Illuminate\Support\Facades\Schema;
  * life of the patient record, so every foreign key RESTRICTs (patients and
  * users are soft-deleted; a hard delete must not erase the reason). Read only
  * through the restricted, branch-scoped surface (rule 244 §4.3).
+ *
+ * PR-3b review B5 — on PostgreSQL a trigger refuses UPDATE, DELETE and
+ * TRUNCATE on the table itself, so no code path (query builder, raw SQL) can
+ * rewrite or remove a row; the model guard covers SQLite. Dropping the table
+ * (rollback of this migration, never on production) is not refused.
  */
 return new class extends Migration
 {
@@ -41,10 +47,27 @@ return new class extends Migration
             $table->index('patient_id', 'trx_prpcr_patient_idx');
             $table->index(['branch_id', 'created_at'], 'trx_prpcr_branch_created_idx');
         });
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement(<<<'SQL'
+                CREATE OR REPLACE FUNCTION trx_prpcr_refuse_change() RETURNS trigger
+                LANGUAGE plpgsql AS $$
+                BEGIN
+                    RAISE EXCEPTION 'trx_patient_rm_paper_card_registrations is append-only (rule 244 section 4.3)';
+                END;
+                $$
+                SQL);
+            DB::statement('CREATE TRIGGER trx_prpcr_no_update_delete BEFORE UPDATE OR DELETE ON trx_patient_rm_paper_card_registrations FOR EACH ROW EXECUTE FUNCTION trx_prpcr_refuse_change()');
+            DB::statement('CREATE TRIGGER trx_prpcr_no_truncate BEFORE TRUNCATE ON trx_patient_rm_paper_card_registrations FOR EACH STATEMENT EXECUTE FUNCTION trx_prpcr_refuse_change()');
+        }
     }
 
     public function down(): void
     {
         Schema::dropIfExists('trx_patient_rm_paper_card_registrations');
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('DROP FUNCTION IF EXISTS trx_prpcr_refuse_change()');
+        }
     }
 };
