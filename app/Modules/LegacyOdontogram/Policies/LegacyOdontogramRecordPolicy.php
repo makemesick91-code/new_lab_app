@@ -10,6 +10,8 @@ use App\Modules\LegacyOdontogram\Support\LegacyOdontogramRecordStatus;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
+use Illuminate\Auth\Access\Response;
 
 /**
  * FIX-04b — authorization for PUBLISHED legacy odontogram records.
@@ -44,6 +46,7 @@ class LegacyOdontogramRecordPolicy
     public function __construct(
         private readonly LegacyOdontogramWorkspaceScope $scope,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function viewAny(User $user): bool
@@ -71,6 +74,23 @@ class LegacyOdontogramRecordPolicy
     public function viewFile(User $user, LegacyOdontogramRecord $record): bool
     {
         return $this->view($user, $record) && $record->isPublished();
+    }
+
+    /**
+     * Rule 243 §1 (owner revision 2026-11-17, plan default 4) — the source PDF
+     * is a download. A Doctor is refused through the one print-deny authority
+     * (rule 138) and reads the archive as inline page images instead
+     * (`viewFile`); every other reader keeps exactly the boundary they had.
+     */
+    public function download(User $user, LegacyOdontogramRecord $record): Response|bool
+    {
+        $print = $this->printDeny->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
+        return $this->viewFile($user, $record);
     }
 
     public function void(User $user, LegacyOdontogramRecord $record): bool

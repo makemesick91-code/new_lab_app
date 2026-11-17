@@ -15,6 +15,7 @@ use App\Modules\LegacyRme\Services\LegacyRmeVoidService;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -57,6 +58,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * `void` is the one action here that CHANGES state, so it stays behind the
  * migration capability exactly like publish: with the capability off the
  * archive is frozen — readable, but neither extended nor retracted.
+ *
+ * RULE 243 §1 — NO DOCTOR DOWNLOADS (owner revision of rule 93 §12,
+ * 2026-11-17). `source`, `print` and `export` reproduce the archive outside the
+ * screen, so a Doctor is refused there (403, audited) while `show` and `page`
+ * keep serving the archive to them as inline page images. The refusal is the
+ * rule 138 print-deny authority, asked by the policy (`download`) and asked
+ * again here after the policy.
  */
 class LegacyRmeRecordController extends Controller
 {
@@ -78,6 +86,7 @@ class LegacyRmeRecordController extends Controller
         private readonly LegacyRmeWorkspaceScope $scope,
         private readonly LegacyRmeAuditService $audit,
         private readonly LegacyRmeFeatureGuard $feature,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function show(Request $request, int $record): View
@@ -102,6 +111,7 @@ class LegacyRmeRecordController extends Controller
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'source');
 
         $path = (string) $legacyRecord->source_pdf_path;
 
@@ -195,6 +205,7 @@ class LegacyRmeRecordController extends Controller
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'print');
 
         $this->audit->logRecordEvent(LegacyRmeAuditEvent::RECORD_PRINTED, $legacyRecord, [], $request->user());
 
@@ -227,6 +238,7 @@ class LegacyRmeRecordController extends Controller
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'export');
 
         $pages = $this->records->pagesFor($legacyRecord);
         $embedded = $this->embedPages($pages);
@@ -306,6 +318,32 @@ class LegacyRmeRecordController extends Controller
         abort_if($record === null, 404);
 
         return $record;
+    }
+
+    /**
+     * Rule 243 §1 — the three layers for a door that reproduces the archive.
+     *
+     * Runs after the reader's own `view`/`viewFile` check and after
+     * `assertStreamable()` (a VOIDed archive is 404 for everyone, before any
+     * download rule), so only a doctor who could otherwise receive this
+     * archive is audited (rule 138 §7: a real attempt,
+     * recorded here and never in the policy, which also gates `@can`). The
+     * policy then refuses, and the print-deny authority is asked once more so a
+     * bypassed policy (Gate::before) still cannot serve a doctor.
+     */
+    private function authorizeDownload(Request $request, LegacyRmeRecord $record, string $action): void
+    {
+        $user = $request->user();
+
+        if ($user !== null && $this->printDeny->deniesClinicalPrint($user)) {
+            $this->printDeny->auditLegacyRmePrintRejected($user, $record, $action);
+        }
+
+        $this->authorize('download', $record);
+
+        if ($user !== null) {
+            $this->printDeny->assertClinicalPrintAllowed($user);
+        }
     }
 
     private function resolvePagePath(LegacyRmeRecordPage $page, bool $wantsThumbnail): ?string

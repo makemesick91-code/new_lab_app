@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\RME\Services\DoctorRoomScopeService;
+use Illuminate\Auth\Access\Response;
 
 /**
  * LEGACY-RME-PDF-1A — authorization for legacy RME staging rows.
@@ -25,6 +27,7 @@ class LegacyRmeImportPolicy
 {
     public function __construct(
         private readonly LegacyRmeWorkspaceScope $scope,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function viewAny(User $user): bool
@@ -99,6 +102,24 @@ class LegacyRmeImportPolicy
     public function viewFile(User $user, LegacyRmeImport $import): bool
     {
         return $this->view($user, $import);
+    }
+
+    /**
+     * Rule 243 §1 — the staging source PDF is the same file the published
+     * archive serves, so it is a download door too: a Doctor who also holds an
+     * intake role (Front Office, Admin Klinik) is refused it through the one
+     * print-deny authority (rule 138), and the staging screen hides the link
+     * under `@can('download', …)`. The rendered page images stay `viewFile`.
+     */
+    public function download(User $user, LegacyRmeImport $import): Response|bool
+    {
+        $print = $this->printDeny->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
+        return $this->viewFile($user, $import);
     }
 
     private function inScope(User $user, LegacyRmeImport $import): bool

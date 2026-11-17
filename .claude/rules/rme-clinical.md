@@ -265,6 +265,10 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-53** A completed/cancelled visit's prescription is read-only (`documentLocked()`: policy, and the service
   under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases and consent
   signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
+- **AIR-RMC-54** A scoped Doctor (rule 138 definition) is refused, 403 and audited, the PTM print `rme.consents.print`
+  and legacy print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; on the
+  oversight legacy doors controller + service only); reading on screen stays; prescription print unchanged; FO, Admin
+  Klinik, Supervisor RME keep printing. Rule 243 §1.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
@@ -308,6 +312,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Document read scope; printed prescription identity; authoring allowlist; serialised numbers |
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; clinical exam start; role allowlists; prescription lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx lock; consent integrity; lease grace; one RM book |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
 
 ## History
 

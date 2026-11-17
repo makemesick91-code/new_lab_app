@@ -79,6 +79,11 @@ alwaysApply: false
   nginx file path may ever expose an archive.
 - Every byte request re-authorizes independently. "The link only renders for an
   authorized doctor" is NOT an authorization argument.
+- **REVISED (owner, 2026-11-17) by rule 243 §1**
+  (`243-rme-doctor-encounter-scope-downloads-fields.mdc`): a Doctor no longer
+  receives the source PDF (`rme.legacy-records.source` answers 403); the
+  workspace serves doctors the page images only, and the zoom/expand viewer
+  requirement above still holds.
 
 ## Doctor authorization
 

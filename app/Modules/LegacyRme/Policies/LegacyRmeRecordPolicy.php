@@ -10,6 +10,8 @@ use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
+use Illuminate\Auth\Access\Response;
 
 /**
  * LEGACY-RME-PDF-1A — authorization for published legacy RME records.
@@ -23,6 +25,7 @@ class LegacyRmeRecordPolicy
     public function __construct(
         private readonly LegacyRmeWorkspaceScope $scope,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     /**
@@ -84,6 +87,34 @@ class LegacyRmeRecordPolicy
     public function viewFile(User $user, LegacyRmeRecord $record): bool
     {
         return $this->view($user, $record) && $record->isPublished();
+    }
+
+    /**
+     * Rule 243 §1 (owner revision of rule 93 §12, 2026-11-17) — reproducing the
+     * archive outside the screen: the source PDF, the print view and the PDF
+     * export. A Doctor is refused through the one print-deny authority (rule
+     * 138), so `@can('download', …)` hides those controls from a doctor. The
+     * doctor keeps `view` and `viewFile`: the archive is read as inline page
+     * images. Every other reader keeps exactly the `view` boundary they had.
+     */
+    public function download(User $user, LegacyRmeRecord $record): Response|bool
+    {
+        $print = $this->printDeny->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
+        return $this->view($user, $record);
+    }
+
+    /**
+     * The record-less form of `download`, for a surface that renders a source
+     * link from a projection rather than a model (the RME workspace).
+     */
+    public function downloadAny(User $user): bool
+    {
+        return $this->viewAny($user) && ! $this->printDeny->deniesClinicalPrint($user);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Requests\StoreRmeVisitConsentRequest;
 use App\Modules\Consent\Requests\VoidRmeVisitConsentRequest;
 use App\Modules\Consent\Services\RmeVisitConsentService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -27,6 +28,7 @@ class RmeVisitConsentController extends Controller
 
     public function __construct(
         private readonly RmeVisitConsentService $consents,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function create(ClinicVisit $clinicVisit): View|RedirectResponse
@@ -110,9 +112,28 @@ class RmeVisitConsentController extends Controller
             ->with('status', 'Persetujuan tindakan medis dibatalkan. Persetujuan baru dapat ditandatangani selama pemeriksaan berlangsung.');
     }
 
+    /**
+     * Rule 243 §1 (owner revision 2026-11-17, memo M2.4) — a Doctor reads the
+     * signed PTM on screen but never prints it. A real doctor attempt on a
+     * consent they may read is audited here (never in the policy, which also
+     * gates `@can`); the policy refuses it; the print-deny authority is asked
+     * once more so a bypassed policy still cannot serve a doctor.
+     */
     public function print(RmeVisitConsent $consent): View
     {
         $this->authorize('view', $consent);
+
+        $user = request()->user();
+
+        if ($user !== null && $this->printDeny->deniesClinicalPrint($user)) {
+            $this->printDeny->auditConsentPrintRejected($user, $consent);
+        }
+
+        $this->authorize('print', $consent);
+
+        if ($user !== null) {
+            $this->printDeny->assertClinicalPrintAllowed($user);
+        }
 
         return view('rme.consents.print', $this->documentData($consent));
     }

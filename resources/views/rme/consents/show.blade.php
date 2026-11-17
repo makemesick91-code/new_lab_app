@@ -10,9 +10,13 @@
                     {{ $consent->isVoided() ? 'Dibatalkan' : 'Ditandatangani' }}
                 </x-ui.badge>
 
-                <x-ui.button variant="secondary" :href="route('rme.consents.print', $consent)" target="_blank">
-                    Cetak Persetujuan
-                </x-ui.button>
+                {{-- Rule 243 §1 — a Doctor reads the PTM here but never prints it;
+                     the server refuses the print route too. --}}
+                @can('print', $consent)
+                    <x-ui.button variant="secondary" :href="route('rme.consents.print', $consent)" target="_blank">
+                        Cetak Persetujuan
+                    </x-ui.button>
+                @endcan
 
                 @if ($consent->clinicVisit)
                     <x-ui.button variant="secondary" :href="route('rme.visits.show', $consent->clinicVisit)">

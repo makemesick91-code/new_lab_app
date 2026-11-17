@@ -15,6 +15,7 @@ use App\Modules\LegacyOdontogram\Services\LegacyOdontogramStorageService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramVoidService;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramAuditEvent;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -52,6 +53,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * `void` is the one action here that CHANGES state, so it stays behind the
  * migration capability exactly like publish: with the capability off the
  * archive is frozen — readable, but neither extended nor retracted.
+ *
+ * RULE 243 §1 — NO DOCTOR DOWNLOADS (owner revision 2026-11-17, plan default
+ * 4). `source` hands over the original PDF, so a Doctor is refused there (403,
+ * audited) and reads the archive through `show` and `page` as inline images.
  */
 class LegacyOdontogramRecordController extends Controller
 {
@@ -63,6 +68,7 @@ class LegacyOdontogramRecordController extends Controller
         private readonly LegacyOdontogramWorkspaceScope $scope,
         private readonly LegacyOdontogramAuditService $audit,
         private readonly LegacyOdontogramFeatureGuard $feature,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function show(Request $request, int $record): View
@@ -93,6 +99,7 @@ class LegacyOdontogramRecordController extends Controller
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'source');
 
         $path = (string) $legacyRecord->source_pdf_path;
         $disk = $this->storage->diskFor($legacyRecord->source_disk);
@@ -186,6 +193,26 @@ class LegacyOdontogramRecordController extends Controller
         abort_if($record === null, 404);
 
         return $record;
+    }
+
+    /**
+     * Rule 243 §1 — audit a real doctor attempt (never from the policy, which
+     * also gates `@can`), let the policy refuse it, then ask the print-deny
+     * authority once more so a bypassed policy still cannot serve a doctor.
+     */
+    private function authorizeDownload(Request $request, LegacyOdontogramRecord $record, string $action): void
+    {
+        $user = $request->user();
+
+        if ($user !== null && $this->printDeny->deniesClinicalPrint($user)) {
+            $this->printDeny->auditLegacyOdontogramPrintRejected($user, $record, $action);
+        }
+
+        $this->authorize('download', $record);
+
+        if ($user !== null) {
+            $this->printDeny->assertClinicalPrintAllowed($user);
+        }
     }
 
     private function resolvePagePath(LegacyOdontogramRecordPage $page, bool $wantsThumbnail): ?string

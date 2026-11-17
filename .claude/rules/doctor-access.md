@@ -198,6 +198,12 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   `rme.doctor-branch-locks.release-session`) carries `DatabaseRouteKey::PATTERN` per route, never `whereNumber`. It
   still rejects the literal `requests`, so the ordering trap stays closed. Route validation changes no device,
   branch-lock, cover or session rule. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
+- **AIR-DAC-42** A Doctor (rule 138's definition, so also one holding Front Office, Admin Klinik, Kasir or an
+  oversight role) is refused, 403 and audited, the legacy RME print/export/source PDF, the legacy odontogram source
+  PDF and the PTM print on every door (clinical, staging, oversight), through `DoctorRoomScopeService` only: policy
+  `download`/`print` plus a controller re-assertion on the clinical, staging and consent doors; controller + service
+  only on the oversight doors (no download/print policy there; follow-up OD-MEMO-B-1). Doctors still read archives as
+  inline page images and print prescriptions. Not behind the encounter-scope flag. Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -244,6 +250,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Visit list scope excludes soft-deleted visits; D1 lease in-flight race recorded |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1) |
 
 ## History
 

@@ -4,10 +4,15 @@ namespace App\Modules\RME\Services;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
+use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -29,11 +34,15 @@ use Illuminate\Database\Eloquent\Builder;
  * sprint can never hide clinical history from the doctor who created it.
  *
  * PRINT DENIAL (§18/§19). A Doctor may read and edit native RME/Odontogram under
- * the existing lifecycle rules but may not print them: exactly the three routes of
- * rule 138 §6 — `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print`.
- * Prescription printing is unaffected, and so are published LEGACY archives, whose
- * read/print/export authority is rule 93-legacy-rme-void-clinical-read (OD-7-3:
- * allowed by that rule; any change is an owner decision, not this class).
+ * the existing lifecycle rules but may not print them: the three routes of rule
+ * 138 §6 — `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print`.
+ *
+ * DOWNLOAD DENIAL (rule 243 §1 — the owner's 2026-11-17 revision of rule 93 §12,
+ * memo M2.4). The same predicate now also refuses a Doctor the published legacy
+ * RME print, export and source PDF, the legacy odontogram source PDF, and the PTM
+ * (consent) print. A Doctor still READS those documents — legacy archives as
+ * inline page images, the consent on screen. Prescription printing is unaffected.
+ * There is no second definition: every one of those doors asks this class.
  *
  * "Is this a scoped Doctor" is delegated to {@see DoctorPatientScopeService} so
  * there is exactly one definition of it — Owner / Super Admin / Supervisor RME
@@ -46,6 +55,17 @@ class DoctorRoomScopeService
     public const AUDIT_PRINT_RME_REJECTED = 'DOCTOR_PRINT_RME_REJECTED';
 
     public const AUDIT_PRINT_ODONTOGRAM_REJECTED = 'DOCTOR_PRINT_ODONTOGRAM_REJECTED';
+
+    /** Rule 243 §1 — legacy RME print, export or source PDF refused to a Doctor. */
+    public const AUDIT_PRINT_LEGACY_RME_REJECTED = 'DOCTOR_PRINT_LEGACY_RME_REJECTED';
+
+    /** Rule 243 §1 — legacy odontogram source PDF refused to a Doctor. */
+    public const AUDIT_PRINT_LEGACY_ODONTOGRAM_REJECTED = 'DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED';
+
+    /** Rule 243 §1 — PTM (consent) print refused to a Doctor. */
+    public const AUDIT_PRINT_CONSENT_REJECTED = 'DOCTOR_PRINT_CONSENT_REJECTED';
+
+    public const CLINICAL_PRINT_DENIED_MESSAGE = 'Dokter tidak diizinkan mencetak atau mengunduh rekam medis.';
 
     public function __construct(
         private readonly DoctorPatientScopeService $doctorScope,
@@ -152,10 +172,27 @@ class DoctorRoomScopeService
     public function authorizeClinicalPrint(User $user): Response|bool
     {
         if ($this->deniesClinicalPrint($user)) {
-            return Response::deny('Dokter tidak diizinkan mencetak atau mengunduh rekam medis.');
+            return Response::deny(self::CLINICAL_PRINT_DENIED_MESSAGE);
         }
 
         return true;
+    }
+
+    /**
+     * Rule 243 §1 — the serving path's own re-assertion (CG-06 third layer).
+     *
+     * Called by the controller that streams or renders a document AFTER the
+     * policy, so a crafted URL is refused even if the policy is ever bypassed:
+     * the single global Gate::before answers every ability without reaching the
+     * policy. The same predicate as the policy, never a second definition.
+     *
+     * @throws AuthorizationException
+     */
+    public function assertClinicalPrintAllowed(User $user): void
+    {
+        if ($this->deniesClinicalPrint($user)) {
+            throw new AuthorizationException(self::CLINICAL_PRINT_DENIED_MESSAGE);
+        }
     }
 
     /**
@@ -200,6 +237,49 @@ class DoctorRoomScopeService
             self::AUDIT_PRINT_ODONTOGRAM_REJECTED,
             null,
             ['clinic_visit_id' => $odontogram->clinic_visit_id],
+            $user,
+        );
+    }
+
+    /**
+     * Rule 243 §1 — `$action` is the door: `source`, `print`, `export` on the
+     * clinical archive, `staging_source` on the intake screen (the same PDF
+     * before and after publishing), `oversight_source|print|pdf` on the
+     * oversight screens. Identifiers only: never the patient's name, RM number
+     * or KTP/NIK.
+     */
+    public function auditLegacyRmePrintRejected(User $user, LegacyRmeRecord|LegacyRmeImport $record, string $action): void
+    {
+        $this->auditLogs->log(
+            $record->getTable(),
+            (int) $record->getKey(),
+            self::AUDIT_PRINT_LEGACY_RME_REJECTED,
+            null,
+            ['action' => $action],
+            $user,
+        );
+    }
+
+    public function auditLegacyOdontogramPrintRejected(User $user, LegacyOdontogramRecord $record, string $action): void
+    {
+        $this->auditLogs->log(
+            $record->getTable(),
+            (int) $record->getKey(),
+            self::AUDIT_PRINT_LEGACY_ODONTOGRAM_REJECTED,
+            null,
+            ['action' => $action],
+            $user,
+        );
+    }
+
+    public function auditConsentPrintRejected(User $user, RmeVisitConsent $consent): void
+    {
+        $this->auditLogs->log(
+            $consent->getTable(),
+            (int) $consent->getKey(),
+            self::AUDIT_PRINT_CONSENT_REJECTED,
+            null,
+            ['action' => 'print', 'clinic_visit_id' => $consent->clinic_visit_id],
             $user,
         );
     }

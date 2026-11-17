@@ -258,11 +258,16 @@
                 Berkas PDF sumber dan gambar halaman arsip ini tidak lagi ditayangkan. Catatan impor dan alasan VOID tetap dapat diaudit.
             </x-ui.alert>
         @else
+        {{-- Rule 243 §1 — the source PDF is a download; a Doctor who also holds
+             an intake role reads the page images below instead. The server
+             refuses the source route too. --}}
+        @can('download', $import)
         <x-ui.card title="Dokumen Sumber">
             <x-ui.button variant="secondary" :href="route('settings.rme.legacy-imports.source', $import->getKey())" target="_blank" rel="noopener">
                 Buka PDF Sumber
             </x-ui.button>
         </x-ui.card>
+        @endcan
         @endif
 
         @unless ($bytesRetracted)
