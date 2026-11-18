@@ -175,6 +175,16 @@ function rcpgSection(string $html, string $testId): string
 }
 
 /** The "Foto Klinis" card's own markup, or '' when it is absent. */
+/**
+ * A person's name as rcpgSection() serialises it: DOMDocument::saveHTML()
+ * escapes &, < and > in text but writes quotes back literally, so e() (which
+ * gives &#039;) never matches a generated name such as "O'Hara".
+ */
+function rcpgDomText(string $text): string
+{
+    return htmlspecialchars($text, ENT_NOQUOTES, 'UTF-8');
+}
+
 function rcpgCard(string $html): string
 {
     return rcpgSection($html, 'clinical-photos-card');
@@ -235,7 +245,7 @@ it('CPG-02 the uploader gets the upload form, the form posts to the server, and 
 
     expect($card)->toContain('src="'.rcpgImageUrl($photo).'"')
         ->and($card)->toContain('loading="lazy"')
-        ->and($card)->toContain(e($this->doctor->name))
+        ->and($card)->toContain(rcpgDomText($this->doctor->name))
         ->and($card)->toContain('18/11/2026 10:30 WITA')
         ->and($card)->not->toContain('Belum ada foto klinis');
 });
@@ -299,6 +309,8 @@ it('CPG-04 the gallery lists live photos only', function () {
 });
 
 it('CPG-05 the "Foto dibatalkan" list is shown to void holders only, with who voided and when', function () {
+    // A name with an apostrophe every time, so the assertion below cannot pass or fail by the generator's luck.
+    $this->doctor->forceFill(['name' => "drg. Dewi O'Hara"])->save();
     $visit = rcpgEncounter();
     $photo = rcpgUpload($visit);
     rcpgClock('2026-11-18 11:45:00');
@@ -307,8 +319,8 @@ it('CPG-05 the "Foto dibatalkan" list is shown to void holders only, with who vo
     $holder = rcpgCard(rcpgPage($this->supervisor, $visit)->assertOk()->getContent());
     $list = rcpgSection($holder, 'clinical-photos-voided');
     expect($list)->toContain('Foto dibatalkan')
-        ->and($list)->toContain(e($this->supervisor->name))
-        ->and($list)->toContain(e($this->doctor->name))
+        ->and($list)->toContain(rcpgDomText($this->supervisor->name))
+        ->and($list)->toContain(rcpgDomText($this->doctor->name))
         ->and($list)->toContain('18/11/2026 11:45 WITA')
         ->and($list)->toContain('18/11/2026 10:30 WITA')
         ->and($list)->toContain('href="'.rcpgImageUrl($voided).'"');
