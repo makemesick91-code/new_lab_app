@@ -1815,6 +1815,12 @@ return [
         // photo row locked, object and evidence columns kept, no delete path, audit ids only.
         // Selected by the existing `ClinicalEvidence` token in BOTH critical variants.
         'tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php',
+        // PTM PR5 (rule 242 §10) — the photos UI on Detail Kunjungan: nothing while the flag is OFF,
+        // the upload form only when the server would accept it (else its reason), live photos only
+        // through the private image route, the voided list and the void form only for holders (never
+        // on the viewer's own upload), the reason never outside the holders' list, the read scope,
+        // constant queries. Selected by the existing `ClinicalEvidence` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoGalleryUiTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

@@ -43,10 +43,14 @@ class ClinicalPhotoNormalizer
     /**
      * Owner decision 2026-11-18 ("Raise to 50 MP"): edges up to 10000 px and at
      * most 50 megapixels, read from the header before anything is decoded; the
-     * file stays capped at 15 MB and the output at a 2560 px long edge. A 50 MP
-     * decode holds about 200 MB of pixels in GD (system libgd, outside PHP's
-     * memory_limit): measured 251 MB peak resident and 0.8 s per upload here;
-     * the range is about 200–380 MB per worker at the top of the bound.
+     * file stays capped at 15 MB and the output at a 2560 px long edge. GD holds
+     * the decoded pixels in system libgd, outside PHP's memory_limit: about
+     * 200–470 MB resident per upload in the worst measured case (5 workers ≈
+     * 2.3–2.7 GB). Measured in the final backend review: a crafted 7000×7000
+     * 4:4:4 progressive JPEG (287 KB, accepted) +468 MB resident (535 MB peak),
+     * a 7071×7071 16-bit RGBA PNG +382 MB, a 49.8 MP baseline JPEG +208 MB. A
+     * per-user upload rate limit is a recommended follow-up before the flag is
+     * turned on (rule 242 §4.1).
      */
     public const MAX_EDGE = 10000;
 

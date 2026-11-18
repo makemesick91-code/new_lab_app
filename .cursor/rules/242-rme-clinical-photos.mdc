@@ -1,6 +1,6 @@
 ---
-description: Internal memo M4.4 / M1.x (rule 242) — clinical photos of an encounter, built behind the risky flag rme.clinical_photos (default OFF; turning it on is a separate owner decision). §1–§8 (PTM PR4a, backend) — with the flag off every photo route answers 404 to the accounts holding its permission and the service refuses. Upload: Doctor or Perawat only (a service allowlist, so Super Admin is bound), on the live in_progress encounter they may work on, only while its PTM is EXECUTED (rule 241 §2) and its clinical-documentation answer is YA (2026.1 the combined clause 8, v2026.2 clause 8); clause 9 never gates or permits. Validated before any write (JPEG/PNG sniffed from the bytes, byte, edge and pixel bounds from the header), re-encoded as JPEG (EXIF/GPS stripped, orientation applied, long edge 2560), stored only through ClinicalEvidenceStorage under a fresh random key; row and object one unit with the visit row locked first (rule 224); audit ids only. Read: the image route only (private, no-store, nosniff, each view audited), clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope, 404 out of scope; never Front Office, Kasir or Admin Klinik even with a runtime grant. §9 (PTM PR4b) — no delete path; a supervised void: own permission (Supervisor RME), the read scope first (404), never the account that uploaded the photo (identity, binds Super Admin), a 10–1000 character reason, once, the visit row then the photo row locked, the object and evidence kept, audit ids only.
-globs: app/Modules/ClinicalPhoto/**, database/migrations/2026_11_18_100001_create_trx_rme_clinical_photos_table.php, tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php
+description: Internal memo M4.4 / M1.x (rule 242) — clinical photos of an encounter, built behind the risky flag rme.clinical_photos (default OFF; turning it on is a separate owner decision). §1–§8 (PTM PR4a, backend) — with the flag off every photo route answers 404 to the accounts holding its permission and the service refuses. Upload: Doctor or Perawat only (a service allowlist, so Super Admin is bound), on the live in_progress encounter they may work on, only while its PTM is EXECUTED (rule 241 §2) and its clinical-documentation answer is YA (2026.1 the combined clause 8, v2026.2 clause 8); clause 9 never gates or permits. Validated before any write (JPEG/PNG sniffed from the bytes, byte, edge and pixel bounds from the header), re-encoded as JPEG (EXIF/GPS stripped, orientation applied, long edge 2560), stored only through ClinicalEvidenceStorage under a fresh random key; row and object one unit with the visit row locked first (rule 224); audit ids only. Read: the image route only (private, no-store, nosniff, each view audited), clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope, 404 out of scope; never Front Office, Kasir or Admin Klinik even with a runtime grant. §9 (PTM PR4b) — no delete path; a supervised void: own permission (Supervisor RME), the read scope first (404), never the account that uploaded the photo (identity, binds Super Admin), a 10–1000 character reason, once, the visit row then the photo row locked, the object and evidence kept, audit ids only. §10 (PTM PR5) — the UI: a "Foto Klinis" card on Detail Kunjungan only, decided by ClinicalPhotoGalleryPresenter in the controller (null = no markup while the flag is off or without photo authority); the upload form only when uploadRefusal() is null, else the server's reason for an account that may upload here at all; live photos through the private image route; "Foto dibatalkan" (with the reason) and the void form only for holders, never on the viewer's own upload.
+globs: app/Modules/ClinicalPhoto/**, database/migrations/2026_11_18_100001_create_trx_rme_clinical_photos_table.php, tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php, tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php, resources/views/rme/visits/partials/clinical-photos.blade.php, tests/Feature/RME/RmeClinicalEvidencePhotoGalleryUiTest.php
 alwaysApply: false
 ---
 
@@ -10,7 +10,7 @@ Source: the internal memo of 2026-10-17 (M4.4, M1.x), the section "M1.1–M1.3 +
 DMS-RME-COMPREHENSIVE-CLOSURE-1 memo implementation plan (PR split item 4) and the owner's decisions of 2026-11-17
 (sprint record `docs/sprints/dms-rme-comprehensive-closure-1.md`). Builds on rule 241 (the PTM double signature and template v2026.2), rule 121 (private evidence disk),
 rule 224 (row + object one unit) and rule 227 §1 (clinical-document read scope). Delivered in PRs; each adds its
-section. The gallery UI is a separate PR.
+section. The gallery UI is §10 (PTM PR5).
 
 ## 0. Owner decisions (CG-22)
 
@@ -108,9 +108,12 @@ transaction.
    L-1; anything else, such as an inconsistent progression that would mask one, is `MESSAGE_RESAVE`, R2-3; the
    reviewed trade-off: this closes the masking hole at the price of refusing a slightly malformed but viewable camera
    file, so the `MESSAGE_RESAVE` rate is watched after the flag is turned on). **Memory** (owner's 50 MP bound): GD
-   holds about 4 bytes per pixel in system libgd, outside PHP's `memory_limit`, so a 50 MP upload needs about
-   200–380 MB resident in its worker (measured here: 251 MB peak resident and 0.8 s for a 50.0 MP JPEG; five
-   PHP-FPM workers can hold that at once). The
+   holds the decoded pixels in system libgd, outside PHP's `memory_limit`: about 200–470 MB resident per upload in
+   the worst measured case (5 workers ≈ 2.3–2.7 GB). Measured in the final backend review (corrected in PTM PR5; the
+   earlier 200–380 MB figure was low): a crafted 7000×7000 4:4:4 progressive JPEG (287 KB, accepted) +468 MB
+   resident (535 MB peak), a 7071×7071 16-bit RGBA PNG +382 MB, a 49.8 MP baseline JPEG +208 MB (and 251 MB peak,
+   0.8 s, for a 50.0 MP JPEG). A per-user upload rate limit is a recommended follow-up before the flag is turned on
+   (§10.6; not built). The
    temporary file sits in the PHP-FPM pool's temporary directory (systemd `PrivateTmp` where the unit sets it); a
    worker killed mid-decode can leave it behind until that directory is cleaned, holding no more than the upload
    PHP itself already keeps there. A truncated PNG fails to decode; drawn onto a fresh opaque canvas,
@@ -211,3 +214,42 @@ consent void (rule 237 §14.2). Committed evidence is never deleted (rule 224 §
 7. **Deploy.** `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`; no migration (the void columns ship in §4).
 8. **Tests.** `tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php` (token `ClinicalEvidence`, declared in
    `critical_gate_mandatory_suites`).
+
+## 10. The photos UI (PTM PR5)
+
+Plan PR split item 5 ("Photos UI"). The plan names no host page, so the UI lives on the per-visit page only.
+
+1. **Where.** A "Foto Klinis" card on Detail Kunjungan (`rme.visits.show`), after Resep in source order (AIR-UI-13),
+   outside the operate-from-detail block (the photo read scope is the service's, and Supervisor RME reads there
+   too): `resources/views/rme/visits/partials/clinical-photos.blade.php`, included from `rme/visits/show.blade.php`.
+   Not on the RME workspace (patient-centric: one page spans many visits), the odontogram page or any print/PDF
+   (photos are never printed; no base64 inlining, AIR-UI-15 does not apply).
+2. **Decided in the controller** (CG-04, MEMO-F5). `ClinicVisitController::show()` passes `clinicalPhotoGallery` from
+   `ClinicalPhotoGalleryPresenter::forVisit($visit, $user)` (`app/Modules/ClinicalPhoto/Support/`), which asks only
+   `RmeClinicalPhotoService` and returns plain arrays; the partial calls no service and decides nothing. **Null**
+   (the include is skipped: no markup, no photo route) while `rme.clinical_photos` is OFF, and for an account that
+   may neither read this visit's photos (`mayViewVisit()`) nor upload to it (`uploadAccountRefusal()` null).
+3. **Upload.** The form (`multipart/form-data`, `accept="image/jpeg,image/png"`, field `photo`, POST
+   `rme.visits.clinical-photos.store`, which redirects back with `status` for a form post) renders only when
+   `uploadRefusal()` is null (rule 135). An account that may upload here at all but is refused by the encounter
+   state (not in examination, PTM awaiting the patient or the doctor, documentation TIDAK) sees a disabled control
+   and the server's reason; an account that is not an uploader (Supervisor RME, Owner) sees neither.
+4. **Gallery.** `visibleForVisit()` (live photos only), each `<img loading="lazy">` from `rme.clinical-photos.image`
+   (private, no-store, each load audited `RME_CLINICAL_PHOTO_VIEWED`), linked to the same route; uploader and
+   `uploaded_at` — a ClinicalClock wall-clock value, formatted as stored and labelled WITA, as the PTM signature
+   times are. Never the object key, a hash, a storage URL or a data URI.
+5. **Void.** Per photo, an `x-ui.modal` confirm step with the `void_reason` form (10–1000 characters, POST
+   `rme.clinical-photos.void`) only when `voidAccountRefusal()` is null — the permission, and never the account that
+   uploaded it. "Foto dibatalkan" renders only when `voidedForVisit()` is not empty (holders inside the read scope):
+   uploader, voider, both times, a link (not a thumbnail, so opening the page audits no voided view) and the reason —
+   read deliberately for holders only (§7); it appears nowhere else.
+6. **Before the flag is turned ON** (owner decision, CG-22): the HARD precondition of §0/§8 (a backup of the private
+   clinical-evidence disk and a tested restore); size the PHP-FPM host for the §4.1 memory (about 200–470 MB per
+   upload, 5 workers ≈ 2.3–2.7 GB); **recommended follow-up: a per-user upload rate limit** on
+   `rme.visits.clinical-photos.store` (not built); WATCH the audit volume (every thumbnail load is a view row) and
+   the `MESSAGE_RESAVE` rate. No new Tailwind utility: every class in the partial is already used elsewhere.
+7. **Tests.** `tests/Feature/RME/RmeClinicalEvidencePhotoGalleryUiTest.php` (token `ClinicalEvidence`, declared in
+   `critical_gate_mandatory_suites`): flag OFF renders nothing for every role, the upload form and the refusal
+   reasons, live photos only, the voided list and the void form for holders only (never on the viewer's own
+   upload), the reason nowhere else, the private route only, the read scope (Front Office with a grant, an
+   unrelated doctor, the doctor-patient scope), constant queries, a refused form post shown on the card.
