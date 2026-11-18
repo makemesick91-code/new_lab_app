@@ -115,6 +115,40 @@ final class PatientIdentityPresenter
     }
 
     /**
+     * Rule 243 §3 (memo M3.1, PR C2) — the biodata grid baked into a NEW RM
+     * page 1 (the workspace canvas, hence the saved PNG and every later print):
+     * the allowed fields only, for every audience (plan default 3: a Front
+     * Office print of a new page 1 loses the address and phone). The Hotfix
+     * 60.5 geometry (five rows, label|value|label|value) is kept, so the table
+     * below the band never moves; the cells that held marital status, address,
+     * religion, phone/WhatsApp and email are blank, exactly the cells
+     * RmPageOneBiodataRedactor blanks on an old page 1 for a Doctor.
+     *
+     * @return array{left: list<array{0: string, 1: string}>, right: list<array{0: string, 1: string}>}
+     */
+    public function rmPageOneBiodata(?Patient $patient): array
+    {
+        $blank = ['', ''];
+
+        return [
+            'left' => [
+                ['Nama', self::filled($patient?->name) ?? self::DASH],
+                ['TTL / Umur', $this->birthPlaceDateAge($patient) ?? self::DASH],
+                ['Pekerjaan', self::filled($patient?->occupation) ?? self::DASH],
+                $blank,
+                $blank,
+            ],
+            'right' => [
+                ['Jenis Kelamin', $this->genderLabel($patient) ?? self::DASH],
+                $blank,
+                $blank,
+                $blank,
+                ['No. RM', self::filled($patient?->medical_record_number) ?? self::DASH],
+            ],
+        ];
+    }
+
+    /**
      * "TTL / Umur": the place of birth (memo M4.2 column, when recorded), the
      * date of birth and the age — "Parepare, 01-02-1990 / 36 tahun".
      */

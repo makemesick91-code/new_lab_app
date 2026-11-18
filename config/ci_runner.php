@@ -960,6 +960,12 @@ return [
         // unchanged, dual roles get the doctor view; not behind the flag. Same
         // `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeIdentityFieldsTest.php',
+        // PR C2 (rule 243 §3) — RM page 1: a new page drawn with the allowed
+        // fields only; an old page streamed to a Doctor (clinical and oversight
+        // doors, dual roles, inline rows) with the hidden biodata cells blanked
+        // (pixel checks), other roles the stored bytes, the stored object never
+        // written, a page it cannot redact never served. Same token.
+        'tests/Feature/RME/DoctorPatientScopePageOneRedactionTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and

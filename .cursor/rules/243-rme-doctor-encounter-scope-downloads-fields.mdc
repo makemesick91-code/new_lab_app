@@ -56,6 +56,8 @@ globs:
   - "app/Console/Commands/RmeDoctorAssignmentsReconcileCommand.php"
   - "app/Modules/Patient/Services/PatientIdentityPresenter.php"
   - "app/Modules/Patient/Support/PatientIdentityView.php"
+  - "app/Modules/MedicalRecord/Services/RmPageOneBiodataRedactor.php"
+  - "app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php"
   - "resources/views/rme/visits/show.blade.php"
 alwaysApply: false
 ---
@@ -629,3 +631,37 @@ added by their own PRs.
    `DoctorPatientScope`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`): every doctor screen
    (flag OFF and ON on the visit page), non-doctor parity, the consent page masked and the print whole, the dual
    role and the master form, every exempt role through the one predicate, no query per patient.
+8. **A new RM page 1 (C2).** The workspace canvas template (Hotfix 60.5, 900 × 1273, baked into the saved PNG and so
+   into every later print) draws `PatientIdentityPresenter::rmPageOneBiodata()`: Nama, TTL / Umur, Pekerjaan,
+   Jenis Kelamin and No. RM in their old cells; the cells that held marital status, address, religion,
+   phone/WhatsApp and email are blank (no label, no value). For every audience: a Front Office print of a new page 1
+   loses the address and phone (plan default 3). The geometry is unchanged, so the table below the band never moves.
+9. **An old page 1 to a Doctor (C2).** `rme.handwritings.image` (page 1: the workspace, the book, the version pages)
+   and `oversight.rme.handwritings.image` answer the §3.2 doctor audience with a copy made by
+   `App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor`. On a template-shaped image (900 × 1273, or that
+   page scaled, height within a pixel) it fills white, 2 px inside the grid lines and scaled by width / 900, the ten
+   cells a new page leaves blank: band rows of 28 px from y = 96, columns 0 | 150 | 470 | 620 | 900; left rows 4–5
+   (marital status, address) and right rows 2–4 (religion, phone/WhatsApp, email), label and value. An old page then
+   reads like a new one; a new page is unchanged. GD works in memory after the handwriting payload bounds; the stored
+   object is never written. Every other role (Front Office, Admin Klinik, Supervisor RME, Super Admin, the oversight
+   roles) gets the stored bytes. Responses stay `image/png`, `nosniff`, `private, no-store`. A missing or
+   undecodable image answers a doctor 404, GD unavailable or a storage read fault 503 — never the unredacted bytes
+   (release check: GD loaded for PHP-FPM on the host). The oversight door audits the read with `variant`
+   `handwriting_redacted`; the clinical door audits no image read and gains none. An image of another shape predates the template (Sprint 60's
+   900 × 1100 canvas had no biodata grid) and is served unchanged.
+10. **Limits, recorded.** (a) Scanned legacy archive pages (published legacy RME and legacy odontogram page images
+    rendered from the source PDF) are scans of paper with no known biodata position: they cannot be redacted, and
+    doctors keep reading them (§1.5). (b) A page 1 kept inline in its row (a `data:` URI) is embedded in the
+    workspace by `MedicalRecordHandwriting::previewUrl()` without redaction; no such row can hold a template page
+    (`handwriting_path` is varchar(255) on PostgreSQL, and page 1 has been a stored object since Sprint 60, before
+    the Hotfix 60.5 grid), and the image route redacts an inline row anyway.
+    (c) The print and PDF embed page 1 unredacted; a Doctor is refused them (rule 138 §6) except on the oversight
+    print residual of §1.8 (OD-MEMO-B-1). (d) A doctor re-saving an old page 1 saves what the canvas holds, the
+    redacted copy (an overwrite is allowed only on an unsealed page the live encounter wrote, rule 240 §4).
+    (e) Pixels on a screen can be photographed.
+11. **Tests (C2).** `tests/Feature/RME/DoctorPatientScopePageOneRedactionTest.php` (token `DoctorPatientScope`,
+    declared in `critical_gate_mandatory_suites`): pixel checks of every blanked and every kept cell, the headers,
+    Front Office and Supervisor RME bytes unchanged, the stored object's hash unchanged, the dual role, the inline
+    read path, a scaled and an off-template image, an unredactable page never served, a storage fault 503, the
+    oversight door and its audit variant, the new page-1 grid the treating doctor draws (no viewer parameter) with
+    its blank cells equal to the redacted ones, the whole workspace without a hidden value.

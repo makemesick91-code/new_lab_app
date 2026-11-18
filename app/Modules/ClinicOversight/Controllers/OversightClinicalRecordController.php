@@ -13,7 +13,9 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -247,6 +249,27 @@ class OversightClinicalRecordController extends Controller
     {
         $record = $handwriting->medicalRecord;
         $this->authorizeRecordImage($request, $record);
+
+        // Rule 243 §3 (memo M3.1, PR C2) — page 1 carries the biodata band. A
+        // Doctor who also holds an oversight role gets the redacted copy here
+        // too (the clinical door's rule), audited as that variant; the stored
+        // object is never written.
+        if (app(PatientIdentityPresenter::class)->audienceFor($request->user()) === PatientIdentityPresenter::AUDIENCE_DOCTOR) {
+            $redacted = app(RmPageOneBiodataRedactor::class)->redactStored($handwriting->handwriting_path);
+            abort_if($redacted['status'] === RmPageOneBiodataRedactor::STATUS_UNAVAILABLE, 503);
+            $bytes = $redacted['bytes'];
+            abort_if($bytes === null, 404);
+
+            $this->auditStream($request, $record, 'handwriting_redacted', null);
+
+            return response()->stream(function () use ($bytes): void {
+                echo $bytes;
+            }, 200, [
+                'Content-Type' => 'image/png',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store, max-age=0',
+            ]);
+        }
 
         return $this->stream($handwriting->handwriting_path, $request, $record, 'handwriting', null);
     }

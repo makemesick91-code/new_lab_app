@@ -526,6 +526,9 @@ class MedicalRecordController extends Controller
             // rows: for a Doctor the memo list only (no address, phone/WhatsApp,
             // email; never a NIK for anyone). Decided here, never in Blade.
             'patientIdentity' => $this->identities->forViewer($activeVisit->patient, $viewer),
+            // Rule 243 §3 (PR C2) — the biodata grid a NEW page 1 bakes into its
+            // PNG: the allowed fields only, whoever draws it.
+            'rmPageOneBiodata' => $this->identities->rmPageOneBiodata($activeVisit->patient),
             'activeRmPage' => $activeRmPage,
             'activePageNumber' => $activePageNumber,
             'totalRmPages' => $totalRmPages,

@@ -522,37 +522,12 @@
                     $rmBranchToken = trim(preg_replace('/\s+/', ' ', $rmBranchToken));
                     $rmBranchLabel = strtoupper($rmBranchToken !== '' ? $rmBranchToken : ($rmBranchRaw !== '' ? $rmBranchRaw : 'TELKOMAS'));
 
-                    // Page-1 biodata grid — same fields/order as the spec (no KTP).
-                    // Recomputed here (independent of the component slot scope) so
-                    // it is reliably available to the canvas script.
-                    $rmPatient = $clinicVisit->patient;
-                    $rmDash = '-';
-                    $rmGenderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-                    if ($rmPatient?->date_of_birth) {
-                        $rmTtlUmur = $rmPatient->date_of_birth->format('d-m-Y');
-                        $rmAge = $rmPatient->age();
-                        if ($rmAge !== null) {
-                            $rmTtlUmur .= ' / '.$rmAge.' tahun';
-                        }
-                    } else {
-                        $rmTtlUmur = $rmDash;
-                    }
-                    $rmBio = [
-                        'left' => [
-                            ['Nama', $rmPatient?->name ?: $rmDash],
-                            ['TTL / Umur', $rmTtlUmur],
-                            ['Pekerjaan', $rmPatient?->occupation ?: $rmDash],
-                            ['Status Pernikahan', $rmPatient?->marital_status ?: $rmDash],
-                            ['Alamat', $rmPatient?->address ?: $rmDash],
-                        ],
-                        'right' => [
-                            ['Jenis Kelamin', $rmPatient?->gender ? ($rmGenderLabels[$rmPatient->gender] ?? $rmPatient->gender) : $rmDash],
-                            ['Agama', $rmPatient?->religion ?: $rmDash],
-                            ['No. Tlp / Wa', $rmPatient?->whatsapp_number ?: ($rmPatient?->phone ?: $rmDash)],
-                            ['Email', $rmPatient?->email ?: $rmDash],
-                            ['No. RM', $rmPatient?->medical_record_number ?: $rmDash],
-                        ],
-                    ];
+                    // Page-1 biodata grid (no KTP). Rule 243 §3 (memo M3.1, PR C2)
+                    // — the allowed fields only, for every audience, decided by
+                    // PatientIdentityPresenter::rmPageOneBiodata() in the
+                    // controller: no address, phone/WhatsApp or email is ever
+                    // baked into a new page's PNG. Blank cells stay blank.
+                    $rmBio = $rmPageOneBiodata;
                 @endphp
                 <script>
                 (function () {
@@ -646,12 +621,19 @@
                             const L = RM_BIO.left[i] || ['', ''];
                             const R = RM_BIO.right[i] || ['', ''];
                             ctx.textAlign = 'left';
-                            ctx.font = '600 12px sans-serif';
-                            ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
-                            ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
-                            ctx.font = '12px sans-serif';
-                            ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
-                            ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            // Rule 243 §3 — a blank cell (no label) draws nothing.
+                            if (L[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
+                            }
+                            if (R[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            }
                         }
                         return bottom;
                     }
