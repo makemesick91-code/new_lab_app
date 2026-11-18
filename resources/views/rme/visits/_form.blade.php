@@ -156,6 +156,7 @@
                         <label class="block text-sm font-medium text-ink">Tempat Lahir <span class="text-danger-700" data-core-field-required>*</span></label>
                         <input type="text" name="new_patient[place_of_birth]" maxlength="100" value="{{ old('new_patient.place_of_birth') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                         @error('new_patient.place_of_birth')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                        @include('settings.patients._ktp-place-of-birth-suggestion')
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-ink">Tanggal Lahir <span class="text-danger-700" data-core-field-required>*</span></label>

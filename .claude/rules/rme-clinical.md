@@ -4,6 +4,7 @@ paths:
   - "app/Modules/MedicalRecord/**"
   - "app/Modules/Odontogram/**"
   - "app/Modules/Consent/**"
+  - "app/Modules/ClinicalPhoto/**"
   - "app/Modules/Prescription/**"
   - "app/Modules/PerformedTreatment/**"
   - "app/Modules/RME/**"
@@ -33,63 +34,63 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-01** `ClinicVisit::VALID_TRANSITIONS` stays `registered→{waiting,cancelled}`,
   `waiting→{in_progress,cancelled}`, `in_progress→{cashier_pending,cancelled}`, `cashier_pending→{completed}`;
   `completed`/`cancelled` terminal. Never an `in_progress→completed` edge; `TransitionStatusRequest` never accepts
-  `completed`. Source: archive Sprint 62.1; code `ClinicVisit`.
+  `completed`. Archive Sprint 62.1; code `ClinicVisit`.
 - **AIR-RMC-02** Reach `completed` only through `RmePaymentService`, from `cashier_pending`, after a cashier payment;
   `ClinicVisitService::transitionStatus()` refuses `completed` from any other status. Add no manual path. Payment
-  rules live in `.claude/rules/rme-billing.md`. Source: rule 108 §11,
+  rules live in `.claude/rules/rme-billing.md`. Rule 108 §11,
   rule 109 §1.
 - **AIR-RMC-03** Pass an explicit, persisted, active `User $actor` to every actor-dependent `ClinicVisitService`
   method; `transitionStatus()` accepts a null actor only for `completed`. The service contains no `Auth::`, `auth()`,
   `request()`, `session()` or `BranchContext`; usability and abilities come from `ClinicVisitActorGuard` asking
-  `ClinicVisitPolicy`. Source: rule 199 §B–C.
+  `ClinicVisitPolicy`. Rule 199 §B–C.
 - **AIR-RMC-04** "Selesai Pemeriksaan" (`rme.visits.transition` to `cashier_pending`) requires
   `complete_rme_examination` (Doctor, Perawat, Supervisor RME; Super Admin via `Gate::before`) **and** an EXECUTED
   consent (patient + treating-doctor countersignature) on that visit, both re-asserted in
   `ClinicVisitService::transitionStatus()`. Admin Klinik and Kasir never close an examination. Several buttons may
-  post to the one guarded route; there is no second path. Source: rule 109 §1–1a, rule 134 §5.
+  post to the one guarded route; there is no second path. Rule 109 §1–1a, rule 134 §5.
 - **AIR-RMC-05** Never let a clinical document complete an examination: finalizing a medical record, saving
   handwriting, or saving/finalizing an odontogram leaves the visit `in_progress`. `MedicalRecordService` must not
   depend on `ClinicVisitService`. If the doctor never clicks "Selesai Pemeriksaan", `RmeInvoiceService::create()`
-  (which requires `cashier_pending`) cannot run — that is intended. Source: rule 109 §1.
+  (which requires `cashier_pending`) cannot run — that is intended. Rule 109 §1.
 
 ### Consent
 
 - **AIR-RMC-06** Allow treatment-consent signing only while the visit is `in_progress`
   (`RmeVisitConsentService::assertSignable()`); refuse `registered`, `waiting`, `cashier_pending`, `completed` and
-  `cancelled` server-side (supersedes rule 100 §2 "any non-terminal visit"). Source: rule 109 §2a.
+  `cancelled` server-side (supersedes rule 100 §2 "any non-terminal visit"). Rule 109 §2a.
 - **AIR-RMC-07** Gate every current-RME write on positive authority,
   `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`: exactly one current encounter
   (`ActiveEncounterResolver`), it is `in_progress`, the resolvable actor may work on it, and an EXECUTED consent
-  (patient + treating-doctor countersignature) exists for that same encounter, re-decided on the visit row locked first
-  inside the write. No encounter, two `in_progress` visits or a null actor fail closed. Covered writers:
+  (AIR-RMC-55) exists for that same encounter, re-decided on the visit row locked first inside the write. No
+  encounter, two `in_progress` visits or a null actor fail closed. Covered writers:
   `MedicalRecordService::createDraft/updateDraft/finalize/getOrCreateCanonicalMedicalRecord`,
   `MedicalRecordDiagnosisService`, `DiagnosisRolloutService::grantOverride`, `MedicalRecordHandwritingController`;
-  performed treatments use their own authority (AIR-RMC-36, AIR-RMC-55). Source: rule 109 §2b.
+  performed treatments use their own authority (AIR-RMC-36, AIR-RMC-55). Rule 109 §2b.
 - **AIR-RMC-08** Never derive authoring authority from `trx_medical_records.clinic_visit_id` (the canonical book
   belongs to an old, finished visit) or from the request (`{clinicVisit}`, `source_visit_id`, `?sheet=`). A cancelled
   or completed encounter never makes the canonical record writable again (cancel-then-author and
-  complete-then-author were real reproducers). Source: rule 109 §2b.
+  complete-then-author were real reproducers). Rule 109 §2b.
 - **AIR-RMC-09** Never consent-gate a read: patient history, earlier sheets, previous odontograms and published
   Legacy RME/Odontogram archives stay readable with or without an encounter. Prescriptions are deliberately outside
-  the consent gate. Source: rule 109 §2, §2c.
+  the consent gate. Rule 109 §2, §2c.
 - **AIR-RMC-10** Read consent only from persisted evidence (`RmeVisitConsentService::hasValidConsent()`,
   `ClinicVisit::hasSignedConsentDocument()`), never from a request value. `trx_clinic_visits.consent_signed_by_patient`
   / `_doctor` are display-only history and authorize nothing. A list that calls a consent predicate per row eager-loads
-  `consents`. Source: rule 100 §1, §1b.
+  `consents`. Rule 100 §1, §1b.
 - **AIR-RMC-11** Keep consent out of payment: `RmePaymentService`, `CreateRmePaymentRequest`, the payment page and
   the cashier handoff never consult, show or wait for consent, and historical receivables without consent stay
-  collectible (supersedes the Sprint 20-era "consent is the payment gate"). Source: rule 109 §3, rule 100 §1a.
+  collectible (supersedes the Sprint 20-era "consent is the payment gate"). Rule 109 §3, rule 100 §1a.
 - **AIR-RMC-12** Treat a signed consent as immutable evidence: no update path, no hard delete; correction is void with
   a reason plus re-sign, and `validForVisit()` returns the latest non-voided consent by `signed_at`, then `id`.
   Snapshot wording from `config/rme_consent.php` and bump its `version` when substance changes; never rephrase the
   clinic's clause text. Clause 8 (v2026.2: clauses 8 and 9) is an explicit YA/TIDAK — required by the service, bound
-  `nullable|boolean` by the request, never defaulted — and never blocks treatment or payment. Source: rule 100 §4–5,
+  `nullable|boolean` by the request, never defaulted — and never blocks treatment or payment. Rule 100 §4–5,
   rule 109 §2b, rule 241 §6.
 - **AIR-RMC-13** Gate consent routes on `manage_rme_consents` / `view_rme_consents` (capture: Front Office, Kasir,
   Admin Klinik, Supervisor RME fallback; the Doctor reads and countersigns, rule 241 §4), never on
   `manage_clinic_visits` (Kasir lacks it). Keep identity numbers and signature paths `$hidden`; only the consent
   document renders a full identity number (masked, without addresses, on a Doctor's consent page: rule 243 §3);
-  signatures stay on a private disk streamed through the consent policy. Source: rule 100 §6–7.
+  signatures stay on a private disk streamed through the consent policy. Rule 100 §6–7.
 
 ### Odontogram
 
@@ -98,7 +99,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   `in_progress` encounter, actor may work on it, chart belongs to that encounter, executed consent re-decided on the
   visit row it locks before the chart), asserted before any insert by
   `OdontogramService::saveForVisit/updatePlaceholder/finalize`. Add no second consent check in a controller,
-  FormRequest, Blade or JS. Saving never signs consent or changes visit status; reading stays open. Source: rule 241 §2.
+  FormRequest, Blade or JS. Saving never signs consent or changes visit status; reading stays open. Rule 241 §2.
 - **AIR-RMC-15** Keep `GET rme/visits/{clinicVisit}/odontogram` write-free: `OdontogramController::show()` uses
   `OdontogramService::draftForVisit()` (saved chart or unsaved instance); the first row is created by
   `rme.visits.odontogram.store` → `saveForVisit()`. `getOrCreateForVisit()` keeps zero production callers (pinned by
@@ -111,7 +112,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-17** Serve "Riwayat Odontogram Pasien" via `OdontogramService::patientHistoryForVisit()`: patient-centric,
   scoped to the RME branch set plus `DoctorPatientScopeService`, excluding the current visit and empty drafts
   (`Odontogram::hasRecordedTeeth()`), with no mutation control, rendered outside the
-  `x-data="odontogramEditor(...)"` wrapper. Missing doctor or branch renders as an em dash. Source: rule 109 §4.
+  `x-data="odontogramEditor(...)"` wrapper. Missing doctor or branch renders as an em dash. Rule 109 §4.
 
 ### Room, doctor scope and print denial
 
@@ -127,18 +128,18 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   `ClinicVisit::PRE_EXAM_STATUSES`; no resolvable room ⇒ no active visit; history stays readable. `applyRoomScope()`
   and `deniesActiveVisitOutsideRoom()` stay mirror images. Owner, Super Admin, Supervisor RME exempt
   (`DoctorPatientScopeService::shouldApplyDoctorScope()`). Never room-guard `completeExamination`. Rule 138 §1–5.
-- **AIR-RMC-20** A scoped Doctor (rule 138 definition) is denied `print` on `rme.visits.print`, `rme.visits.pdf`
-  (`ClinicVisitPolicy::print`) and `rme.odontograms.print` (`OdontogramPolicy::print`) — `@can('print')` already hides
-  the buttons, so no UI-only check — and is refused, 403 and audited, the PTM print `rme.consents.print` and legacy
-  print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; on the oversight
-  legacy doors controller + service only). Reading on screen stays; prescription print keeps working; FO, Admin
-  Klinik, Supervisor RME keep printing. `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
-  `DOCTOR_PRINT_ODONTOGRAM_REJECTED` are audited from controllers only, never a policy. Rule 138 §6–7; rule 243 §1.
+- **AIR-RMC-20** A scoped Doctor (rule 138) is denied `print` on `rme.visits.print`, `rme.visits.pdf`
+  (`ClinicVisitPolicy::print`) and `rme.odontograms.print` (`OdontogramPolicy::print`; `@can('print')` hides the
+  buttons, no UI-only check) and refused (403, audited) the PTM print `rme.consents.print` and legacy
+  print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; oversight legacy doors:
+  controller + service). Screen reading, prescription print and FO/Admin Klinik/Supervisor RME printing stay.
+  `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`, `DOCTOR_PRINT_ODONTOGRAM_REJECTED` are audited from
+  controllers only, never a policy. Rule 138 §6–7; rule 243 §1.
 - **AIR-RMC-21** Aggregate visit data (RME dashboard, visit widgets) over
   `ClinicVisitService::scopedBranchIdsFor($actor)`, never `BranchService::rmeEnabledIds()`;
-  `patientVisitHistory()` stays cross-branch by design because callers authorize the anchor visit first. Source: rule
+  `patientVisitHistory()` stays cross-branch (callers authorize the anchor visit first). Rule
   199 §E. `adjacentVisits()` (prescription/odontogram arrows) takes the viewer and the page's own ability and offers
-  only the nearest visit that viewer may open, skipping the rest. Rule 227 §1.8c.
+  only the nearest visit that viewer may open. Rule 227 §1.8c.
 
 ### Medical record workspace
 
@@ -149,10 +150,10 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-23** Resolve the patient-centric book with `PatientRmWorkspaceResolver`: one sheet per visit
   (`UNIQUE(clinic_visit_id)`), canonical anchor = earliest non-cancelled RME visit, any other visit redirects to the
   canonical URL with an IDOR-validated `?source_visit_id=`; the handwriting book is the earliest self-anchored sheet
-  (`bookOn()`, rule 237 §16). Per-visit actions use the active sheet's visit. Source: archive Sprint 64.0; rule 100 §8.
+  (`bookOn()`, rule 237 §16). Per-visit actions use the active sheet's visit. Archive Sprint 64.0; rule 100 §8.
 - **AIR-RMC-24** Keep Medical Record page order Informasi Kunjungan → RME Tulisan Tangan → Dokumen RME Pasien, with
   exactly one Finalisasi and one Cetak RME, both in its header. Cetak RME is not on Detail Kunjungan (front office
-  uses the Rekam Medis link); moving a button never adds a print endpoint. Source: rule 100 §8–9.
+  uses the Rekam Medis link); moving a button never adds a print endpoint. Rule 100 §8–9.
 - **AIR-RMC-25** RME authoring controls follow the capability, not a permission: the controller passes
   `RmeVisitConsentService::canAuthorRmeForPatient()` (odontogram page: `canAuthorOdontogramFor()`); never
   `can('create', MedicalRecord)` alone, never consent re-derived in Blade. A not-yet-allowed "Buat Halaman RM Pertama"
@@ -171,11 +172,11 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   schema or the detail screen. Rule 127; rule 100 §9.
 - **AIR-RMC-28** Print/PDF embeds handwriting as inline base64 (`orderedHandwritingPages(true)`), never a link (dompdf
   cannot authenticate). Handwriting and prescription/doctor-signature canvases are written only through
-  `App\Support\Storage\ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`) and read through
-  policy-gated controllers, with no fallback disk. Rule 121.
+  `ClinicalEvidenceStorage` (never `disk('public')` or `storeAs(..., 'public')`) and read through policy-gated
+  controllers, with no fallback disk. Rule 121.
 - **AIR-RMC-29** Render the structured odontogram print through `OdontogramPrintFormatter` and
   `rme/visits/odontogram/partials/structured-print-template.blade.php`: HTML table cells, no flexbox, DMF-T from
-  `Odontogram::dmftCounts()` (an unknown status never inflates it). Source: archive Sprint 63.1.
+  `Odontogram::dmftCounts()` (an unknown status never inflates it). Archive Sprint 63.1.
 
 ### Registration, visit detail, dates, prescriptions
 
@@ -184,7 +185,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   cross-patient, non-RME or soft-deleted prior visit is rejected, never downgraded; history alone never makes Kontrol;
   `continued_treatment`/`emergency` stay in data but are not creatable. Rule 185 §C.
 - **AIR-RMC-31** Render Detail Kunjungan clinical cards in Blade source order Odontogram → Rekam Medis → Resep (never
-  CSS `order-*`), each keeping its own `@can`; front-office-only accounts see none of them. Source: rule 185 §A.
+  CSS `order-*`), each keeping its own `@can`; front-office-only accounts see none of them. Rule 185 §A.
 - **AIR-RMC-32** Clinical dates come from `ClinicalClock` (CG-12): `visit_date` (it also drives queue and visit
   numbers), the RM year in `PatientMedicalRecordNumberService::composeForRegistration()`, the RM pre-check in
   `StoreClinicVisitRequest`. A supplied date is used verbatim; an existing patient is never renumbered. Daftar
@@ -200,19 +201,16 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   fixtures build a real encounter (`rmeActiveConsentedEncounter()` / `rmeConsentedOdontogramVisit()`);
   `rmeSignedConsentFor()` builds an EXECUTED consent (fixture countersignature) but alone authorizes nothing;
   two-signature gate tests build state through the services; consent tests go through `RmeVisitConsentService`. Pinned
-  suites stay in `critical_gate_mandatory_suites` (CG-19). Source: rule 109 §6, rule 134 §7, rule 135 §7.
+  suites stay in `critical_gate_mandatory_suites` (CG-19). Rule 109 §6, rule 134 §7, rule 135 §7.
 - **AIR-RMC-35** Consent identity cannot be borrowed: the treating doctor comes from the visit, never from the request,
-  and "Saya sendiri" copies the patient's `mst_patients` identity, which typed input cannot override. Source:
-  rule 100 §3; `RmeVisitConsentService`.
-
-- **AIR-RMC-36** Performed treatments only through `RmePerformedTreatmentService` (rule 219): the visit's treating
-  doctor, `in_progress`, EXECUTED consent (rule 241 §2), visit row locked first, append-only rows voided with a reason. Empty =
-  `NOT_RECORDED`; only "Tidak Ada Tindakan" is operational KONTROL: never rewrites `visit_type`, never creates a
-  parent, never makes anything free (rule 217), never transitions the visit. A covering doctor must first be the
-  assigned doctor; no post-completion edit. Flag `rme.doctor_performed_treatments` default OFF; ask
-  `enabledFor($visit)` (fail-closed allowlist via `RmePerformedTreatmentPilotScope`), never the bare flag, re-decided
-  on the LOCKED visit. Pilot posture and DPT-Q2…Q10: rule 219 §14–§15. Consent void = `RmeVisitConsentService::void()`.
-
+  and "Saya sendiri" copies the patient's `mst_patients` identity, which typed input cannot override. Rule 100 §3.
+- **AIR-RMC-36** Performed treatments only via `RmePerformedTreatmentService` (rule 219): treating doctor,
+  `in_progress`, EXECUTED consent (rule 241 §2), visit row locked first, append-only rows voided with a reason. Empty =
+  `NOT_RECORDED`; only "Tidak Ada Tindakan" is operational KONTROL: never rewrites `visit_type`, creates a parent, makes
+  anything free (rule 217) or transitions the visit. A covering doctor must first be the assigned doctor; no
+  post-completion edit. Flag `rme.doctor_performed_treatments` default OFF: ask `enabledFor($visit)` (fail-closed
+  `RmePerformedTreatmentPilotScope` allowlist), never the bare flag, re-decided on the LOCKED visit. Pilot posture,
+  DPT-Q2…Q10: rule 219 §14–§15. Consent void = `RmeVisitConsentService::void()`.
 - **AIR-RMC-37** Governed RME route keys (`{clinicVisit}`, `{medicalRecord}`, `{rmePrescription}`, `{consent}`,
   `{odontogram}`, `{diagnosis}`, `{handwriting}`, `{handwritingPage}` = the page ROW key) are constrained globally by
   `App\Support\Routing\DatabaseRouteKey` (first in `AppServiceProvider::boot()`): a non-bigint segment answers 404,
@@ -221,26 +219,25 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-38** Decide a visit's status, room and consent window on the LOCKED row:
   `transitionStatus()`, `assignRoom()` and `RmeVisitConsentService::sign()` take
   `ClinicVisitRepositoryInterface::lockForStatusDecision()` (FOR NO KEY UPDATE, never FOR UPDATE: FK inserts must not
-  wait or deadlock) and re-check the map / `isTerminal()` / `assertSignable()` on that row before writing (a stale
-  copy let a cancelled visit come back billable). Lock the visit row first, always.
-  Source: rule 223 §1.
+  wait or deadlock) and re-check the map / `isTerminal()` / `assertSignable()` on that row before writing. Lock the
+  visit row first, always. Rule 223 §1.
 - **AIR-RMC-39** Detail Kunjungan "Buat Rekam Medis" (`canCreateRecordHere`), the Rekam Medis page "Selesai
   Pemeriksaan" (`transition` + `completeExamination` + EXECUTED consent), the handwriting editor and the diagnosis forms
-  (`canAuthorRme`) follow the capability, never a permission alone. Source: rule 223 §2.
+  (`canAuthorRme`) follow the capability, never a permission alone. Rule 223 §2.
 - **AIR-RMC-40** The front-desk-only tier (`FrontOfficeRole::isVisitFrontDeskOnly()`: Admin Klinik / Front Office
   without a clinical role) never authors the active RME or odontogram; the refusal sits in
   `RmeVisitConsentService::actorMayWorkOnEncounter()`. Perawat/Supervisor RME authoring and front-office exam start
-  are owner decisions, not settled here. Source: rule 223 §3.
+  are owner decisions, not settled here. Rule 223 §3.
 - **AIR-RMC-41** Store a new sheet's `source_visit_id` only after `PatientRmWorkspaceResolver::resolveSourceVisit()`;
-  never a raw request id. Source: rule 223 §4.
+  never a raw request id. Rule 223 §4.
 - **AIR-RMC-42** A handwriting page or prescription canvas row and its private object are one unit: validate first,
   then one transaction (draft if needed, authorize, lock the parent FOR NO KEY UPDATE, write a fresh random-suffixed
   object, write the row); a failure removes only this call's object. Never draft before validation, build a key from
   request input, or delete committed evidence. Rule 224 §1–5.
 - **AIR-RMC-43** Name a controller's route-model argument after its route segment (`{rmePrescription}` →
   `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
-  unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
-  Source: rule 224 §6–7.
+  unreadable or non-PNG object; print then renders "Gambar halaman ini tidak tersedia.", never an empty `<img>`.
+  Rule 224 §6–7.
 - **AIR-RMC-44** A racing insert that may lose a unique index runs in a nested `DB::transaction()` (SAVEPOINT); catch
   `UniqueConstraintViolationException` outside it and re-read the winner, never inside the aborted transaction
   (25P02). Visit numbers: `lockVisitSequence($branchId)` (advisory 92_001), then `withTrashed()` MAX; a row lock
@@ -252,14 +249,14 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   consent rule (room: AIR-RMC-50; lock, signer: AIR-RMC-53). Rule 226 §1.
 - **AIR-RMC-46** Clinical documents (MR + handwriting images, prescription page/canvas/print/history, odontogram) are
   read under `RmeWorkingBranchScope::allowsClinicalDocument()`: Kasir / Admin Klinik / Front Office only in their
-  working branch (none without one); clinicians and Owner keep the RME set; never wider. Source: rule 227 §1.
+  working branch (none without one); clinicians and Owner keep the RME set; never wider. Rule 227 §1.
 - **AIR-RMC-47** The printed prescription dentist and patient are server-derived (visit on create, the prescription's
-  own doctor/patient on update); never request fields; no doctor means refused. Source: rule 227 §2.
+  own doctor/patient on update); never request fields; no doctor means refused. Rule 227 §2.
 - **AIR-RMC-48** Prescription authoring = `manage_clinic_visits` + a role in `PrescriptionAuthoringAuthority::
   AUTHORING_ROLES` (an allowlist; runtime roles do not inherit it) + working branch, re-asserted in the service. Test
-  authors use `rmeClinicalAuthor()`. Source: rule 227 §3.
+  authors use `rmeClinicalAuthor()`. Rule 227 §3.
 - **AIR-RMC-49** RME invoice / payment / consent numbers are read after `lockNumberSequence($month)` (advisory 92_002 /
-  92_003 / 92_004, objid YYYYMM, never renumbered) and invoice/payment MAX counts soft-deleted rows. Source: rule 227 §4.
+  92_003 / 92_004, objid YYYYMM, never renumbered) and invoice/payment MAX counts soft-deleted rows. Rule 227 §4.
 - **AIR-RMC-50** The doctor room scope (rule 138) binds prescriptions and the live-encounter write predicate
   (`actorMayWorkOnEncounter`): never an ACTIVE visit of another room; history unaffected. Rule 228 §1–§2.
 - **AIR-RMC-51** Only `ClinicVisitPolicy::startExamination()` moves a visit to `in_progress` (front desk keeps cancel); a
@@ -285,13 +282,16 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   `MedicalRecordPolicy::editSheet` / `OdontogramPolicy::update` (scope first), and the service decides on the row it
   locked after the visit (binds Super Admin), answering before a missing PTM (AIR-RMC-55); correction only by
   supervised amendment, which ships in the same release. Rule 240 §1, §1.8.
+- **AIR-RMC-58** Clinical photos only via `RmeClinicalPhotoService` behind `rme.clinical_photos` (OFF: 404, refused):
+  Doctor/Perawat allowlist (binds Super Admin), live encounter, EXECUTED PTM with `allowsClinicalDocumentation()`
+  (never clause 9), re-encoded before any write, visit locked first; no-store reads in the clinical scope, never
+  FO/Kasir/Admin Klinik; no delete, a supervised void (reason, maker ≠ checker). Rule 242.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
-- Live: pre-consent odontogram charting (ends when rule 241 §2 is released: both PTM signatures then gate RME,
-  odontogram and "Selesai Pemeriksaan"), consent-gated RME authoring and "Selesai Pemeriksaan", consent-free payment,
-  room gate, doctor room isolation, doctor RME/odontogram print denial; performed treatments ARMED for SPN4 only
-  (rule 219 §14).
+- Live: pre-consent odontogram charting (ends with the rule 241 §2 release, AIR-RMC-55), consent-gated RME
+  authoring and "Selesai Pemeriksaan", consent-free payment, room gate, doctor room isolation, doctor RME/odontogram
+  print denial; performed treatments ARMED for SPN4 only (rule 219 §14).
 - In code since 2026-11-17 (check the deployed SHA): one valid consent per visit and a supervised void
   (`rme.consents.void`, `void_rme_consents`); consent signatures on `ClinicalEvidenceStorage`; readers keep a temporary
   read-only fallback to the old disk until `rme:consent-signatures-migrate` is applied and verified (rule 237 §14.5a).
@@ -332,6 +332,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 | `.cursor/rules/240-rme-finalized-record-lock-and-amendment.mdc` | Final sheet and finalized odontogram locked; supervised amendment |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
 | `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM countersignature (§1); both signatures gate writing (§2–§5); template v2026.2 off until approved (§6) |
+| `.cursor/rules/242-rme-clinical-photos.mdc` | Clinical photos (flag OFF) |
 
 ## History
 

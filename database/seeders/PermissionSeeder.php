@@ -158,6 +158,15 @@ class PermissionSeeder extends Seeder
         // the finalizer of the record (creator ≠ approver).
         'request_rme_amendments',
         'approve_rme_amendments',
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos behind the
+        // risky flag rme.clinical_photos (OFF). Upload: Doctor and Perawat (the
+        // service allowlist binds every other role, Super Admin included). Read:
+        // Doctor, Perawat, Supervisor RME; never Front Office, Kasir or Admin Klinik.
+        'upload_rme_clinical_photos',
+        'view_rme_clinical_photos',
+        // PTM PR4b (rule 242 §9) — the supervised void of a clinical photo (Supervisor
+        // RME; never the uploader, decided in the service).
+        'void_rme_clinical_photos',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist

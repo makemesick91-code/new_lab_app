@@ -493,6 +493,14 @@
         @endcan
         @endif
 
+        {{-- DMS memo M4.4, PTM PR5 (rule 242 §10) — Foto Klinis, after Resep in source
+             order. Outside the operate-from-detail block: the photo read scope is the
+             service's (the void holders read too); null renders nothing (flag OFF or
+             no photo authority). --}}
+        @if ($clinicalPhotoGallery ?? null)
+            @include('rme.visits.partials.clinical-photos', ['gallery' => $clinicalPhotoGallery, 'visit' => $visit])
+        @endif
+
         @include('rme.visits.partials.patient-visit-history', [
             'patientVisitHistory' => $patientVisitHistory,
             'currentVisitId' => $visit->id,
