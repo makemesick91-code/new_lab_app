@@ -229,7 +229,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   counts + visit ids (stale open visits, roomless pre-exam anchors), `--apply --confirm-plan=<digest>` sets
   `unassigned_at` only, idempotent, runtime user, owner-approved. The room gate picks the doctor's working visit on
   the server, the workflow tabs never show an unreadable anchor, another doctor's roomless pre-exam visit is 404.
-  Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.12.
+  Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

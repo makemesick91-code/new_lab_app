@@ -222,7 +222,7 @@ class PatientRmWorkspaceResolver
     }
 
     /**
-     * Rule 243 §2.12 (PR A4, closes §2.8 item 8 (a); review LOW-1) — the visit a
+     * Rule 243 §2.13 (PR A4, closes §2.8 item 8 (a); review LOW-1) — the visit a
      * doctor works from at the patient's workspace address, chosen on the
      * server, in this order: the patient's live encounter when it is the
      * doctor's own ({@see ActiveEncounterResolver::currentFor()}); else the visit

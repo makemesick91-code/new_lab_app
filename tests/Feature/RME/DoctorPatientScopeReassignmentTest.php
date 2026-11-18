@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
 |--------------------------------------------------------------------------
-| DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 — PR A4 (rule 243 §2.12)
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 — PR A4 (rule 243 §2.13)
 |--------------------------------------------------------------------------
 | Revocation, and the A3 re-review preconditions (a)(b)(c) of §2.8 item 8,
 | under `rme.doctor_encounter_scope`:

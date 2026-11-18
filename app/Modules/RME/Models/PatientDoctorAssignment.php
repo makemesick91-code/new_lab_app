@@ -24,7 +24,7 @@ class PatientDoctorAssignment extends Model
 
     public const TYPE_REASSIGNED = 'reassigned';
 
-    /** Rule 243 §2.12 (PR A4) — `unassigned_reason` codes; never free text. */
+    /** Rule 243 §2.13 (PR A4) — `unassigned_reason` codes; never free text. */
     public const END_REASON_VISIT_DOCTOR_CHANGED = 'visit_doctor_changed';
 
     public const END_REASON_VISIT_CANCELLED = 'visit_cancelled';

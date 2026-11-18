@@ -200,7 +200,7 @@
             </x-ui.alert>
         @endif
 
-        {{-- Rule 243 §2.12 — the tabs' visit is decided in the controller: the
+        {{-- Rule 243 §2.13 — the tabs' visit is decided in the controller: the
              active sheet's visit, or on an unreadable anchor the source visit
              (no tabs without one), so they never show that anchor's room state. --}}
         @if ($workflowNavVisit ?? null)

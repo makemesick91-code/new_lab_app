@@ -14,7 +14,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4) — the
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.13, PR A4) — the
  * plan and the apply behind `rme:doctor-assignments-reconcile`.
  *
  * The PLAN (read only) holds:

@@ -8,7 +8,7 @@ use App\Modules\RME\Services\DoctorAssignmentReconcileService;
 use Illuminate\Console\Command;
 
 /**
- * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4) — end
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.13, PR A4) — end
  * the automatic patient-doctor assignments that went stale before revocation
  * existed, and report what keeps the doctor encounter scope from being turned on.
  *

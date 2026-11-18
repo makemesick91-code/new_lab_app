@@ -18,7 +18,7 @@ use LogicException;
 /**
  * Sprint 66.2 — Patient ↔ doctor assignment history (share/reassign, not exclusive transfer).
  *
- * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4) — an
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.13, PR A4) — an
  * automatic (`auto_visit`) row says "this doctor was placed on a visit of this
  * patient by the queue". It is STALE once no live visit of the patient (not
  * cancelled, not soft-deleted) has that doctor any more
@@ -31,7 +31,7 @@ class PatientDoctorAssignmentService
 {
     public const AUDIT_TABLE = 'trx_rme_patient_doctor_assignments';
 
-    /** Rule 243 §2.12 — one auto_visit row ended by a doctor change or a cancel. */
+    /** Rule 243 §2.13 — one auto_visit row ended by a doctor change or a cancel. */
     public const AUDIT_ACTION_REVOKED = 'PATIENT_DOCTOR_ASSIGNMENT_REVOKED';
 
     private const END_REASONS = [
@@ -214,7 +214,7 @@ class PatientDoctorAssignmentService
     }
 
     /**
-     * Rule 243 §2.12 — the active `auto_visit` rows no live visit supports any
+     * Rule 243 §2.13 — the active `auto_visit` rows no live visit supports any
      * more: no visit of the row's patient that is neither cancelled nor
      * soft-deleted has the row's doctor. Revocation and the reconcile command
      * both start from this builder, so "stale" has one definition. The
@@ -239,7 +239,7 @@ class PatientDoctorAssignmentService
     }
 
     /**
-     * Rule 243 §2.12 (PR A4, review INFO-1) — lock the patient's active rows of
+     * Rule 243 §2.13 (PR A4, review INFO-1) — lock the patient's active rows of
      * these doctors in doctor_id order, before a doctor swap creates one and
      * ends the other, so two swaps in opposite directions never deadlock. A
      * missing row locks nothing (its insert is guarded by the partial unique
@@ -259,7 +259,7 @@ class PatientDoctorAssignmentService
     }
 
     /**
-     * Rule 243 §2.12 (PR A4) — end the former doctor's `auto_visit` row for the
+     * Rule 243 §2.13 (PR A4) — end the former doctor's `auto_visit` row for the
      * visit's patient once it is stale: after the visit's doctor changed away
      * from $formerDoctorId, or the visit was cancelled. A row the former doctor
      * still holds through another live visit of the patient is kept (it is

@@ -494,7 +494,7 @@ class MedicalRecordController extends Controller
         // state, status, recorded/finalized metadata). When it is not, only the
         // handwriting pages remain. Always true with the encounter scope OFF.
         $anchorContentReadable = $viewer?->can('viewAnchorContent', $activeSheet) ?? false;
-        // Rule 243 §2.12 (PR A4, closes §2.8 item 8 (b)) — the workflow tabs show
+        // Rule 243 §2.13 (PR A4, closes §2.8 item 8 (b)) — the workflow tabs show
         // their visit's room state and link its pages, so on an anchor the viewer
         // may not read they follow the visit the viewer came from (readable by
         // construction above), or are omitted. Always the active sheet's visit

@@ -46,7 +46,7 @@ class EnsureVisitRoomAssigned
     }
 
     /**
-     * Rule 243 §2.12 (PR A4, closes §2.8 item 8 (c)) — authorise before the room
+     * Rule 243 §2.13 (PR A4, closes §2.8 item 8 (c)) — authorise before the room
      * redirect. With the encounter scope applying to the user (flag ON, a scoped
      * Doctor), a visit the doctor may not read answers the scope's 404 here,
      * exactly as it does once placed, so the redirect never tells another
@@ -78,7 +78,7 @@ class EnsureVisitRoomAssigned
      * scope applying to the user (flag ON, a scoped Doctor), an anchor the
      * doctor may not read — another doctor's pre-exam visit, possibly roomless —
      * is never the visit this gate guards: it asks instead the visit the doctor
-     * works from, chosen on the server (rule 243 §2.12, PR A4, closes §2.8 item
+     * works from, chosen on the server (rule 243 §2.13, PR A4, closes §2.8 item
      * 8 (a)): the doctor's own live encounter, else the `source_visit_id` visit
      * when it is any RME visit of the doctor's own, else the doctor's latest own
      * pre-exam visit of the patient

@@ -45,7 +45,7 @@ class ClinicVisitService
     public const ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED = 'DOCTOR_EFFECTIVE_BRANCH_WRITE_REFUSED';
 
     /**
-     * Rule 243 §2.12 (PR A4, review MEDIUM-1) — with the doctor encounter scope
+     * Rule 243 §2.13 (PR A4, review MEDIUM-1) — with the doctor encounter scope
      * ON an examination in progress only follows its own doctor.
      */
     public const IN_PROGRESS_MOVE_REFUSED = 'Pemeriksaan sedang berlangsung. Dokter pemeriksa harus pindah ruangan terlebih dahulu (online di ruangan tujuan), baru pasien dapat dipindahkan.';
@@ -299,7 +299,7 @@ class ClinicVisitService
             ]);
         }
 
-        // Rule 243 §2.12 (PR A4) — read once, through the single authority that
+        // Rule 243 §2.13 (PR A4) — read once, through the single authority that
         // reads the encounter-scope switch (CG-08).
         $encounterScope = $this->doctorScope->encounterScopeEnabled();
 
@@ -339,7 +339,7 @@ class ClinicVisitService
             // and income attribution, and the printed identity, to whoever was
             // online in the new room (or to nobody).
             //
-            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.12, PR A4;
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.13, PR A4;
             // owner default 2, rule 228 §4 extended; review MEDIUM-1) — with the
             // doctor encounter scope ON, an examination already STARTED
             // (in_progress) keeps its doctor, and the visit can only FOLLOW that
@@ -384,7 +384,7 @@ class ClinicVisitService
                 $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), $account);
             }
 
-            // Rule 243 §2.12 — the former doctor's automatic assignment is ended
+            // Rule 243 §2.13 — the former doctor's automatic assignment is ended
             // with the doctor change, in this transaction (flag ON only).
             if ($encounterScope && $doctorSwap) {
                 $this->patientDoctorAssignments->revokeStaleAutoVisit(
@@ -1085,7 +1085,7 @@ class ClinicVisitService
             ]);
         }
 
-        // Rule 243 §2.12 (PR A4) — read once, through the single authority (CG-08).
+        // Rule 243 §2.13 (PR A4) — read once, through the single authority (CG-08).
         $encounterScope = $this->doctorScope->encounterScopeEnabled();
 
         return DB::transaction(function () use ($visit, $newStatus, $account, $encounterScope) {
@@ -1134,7 +1134,7 @@ class ClinicVisitService
 
             $this->visits->update($locked, array_merge(['status' => $newStatus], $timestamps));
 
-            // Rule 243 §2.12 (PR A4) — a cancelled visit no longer places its
+            // Rule 243 §2.13 (PR A4) — a cancelled visit no longer places its
             // doctor on the patient: the doctor's automatic assignment is ended
             // in this transaction unless another live visit still supports it
             // (flag ON only). A cancel always has an explicit actor (above).

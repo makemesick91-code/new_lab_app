@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 /*
 |--------------------------------------------------------------------------
-| DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 — PR A4 (rule 243 §2.12)
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 — PR A4 (rule 243 §2.13)
 | `rme:doctor-assignments-reconcile`
 |--------------------------------------------------------------------------
 | Dry run by default: counts, and visit ids where they are safe, never a name,
 | a NIK, a Nomor RM or a visit number. It reports
 |  - the STALE auto_visit rows: active, and no live (non-cancelled,
 |    non-deleted) visit of the patient has that doctor any more — the same
-|    predicate revocation uses (§2.12), so a doctor change with the flag ON
+|    predicate revocation uses (§2.13), so a doctor change with the flag ON
 |    leaves none and one with the flag OFF leaves one;
 |  - the stale OPEN visits that keep a doctor's encounter window open (an open
 |    status on a clinical date before today, WITA; §2.10 precondition);
