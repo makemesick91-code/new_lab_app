@@ -470,20 +470,22 @@ Pending owner steps after release 2: §10.3b (log read: backup + migrations), §
 
 ### 9.7 Program status after release 2 — OPEN (no GO tag)
 
-Release 2 is **DEPLOYED and PRODUCTION VERIFIED (read-only)**. The memo wave is **PENDING**. The program
+Release 2 is **DEPLOYED and PRODUCTION VERIFIED (read-only)**. Release 3 (memo wave 1) is **DEPLOYED and PRODUCTION
+VERIFIED (read-only)** at `4f59c347` (§9.8); memo wave 2 (release 4) is **PENDING**. The program
 DMS-RME-COMPREHENSIVE-CLOSURE-1 stays **OPEN**; the final GO tag `dms-rme-comprehensive-closure-1-go` is **not
 allowed** until every mandatory item below is done, released and production verified (owner directive, §2a).
 
 | Pending item | Owner | Acceptance criteria | Evidence required |
 |---|---|---|---|
+| Release 3 follow-ups (§9.8) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line, all 11 release-3 migrations DONE and `DEPLOY OK`; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed (6 new permissions) | pasted command outputs, recorded in §9.8 |
 | Release 2 follow-ups (§9.6) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
 | Consent signature copy `--apply` | Owner (separate approval after the dry run) | `CONSENT_SIGNATURE_MIGRATION=APPLIED`, `CONFLICT=0`, `VERIFY_FAILED=0`, nothing deleted | command output; re-run dry run shows `ALREADY_COPIED` = total |
 | Removing the read fallback (rule 237 §14.5a) | Owner (separate approval after the copy is verified) | all needed copies verified; fallback removed by a reviewed PR | PR + CI + release evidence |
-| Memo M3.3 (rule 240) PR1–PR7 — **merged** as one series PR #667 (`8929e570`→`7482f4bd`, owner re-approved after two test-only CI fixes; critical gate 11,362 passed on the exact head; post-merge CI green) — release 3 pending | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
-| Memo PTM (rules 241/242) PR1–PR3 — **merged**: #663 `b204b2d6`→`fd2bf03e`, #664 `69872fb9`→`ae07ccb5`, #665 `b15f4fa9`→`c1b17367` (each on its exact re-tested head; #664/#665 updated after the previous squash with a strategy-`ours` merge, tree byte-identical to the tested head; critical gates 10,862 / 10,862 / 10,891 passed) — release 3 pending (+ PR4/PR5 clinical photos, wave 2) | Engineering; Owner supplies the clause 8/9 wording | PR1–PR3 ship together; v2026.2 stays **inactive** in production until the owner approves the final wording; photos flag `rme.clinical_photos` stays OFF until an owner decision | review records, CI, deploy; owner's written wording approval before any activation |
-| Memo RM number (rule 244) PR-2, PR-3, PR-3b, PR-4, PR-4b — **merged** as one series PR #666 (`b9ea67c9`→`9f799c31`, owner "ONE PR PER SERIES"; critical gate 11,112 passed on the exact head) — release 3 pending (+ PR-5 OCR suggestion, PR-6 records, wave 2) | Engineering; owner approves merges/release | auto number, claim cap per batch, paper-card reason (restricted), core fields + no-phone; existing numbers never changed | review records, CI, deploy, production smoke of registration |
-| Memo doctor scope (rule 243) B (#660, merged `41fecc06`); A1–A3b + integration **merged** as one series PR #668 (`57d18f7a`→`4f59c347`, critical gate 11,558 passed; flag OFF, flag-OFF parity measured identical) — release 3 pending; A4, C1, C2 (wave 2) | Engineering; Owner decides turning the flag ON | B effective on release; encounter scope flag `rme.doctor_encounter_scope` stays OFF until A2–A4 (incl. the A3 list surfaces), C1–C2, M3.3 released, a dry run, doctor UAT and an owner decision | review records, CI, deploy; dry-run + UAT records; owner decision |
-| CC1-ADJ-1 adjacent-visit arrows (#662, merged `b5772008` after every required gate passed on `ec274cf5`, critical gate 10,684 passed; release pending) | Engineering; owner approves merge/release | arrows offer only visits the viewer may open | review, CI, deploy, production smoke |
+| Memo M3.3 (rule 240) PR1–PR7 — **merged** as one series PR #667 (`8929e570`→`7482f4bd`, owner re-approved after two test-only CI fixes; critical gate 11,362 passed on the exact head; post-merge CI green) — **released in release 3** (§9.8) | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
+| Memo PTM (rules 241/242) PR1–PR3 — **merged**: #663 `b204b2d6`→`fd2bf03e`, #664 `69872fb9`→`ae07ccb5`, #665 `b15f4fa9`→`c1b17367` (each on its exact re-tested head; #664/#665 updated after the previous squash with a strategy-`ours` merge, tree byte-identical to the tested head; critical gates 10,862 / 10,862 / 10,891 passed) — **released in release 3** (§9.8; + PR4/PR5 clinical photos, wave 2 PR #670) | Engineering; Owner supplies the clause 8/9 wording | PR1–PR3 ship together; v2026.2 stays **inactive** in production until the owner approves the final wording; photos flag `rme.clinical_photos` stays OFF until an owner decision | review records, CI, deploy; owner's written wording approval before any activation |
+| Memo RM number (rule 244) PR-2, PR-3, PR-3b, PR-4, PR-4b — **merged** as one series PR #666 (`b9ea67c9`→`9f799c31`, owner "ONE PR PER SERIES"; critical gate 11,112 passed on the exact head) — **released in release 3** (§9.8; + PR-5 OCR suggestion, wave 2 PR #669) | Engineering; owner approves merges/release | auto number, claim cap per batch, paper-card reason (restricted), core fields + no-phone; existing numbers never changed | review records, CI, deploy, production smoke of registration |
+| Memo doctor scope (rule 243) B (#660, merged `41fecc06`); A1–A3b + integration **merged** as one series PR #668 (`57d18f7a`→`4f59c347`, critical gate 11,558 passed; flag OFF, flag-OFF parity measured identical) — **released in release 3** (§9.8); A4, C1, C2 (wave 2 PR #671) | Engineering; Owner decides turning the flag ON | B effective on release; encounter scope flag `rme.doctor_encounter_scope` stays OFF until A2–A4 (incl. the A3 list surfaces), C1–C2, M3.3 released, a dry run, doctor UAT and an owner decision | review records, CI, deploy; dry-run + UAT records; owner decision |
+| CC1-ADJ-1 adjacent-visit arrows (#662, merged `b5772008` after every required gate passed on `ec274cf5`, critical gate 10,684 passed; **released in release 3**, §9.8) | Engineering; owner approves merge/release | arrows offer only visits the viewer may open | review, CI, deploy, production smoke |
 | PR6 SATUSEHAT submission guard | Owner | **SKIPPED by owner decision (2026-11-18): "skip SATUSEHAT work (will inactive later)"** — not part of this program's GO; SATUSEHAT is to be inactivated later in a separate owner-decided change; the local PR6 branch is not pushed | owner decision recorded here |
 | CC1-CI-1 docs-only push run after a cancelled code run | Owner decision on a workflow fix (needs the `workflow` scope) | either a workflow fix or a recorded operating rule (dispatch run on release SHAs) | decision record |
 | D4 readiness ceremony | BLOCKED_EXTERNAL | §10.7 | ceremony record |
@@ -492,6 +494,26 @@ allowed** until every mandatory item below is done, released and production veri
 | M5.1/M5.2 lab fees, post-payment correction, rollout | Owner (discussion) | owner decision | decision record |
 | M6.2 storage cost | Owner (verified rate) | report + rate | `storage:usage-report` output + rate source |
 | M6.1 / C4 organizational approvals | Owner / management | approvals exist before any all-branch rollout (no BUSINESS ROLLOUT APPROVED claim without evidence) | approval records |
+
+### 9.8 Release 3 — `dms-rme-comprehensive-closure-1-r3` at `4f59c347` (memo wave 1; intermediate release, the program stays OPEN)
+
+| Item | Evidence |
+|---|---|
+| Candidate | `4f59c347e71a0f0ad5ec3ea27c1bd468b3a4e0a0` (tree `866fbc7c`), the squash merge of #668 and the base tip; wave 1 = #660, #662, PTM #663–#665, RM series #666, M3.3 series #667, doctor scope series #668 (encounter scope flag OFF) |
+| Post-merge CI | push run 44229561608 of `foundation-evidence-gates.yml` on `4f59c347`: **NSF-R011 Critical Test Gate 11,558 passed, 59,069 assertions, 0 failed, PostgreSQL** ("Run critical regression tests" ran); NSF-R012 Quality Gate and CICD-CTRL Gate Classifier success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+| Owner approval | structured answer 2026-11-18 "Approve 4f59c347" for the full SHA (the release 2 approval was not reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `d099b97368d0184f42d251f49342262e`, bundle SHA-256 `3f0f846ad1a912aab6ddf9abef3179629491f68637c0816bf876d05f34da5898` (re-computed locally before submission), record SHA-256 `fb135fea7a5ac84b1aaab21bc1b5bbb30def9291527f48e4cd413471fdf54870`, signature SHA-256 `dd93e3afef0bff0470bc72f4c2d1e6241fdd124ea108153084477787e6484bd5`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-20T06:40:18Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` → `PRODUCTION_TARGET=VERIFIED`; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature good against the host anchor, SHA = base tip with nothing merged after it, release and approval unspent, required CI push run 44229561608 success) |
+| Deploy | base tip re-confirmed `4f59c347` immediately before `start`; `start` through the deploy operator (runner on the VPS, never local) at 14:43 WITA: deploy id **`20261118-064305`**, started 06:43:05Z, finished 06:44:44Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261118-064305` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | 11 additive migrations: `2026_11_17_200001` (doctor-patient status index; handwriting page seal columns; `trx_rme_visit_consent_doctor_signatures`), `2026_11_17_210001` publication consent, `2026_11_17_300001` `trx_rme_record_versions`, `2026_11_17_400001` `trx_rme_amendments`, `2026_11_17_500001` applied version, `2026_11_17_600001` correction page, `2026_11_18_100001` lower-case medical record number indexes, `2026_11_18_100002` `trx_patient_rm_paper_card_registrations`, `2026_11_18_100003` place of birth and no-phone exception. They ran inside the runner's `migrate --force` after its pre-deploy dump; the runner aborts on a failed dump or migration, so `DEPLOY RUNNER OK` implies them; the log lines sit in the root-only deploy log (owner read, §10.9). No RM counter seeding is needed (rule 244 §9) |
+| Production verification (read-only) | `posture`: `HEAD=4f59c347`, `TRACKED_MODIFIED=0`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), php8.3-fpm / nginx / postgresql active, queue worker and timers unchanged, deploy / release / rollback locks IDLE; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200; `/rme/visits`, `/settings/patients`, the new `/settings/patients/paper-card-registrations` and `/rme/amendments` → 302 to login (unauthenticated), while an unknown path answers 404, so the new routes are live |
+| Flags | no production flag was changed: `rme.doctor_encounter_scope` ships at its default OFF; consent template v2026.2 ships inactive; clinical photos are not in this release (wave 2) |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| GO | **none** — release 3 is intermediate; the final GO tag waits for release 4 and every mandatory item (§9.7) |
+
+Pending owner steps after release 3: §10.9 (log read: backup + 11 migrations; permissions). Wave 2 (#669, #670,
+#671) may now merge, each with the owner's approval on its exact green head; it ships as release 4.
 
 ## 10. Owner actions prepared by this program
 
@@ -634,6 +656,26 @@ channel, never by personal name or patient detail (public repository):
 
 After all four are recorded, the canonical closure path of the Program 8 owner checkpoint record (D5 section) runs
 step by step, dry run first, as the runtime user.
+
+
+### 10.9 Release 3 — deploy log and permissions (root and runtime user, owner's admin password)
+
+1. Read the dump and migration lines from the root-only log:
+
+```bash
+ssh -t daengtisiams-biznet-prod 'sudo grep -aE "Pre-deploy backup|backup-verify|2026_11_1[78]_[0-9]{6}_|DEPLOY OK" /var/lib/daengtisiams-deploy/runner/deploy-20261118-064305.log'
+```
+
+Expected: a `Pre-deploy backup: … sha256=…` line, the 11 release-3 migrations marked DONE, and `DEPLOY OK`.
+
+2. Release 3 adds six permissions: `countersign_rme_consents` (Doctor), `request_rme_amendments` (Doctor),
+`approve_rme_amendments` (Supervisor RME), `register_patient_paper_card_rm` and `view_patient_rm_paper_card_reasons`
+(Supervisor RME; the reasons also Owner), `register_patient_without_phone` (Admin Klinik and Front Office). Until
+the seeders run, those actions answer 403 for everyone but Super Admin. As the runtime user (CG-15):
+
+```bash
+ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -u daengtisiams php artisan db:seed --class=PermissionSeeder --force && sudo -u daengtisiams php artisan db:seed --class=RoleSeeder --force && sudo -u daengtisiams php artisan permission:cache-reset'
+```
 
 ## 11. Graphify, Dataviz, Obsidian
 
