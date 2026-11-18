@@ -344,7 +344,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 2. **State machine.** `pending` → `cancelled` (the requester), `rejected` (a checker, with a written reason) or
    `applied` (M3.3 PR5: approve and apply in one transaction). Every other transition is refused ("no longer
    pending"). A cancel sets `cancelled_at` and never `decided_by`, so the CHECK holds.
-3. **Requester (plan default 2).** First the account must be able to `view` the record (MedicalRecordPolicy /
+3. **Requester (plan default 2).** REVISED IN PART for the flag-ON doctor encounter scope by rule 243 §2.12 (a sheet is asked `viewAnchorContent`). First the account must be able to `view` the record (MedicalRecordPolicy /
    OdontogramPolicy) — otherwise "not found" (404) before anything else, the reason's length included, so a
    stranger never learns whether the record is a draft or final. Then `RmeAmendmentService::requestRefusal()`, in order: the subject is a final sheet or
    a finalized chart; the account holds `request_rme_amendments`; it IS the doctor of record (the sheet's
@@ -401,7 +401,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    binding Super Admin. The same refusals hide the decision controls (`actionsFor()`), and M3.3 PR5's approval
    inherits them. A stale base version is not checked on reject (nothing is
    written to the record); M3.3 PR5 must refuse an approval whose base is no longer the latest version.
-7. **Three layers and the pages.** Routes (`rme.amendments.*`): `permission:request_rme_amendments|approve_rme_amendments`
+7. **Three layers and the pages.** REVISED IN PART for the flag-ON doctor encounter scope by rule 243 §2.12 (a sheet is asked `viewAnchorContent`). Routes (`rme.amendments.*`): `permission:request_rme_amendments|approve_rme_amendments`
    and `cache.headers:private;no_store;max_age=0` on the group; the queue and reject need `approve_rme_amendments`,
    the request form, store and cancel need `request_rme_amendments`. `RmeAmendmentPolicy` (registered in
    RepositoryServiceProvider): `viewAny` (approve permission), `view` (the requester, or an approver whose branch
@@ -522,7 +522,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    permission, scope, none of the §6.6 refusals — evaluated in a rolled-back transaction, as the dispute
    escalation does), and to the requester on a reject and on an apply. Sent after commit; a failed one is logged
    with ids only and changes nothing.
-7. **Markers and pages.** "Diamandemen n×" (`amendmentCount()`, the applied amendments counted from the versions)
+7. **Markers and pages.** REVISED IN PART for the flag-ON doctor encounter scope by rule 243 §2.12 (a sheet is asked `viewAnchorContent`). "Diamandemen n×" (`amendmentCount()`, the applied amendments counted from the versions)
    on the RME print and PDF (`ClinicVisitPrintDataBuilder`, shared with the oversight print), on the odontogram
    print (`OdontogramPrintFormatter::format()['amendment_count']`, shared with the oversight odontogram print; the
    counts of all the patient's finalized charts are read in one grouped query per formatter, so the odontogram

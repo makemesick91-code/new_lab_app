@@ -474,6 +474,15 @@ added by their own PRs.
       `view`, which needs `history`; listing the doctor's own book pages there needs the routes to admit an
       own-authored page in own mode. (b) The cashier's clinical summary (`RmeInvoiceController`) and the oversight
       displays are not doctor surfaces; a dual-role Doctor there is OD-MEMO-A2-1's question.
+    - **Preconditions for ON (integration review, flag ON only; the flag OFF is unaffected).** (a) A BOOK amendment's
+      own requester, finalizer and doctor of record are locked out once out of service: `viewAnchorContent` starts
+      from the book's patient-level `view` (needs `history`), so the next clinical day the amendment page, the version
+      list and cancel answer 404 and the amendment stays pending. Decide the book's anchor content on the anchor
+      visit (`listsVisitFor(anchor)` plus the existing view/branch/document scope) instead, with a test, before ON.
+      (b) The author-stamp filter covers only the BOOK: a per-visit sheet page written in place during another
+      doctor's live encounter (two own visits of one patient the same day) is listed and served to a doctor in
+      `history`; filter stamped pages of every sheet (unstamped stay patient-level) or require an in-place save to
+      target the live encounter's own sheet, before ON.
     - **Tests.** `tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php` (token `DoctorPatientScope`,
       declared in `critical_gate_mandatory_suites`): the book's pages by author (sequence, page route, the writer and
       the exempt roles, version page, print), versions and amendments of a book on an unreadable anchor (requester
