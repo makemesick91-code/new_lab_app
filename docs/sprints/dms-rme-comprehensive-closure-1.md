@@ -565,7 +565,8 @@ without the permission and 404 to a holder while the flag is OFF (owner decision
 | Flags | no production flag changed: `rme.clinical_photos` and `rme.doctor_encounter_scope` ship at their default OFF; consent template v2026.2 stays inactive |
 | BK-2 | SKIPPED (owner directive) |
 | Release id | spent |
-| GO | **not yet** — the final GO tag waits for the owner's release 4 steps (§10.10) and the closure gates (canonical rules, Graphify, Obsidian, Dataviz; §11) |
+| Owner steps (§10.10), run from the owner's terminal 2026-11-18 | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261118-114251.sql sha256=e46305ba82a68c38334a70f1944b8f552541acd0d3f06417c7cf3faf396dd494`; both release-4 migrations DONE (134.01 ms, 10.88 ms); `backup-verify.json` written and present; `DEPLOY OK: 20261118-114251`; `PermissionSeeder` and `RoleSeeder` seeded, `permission:cache-reset` silent (cache already cleared by the seeders) |
+| GO | **not yet** — the final GO tag waits for the closure gates (canonical rules, Graphify, Obsidian, Dataviz; §11) and the mandatory-item check (§9.7) |
 
 ## 10. Owner actions prepared by this program
 
