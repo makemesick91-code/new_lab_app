@@ -643,6 +643,15 @@ return [
         // on a later number); legacy edits never forced. Selected by the
         // existing `FrontOffice` token in BOTH critical variants.
         'tests/Feature/Patient/FrontOfficeNewPatientCoreFieldsTest.php',
+        // Rule 244 §5.9 (RM PR-5, memo M4.2) — the KTP OCR place of birth is a
+        // suggestion beside the field of both new-patient forms: an empty,
+        // hidden slot with no script, URL or OCR text from the server, none on
+        // the edit page, and the browser's format rule pinned to the server's.
+        // The browser half (never auto-filled, text only, click to apply, no
+        // request) is tests/js/ktp-place-of-birth-suggestion.test.mjs (run by
+        // the quality gate). Selected by the existing `PatientKtp` token in
+        // BOTH critical variants.
+        'tests/Feature/RME/PatientKtpPlaceOfBirthSuggestionTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

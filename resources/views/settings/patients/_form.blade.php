@@ -144,6 +144,9 @@
         <label class="block text-sm font-medium text-gray-700">Tempat Lahir @if ($isNewPatient)<span class="text-rose-600" data-core-field-required>*</span>@endif</label>
         <input type="text" name="place_of_birth" maxlength="100" value="{{ old('place_of_birth', $patient?->place_of_birth) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
         @error('place_of_birth')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        @if ($isNewPatient)
+            @include('settings.patients._ktp-place-of-birth-suggestion')
+        @endif
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">Tanggal Lahir @if ($isNewPatient)<span class="text-rose-600" data-core-field-required>*</span>@endif</label>

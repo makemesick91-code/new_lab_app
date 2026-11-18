@@ -38,8 +38,9 @@ import { hintToPixelCorners } from './ktp-live-overlay.js';
 
 /**
  * Rows of the verification table. `form` rows can be applied to the patient
- * form; `component` rows feed the composed address; `info` rows have no
- * patient column and are shown for checking only.
+ * form; `component` rows feed the composed address; `info` values are shown
+ * for checking only and never applied by "Terapkan ke Formulir" (the place of
+ * birth is offered beside its own field instead, rule 244 §5.9).
  */
 export const ROW_DEFS = Object.freeze([
     { id: 'nik', roi: 'nik', form: 'ktp_number', label: 'NIK', input: 'nik' },
@@ -375,7 +376,11 @@ export function createSessionGuard() {
  * One OCR session per confirmed image. `deps`:
  *   root, parseUrl, csrf, assetConfig, setStatus(msg, tone), formValue(field),
  *   consent — the D7 attestation `{ consent, consent_version }` sent with every
- *   parse request (PHASE-3); without it the server refuses the text.
+ *   parse request (PHASE-3); without it the server refuses the text;
+ *   onParsed(parsed) — optional, handed every parse response of this session
+ *   (the page offers the place of birth from it, rule 244 §5.9). Never called
+ *   after destroy(): the response is raced against the session's lifetime;
+ *   placeOfBirthOffered() — optional, true while that offer is on screen.
  */
 export function createKtpOcrSession(deps) {
     const { root } = deps;
@@ -492,6 +497,7 @@ export function createKtpOcrSession(deps) {
         if (!res.ok || !parsed.ok) throw new Error('Hasil baca KTP tidak dapat diproses.');
         state.parsed = parsed;
         state.rows = buildRowModel(parsed, state.rows, formValues());
+        deps.onParsed?.(parsed);
 
         return parsed;
     };
@@ -719,7 +725,9 @@ export function createKtpOcrSession(deps) {
                 }
                 valueCell.appendChild(el('div', { class: 'mt-1', dataset: { ktpRoiPending: def.form } }));
                 if (def.info && fields[def.info]?.value) {
-                    valueCell.appendChild(el('p', { class: 'mt-1 text-xs text-gray-500' }, `Tempat lahir: ${fields[def.info].value} (tidak disimpan)`));
+                    // Points at "Gunakan" only while the page actually offers it (rule 244 §5.9).
+                    const offered = deps.placeOfBirthOffered?.() === true;
+                    valueCell.appendChild(el('p', { class: 'mt-1 text-xs text-gray-500' }, `Tempat lahir: ${fields[def.info].value}${offered ? ' (dipakai lewat "Gunakan" di isian Tempat Lahir)' : ''}`));
                 }
                 statusCell.appendChild(badge(statusText(s.status), toneFor(s.status)));
                 if (row?.replaces) statusCell.appendChild(badge('mengganti isian', 'warn'));

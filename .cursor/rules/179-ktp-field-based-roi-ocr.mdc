@@ -66,6 +66,10 @@ previous release still runs on the same straightened card. The server
 12. **Only existing `mst_patients` columns are applied.** Birth place, religion
     and marital status stay display-only. No new column or migration without an
     explicit schema decision.
+    REVISED by rule 244 §5.5 and §5.9 (memo M4.2): the birth place now has a
+    column (`mst_patients.place_of_birth`). "Terapkan ke Formulir" still never
+    applies it; it is offered beside its own field and written only by the
+    operator's "Gunakan", under the same `ktp_ocr_verified` attestation.
 13. **Every existing control stays**: authentication, RBAC, branch isolation,
     the pilot gate (rule 178), the feature flag, private storage, NIK masking,
     CSRF, the `ktp-scan` rate limit, the explicit `ktp_ocr_verified`
