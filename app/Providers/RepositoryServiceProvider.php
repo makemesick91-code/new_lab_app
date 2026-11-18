@@ -287,6 +287,12 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
+use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Policies\RmeAmendmentPolicy;
+use App\Modules\RmeAmendment\Repositories\RmeAmendmentRepository;
+use App\Modules\RmeAmendment\Repositories\RmeRecordVersionRepository;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeReviewerRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
@@ -493,6 +499,10 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeRefundRequestRepositoryInterface::class => RmeRefundRequestRepository::class,
         RmeRefundSettlementRepositoryInterface::class => RmeRefundSettlementRepository::class,
         RmeReceiptSnapshotRepositoryInterface::class => RmeReceiptSnapshotRepository::class,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §5) — immutable record versions.
+        RmeRecordVersionRepositoryInterface::class => RmeRecordVersionRepository::class,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — supervised amendments.
+        RmeAmendmentRepositoryInterface::class => RmeAmendmentRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
         RmeBillingDisputeReviewerRepositoryInterface::class => RmeBillingDisputeReviewerRepository::class,
@@ -614,6 +624,9 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeBillingDispute::class => RmeBillingDisputePolicy::class,
         RmeRefundRequest::class => RmeRefundRequestPolicy::class,
         RmeRefundSettlement::class => RmeRefundSettlementPolicy::class,
+        // Memo M3.3 PR4 (rule 240 §6) — Gate::before skips it for Super Admin, so
+        // the separation-of-duties rules live in RmeAmendmentService's transaction.
+        RmeAmendment::class => RmeAmendmentPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

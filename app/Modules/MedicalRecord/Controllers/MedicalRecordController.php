@@ -16,6 +16,7 @@ use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\StoreMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
+use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
@@ -25,6 +26,7 @@ use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -320,7 +322,13 @@ class MedicalRecordController extends Controller
         // Sprint 64.0.2 — one patient = one handwriting RM book on the canonical
         // visit. Virtual navigation merges same-patient pages from all sheets;
         // new pages are always added to the canonical medical record.
-        $handwritingBook = $workspace->orderedHandwritingBookForPatient($patientId);
+        // Rule 240 §9.5 (memo M3.3 PR7) — a correction page's label as this
+        // viewer may read it: the amended visit, its date and the approver only
+        // when the viewer may open that visit (the service decides, per viewer).
+        $handwritingBook = app(RmeAmendmentService::class)->correctionPagesFor(
+            $request->user(),
+            $workspace->orderedHandwritingBookForPatient($patientId),
+        );
         $handwritingRecord = $workspace->canonicalMedicalRecord($patientId);
 
         // LEGACY-RME-DOCTOR-WORKSPACE-1A — ONE page navigation experience, two
@@ -378,6 +386,33 @@ class MedicalRecordController extends Controller
             ? $this->handwritings->nextPageNumber($handwritingRecord->id)
             : 1;
 
+        /*
+         * Rule 240 §4 (memo M3.3) — a page the live encounter may not overwrite
+         * (sealed by a finalize, or written by another encounter) renders
+         * read-only with the service's reason, so the page never offers an
+         * overwrite the service refuses (rule 135). Presentation only;
+         * MedicalRecordHandwritingService::save() is the authority. An archive
+         * page is read-only anyway. On such a page the shared editor targets only
+         * the next, new page of the book — what "+ Tambah Halaman RM" opens.
+         */
+        $storagePageNumber = (int) ($activeRmPage['storage_page_number'] ?? $activePageNumber);
+        $activePageLockMessage = $isLegacyActivePage ? null : app(MedicalRecordHandwritingService::class)->pageLockMessage(
+            $handwritingFormRecord,
+            $storagePageNumber,
+            $currentEncounter !== null ? (int) $currentEncounter->getKey() : null,
+        );
+        $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
+            $handwritingRecord?->clinicVisit ?? $workspaceVisit,
+            $handwritingRecord ?? $handwritingFormRecord,
+        ]);
+        $editorFormAction = $activePageLockMessage !== null
+            ? $canonicalHandwritingFormAction
+            : route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]);
+        $editorPageNumber = $activePageLockMessage !== null ? $nextRmPageNumber : $storagePageNumber;
+        $editorRevision = $activePageLockMessage !== null
+            ? MedicalRecord::HANDWRITING_REVISION_NONE
+            : (string) ($activeRmPage['revision'] ?? '');
+
         $prevRmPage = $activePageNumber > 1 ? $activePageNumber - 1 : null;
         $nextRmPage = $activePageNumber < $totalRmPages ? $activePageNumber + 1 : null;
 
@@ -406,6 +441,12 @@ class MedicalRecordController extends Controller
             'handwritingRecord' => $handwritingRecord,
             'handwritingFormRecord' => $handwritingFormRecord,
             'handwritingFormVisit' => $handwritingFormVisit,
+            'activePageLockMessage' => $activePageLockMessage,
+            'storagePageNumber' => $storagePageNumber,
+            'canonicalHandwritingFormAction' => $canonicalHandwritingFormAction,
+            'editorFormAction' => $editorFormAction,
+            'editorPageNumber' => $editorPageNumber,
+            'editorRevision' => $editorRevision,
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
@@ -431,6 +472,9 @@ class MedicalRecordController extends Controller
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
+            // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a final sheet
+            // (null on a draft); the request offer is the service's own answer.
+            'amendmentPanel' => app(RmeAmendmentService::class)->panelFor($activeSheet, $request->user()),
             // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the treating
             // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
             // while the capability is OFF, so the page renders exactly as before.
@@ -544,7 +588,8 @@ class MedicalRecordController extends Controller
     {
         abort_if($medicalRecord->clinic_visit_id !== $clinicVisit->id, 404);
 
-        $this->authorize('update', $medicalRecord);
+        // Rule 240 §1 — a final sheet is locked (the service re-decides it).
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->service->updateDraft($medicalRecord, $request->validated());
 

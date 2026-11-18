@@ -1697,6 +1697,68 @@ return [
         // page refused, historical consents byte for byte, clause 9 gating nothing. Selected by the
         // existing `RmeVisitConsent` token in BOTH critical variants.
         'tests/Feature/RME/RmeVisitConsentTemplateVersionSplitTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR1 (rule 240 §1, owner decision 2026-11-17) — a final
+        // RME sheet (notes, structured diagnoses, the diagnosis override) and a finalized odontogram are
+        // locked: policy scope first then final ⇒ deny, the service re-deciding on the row it locked after
+        // the visit row (binds Super Admin), the page mirroring it. Selected by the existing
+        // `MedicalRecordFinalization` and `Odontogram` tokens in BOTH critical variants; declared so a
+        // rename cannot drop them.
+        'tests/Feature/RME/MedicalRecordFinalizationLockTest.php',
+        'tests/Feature/RME/OdontogramFinalizedLockTest.php',
+        // Same rule, §4 (M3.3 PR2) — finalizing seals the handwriting book's pages; a sealed page is never
+        // overwritten (service + HTTP, Super Admin too, no object written), appending stays allowed, pages from
+        // before the rule follow the derived rule (ties lock). Selected by the existing `MedicalRecordFinalization`
+        // token in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php',
+        // Same rule, §5 (M3.3 PR3) — finalize writes version 1 of the sheet or chart: an immutable,
+        // hash-chained snapshot (model guard + PostgreSQL trigger), idempotent on re-finalize, a baseline
+        // for records finalized before the rule, reads authorized like the record. Selected by the
+        // existing `MedicalRecordFinalization` and `Odontogram` tokens in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php',
+        'tests/Feature/RME/OdontogramVersionHistoryTest.php',
+        // Same rule, §6 (M3.3 PR4) — the supervised amendment: request (doctor of record or finalizer,
+        // final subject, bounded reason, validated proposal, base = latest version, one pending per subject
+        // with the partial unique index refused cleanly in a savepoint), cancel (requester only), reject
+        // (approver ≠ requester, ≠ doctor of record, ≠ finalizer, binding Super Admin; PostgreSQL CHECK and
+        // trigger backstops),
+        // branch-scoped queue and detail (404 out of scope), no-store pages, the record page mirroring the
+        // server. Selected by the existing `MedicalRecordFinalization`, `Odontogram` and
+        // `RmeClinicalWriteAuthority` tokens in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php',
+        'tests/Feature/RME/OdontogramAmendmentTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php',
+        // Same rule, §7 (M3.3 PR5) — approve AND apply in one transaction: the checker rules re-decided on
+        // the locked rows (binding Super Admin), a stale base refused, the proposal re-validated under
+        // today's rules, the record changed while it stays final and locked, the next version chained
+        // and verifiable (snapshot_schema_version hashed), the amendment applied in one update, audit
+        // ids-only, notifications after commit, "Diamandemen n×" on the prints and the record pages,
+        // the version history read like the record (404 outside its scope, no object key, no-store).
+        // Selected by the existing `MedicalRecordFinalization`, `Odontogram` and
+        // `RmeClinicalWriteAuthority` tokens in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php',
+        'tests/Feature/RME/OdontogramAmendmentApplyTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php',
+        // Same rule, §8 (M3.3 PR6) — the handwriting amendment page: one correction page per sheet
+        // amendment, decoded with the canvas decoder and bounds plus a clean PNG structure (no
+        // polyglot), stored privately under a fresh server key with its SHA-256 as one unit with the
+        // row (rule 224 compensation), verified on apply and on display, appended on approval as the
+        // book's next page sealed at once and stamped with the amendment (visit → sheet → amendment →
+        // book), the original pages unchanged, the next version listing it, labelled in the workspace,
+        // the print and the version history, the pending image policy-gated (404 out of scope).
+        // Selected by the existing `MedicalRecordFinalization` and `RmeClinicalWriteAuthority` tokens in
+        // BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php',
+        // Same rule, §9 (M3.3 PR7) — the amendment page in the oversight and cashier displays: labelled on the
+        // oversight patient and visit pages and in the cashier summary, the oversight image route serving it only
+        // when its SHA-256 verifies (404 tampered, 503 read fault). Selected by the existing `ClinicOversight`
+        // token in BOTH critical variants.
+        'tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php',
+        // Same rule, §6.11 (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it") — the
+        // supervised amendment stays outside the PTM gate: requested and applied in every PTM state, the amended
+        // visit's recorded PTM shown for information only, no consent row created or changed. Selected by the
+        // existing `MedicalRecordFinalization` token in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

@@ -2,7 +2,9 @@
     $medicalRecord = $visit->medicalRecord;
     $odontogram = $visit->odontogram;
     // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
-    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
+    // Rule 240 §9.5 (memo M3.3 PR7) — RmeInvoiceController passes them with a
+    // correction page's label as this cashier may read it; given none, no label.
+    $rmPages = $rmPagesForReader ?? ($medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect());
     $statusLabels = [
         'normal' => 'Normal',
         'caries' => 'Karies',
@@ -106,6 +108,10 @@
                                 &mdash; Tersimpan {{ $rmPage['saved_at']->format('d/m/Y H:i') }}
                             @endif
                         </p>
+                        {{-- Rule 240 §8.10 / §9 (M3.3 PR7, review L4) — a page appended by an approved amendment says so. --}}
+                        @if (($rmPage['amendment_label'] ?? null) !== null)
+                            <p class="mt-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $rmPage['amendment_id'] }}">{{ $rmPage['amendment_label'] }}</p>
+                        @endif
                         <img src="{{ $rmPage['preview_url'] }}" alt="RME tulisan tangan dokter halaman {{ $rmPage['page_number'] }}"
                              class="mt-1 max-h-64 rounded-lg border border-gray-200 bg-white object-contain" />
                     </div>

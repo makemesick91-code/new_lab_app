@@ -3,11 +3,13 @@
 namespace App\Modules\RmeInvoice\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
@@ -51,6 +53,23 @@ class RmeInvoiceController extends Controller
     ) {}
 
     /** @return array<int, string> */
+    /**
+     * Rule 240 §9.5 (memo M3.3 PR7) — the visit's RM pages for the clinical
+     * summary, a correction page labelled as this viewer may read it
+     * (RmeAmendmentService decides; the partial prints what it is given).
+     *
+     * @return Collection<int|string, array<string, mixed>>
+     */
+    private function clinicalSummaryPages(?User $viewer, ClinicVisit $clinicVisit): Collection
+    {
+        $sheet = $clinicVisit->medicalRecord;
+
+        return $sheet === null ? collect() : app(RmeAmendmentService::class)->correctionPagesFor(
+            $viewer,
+            $sheet->orderedHandwritingPages()->filter(fn (array $page): bool => (bool) $page['has_content']),
+        );
+    }
+
     private function cashierVisitRelations(): array
     {
         return [
@@ -531,8 +550,13 @@ SQL;
 
         // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — the cashier types every
         // price; the form carries no tariff, no autofill and no pricing mode.
+        $clinicVisit->load($this->cashierVisitRelations());
+
         return view('rme.cashier.create', [
-            'visit' => $clinicVisit->load($this->cashierVisitRelations()),
+            'visit' => $clinicVisit,
+            // Rule 240 §9.5 (memo M3.3 PR7) — the clinical summary's RM pages with
+            // a correction page's label as this cashier may read it.
+            'rmPagesForReader' => $this->clinicalSummaryPages($request->user(), $clinicVisit),
             'treatments' => $this->treatments->listActive(),
             // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — what the doctor
             // recorded as performed (display only; null while the capability is OFF).
@@ -567,8 +591,12 @@ SQL;
             'zeroValueClosedBy',
         ]);
 
+        $clinicVisit->load(array_merge($this->cashierVisitRelations(), ['followUpOf']));
+
         return view('rme.cashier.show', [
-            'visit' => $clinicVisit->load(array_merge($this->cashierVisitRelations(), ['followUpOf'])),
+            'visit' => $clinicVisit,
+            // Rule 240 §9.5 (memo M3.3 PR7) — as in create().
+            'rmPagesForReader' => $this->clinicalSummaryPages(request()->user(), $clinicVisit),
             'invoice' => $invoice,
             // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the doctor's record
             // matched to this invoice by treatment identity (display only, never a

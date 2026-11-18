@@ -597,7 +597,9 @@ it('finalize service rejects odontogram from another branch', function () {
         ->toThrow(ValidationException::class);
 });
 
-it('updatePlaceholder allows editing a finalized odontogram (Sprint 59)', function () {
+// Rule 240 §1 (memo M3.3, owner decision 2026-11-17) — flipped from the Sprint 59
+// "updatePlaceholder allows editing a finalized odontogram": a finalized chart is locked.
+it('updatePlaceholder refuses a finalized odontogram (rule 240 §1, supersedes Sprint 59)', function () {
     $user = rmeClinicalAuthor(['manage_clinic_visits']);
     $this->actingAs($user);
 
@@ -611,16 +613,16 @@ it('updatePlaceholder allows editing a finalized odontogram (Sprint 59)', functi
         'finalized_by' => $user->id,
     ]);
 
-    $updated = app(OdontogramService::class)->updatePlaceholder(
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder(
         $odontogram,
         ['summary_notes' => 'revisi setelah final'],
         $user
-    );
+    ))->toThrow(ValidationException::class, OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
 
-    expect($updated->summary_notes)->toBe('revisi setelah final')
-        // Finalized status/columns are preserved for backward compatibility.
-        ->and($updated->status)->toBe(Odontogram::STATUS_FINALIZED)
-        ->and($updated->finalized_at)->not->toBeNull();
+    $fresh = $odontogram->fresh();
+    expect($fresh->summary_notes)->toBeNull()
+        ->and($fresh->status)->toBe(Odontogram::STATUS_FINALIZED)
+        ->and($fresh->finalized_at)->not->toBeNull();
 });
 
 // --- HTTP: finalize ---
@@ -697,9 +699,9 @@ it('finalize does not duplicate odontogram', function () {
     expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(1);
 });
 
-// --- HTTP: editable after finalize (Sprint 59) ---
+// --- HTTP: locked after finalize (rule 240 §1; flipped from Sprint 59 "editable after finalize") ---
 
-it('finalized odontogram can update summary_notes via HTTP (Sprint 59)', function () {
+it('finalized odontogram refuses a summary_notes update via HTTP (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
@@ -715,13 +717,12 @@ it('finalized odontogram can update summary_notes via HTTP (Sprint 59)', functio
         ->patch(route('rme.odontograms.update', $odontogram), [
             'summary_notes' => 'revisi catatan',
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($odontogram->fresh()->summary_notes)->toBe('revisi catatan');
+    expect($odontogram->fresh()->summary_notes)->toBeNull();
 });
 
-it('finalized odontogram can update tooth_map_payload via HTTP (Sprint 59)', function () {
+it('finalized odontogram refuses a tooth_map_payload update via HTTP (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
@@ -737,10 +738,9 @@ it('finalized odontogram can update tooth_map_payload via HTTP (Sprint 59)', fun
         ->patch(route('rme.odontograms.update', $odontogram), [
             'tooth_map_payload' => json_encode(['teeth' => ['11' => ['status' => 'caries']]]),
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['status'])->toBe('caries');
+    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
 });
 
 // --- UI: badge visibility ---
@@ -922,9 +922,9 @@ it('cross-branch user cannot update per-tooth note', function () {
         ->assertForbidden();
 });
 
-// --- Editable: finalized odontogram can receive note update (Sprint 59) ---
+// --- Locked: a finalized odontogram refuses a note update (rule 240 §1; flipped from Sprint 59) ---
 
-it('finalized odontogram can update per-tooth note via HTTP (Sprint 59)', function () {
+it('finalized odontogram refuses a per-tooth note update via HTTP (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
@@ -940,10 +940,9 @@ it('finalized odontogram can update per-tooth note via HTTP (Sprint 59)', functi
         ->patch(route('rme.odontograms.update', $odontogram), [
             'tooth_map_payload' => json_encode(['teeth' => ['11' => ['status' => 'caries', 'note' => 'test']]]),
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['note'])->toBe('test');
+    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
 });
 
 // ============================================================
@@ -1128,9 +1127,9 @@ it('cross-branch cannot update conditions', function () {
         ->assertForbidden();
 });
 
-// --- Editable: finalized can update conditions (Sprint 59) ---
+// --- Locked: a finalized odontogram refuses a conditions update (rule 240 §1; flipped from Sprint 59) ---
 
-it('finalized odontogram can update conditions via HTTP (Sprint 59)', function () {
+it('finalized odontogram refuses a conditions update via HTTP (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
@@ -1148,10 +1147,9 @@ it('finalized odontogram can update conditions via HTTP (Sprint 59)', function (
                 'teeth' => ['11' => ['status' => 'caries', 'conditions' => ['caries']]],
             ]),
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
 });
 
 // --- Idempotency: no duplicate odontogram after conditions update ---

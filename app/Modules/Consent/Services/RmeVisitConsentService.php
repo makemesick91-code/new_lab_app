@@ -125,6 +125,36 @@ class RmeVisitConsentService
     public const MESSAGE_FINISH_AWAITING_DOCTOR = 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani dokter. Dokter yang menangani menandatanganinya dari Ruang Perawatan.';
 
     /*
+     * Rule 240 §1.8 (memo M3.3 review LOW-3) — the gates assertExecutedConsent()
+     * decides, and its refusal for each by PTM state. ONE list: every gate raises
+     * its refusal from it and isPtmRefusal() recognises a refusal by it, so a
+     * caller that must know "the authority's only refusal is the PTM"
+     * (MedicalRecordService::assertSheetAuthoringAllowed(),
+     * OdontogramService::assertChartAuthoringAllowed()) asks by gate and never
+     * restates a message.
+     */
+    public const PTM_GATE_RME = 'rme';
+
+    public const PTM_GATE_ODONTOGRAM = 'odontogram';
+
+    public const PTM_GATE_FINISH = 'finish';
+
+    private const PTM_REFUSALS = [
+        self::PTM_GATE_RME => [
+            self::PTM_AWAITING_PATIENT => self::MESSAGE_RME_AWAITING_PATIENT,
+            self::PTM_AWAITING_DOCTOR => self::MESSAGE_RME_AWAITING_DOCTOR,
+        ],
+        self::PTM_GATE_ODONTOGRAM => [
+            self::PTM_AWAITING_PATIENT => self::MESSAGE_ODONTOGRAM_AWAITING_PATIENT,
+            self::PTM_AWAITING_DOCTOR => self::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR,
+        ],
+        self::PTM_GATE_FINISH => [
+            self::PTM_AWAITING_PATIENT => self::MESSAGE_FINISH_AWAITING_PATIENT,
+            self::PTM_AWAITING_DOCTOR => self::MESSAGE_FINISH_AWAITING_DOCTOR,
+        ],
+    ];
+
+    /*
      * DMS memo M4.4, PTM plan PR3 (rule 241 §6) — consent template v2026.2,
      * built INACTIVE. A new consent is signed on the candidate version only
      * while the risky flag is on AND its wording is approved (owner decision:
@@ -244,7 +274,7 @@ class RmeVisitConsentService
      */
     public function assertExecutedConsentForFinish(ClinicVisit $visit): void
     {
-        $this->assertExecutedConsent($visit, 'status', self::MESSAGE_FINISH_AWAITING_PATIENT, self::MESSAGE_FINISH_AWAITING_DOCTOR);
+        $this->assertExecutedConsent($visit, 'status', self::PTM_GATE_FINISH);
     }
 
     /**
@@ -264,7 +294,8 @@ class RmeVisitConsentService
             : RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
     }
 
-    private function assertExecutedConsent(ClinicVisit $visit, string $key, string $awaitingPatient, string $awaitingDoctor): void
+    /** @param  string  $gate  a PTM_GATE_* — its refusal comes from PTM_REFUSALS */
+    private function assertExecutedConsent(ClinicVisit $visit, string $key, string $gate): void
     {
         $state = $this->ptmStateFor($visit);
 
@@ -273,8 +304,22 @@ class RmeVisitConsentService
         }
 
         throw ValidationException::withMessages([
-            $key => $state === self::PTM_AWAITING_DOCTOR ? $awaitingDoctor : $awaitingPatient,
+            $key => self::PTM_REFUSALS[$gate][$state],
         ]);
+    }
+
+    /**
+     * Rule 240 §1.8 — is this refusal assertExecutedConsent()'s refusal for $gate
+     * and nothing else? True only for a refusal whose ONE message is one of the
+     * gate's PTM_REFUSALS; the same authority's encounter, actor, chart-identity
+     * and visit-status refusals, another gate's PTM refusal, or a refusal that
+     * carries anything beside it never match.
+     */
+    public static function isPtmRefusal(ValidationException $refusal, string $gate): bool
+    {
+        $messages = array_merge(...array_values($refusal->errors()));
+
+        return count($messages) === 1 && in_array($messages[0], self::PTM_REFUSALS[$gate] ?? [], true);
     }
 
     /**
@@ -545,7 +590,7 @@ class RmeVisitConsentService
         }
 
         // Rule 241 §2 — both signatures: the patient's and the doctor's.
-        $this->assertExecutedConsent($encounter, 'consent', self::MESSAGE_RME_AWAITING_PATIENT, self::MESSAGE_RME_AWAITING_DOCTOR);
+        $this->assertExecutedConsent($encounter, 'consent', self::PTM_GATE_RME);
 
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8; rule 219 §12a, rule 223 §6) —
         // inside a write transaction the encounter's visit row is locked FIRST and
@@ -565,7 +610,7 @@ class RmeVisitConsentService
 
             // Re-decided on the locked row: a void or a countersignature
             // committed meanwhile is seen (rule 241 §2.3).
-            $this->assertExecutedConsent($locked, 'consent', self::MESSAGE_RME_AWAITING_PATIENT, self::MESSAGE_RME_AWAITING_DOCTOR);
+            $this->assertExecutedConsent($locked, 'consent', self::PTM_GATE_RME);
 
             return $locked;
         }
@@ -667,7 +712,7 @@ class RmeVisitConsentService
         // 4. Rule 241 §2 (owner decision 2026-11-17) — the EXECUTED consent:
         // the patient's signature and the treating doctor's. Supersedes rule
         // 134's pre-consent charting for WRITING; reading stays open.
-        $this->assertExecutedConsent($encounter, 'consent', self::MESSAGE_ODONTOGRAM_AWAITING_PATIENT, self::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR);
+        $this->assertExecutedConsent($encounter, 'consent', self::PTM_GATE_ODONTOGRAM);
 
         // Inside a write transaction the visit row is locked FIRST — before
         // OdontogramService locks or writes the chart — and the decision is
@@ -681,7 +726,7 @@ class RmeVisitConsentService
                 ]);
             }
 
-            $this->assertExecutedConsent($locked, 'consent', self::MESSAGE_ODONTOGRAM_AWAITING_PATIENT, self::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR);
+            $this->assertExecutedConsent($locked, 'consent', self::PTM_GATE_ODONTOGRAM);
 
             return $locked;
         }

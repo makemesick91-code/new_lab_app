@@ -5,8 +5,10 @@ namespace App\Modules\MedicalRecord\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -21,6 +23,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * Mirrors LabWorkflowEvidenceController@show, the established pattern for
  * serving private clinical evidence in this codebase.
+ *
+ * Rule 240 §8 (memo M3.3 PR6) — an amendment page (a correction appended by an
+ * approved amendment) is served only when its bytes match the recorded SHA-256;
+ * a missing or tampered object answers 404, like an absent one; a storage read
+ * fault answers 503.
  */
 class MedicalRecordHandwritingImageController extends Controller
 {
@@ -44,6 +51,23 @@ class MedicalRecordHandwritingImageController extends Controller
         abort_if($record === null, 404);
 
         $this->authorize('view', $record);
+
+        if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
+            $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
+
+            if ($stored['bytes'] === null) {
+                Log::warning('An RME amendment page was not served.', [
+                    'handwriting_page_id' => (int) $handwritingPage->getKey(),
+                    'rme_amendment_id' => (int) $handwritingPage->getAttribute('rme_amendment_id'),
+                    'status' => $stored['status'],
+                ]);
+                // A storage read fault is retried (503), never reported as a
+                // missing or tampered page (404) — review L2.
+                abort($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE ? 503 : 404);
+            }
+
+            return $this->streamBytes($stored['bytes']);
+        }
 
         return $this->stream($handwritingPage->handwriting_path);
     }
@@ -79,6 +103,11 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($binary === '', 404);
 
+        return $this->streamBytes($binary);
+    }
+
+    private function streamBytes(string $binary): StreamedResponse
+    {
         return new StreamedResponse(static function () use ($binary): void {
             echo $binary;
         }, 200, [

@@ -320,6 +320,10 @@ class RoleSeeder extends Seeder
             // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — countersign the PTM of the
             // doctor's own visit (identity, not role, is decided in the service).
             'countersign_rme_consents',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — request a
+            // supervised amendment of a final record; only as its doctor of record
+            // or finalizer (RmeAmendmentService). Never the approve permission.
+            'request_rme_amendments',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
             // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency
@@ -600,6 +604,10 @@ class RoleSeeder extends Seeder
             'manage_rme_consents',
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — supervised consent void.
             'void_rme_consents',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the checker of a
+            // supervised amendment; never the maker (no request_rme_amendments), never
+            // on a record it is the doctor of or finalized (RmeAmendmentService).
+            'approve_rme_amendments',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',

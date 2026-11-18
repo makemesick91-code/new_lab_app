@@ -6,7 +6,10 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use Database\Factories\MedicalRecordFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -130,6 +133,12 @@ class MedicalRecord extends Model
         return $this->hasMany(MedicalRecordDiagnosis::class)->orderBy('diagnosis_role')->orderBy('id');
     }
 
+    /** SATUSEHAT-4B emergency overrides of the structured-diagnosis requirement (append-only). */
+    public function diagnosisRequirementOverrides(): HasMany
+    {
+        return $this->hasMany(DiagnosisRequirementOverride::class);
+    }
+
     /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of a page that has no stored drawing. */
     public const HANDWRITING_REVISION_NONE = 'none';
 
@@ -182,18 +191,81 @@ class MedicalRecord extends Model
             'has_content' => $legacy !== null && filled($legacy->handwriting_path),
         ]]);
 
-        foreach ($this->handwritingPages()->get() as $page) {
-            $pages->push([
+        $rows = $this->handwritingPages()->get();
+
+        foreach ($rows as $page) {
+            $amendmentId = $page->getAttribute('rme_amendment_id');
+
+            $entry = [
                 'page_number' => $page->page_number,
                 'is_legacy' => false,
-                'preview_url' => $embedBinary ? $page->previewDataUri() : $page->previewUrl(),
+                'preview_url' => match (true) {
+                    ! $embedBinary => $page->previewUrl(),
+                    // The print embeds an amendment page only when its bytes match
+                    // the recorded SHA-256; a tampered one prints the honest "not
+                    // available" notice. (The page route verifies the same.)
+                    $amendmentId !== null => self::verifiedDataUri($page),
+                    default => $page->previewDataUri(),
+                },
                 'saved_at' => $page->saved_at,
                 'revision' => self::handwritingRevision($page->handwriting_path),
                 'has_content' => filled($page->handwriting_path),
-            ]);
+            ];
+
+            // Rule 240 §8 (memo M3.3 PR6) — an amendment page names its amendment.
+            // Its label is NOT decided here: what a viewer may read of it (the
+            // amended visit, its date, the approver) is RmeAmendmentService::
+            // correctionPagesFor()'s decision per viewer (§9.5). A surface that
+            // skips it shows no label at all — fail closed.
+            if ($amendmentId !== null) {
+                $entry['amendment_id'] = (int) $amendmentId;
+            }
+
+            $pages->push($entry);
         }
 
         return $pages;
+    }
+
+    /**
+     * Rule 240 §8 (review M3) — where this sheet's applied correction pages sit
+     * in the patient's book, for the line beside "Diamandemen n×" on the sheet's
+     * page and its print: "Halaman koreksi: buku RM halaman N (amandemen #id)".
+     *
+     * @return list<string>
+     */
+    public function correctionPagePointers(): array
+    {
+        $amendmentIds = RmeAmendment::query()
+            ->where('subject_type', RmeRecordVersion::SUBJECT_MEDICAL_RECORD)
+            ->where('subject_id', $this->getKey())
+            ->where('status', RmeAmendment::STATUS_APPLIED)
+            ->whereNotNull('correction_page_path')
+            ->pluck('id');
+
+        if ($amendmentIds->isEmpty()) {
+            return [];
+        }
+
+        return MedicalRecordHandwritingPage::query()
+            ->whereIn('rme_amendment_id', $amendmentIds)
+            ->orderBy('rme_amendment_id')
+            ->get(['page_number', 'rme_amendment_id'])
+            ->map(fn (MedicalRecordHandwritingPage $page): string => sprintf(
+                'Halaman koreksi: buku RM halaman %d (amandemen #%d)',
+                (int) $page->page_number,
+                (int) $page->getAttribute('rme_amendment_id'),
+            ))
+            ->values()
+            ->all();
+    }
+
+    /** Rule 240 §8 — an amendment page's bytes for print, only when they verify. */
+    private static function verifiedDataUri(MedicalRecordHandwritingPage $page): ?string
+    {
+        $bytes = HandwritingPayloadGuard::intactPng($page->handwriting_path, $page->handwriting_hash);
+
+        return $bytes !== null ? 'data:image/png;base64,'.base64_encode($bytes) : null;
     }
 
     protected static function newFactory(): MedicalRecordFactory

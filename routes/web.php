@@ -123,6 +123,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\RmeAmendment\Controllers\RmeAmendmentController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeController;
@@ -1318,7 +1319,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/handwriting', [MedicalRecordHandwritingController::class, 'store'])
                 ->name('visits.medical-record.handwriting.store');
             // SATUSEHAT-4A — structured diagnosis entry (never auto-created;
-            // reuses MedicalRecordPolicy::update inside the controller).
+            // MedicalRecordPolicy::editSheet inside the controller, rule 240 §1).
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses', [MedicalRecordDiagnosisController::class, 'store'])
                 ->name('visits.medical-record.diagnoses.store');
             Route::delete('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}', [MedicalRecordDiagnosisController::class, 'destroy'])
@@ -1577,6 +1578,69 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('refund-requests/{refundRequest}/reject', [RmeRefundRequestController::class, 'reject'])
                 ->whereNumber('refundRequest')->name('refund-requests.reject');
         });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — the supervised
+    | amendment of a final sheet or a finalized odontogram. Three layers: the route
+    | permission (request_rme_amendments: Doctor; approve_rme_amendments:
+    | Supervisor RME; Super Admin via '*'), RmeAmendmentPolicy (an amendment the
+    | account may not see answers 404), and RmeAmendmentService, which re-decides
+    | requester identity, branch scope and maker != checker inside the
+    | transaction (binding Super Admin). Every page is private, no-store. Approve
+    | and apply is M3.3 PR5.
+    */
+    Route::middleware(['permission:request_rme_amendments|approve_rme_amendments', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('amendments/{amendment}', [RmeAmendmentController::class, 'show'])
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.show');
+        // Rule 240 §8 (M3.3 PR6) — the handwriting correction page an amendment
+        // carries: its requester or an approver in scope (404 otherwise), the
+        // object verified against its SHA-256, never its key.
+        Route::get('amendments/{amendment}/correction-page', [RmeAmendmentController::class, 'correctionPage'])
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.correction-page');
+
+        Route::middleware('permission:approve_rme_amendments')->group(function () {
+            Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');
+            Route::post('amendments/{amendment}/reject', [RmeAmendmentController::class, 'reject'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.reject');
+            // Rule 240 §7 (M3.3 PR5) — approve AND apply, one transaction.
+            Route::post('amendments/{amendment}/approve', [RmeAmendmentController::class, 'approve'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.approve');
+        });
+
+        Route::middleware('permission:request_rme_amendments')->group(function () {
+            Route::get('medical-records/{medicalRecord}/amendments/create', [RmeAmendmentController::class, 'createForSheet'])
+                ->name('amendments.create-sheet');
+            Route::post('medical-records/{medicalRecord}/amendments', [RmeAmendmentController::class, 'storeForSheet'])
+                ->name('amendments.store-sheet');
+            Route::get('odontograms/{odontogram}/amendments/create', [RmeAmendmentController::class, 'createForChart'])
+                ->name('amendments.create-chart');
+            Route::post('odontograms/{odontogram}/amendments', [RmeAmendmentController::class, 'storeForChart'])
+                ->name('amendments.store-chart');
+            Route::post('amendments/{amendment}/cancel', [RmeAmendmentController::class, 'cancel'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.cancel');
+        });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR5 (rule 240 §7) — the version
+    | history of a final sheet or a finalized chart, read like the record itself:
+    | the clinic-visit read permission here, the record's own `view` policy in
+    | RmeAmendmentService (404 outside its scope), private and no-store.
+    | `{medicalRecord}` / `{odontogram}` are governed keys, constrained globally
+    | (DatabaseRouteKey, AIR-RMC-37: never per route); `{amendment}` takes the
+    | bigint key pattern per route and `{version}` a 1-based int4 number (the
+    | PAGE_NUMBER_PATTERN bounds), so an out-of-range segment is a 404, never a 500.
+    */
+    Route::middleware(['permission:view_clinic_visits|manage_clinic_visits', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('medical-records/{medicalRecord}/versions', [RmeAmendmentController::class, 'sheetVersions'])
+            ->name('amendments.versions.sheet');
+        Route::get('medical-records/{medicalRecord}/versions/{version}', [RmeAmendmentController::class, 'sheetVersion'])
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.sheet.show');
+        Route::get('odontograms/{odontogram}/versions', [RmeAmendmentController::class, 'chartVersions'])
+            ->name('amendments.versions.chart');
+        Route::get('odontograms/{odontogram}/versions/{version}', [RmeAmendmentController::class, 'chartVersion'])
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.chart.show');
     });
 
     /*

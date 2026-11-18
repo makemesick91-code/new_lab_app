@@ -333,9 +333,13 @@ it('renders only the active RM page preview, not every page image (Sprint 60.1)'
 it('loads only the selected page when ?rm_page= is provided (Sprint 60.1)', function () {
     s60SaveLegacyPageOne($this->record);
 
+    // Rule 240 §4.4 (review MEDIUM-A): page 2 is the live encounter's own, so the
+    // editor targets it. An unstamped page is a pre-rule page no finalize covers,
+    // rendered read-only with the editor on the next new page.
     MedicalRecordHandwritingPage::factory()->create([
         'medical_record_id' => $this->record->id,
         'clinic_visit_id' => $this->visit->id,
+        'authored_clinic_visit_id' => $this->visit->id,
         'branch_id' => $this->branch->id,
         'page_number' => 2,
         'handwriting_path' => 'handwritings/legacy/page1.png',

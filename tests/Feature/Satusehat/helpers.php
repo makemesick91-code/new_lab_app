@@ -64,6 +64,12 @@ if (! function_exists('ssOpenEncounter')) {
      *
      * Pair with ssCloseEncounter() when the test's later assertions depend on the
      * visit being finished again.
+     *
+     * Rule 240 §1 (memo M3.3) — a FINAL sheet is locked: its structured diagnoses
+     * and the emergency override are refused, even inside a live encounter. While
+     * the patient is in the chair the sheet is still a draft, so the fixture
+     * returns `ssMakeVisit()`'s final sheet to draft as well (synthetic fixture
+     * only; production corrects a final sheet through a supervised amendment).
      */
     function ssOpenEncounter(array $ctx, ?User $actor = null): void
     {
@@ -72,6 +78,11 @@ if (! function_exists('ssOpenEncounter')) {
         $visit->forceFill([
             'status' => ClinicVisit::STATUS_IN_PROGRESS,
             'completed_at' => null,
+        ])->save();
+
+        $ctx['mr']->forceFill([
+            'status' => MedicalRecord::STATUS_DRAFT,
+            'finalized_at' => null,
         ])->save();
 
         rmeSignedConsentFor($visit->refresh());
@@ -88,6 +99,12 @@ if (! function_exists('ssCloseEncounter')) {
         $ctx['visit']->forceFill([
             'status' => ClinicVisit::STATUS_COMPLETED,
             'completed_at' => now(),
+        ])->save();
+
+        // The mirror of ssOpenEncounter(): the finished visit's sheet is final again.
+        $ctx['mr']->forceFill([
+            'status' => MedicalRecord::STATUS_FINAL,
+            'finalized_at' => now(),
         ])->save();
 
         $ctx['visit']->refresh();

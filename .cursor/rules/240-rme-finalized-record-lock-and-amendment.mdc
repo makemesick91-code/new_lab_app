@@ -1,0 +1,794 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. A correction is a supervised amendment (§6): the doctor of record or the finalizer requests it with a reason and the proposed change against the latest version, the requester may cancel it, a Supervisor RME who is neither the requester, the doctor of record nor the finalizer rejects it (approve-and-apply is M3.3 PR5); one pending per record; decided in the service under the locks, binding Super Admin. Approving IS applying (§7): one transaction under visit → subject → amendment locks, the checker re-decided, the base still the latest version, the proposal re-validated, the record changed while it stays final and locked, the next version chained, "Diamandemen n×" on prints and pages, a version history read like the record. A sheet amendment may carry ONE handwriting correction page (§8, M3.3 PR6): decoded with the canvas decoder and bounds plus a clean PNG structure, stored privately under a fresh server key with its SHA-256 as one unit with the row, verified on apply and on display, and appended on approval as the book's next page, sealed at once and stamped with the amendment — never in place of a page. Release constraint — the lock and the amendment path (PR1–PR6) ship in the same release.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php, resources/views/rme/amendments/**, tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php, tests/Feature/RME/OdontogramAmendmentTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php, tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php, tests/Feature/RME/OdontogramAmendmentApplyTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php, app/Modules/ClinicVisit/Services/ClinicVisitPrintDataBuilder.php, app/Modules/Odontogram/Services/OdontogramPrintFormatter.php, app/Modules/MedicalRecord/Services/HandwritingPayloadGuard.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingImageController.php, resources/views/rme/visits/partials/print-body.blade.php, tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php, tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php
+alwaysApply: false
+---
+
+# Finalized RME record lock and supervised amendment (rule 240)
+
+Source: the internal memo of 2026-10-17 (M3.3) and the owner's written decision of 2026-11-17, recorded in
+`docs/sprints/dms-rme-comprehensive-closure-1.md` §2c; the plan, impact analysis and compatibility plan (with the six
+defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`
+§M3.3. Delivered in six PRs; each PR adds its section (§8 is M3.3 PR6, the handwriting amendment page).
+
+## 0. Owner decision and release constraint (CG-22)
+
+1. **Decision (2026-11-17, binding).** A finalized medical record is no longer editable. A correction goes through a
+   supervised amendment: a reason, an approval, a version history and an audit trail. This reverses Sprint 59
+   ("a finalized RME and odontogram can still be edited").
+2. **Release constraint.** The lock (§1, M3.3 PR1) and the amendment path through approve-and-apply (M3.3 PR5) ship
+   in the SAME production release. No release is cut from a base that contains M3.3 PR1 without M3.3 PR5: a lock with
+   no correction path is never deployed. Every M3.3 PR body states this constraint. The M3.3 PRs are one stacked
+   series: they merge into the base back-to-back, and only after PR1–PR5 are ALL reviewed and green, so the base
+   never carries the lock without the amendment path. Until then no PR of the series merges.
+3. **Decision (2026-11-17, "BUILD AMENDMENT PAGE FIRST", binding).** The handwriting amendment page (§8, M3.3 PR6)
+   joins the series: PR1–PR6 ship together, and no release carries the typed-only amendment path without it. The
+   finalized page seal and the immutable original stay — an original page image or row is never changed,
+   overwritten or deleted.
+
+## 1. A final sheet and a finalized chart are locked (M3.3 PR1)
+
+1. **What locks.**
+   - A sheet whose `trx_medical_records.status` is `final`: its SOAP fields and notes
+     (`MedicalRecordService::updateDraft()`), its structured diagnoses (`MedicalRecordDiagnosisService::record()`,
+     `makePrimary()`, `remove()`) and the emergency diagnosis override (`DiagnosisRolloutService::grantOverride()`,
+     which exists to unlock a finalization the sheet no longer has).
+   - An odontogram whose `trx_odontograms.status` is `finalized`: the whole chart
+     (`OdontogramService::updatePlaceholder()`, and `saveForVisit()`, which revises an existing chart through it).
+   - Not covered by this section: the handwriting book's pages (sealed by §4; `MedicalRecordHandwritingController`
+     keeps asking `MedicalRecordPolicy::update`, because appending a page stays allowed), prescriptions
+     (signed-content lock, rule 237 §9), performed treatments (rule 219) and payment.
+2. **Finalizing stays as it was.** A draft sheet or chart is finalized exactly as before, and finalizing never moves
+   the visit (AIR-RMC-05). Finalizing a final sheet or chart again returns it as stored and never rewrites
+   `finalized_at` or `finalized_by`; this is decided on the locked row, so a stale copy cannot rewrite it either.
+3. **Three layers on a locked row.**
+   - Route: `permission:manage_clinic_visits` + `visit.room`, unchanged.
+   - Policy, scope first: `MedicalRecordPolicy::editSheet()` is the `update()` answer (manage permission, active RME
+     branch, doctor-patient scope) and then, for a final sheet, `Response::deny(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED)`.
+     `MedicalRecordController::update`, `MedicalRecordDiagnosisController` (store, destroy, makePrimary) and
+     `DiagnosisRolloutController::override` ask it. `MedicalRecordPolicy::update()` itself is unchanged (the
+     handwriting book and "Tambah Lembar RM" still ask it). `OdontogramPolicy::update()` answers role, branch, room and
+     doctor-patient scope first and then denies a finalized chart with `OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED`.
+     An account outside the scope gets the scope refusal and learns nothing about the record's state; out-of-scope
+     answers are otherwise unchanged (403 from the policy, 404 where a controller already answers 404, e.g. a sheet
+     named on another visit).
+   - Service, binding Super Admin (`Gate::before` skips the policy, CG-06): every write in §1.1 locks the
+     encounter's visit row first, then the sheet or chart row, and re-decides "final ⇒ refuse" on THAT row before
+     anything is written. The refusal is a `ValidationException` keyed `medical_record` or `odontogram` carrying the
+     message constant; nothing is written and no audit row is added. `MedicalRecordService::assertSheetUnlocked()` is
+     the one sheet refusal the three sheet services share.
+4. **Lock order (extends rule 223 §1 item 6).** Visit (FOR NO KEY UPDATE) → sheet → odontogram; never a clinical
+   row before the visit. The sheet service takes the visit through `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`
+   inside its transaction, then the sheet row through `MedicalRecordRepositoryInterface::lockForHandwriting()` (FOR NO
+   KEY UPDATE — the same row lock a handwriting save takes, so an edit, a finalize and a page save of one record
+   serialise). The diagnosis and override writes lock the same sheet row FOR UPDATE: `record()` and `makePrimary()`
+   already did; `remove()` and `grantOverride()` gain that lock with this section. The chart service takes
+   the visit through `ClinicVisitRepositoryInterface::lockForStatusDecision()`, re-checks that it is still
+   `in_progress` (a finish committed after the authority read is refused with the authority's reason), then the
+   chart row through `findByClinicVisitForUpdate()`.
+5. **Existing rows.** A sheet or chart already final at deploy is locked by its status alone. No backfill, no data
+   change, no migration. Drafts in progress are unaffected.
+6. **The page mirrors the server (rule 135).** A final sheet renders no structured-diagnosis form (record, remove,
+   make primary, override) and states the lock; a finalized chart renders no save form and no editor and states the
+   lock; both finalize confirmations say the record locks. Because Super Admin passes the policy, the Blade adds
+   `! $isFinal` / `! $isFinalized` beside the policy answer, exactly mirroring the service. The page wording equals
+   the two message constants (pinned by the tests in §3).
+7. **History and the lock, one reason each.** At the policy, a FINALIZED chart — of the live encounter or of a
+   previous visit — is denied with the lock reason (HTTP 403). A DRAFT chart of a previous visit passes the policy
+   and is refused by `OdontogramService` with the history reason (rule 109 §4, key `consent`; inside the service the
+   authoring authority is asked before the lock, so a direct service call on a finalized history chart answers
+   history too). The page shows the history banner for any previous-visit chart, finalized or not, and the lock
+   banner only for a finalized chart of the live encounter; `OdontogramController::show()` decides which, the Blade
+   only renders it. A finalized chart is corrected only by the supervised amendment of this rule — a supervised
+   correction, not a "reopening" in the sense of rule 109 §4. A final sheet and a finalized chart stay readable
+   (AIR-RMC-09) and printable under the existing print rules.
+8. **Refusal order with the PTM gate (rule 241 §2).** The authoring authority decides the encounter, the actor and —
+   for a chart — its identity first (history stays history, §1.7), and the EXECUTED consent last. A final sheet or a
+   finalized chart answers with its lock BEFORE that consent, whatever the PTM state: signing the PTM never unlocks
+   it, so a missing signature is never the reason given. When the authority's only refusal is the PTM — typed by gate:
+   `RmeVisitConsentService::isPtmRefusal($refusal, PTM_GATE_RME | PTM_GATE_ODONTOGRAM)` reads the one list
+   (`PTM_REFUSALS`) that `assertExecutedConsent()` raises from, so no caller restates a message (review LOW-3) —
+   `MedicalRecordService::assertSheetAuthoringAllowed()` (notes, diagnoses, override; also their
+   pre-checks, unlocked) and `OdontogramService::assertChartAuthoringAllowed()` (revision, visit save) lock the
+   encounter's visit row, then the sheet or chart row, and refuse a final record with the lock; a draft keeps the
+   consent refusal. Neither gate is weakened; each decides on the row it locked. Matrix, service and HTTP: final +
+   executed → lock; final + unsigned → lock; draft + unsigned → consent; draft + executed → written. The policies
+   (no consent condition) already answer the lock first, and the odontogram page shows the lock banner, not the PTM
+   banner, on a finalized live chart. Finalizing again (§1.2) stays behind the whole authority.
+
+## 2. Rules superseded or amended by §1
+
+- **Rule 109** (GO `fix-rme-exam-consent-odontogram-history-3-go`): SUPERSEDED in §1 ("Since Sprint 59 a finalized
+  record is explicitly editable again"), in the last bullet of §2b ("during an authorized consented encounter a
+  finalized record is still editable") and in §4 CORRECTIVE-03 ("the FINALIZATION lock is gone, so a finalized chart
+  on the LIVE encounter is still revisable"; `OdontogramPolicy::update` now also denies a finalized chart, after
+  scope). The rest of rule 109, including positive authoring authority and read-only history, stands.
+- **Rule 134** (GO `revision-rme-consent-odontogram-preconsent-edit-1-go`): §5 "Since Sprint 59 a finalized chart is
+  still revisable" is SUPERSEDED; §4 "OdontogramPolicy is unchanged" is amended as above. The §2 matrix gains a row:
+  finalized chart, any state → DENY (correction by amendment only). Pre-consent charting itself ended with rule 241 §2.
+- **Rule 135** (GO `bugfix-rme-preconsent-first-page-ui-gate-1-go`): extended — a final sheet and a finalized chart
+  render as locked, with no submittable form (§1.6).
+- **Rule 223** §1 item 6 (lock order, the visit first): extended with the lock order in §1.4.
+- **Rule 241** §2 (PTM double signature): unchanged; on a final record its consent refusal answers after the lock (§1.8).
+  Its §3.2–§3.3 odontogram-page PTM state and countersign notices are AMENDED (marked there as §3.5): a finalized
+  chart shows none of them, and the live encounter's shows the lock banner (§1.7–§1.8).
+- **Unchanged:** rule 219 (performed treatments), rule 237 §9 (signed prescriptions), rule 237 §15 (handwriting page
+  revision).
+
+## 3. Tests and CI selection (§1, §4, §5, §6, §7)
+
+- `tests/Feature/RME/MedicalRecordFinalizationLockTest.php` (selected by the existing `MedicalRecordFinalization`
+  token) and `tests/Feature/RME/OdontogramFinalizedLockTest.php` (existing `Odontogram` token), in BOTH critical-gate
+  variants and declared in `config/ci_runner.php` `critical_gate_mandatory_suites` (CG-19). They pin: drafts still
+  editable and finalizable; the service and HTTP refusals with nothing written and nothing blanked; diagnoses and the
+  override refused; the decision on the locked row (a stale draft copy is refused and never re-finalizes); Super Admin
+  refused by the service; scope-first policy answers; the page renders no submittable form; one banner per chart
+  (history for any previous-visit chart, the lock only for a finalized live chart, never the "can be written"
+  reminder on a locked chart); branch isolation and the history refusal unchanged; the visit row locked before the
+  sheet or chart row (PostgreSQL); the §1.8 refusal order in both directions (`MedicalRecordFinalizationLockTest`,
+  `RmeOdontogramAuthorityMatrixTest`).
+- The Sprint 59 pins were flipped to the lock, never deleted: `MedicalRecordFinalizationTest` (Part C),
+  `MedicalRecordTest`, `OdontogramTest`, `OdontogramAdditionalFieldsTest`, `OdontogramSelectedResultsTableTest`,
+  `RmeOdontogramAuthorityMatrixTest`. Fixtures that wrote diagnoses or an override onto a final sheet now write
+  them while the sheet is a draft, as the clinic does: `ssOpenEncounter()` (SATUSEHAT helpers) returns the sheet to
+  draft and `ssCloseEncounter()` finalizes it again; `RmeVisitConsentSupervisedVoidTest` CV-16 runs on a draft sheet.
+- §4: `tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php` (existing `MedicalRecordFinalization` token, BOTH
+  variants, declared in `critical_gate_mandatory_suites`). It pins: the seal on finalize with its stamps; the sealed
+  page refused over HTTP and in the service, for a clinician and Super Admin, with no object written; the page
+  revision compared first (a stale save still answers stale); a later encounter appending to the one book (R7-1,
+  stored on the book's visit, authored by the live encounter) and writable until a sheet is finalized; the live
+  encounter's pages sealed too when an older sheet is finalized (flipped from the dropped spare); the review HIGH-1
+  scenario through the real routes (a returning patient's book created on the canonical visit, finalized → every
+  page sealed, overwrite refused in that and a later encounter); a later encounter refused on an unsealed page an
+  earlier encounter wrote, and that page rendered read-only; another patient's pages untouched; a sealed page of a
+  non-canonical sheet refused through the edit-in-place path; the canonical-draft path adopting a book with a sealed
+  page; the derived rule for unstamped pages (one second before: not sealed but refused as another encounter's page —
+  flipped from "writable" by the review MEDIUM-A; same second and after: sealed; a final sheet without
+  `finalized_at`: sealed; no final sheet: not sealed yet refused; a soft-deleted covering final sheet: locked; an
+  empty slot: never locked); a later encounter refused on an unstamped pre-rule page no finalize covers, for a
+  clinician and Super Admin, with appending kept (MEDIUM-A); a resolver that names no encounter refused with a
+  `LogicException` before any object or row is written (LOW-B);
+  the page rendered read-only with the add-page control kept; the explicit foreign-key names (PostgreSQL); visit →
+  sheet → page seal order (PostgreSQL). `MedicalRecordHandwritingTest` "final show page … keeps the canvas editable (Sprint 59)" was
+  flipped to the sealed rendering, never deleted. Fixtures that overwrite or edit a page as the live encounter's own
+  now stamp it with that encounter (`RmeClinicalWriteAuthorityPageRevisionTest` HR-06, `Sprint60MultiPageHandwritingTest`
+  "loads only the selected page"), and `RmeClinicalEvidenceWriteLockConcurrencyTest` names the encounter in its
+  resolver (§4.4).
+
+- §5: `tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php` (existing `MedicalRecordFinalization`
+  token) and `tests/Feature/RME/OdontogramVersionHistoryTest.php` (existing `Odontogram` token), BOTH variants,
+  declared in `critical_gate_mandatory_suites`. They pin: version 1 on finalize for a sheet (fields, diagnoses in
+  order, the sealed pages with object key and the SHA-256 of the stored bytes) and for a chart (the payload);
+  nothing new on re-finalize, also from a stale copy; no version when the finalize is refused; the hash chain
+  verified and a forged link detected, a correctly linked version whose content does not match its hash detected,
+  and a numbering gap (v1, v3) detected; the snapshot stored as its canonical text and the hash recomputed
+  independently from §5.6; a chart payload with a zero-fraction float, a negative zero and floats in a list (written
+  by raw SQL, then finalized) verifying; the emergency diagnosis override recorded without patient identity;
+  immutability through the model and, on PostgreSQL, a raw UPDATE, DELETE and TRUNCATE refused by the triggers; the
+  baseline written once, only inside a transaction, only for a final subject; the baseline recording exactly the
+  pages `pageSlotLock()` locks for the amending encounter, an unstamped page no finalize covers included; reads
+  authorized like the record; no snapshot content in any log message or `sys_audit_logs` row; visit → subject lock
+  → version insert (PostgreSQL).
+- §7: `tests/Feature/RME/MedicalRecordFinalizationAmendmentApplyTest.php` (existing `MedicalRecordFinalization`
+  token), `tests/Feature/RME/OdontogramAmendmentApplyTest.php` (existing `Odontogram` token) and
+  `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentApplyAuthorizationTest.php` (existing
+  `RmeClinicalWriteAuthority` token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §7.9.
+- §8: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php` (existing `MedicalRecordFinalization` token)
+  and `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php` (existing
+  `RmeClinicalWriteAuthority` token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §8.9.
+- §6.11: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php` (existing `MedicalRecordFinalization`
+  token), BOTH variants, declared in `critical_gate_mandatory_suites`.
+- §6: `tests/Feature/RME/MedicalRecordFinalizationAmendmentTest.php` (existing `MedicalRecordFinalization` token),
+  `tests/Feature/RME/OdontogramAmendmentTest.php` (existing `Odontogram` token) and
+  `tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentAuthorizationTest.php` (existing `RmeClinicalWriteAuthority`
+  token), BOTH variants, declared in `critical_gate_mandatory_suites`. See §6.9.
+
+## 4. Handwriting pages sealed on finalize (M3.3 PR2)
+
+1. **The seal.** `MedicalRecordService::finalize()` — after the visit lock, the sheet lock and every finalization
+   check, inside the same transaction — calls `MedicalRecordHandwritingRepositoryInterface::sealBookPages()`: EVERY
+   page of the patient's handwriting book (page 1 in `trx_medical_record_handwritings`, pages 2+ in
+   `trx_medical_record_handwriting_pages`, on every sheet of the patient) that is not sealed yet gets `sealed_at`
+   (technical instant, UTC) and `sealed_by_medical_record_id` (the sheet finalized), the live encounter's own pages
+   included. An existing seal is never re-stamped; another patient's pages are never touched. The seal columns are
+   not mass-assignable; only the repository writes them, through the base query (the row's `updated_at` keeps
+   meaning "last drawn").
+   - *Why there is no exception.* The first version of this section spared the live encounter's pages when the sheet
+     finalized was not that encounter's own. The M3.3 PR2 review (HIGH-1) proved that this left a returning
+     patient's book completely unsealed: the book is created during the live encounter on the patient's CANONICAL
+     (earliest) visit (R7-1-FS), so finalizing it — the patient's only sheet — spared every page that encounter wrote,
+     and those pages of a FINAL sheet stayed overwritable then and in later encounters. The owner's rule is literal:
+     when a sheet is finalized, the pages are sealed. The live encounter keeps APPENDING new pages (§4.4).
+2. **The refusal.** `MedicalRecordHandwritingService::save()` — under the visit lock and the record lock, AFTER the
+   page-revision compare (rule 237 §15, a stale save still answers stale) and BEFORE any object is written — refuses
+   an overwrite of an existing page the live encounter may not overwrite (§4.3, §4.4), key `handwriting_data`:
+   `MESSAGE_SEALED_PAGE` for a sealed (or pre-rule covered) page, `MESSAGE_EARLIER_ENCOUNTER_PAGE` for a page another
+   encounter wrote or an unstamped page no finalize covers (§4.4). Nothing is written: no object, no row. It binds every caller, Super Admin included
+   (`Gate::before` lets Super Admin past `MedicalRecordPolicy::update`, which cannot see a page anyway). Refusal
+   order with the PTM gate (rule 241 §2; contrast §1.8): a page save is consent-gated as a whole — the controller asks
+   the authority before validation and again inside the save, before the record lock the seal is decided on — so on
+   an encounter whose PTM is missing an overwrite of a sealed page answers with the consent refusal. That is
+   deliberate: the only write the book then allows, a NEW page, needs the PTM too. With the PTM executed the seal
+   answers (`MedicalRecordFinalizationPageSealTest`).
+3. **Sealed** (`pageSlotLock()` → `LOCK_SEALED`): a page row that is sealed; or a row with neither a seal nor an
+   authoring stamp (written before this rule) when a final sheet of the patient was finalized at or after the row's
+   `created_at` — a tie locks, a missing `created_at` or a final sheet without `finalized_at` locks, a soft-deleted
+   final sheet still counts. No backfill: such rows are judged by this derived rule until a finalize seals them; until
+   then §4.4 locks them against overwrite.
+4. **Only the live encounter overwrites its own pages; everyone appends** (plan default 4, "a page after the encounter
+   only as an amendment item", accepted 2026-11-17). An existing page may be overwritten only when it is not sealed
+   AND its `authored_clinic_visit_id` is the live encounter (the authorized encounter the controller resolved,
+   `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`). A page another encounter wrote — even one never
+   sealed because that encounter finalized nothing — is refused (`LOCK_EARLIER_ENCOUNTER`). A page with no author
+   stamp (written before this rule) is sealed under §4.3 when a finalize covers it, and otherwise is refused as
+   `LOCK_EARLIER_ENCOUNTER` too (review MEDIUM-A): the encounter that wrote it was never recorded, so it is never the
+   live encounter's own, and letting a later encounter overwrite it would restamp a closed encounter's page as that
+   encounter's. The accepted cost: an encounter that spans the deploy loses overwrite of its own pre-deploy page and
+   keeps appending. `save()` requires the encounter: a resolver that names none is a programming error, refused
+   with a `LogicException` before any object or row is written (review LOW-B), so no unstamped row is written after
+   this rule; `pageLockMessage()` with no live encounter locks every existing page. A slot with no row (a new page 1 of an empty book, or the next page number) is never
+   locked: a live, consented encounter keeps adding pages to the one book (OD-5-6, R7-1 — stored on the book's
+   visit). Each write stamps `authored_clinic_visit_id` with the live encounter, because `clinic_visit_id` names the
+   book's visit, not the encounter.
+5. **Lock order (extends §1.4).** Finalize: visit → sheet → page rows (the seal UPDATE). Save: visit → book record
+   (`lockForHandwriting`) → page read. Both are consent-gated writes of one patient, so they serialise on the
+   encounter's visit row.
+6. **The page mirrors the server (rule 135).** `MedicalRecordController::show()` asks
+   `MedicalRecordHandwritingService::pageLockMessage()` for the active native page with the live encounter; a page
+   the live encounter may not overwrite renders read-only (`data-sealed="1"`, no "Klik untuk menulis", the service's
+   reason). The controller also prepares the editor's target: on such a page the shared editor posts only to the
+   next new page of the book, and "+ Tambah Halaman RM" stays where the server allows it.
+7. **Migration.** `2026_11_17_200001_add_seal_columns_to_handwriting_page_tables` adds `authored_clinic_visit_id`,
+   `sealed_at` and `sealed_by_medical_record_id` (nullable, foreign keys restrict on delete, with explicit names
+   `trx_mrh_*` / `trx_mrhp_*` — the generated ones exceed PostgreSQL's 63 characters) to both page tables. Additive
+   only (CG-09); no existing row is touched.
+8. **Supersedes** the Sprint 59 comment "handwriting RM is revisable after finalization" in
+   `MedicalRecordHandwritingController` and the corresponding part of rule 109 §2b's last bullet (already marked by
+   §2).
+
+## 5. Version history (M3.3 PR3)
+
+1. **The table.** `trx_rme_record_versions` (migration `2026_11_17_300001_create_trx_rme_record_versions_table`,
+   additive): one row per version of a subject — `subject_type` (`medical_record` | `odontogram`) and `subject_id`,
+   `version` (UNIQUE per subject, ≥ 1), `kind` (`final` | `baseline` | `amendment`), `snapshot_schema_version`,
+   `snapshot` (`json`, never `jsonb` — §5.6), `previous_hash`, `hash`, `created_by`, `created_at` (technical instant,
+   UTC; no `updated_at`). PostgreSQL CHECK constraints pin the subject types, kinds and version ≥ 1.
+2. **Immutable.** `RmeRecordVersion` throws on update and delete; on PostgreSQL the row trigger
+   `trx_rme_record_versions_immutable` refuses a raw UPDATE or DELETE, and the statement trigger
+   `trx_rme_record_versions_no_truncate` (same function) refuses a TRUNCATE, which no row trigger sees (SQLite has
+   no trigger and no TRUNCATE; the model guard stands). The repository has no update or delete. `down()` refuses to
+   drop the table while a version exists.
+3. **Version 1.** `MedicalRecordService::finalize()` and `OdontogramService::finalize()` call
+   `RmeRecordVersionService::recordFinal()` inside their transaction, after the visit and subject locks (and, for a
+   sheet, after the page seal of §4), so the version commits with the finalize or not at all. The already-final
+   paths return before it, and `recordFinal()` itself returns an existing version 1, so a re-finalize writes nothing.
+   A version is written only inside a transaction and only for a final sheet or a finalized chart (LogicException
+   otherwise).
+4. **Baseline.** A record finalized before rule 240 has no version. `RmeRecordVersionService::ensureBaseline()`
+   writes its version 1 (`baseline`) from the record as it stands, once; M3.3 PR5 calls it inside the amendment
+   transaction, under the same locks, before the record changes, naming the amending (live) encounter so that
+   encounter's own unsealed pages — still writable under §4.4 — are not recorded as locked.
+5. **The snapshot.** A sheet: `fields` (subjective, objective, assessment, plan, notes), `diagnoses` (code system,
+   code, display, role, statuses, notes, diagnosed at; by id), `diagnosis_overrides` — the emergency overrides of
+   the structured-diagnosis requirement (`trx_diagnosis_requirement_overrides`: id, reason, `used_by` as an account
+   id, `expires_at`, `created_at`; by id), part of the locked sheet (§1.1) and possibly what let it finalize — and
+   `pages` — every LOCKED page of the patient's handwriting book by the rule of §4.3-§4.4 (sealed; written before
+   rule 240 with no authoring stamp, covered by a finalize or not; or written by an encounter other than the live
+   one — `MedicalRecordHandwritingRepositoryInterface::lockedBookPages()` lists a row exactly when `pageSlotLock()`
+   answers a lock for it; at a finalize every page has just been sealed, so it is the whole book), with its
+   record, page number, object key and SHA-256 (never bytes; an inline data-URI page reports no key), authoring
+   encounter and seal stamps. A chart: summary notes, additional conditions and `tooth_map_payload`. Both carry the
+   subject's ids, status, `finalized_at` and `finalized_by`. No patient identity field is copied; nothing is
+   logged and no audit row carries a snapshot.
+6. **The hash chain.** `hash` = SHA-256 of the canonical JSON (object keys sorted recursively, lists in order, the
+   flags of `RmeInvoiceSnapshot`) of subject type, subject id, version, kind, `previous_hash`,
+   `snapshot_schema_version` (since M3.3 PR5, before any release: a snapshot read under the wrong schema is detected)
+   and snapshot; version
+   1 has no previous hash, version n+1 carries version n's hash. The snapshot column holds the snapshot's canonical
+   JSON text verbatim — a `json` column, whose text PostgreSQL returns exactly as written (SQLite: text) — and the
+   model stores only that text (no `array` cast). The hash is computed over the envelope with that exact stored text
+   spliced in as the snapshot (`RmeRecordVersion::snapshotJson()`), never over a re-encoding of its decoded value, so
+   nothing between write and verify can change what is hashed. Why not `jsonb` and a decode/re-encode (review
+   MEDIUM-C): `jsonb` re-encodes the text and PHP's decode/encode does not round-trip every number — a chart payload
+   `5.0` was hashed as `5.0` and stored by the `array` cast as `5`, so `verifyChain()` failed for a legitimate row
+   (and `-0.0` reads back as `0` or `0.0`); normalising numbers on both sides would have to anticipate every such
+   difference, while hashing the stored bytes needs none. `verifyChain()` checks numbering 1..n, each link and each
+   stored hash against the stored text and stored schema version. Every version is written by one private writer
+   (`RmeRecordVersionService::write()`), so the stored text and the hash come from the same `canonicalJson()` result.
+7. **Reading and verifying.** `versionsFor()` and `version()` authorize the subject's `view` ability for the given
+   account (MedicalRecordPolicy / OdontogramPolicy) before reading; the version history pages are §7. The chain is
+   verified where it matters: `approve()` refuses (`MESSAGE_CHAIN_BROKEN`, nothing written) to chain a new version
+   onto a history that does not verify, and the version page shows a warning (`data-version-chain-broken`) when it
+   does not. The amendment detail page mirrors `approve()` (rule 135): for a pending amendment on a chain that does
+   not verify it withholds "Setujui dan Terapkan" (`actionsFor()` `can_approve` false, `chain_broken` true) and shows
+   the same warning above the unverified "before"; rejecting stays possible. The list page reads no snapshot and does
+   not verify.
+8. **The "Diamandemen n×" marker.** `amendmentCount()` counts the subject's `amendment` versions. No marker column
+   is added: a counter would have to be written beside every amendment and could drift from the immutable rows it
+   summarises; the count reads one indexed set (`subject_type`, `subject_id`, `kind`) per printed record.
+9. **Page objects are never deleted.** A handwriting save writes every page to a fresh object key and never removes
+   the object a committed row names; the only removal in that path is the uncommitted object of a failed save
+   (`MedicalRecordHandwritingService::discardUncommitted()`), whose key no row references. A version therefore
+   always points at objects that still exist. No other code path deletes handwriting objects (the public-disk
+   migration command removes a public copy only after a byte-identical private copy is verified) — except the same
+   rule-224 compensation for an amendment's correction page (§8.3: `RmeAmendmentService` removes the object of a
+   request whose body failed, a fresh key no row names); an applied correction page's object is the page's object.
+
+## 6. Supervised amendment — request, cancel, reject (M3.3 PR4)
+
+1. **The table.** `trx_rme_amendments` (migration `2026_11_17_400001_create_trx_rme_amendments_table`, additive): the
+   subject (`subject_type` = `RmeRecordVersion::SUBJECT_*`, `subject_id`), its `branch_id` and `clinic_visit_id`
+   (copied from the subject by the service, never from a request; the patient is read through the visit,
+   `clinicVisit.patient` — there is deliberately no `patient_id`: a patient merge reassigns
+   `trx_clinic_visits.patient_id` and visit ids stay valid, so the amendment follows the surviving patient, while a
+   patient column would be a reference `PatientOwnedRecordRegistry` does not know — blocking every merge — that the
+   row guard could never let a merge rewrite), `base_version_id` /
+   `base_version` (the version the request was made against), `status`, `reason` (10–1000 characters),
+   `proposed_content` (`json`, read back in the order written), `requested_by`, `cancelled_at`, `decided_by`,
+   `decided_at`, `decision_reason`, timestamps (technical instants, UTC; pages render WITA). Constraint names
+   `trx_rme_amd_*` (≤ 63 characters). A partial unique index `trx_rme_amd_one_pending_uq` (both engines) keeps one
+   `pending` amendment per subject. PostgreSQL CHECKs: subject types, statuses, `base_version >= 1`, the reason
+   bounds, maker ≠ checker `trx_rme_amd_maker_checker_chk` (`decided_by IS NULL OR decided_by <> requested_by`), and
+   the shape of each status (pending: no `decided_by`, `decided_at`, `cancelled_at` or `decision_reason`; cancelled:
+   `cancelled_at` and none of the decision columns; rejected/applied: `decided_by` and `decided_at`, no
+   `cancelled_at`; rejected: a bounded `decision_reason`). The PostgreSQL trigger `trx_rme_amendments_guard` (BEFORE
+   UPDATE OR DELETE per row, BEFORE TRUNCATE per statement) refuses any change of the request columns
+   (`RmeAmendment::REQUEST_COLUMNS`: subject, branch, visit, base version, reason, proposal compared as
+   text, requester, `created_at`), any change of a row that left `pending`, and every DELETE or TRUNCATE; the model
+   refuses the same on every engine, and `status` is not mass-assignable (a new row is always `pending`). Because
+   `base_version_id` references `trx_rme_record_versions`, a plain TRUNCATE of the version table now fails on the
+   foreign key, and `TRUNCATE … CASCADE` on the triggers. `down()` refuses while a row exists.
+2. **State machine.** `pending` → `cancelled` (the requester), `rejected` (a checker, with a written reason) or
+   `applied` (M3.3 PR5: approve and apply in one transaction). Every other transition is refused ("no longer
+   pending"). A cancel sets `cancelled_at` and never `decided_by`, so the CHECK holds.
+3. **Requester (plan default 2).** First the account must be able to `view` the record (MedicalRecordPolicy /
+   OdontogramPolicy) — otherwise "not found" (404) before anything else, the reason's length included, so a
+   stranger never learns whether the record is a draft or final. Then `RmeAmendmentService::requestRefusal()`, in order: the subject is a final sheet or
+   a finalized chart; the account holds `request_rme_amendments`; it IS the doctor of record (the sheet's
+   `doctor_id`, for a chart the chart visit's `doctor_id`, → `mst_doctors.user_id`) or the finalizer
+   (`finalized_by`). A chart's doctor of record is the visit's CURRENT `doctor_id`: a reassignment of the visit
+   moves it. Identity, not role: a Super Admin who is neither is refused, one who finalized the record may request.
+   A finalizer without the permission (e.g. a Supervisor RME) may not request. A doctor row with no linked account
+   leaves only the finalizer (a departed doctor's record waits).
+4. **Request.** `RmeAmendmentService::request()` bounds the reason (trimmed), asks the requester rule, then inside
+   one transaction: locks the subject's visit (FOR NO KEY UPDATE), then the subject row (sheet: FOR NO KEY UPDATE via
+   `lockForHandwriting`; chart: FOR UPDATE via `findByClinicVisitForUpdate`), re-decides the requester rule on the
+   locked row, refuses a second pending amendment, validates the proposal against the locked record, takes the
+   latest version as the base (or `ensureBaseline()` for a record finalized before this rule, naming the patient's
+   live encounter from `ActiveEncounterResolver`), and inserts the row inside a savepoint: a unique violation of
+   `trx_rme_amd_one_pending_uq` (a raced check) is rolled back to the savepoint and refused cleanly with the
+   "already pending" message. Nothing in the record changes; the §1 lock keeps refusing direct edits.
+   - *Sheet proposal:* `fields` — only the SOAP fields and notes (`SHEET_FIELDS`), line endings normalised, empty =
+     null; only the fields that differ (surrounding whitespace ignored, as `TrimStrings` posts them) are stored,
+     and only a changed field is bounded (≤ 10 000 characters). Every value is type-checked before it is cast: an
+     array role (`MESSAGE_DIAGNOSIS_ROLE`), array notes or a non-digit id (`MESSAGE_DIAGNOSIS_ROW`) answer 422.
+     `diagnoses` — `remove` (integer ids of THIS sheet's diagnoses) and `add` (≤ 10 rows with only
+     `clinical_diagnosis_id`, `diagnosis_role`, `notes`: an ACTIVE master, a valid role, notes ≤ 500, not already on
+     the sheet unless removed in the same proposal; an untouched form row naming no diagnosis is ignored); at most
+     one primary after the change. The state after a diagnosis change must pass the finalization gate
+     (`DiagnosisRolloutService::assertFinalizationAllowed()`): on a `pilot_enforced` branch an active primary or a
+     usable override must remain (`MESSAGE_PRIMARY_REQUIRED`); M3.3 PR5 must re-check it when applying.
+   - *Chart proposal:* the whole proposed chart (`summary_notes`, `additional_conditions`, `tooth_map_payload`;
+     an absent key keeps the current value). The chart AFTER the change — absent keys filled from the current
+     chart — is what is validated (M3.3 PR5 review), so a request is never accepted that no approval could apply;
+     a null tooth map is refused only when it would erase one. Validated with the rules of a chart save — the rules of
+     `UpdateOdontogramPlaceholderRequest` are the source of truth (fields, statuses, conditions, lengths), plus FDI
+     numbers, no duplicate condition, only `teeth` in the tooth map and only the per-tooth keys that request
+     validates (every tooth an object). Sizes are therefore bounded like a chart save (52 FDI teeth, fixed
+     per-field lengths); a tooth's `conditions` is a list of distinct known values (at most the number the save
+     rule allows, no null, never a map — as the editor writes it, `MESSAGE_CONDITIONS`). An explicit null, an
+     unreadable tooth map, or one without a `teeth` object (`{}`, `{"teeth": null}`) is refused
+     (`MESSAGE_TOOTH_MAP`): it cannot be told apart from a broken editor, and clearing a whole chart is not an
+     amendment intent (an empty chart is `{"teeth": {}}`); the HTTP form requires the editor's tooth map and keeps
+     an unreadable string as it came, so the `array` rule refuses it. The controller passes the posted proposal
+     (`RmeAmendmentActionRequest::proposal()` = the input, never `validated()`, whose excludeUnvalidatedArrayKeys
+     would drop the notes beside the validated tooth map) and the service validates all of it; after a refusal the
+     form restores the posted teeth.
+   - Unknown keys are refused at every level, and so is a proposal that changes nothing (for a chart: nothing that
+     the before/after view would show as changed). Performed treatments and prescriptions are not amendable (plan
+     default 5); a handwriting correction page rides with a sheet amendment (§8, M3.3 PR6).
+5. **Cancel.** `cancel()` locks visit → subject → amendment (FOR UPDATE) and refuses unless the amendment is pending
+   and the actor IS its requester (binds Super Admin).
+6. **Reject (plan defaults 1 and 6).** `reject()` bounds the decision reason, then inside the transaction: the
+   account holds `approve_rme_amendments` (Supervisor RME; Super Admin through Gate::before); visit → subject →
+   amendment are locked; the amendment's branch is inside the account's scope (`RmeWorkingBranchScope::allows()`)
+   and the account may `view` the subject — otherwise "not found" (404); the amendment is pending; the account is
+   not the requester (`MESSAGE_SELF_DECISION`), not the doctor of record (`MESSAGE_DOCTOR_OF_RECORD`) and not the
+   finalizer of the record (`MESSAGE_FINALIZER`, creator ≠ approver, CG-07), all decided on the locked rows,
+   binding Super Admin. The same refusals hide the decision controls (`actionsFor()`), and M3.3 PR5's approval
+   inherits them. A stale base version is not checked on reject (nothing is
+   written to the record); M3.3 PR5 must refuse an approval whose base is no longer the latest version.
+7. **Three layers and the pages.** Routes (`rme.amendments.*`): `permission:request_rme_amendments|approve_rme_amendments`
+   and `cache.headers:private;no_store;max_age=0` on the group; the queue and reject need `approve_rme_amendments`,
+   the request form, store and cancel need `request_rme_amendments`. `RmeAmendmentPolicy` (registered in
+   RepositoryServiceProvider): `viewAny` (approve permission), `view` (the requester, or an approver whose branch
+   scope covers it, and who may view the subject — else `denyAsNotFound`), `request`, `cancel`, `reject` (each asks
+   visibility first and answers `denyAsNotFound`, then gives the service's own refusal).
+   `RmeAmendmentActionRequest::authorize()` runs before validation and answers 404 to an account that may not
+   `view` the record (store) or the amendment (decisions), so an out-of-scope account never gets a validation
+   answer. The controller is thin and calls `assertMayRequest()` before the form and the store, so a Super Admin
+   who is neither gets 403 there too. The supervisor queue lists the approver's list scope
+   (`RmeWorkingBranchScope::resolve()`), pending first; the patient's name, medical record number and the link
+   show only on a row the approver may open (`viewableIds()` — an approver may be narrowed by the doctor-patient
+   scope). The detail page shows the base version beside the proposal (a chart tooth by tooth, with every field each
+   side stores and the changed rows marked — `chartDiff()`) and only the actions `actionsFor()` allows (approve-and-apply
+   since M3.3 PR5, §7.7). The final sheet and chart
+   pages render an "Amandemen" block (`RmeAmendmentService::panelFor()`: pending status, recent amendments, links
+   only for an account that may open them) and "Ajukan Amandemen" only when the service would accept this account
+   now (rule 135 mirror). The sidebar link is gated by `approve_rme_amendments`.
+8. **Audit.** `sys_audit_logs`, entity `trx_rme_amendments`: `RME_AMENDMENT_REQUESTED` (subject, branch, base
+   version and id, status, `reason_length`), `RME_AMENDMENT_CANCELLED` (subject, branch, status),
+   `RME_AMENDMENT_REJECTED` (subject, branch, status, `requested_by`, `decision_reason_length`). Ids and lengths
+   only — never the reason, the decision reason or the proposed content (CG-11). Database notifications to the
+   approvers move to M3.3 PR5 (the `app/` file budget of this PR).
+9. **Tests (§3).** Request by the doctor of record and by the finalizer; another doctor, a Super Admin who is neither
+   and a finalizer without the permission refused; draft refused; reason bounds; the proposal rules; base = latest
+   version, a baseline only when none exists; one pending (service, and the partial unique index raced through a
+   repository double — refused inside a savepoint, the connection still usable); cancel and reject matrices
+   (requester, doctor of record also holding Supervisor RME, Super Admin on their own request refused, otherwise
+   allowed); the lock still refusing direct edits; audit ids-only; the PostgreSQL CHECK refusing
+   `decided_by = requested_by` on a raw insert, the constraint names, visit → sheet → amendment order; the HTTP role
+   matrix (Front Office, Kasir, Admin Klinik, Perawat, a treating doctor who is neither, Supervisor RME: 403; a
+   doctor who never treated the patient: 404 on a draft and on a final record alike); a context-bound approver
+   seeing only its branch (queue, detail and reject 404 outside it, also with an invalid decision reason); a
+   requester seeing only their own amendment; `private, no-store`; the sheet and chart pages offering the request
+   only to the doctor of record. Review fixes: a Supervisor RME or Super Admin finalizer refused as checker (service
+   and HTTP, no decision control); an unreadable, empty or null tooth map refused (an absent one keeps the chart);
+   unknown keys refused in the tooth map, a tooth and a diagnosis row; the chart detail rendering every tooth field
+   with the changed row marked; the last primary not removable on a `pilot_enforced` branch; only a changed field
+   bounded; `status` not mass-assignable; the model and, on PostgreSQL, the trigger refusing edits of the request,
+   any change of a decided row and DELETE; the tightened status CHECKs; queue identity hidden from an approver
+   outside the patient scope. Re-review: a chart notes-only change and a notes-and-teeth change round-trip through
+   the form, and every part of a sheet proposal; `{"teeth": null}`, `{}`, a conditions map, a null condition or
+   too many conditions refused; the posted teeth restored after a refusal; a chart finalizer refused as checker
+   (service and HTTP); TRUNCATE of `trx_rme_amendments` refused on PostgreSQL; "not found" before the reason;
+   refusals asserted by their message constants (`MESSAGE_UNKNOWN_PART`, `MESSAGE_DIAGNOSIS_NOT_ON_SHEET` — also
+   for an id with trailing junk —, `MESSAGE_MASTER_INACTIVE`, `MESSAGE_SECOND_PRIMARY`, `MESSAGE_TOOTH_MAP_PART`,
+   `MESSAGE_TOOTH_NUMBER`, `MESSAGE_TOOTH_FIELD`, `MESSAGE_CONDITIONS`, and the §1 lock constants on a live
+   encounter).
+10. **Deploy.** The two permissions are new: run `PermissionSeeder`, then `RoleSeeder`, then
+    `permission:cache-reset` (CG-15). Doctor gains `request_rme_amendments`; Supervisor RME gains
+    `approve_rme_amendments`; Super Admin through '*'.
+11. **Outside the PTM gate (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it", CG-22).** A
+    supervised amendment corrects a record that already exists, so it stays OUTSIDE the PTM gate (rule 241 §2.3):
+    `request()`, `cancel()`, `reject()`, `approve()` and `actionsFor()` never consult the consent. What stays: the
+    append-only versions and the immutable original (§5), the doctor as requester (§6.3), a separate Supervisor RME
+    as approver (§6.6, §7), the written reason and the audit trail (§6.8). The original PTM state is RECORDED for
+    information: `RME_AMENDMENT_REQUESTED` and `RME_AMENDMENT_APPLIED` carry `visit_ptm_state`, the amended visit's
+    PTM at that moment as its persisted consent evidence records it — `executed`, `patient_only` (the patient's
+    signature, no doctor countersignature), `none`, or `voided` (no live consent, a voided one in its history); a
+    code, no personal data (`RmeAmendmentService::ptmCodeOf()`, from `RmeVisitConsentService::ptmStateFor()` and
+    `historyFor()`). The detail page shows, read-only, the visit's CURRENT recorded PTM and, when the state recorded
+    at request differs (e.g. a supervised void in between), that one beside it; an amendment requested before the
+    audit carried it shows the current state only. `RmeAmendmentService::detailFor()` decides both (`original_ptm`:
+    `state`, `at_request`); the Blade only renders them (`data-amendment-original-ptm`,
+    `data-amendment-original-ptm-at-request`). No decision reads either value. No consent row is created, changed or
+    back-dated for an amendment, and a historical consent is never made up. A NEW medical act is not an amendment:
+    it takes the examination workflow and the PTM. Tests: `tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php`
+    — a sheet and a chart amendment requested, shown and applied in each of the four states, both audits carrying
+    the state and every consent row of the visit unchanged; a supervised void between request and decision shown as
+    both values, the apply audit recording `voided` and the request audit `executed`; a re-signed visit names its
+    live consent, not the voided one.
+
+## 7. Approve and apply (M3.3 PR5)
+
+1. **One transaction.** `RmeAmendmentService::approve()` approves AND applies, so the checker approves exactly what
+   is applied. It locks the subject's visit (FOR NO KEY UPDATE), the subject row and the amendment (FOR UPDATE),
+   then decides on those rows, binding Super Admin: the account holds `approve_rme_amendments`; the amendment's
+   branch is in its scope and it may `view` the record (otherwise "not found", 404); `decisionRefusal()` — the
+   amendment pending, not the requester, not the doctor of record, not the finalizer (§6.6); the subject still
+   final; the subject's LATEST version is still the amendment's `base_version_id` (otherwise `MESSAGE_STALE_BASE`:
+   the requester files a new request). An optional note (≤ 1000 characters) is the `decision_reason`.
+2. **Re-validation.** The stored proposal is validated again against the locked record under today's rules — the
+   sheet field allowlist and bounds, diagnosis ownership, ACTIVE masters, at most one primary, the
+   `pilot_enforced` finalization gate on the state after the change (§6.4); a chart through the chart-save rules
+   — and must come out identical to what was requested (`MESSAGE_PROPOSAL_CHANGED` otherwise). A refusal names its
+   reason under the `amendment` key.
+3. **Apply.** Only this path writes a final record; the §1 lock stays and keeps refusing every normal edit
+   (`updateDraft`, the diagnosis writes, the chart save) after an apply. A sheet: the changed fields through
+   `MedicalRecordRepositoryInterface::update()`; the diagnosis change through
+   `RmeAmendmentRepositoryInterface::applySheetDiagnoses()` (removed rows soft-deleted, this sheet's only; added
+   rows diagnosed by the requester, created by the approver). A chart: the whole proposed chart through
+   `OdontogramRepositoryInterface::updatePlaceholder()`. Status, `finalized_at` and `finalized_by` never change.
+   `applySheetDiagnoses()` itself refuses (LogicException) outside a transaction or on a sheet that is not final.
+   **SATUSEHAT:** every apply refreshes the visit's existing SATUSEHAT candidate after commit, so drift revokes an
+   approval (`source_changed`, `revoked_at`, review back to pending) — the conservative direction; it decides no
+   re-submission policy (gateway disabled; that policy is an open owner decision). A saved sheet row is refreshed
+   by `SatusehatMedicalRecordObserver` (after commit, so it reads the diagnoses written by the same apply);
+   `RmeAmendmentService` refreshes, as `MedicalRecordDiagnosisService::refreshCandidate()` does, after a
+   diagnosis-only apply, after a chart apply (the chart feeds the dental readiness) and whenever that observer is
+   off (`satusehat.candidate.auto_generate`) — never twice, because a second refresh would overwrite the
+   `source_changed` readiness of the first. Not run: the per-diagnosis SATUSEHAT audit events of
+   `MedicalRecordDiagnosisService`.
+4. **The next version.** `RmeRecordVersionService::recordAmendment()` writes version n+1 (`amendment`) of the
+   changed record, `previous_hash` = the base version's hash, through the one writer (§5.6); it refuses unless the
+   given version is still the latest. The snapshot's pages name the patient's live encounter, as the baseline
+   does (§5.4).
+5. **The amendment row.** One UPDATE moves it `pending` → `applied` with `decided_by`, `decided_at`,
+   `decision_reason` and the link to the version it wrote — `applied_version_id` (unique, foreign key on
+   PostgreSQL) and `applied_version` — set in that same statement (the §6.1 guard refuses any later change of an
+   applied row; `base_version_id` never changes). Migration `2026_11_17_500001_add_applied_version_to_trx_rme_amendments_table`
+   (additive): the two columns, `trx_rme_amd_applied_version_uq`, and on PostgreSQL `trx_rme_amd_applied_version_fk`,
+   `trx_rme_amd_applied_chk` (`applied` ⇔ both set) and `trx_rme_amd_applied_version_chk` (≥ 2). The foreign key is
+   PostgreSQL-only because adding one on SQLite rebuilds the table and would turn the partial unique index of
+   §6.1 into a full one.
+6. **Audit and notifications.** `RME_AMENDMENT_APPLIED` (subject, branch, status, `requested_by`, base version,
+   applied version and id, `decision_reason_length`) — ids and lengths only. Database notifications
+   (`RmeAmendmentNotification`, the `RmeBillingDisputeNotification` pattern: in-app only, payload `title`,
+   `message`, `url`, `rme_amendment_id`): to every usable account that could decide a new request (approve
+   permission, scope, none of the §6.6 refusals — evaluated in a rolled-back transaction, as the dispute
+   escalation does), and to the requester on a reject and on an apply. Sent after commit; a failed one is logged
+   with ids only and changes nothing.
+7. **Markers and pages.** "Diamandemen n×" (`amendmentCount()`, the applied amendments counted from the versions)
+   on the RME print and PDF (`ClinicVisitPrintDataBuilder`, shared with the oversight print), on the odontogram
+   print (`OdontogramPrintFormatter::format()['amendment_count']`, shared with the oversight odontogram print; the
+   counts of all the patient's finalized charts are read in one grouped query per formatter, so the odontogram
+   history list does not count per chart),
+   and in the "Amandemen" block of the final sheet and chart pages, with a link to the version history. Version
+   history: `rme.amendments.versions.sheet|chart` (list: number, kind, author, time — no snapshot, authors
+   eager-loaded) and `...show` (one version beside the previous one), behind
+   `permission:view_clinic_visits|manage_clinic_visits` and `private, no-store`; the record's own `view` policy
+   decides (404 outside its scope). Route keys: `{medicalRecord}` and `{odontogram}` are governed and constrained
+   globally (AIR-RMC-37 — the per-route `whereNumber` of M3.3 PR4 is removed, it widened the global pattern);
+   `{amendment}` takes `DatabaseRouteKey::PATTERN` per route and `{version}` `DatabaseRouteKey::PAGE_NUMBER_PATTERN`
+   (a 1-based int4 number), so an out-of-range segment answers 404, never 500. A sheet version shows its fields (changed ones marked), diagnoses,
+   emergency overrides and its locked pages — each only as the existing policy-gated, no-store page route
+   (`rme.handwritings.image` for page 1, `rme.handwriting-pages.image` for pages 2+), never an object key; a chart
+   version shows the §6 tooth-by-tooth diff against the previous version. The detail page offers "Setujui dan
+   Terapkan" only when `actionsFor()` says the service would accept it (`can_approve`: a checker, and the base
+   still the latest version; a stale amendment says why).
+8. **Concurrency.** Two approvals, an approval after a cancel, an approval after a reject: each decides on the
+   locked amendment row, so a stale copy is refused ("no longer pending") and nothing is written twice; the
+   version number is also UNIQUE per subject. Proven in-process with stale model copies and the PostgreSQL lock
+   order (visit → sheet → amendment → the record write); a separate probe connection cannot see the test's own
+   uncommitted rows, so a two-connection race needs the multi-process harness and is not part of this suite.
+9. **Tests (§3).** Review fixes: SATUSEHAT — a diagnosis-only apply and a chart apply revoke an approved candidate,
+   a notes apply still does (through the observer, once), and so does a field apply with the observer off; a
+   malformed diagnosis row (array role, array notes, `'<id>abc'`, a nested removal id) refused with its constant,
+   never a 500; surrounding whitespace is not a change; `MESSAGE_PROPOSAL_CHANGED` and `MESSAGE_NOT_FINAL` at
+   apply; an added diagnosis diagnosed by the requester and created by the approver; `applySheetDiagnoses()`
+   refused outside a transaction and on a draft; a chart request whose merged after-state fails today's rules
+   refused at request time; the history list counting amendments once per patient; the version list loading its
+   authors in one query; out-of-range keys and version numbers answering 404; each lock-order statement found.
+   Apply writes exactly the proposal (fields, a field cleared, diagnoses removed and added), keeps
+   the record final with its finalizer, chains version 2 to the baseline with `verifyChain()` true and counts one
+   amendment; the lock still refuses a normal edit after apply; a stale base refused with nothing written; the
+   approve matrix (requester, finalizer, no permission, Super Admin on their own request refused; Super Admin
+   otherwise applies); re-validation at apply (the `pilot_enforced` gate turned on after the request; a master
+   deprecated after the request); stale copies after approve, cancel and reject; audit ids-only; notifications
+   (approvers on request, the requester on reject and apply, ids only, none on a refused request); the hash
+   covering `snapshot_schema_version`; the lock order (PostgreSQL); the chart applied and verifiable, the chart page
+   and odontogram print markers, the chart version diff; HTTP: the approve matrix (Front Office, Kasir, Admin
+   Klinik, Perawat, the requester, the finalizer: 403; Super Admin on their own request refused; a decision note
+   bounded and optional), an out-of-scope approver 404 before validation, the version history (doctor of record
+   and Supervisor RME read it; a stranger 404; no object key; page links through the page route), the RME print
+   and sheet page markers.
+10. **CLOSED by §8 (M3.3 PR6): the handwriting "amendment page" item** (plan default 4: a page after the encounter
+    only as an amendment item). PR5 deferred it for its `app/` budget; §8 delivers it — the canvas decoder and
+    bounds of rule 237 §5, a pending object on `ClinicalEvidenceStorage` written with its amendment row as one unit
+    (rule 224), a pending-page image route for the checker, columns for the pending object, and the handwriting
+    repository appending a sealed page stamped with the amendment at apply. A page reaches the book only by a live,
+    consented encounter (§4.4, AIR-RMC-07) or by an approved amendment (§8), never otherwise.
+
+## 8. Handwriting amendment page (M3.3 PR6)
+
+1. **Owner decision (2026-11-17, "BUILD AMENDMENT PAGE FIRST", §0.3).** A doctor who may request an amendment of a
+   final sheet (§6.3: doctor of record or finalizer, holding `request_rme_amendments`) may attach ONE new
+   handwriting correction page to it, with the amendment's written reason. A Supervisor RME approves (§7, maker ≠
+   checker through `decisionRefusal()`). On approval the page is appended to the patient's book as a NEW sealed
+   page. An original page — its row and its object — is never changed, overwritten or deleted. Charts carry no
+   correction page (`MESSAGE_CORRECTION_PAGE_SHEET_ONLY`).
+2. **Schema.** Migration `2026_11_17_600001_add_correction_page_to_rme_amendments_and_handwriting_pages` (additive):
+   `trx_rme_amendments.correction_page_path` (the object key; `$hidden` on the model, never rendered),
+   `correction_page_sha256`, `corrects_page_number` (optional); `trx_medical_record_handwriting_pages.rme_amendment_id`
+   (nullable, `trx_mrhp_rme_amendment_fk` restrict on delete, unique `trx_mrhp_rme_amendment_uq` — one page per
+   amendment). PostgreSQL CHECKs: `trx_rme_amd_correction_page_chk` (key and SHA-256 together, 64 lowercase hex,
+   a corrected page only with a page and ≥ 1), `trx_rme_amd_correction_subject_chk` (a sheet only),
+   `trx_mrhp_rme_amendment_sealed_chk` (an amendment page is sealed). The three amendment columns are REQUEST
+   columns (`RmeAmendment::REQUEST_COLUMNS`): the model refuses a change on every engine, and the migration
+   replaces `trx_rme_amendments_guard()` with the §6.1 body plus exactly these three comparisons (down() restores
+   it) — a pending row may still be cancelled, rejected or applied, nothing else of the request changes. The
+   unreleased PR4 migration is not edited. Only pages 2+ get the link: the amendment page is always the book's NEXT
+   page (`nextPageNumber()` ≥ 2), never page 1. Because the pages table now references `trx_rme_amendments`, a plain
+   TRUNCATE of it fails on the foreign key and `TRUNCATE … CASCADE` on the §6.1 trigger (the PR4 TRUNCATE test
+   was flipped to pin both, as §5.2's version-table test was in PR4).
+3. **Request** (`RmeAmendmentService::request(…, $correctionPage, $correctsPageNumber)`). After "not found", the
+   reason bounds and the requester rule, and BEFORE anything is written, the canvas is decoded by
+   `HandwritingPayloadGuard::decodeCanvas()` — the one canvas decoder, moved unchanged from
+   `MedicalRecordHandwritingController` (payload length, `data:` prefix, strict base64, PNG magic, a 13-byte IHDR —
+   on every canvas path since the review INFO, a shorter one used to answer 500 from the blank check — rule 237 §5
+   declared-size and inflate bounds, the Sprint 59.1 blank guard) — then held to `assertCleanPng()` (review L1): the
+   signature, the 13-byte IHDR first, every chunk complete with a valid CRC and on an ALLOWLIST — `IHDR`, `PLTE`,
+   `IDAT`, `IEND` and only the colour-space, density and transparency chunks a canvas export can carry (`sRGB`,
+   `gAMA`, `cHRM`, `pHYs`, `iCCP`, `tRNS`); any other chunk, whatever its case bits (`tEXt`, `tEXT`, `htMl`, …), is
+   refused. Every chunk but IDAT appears at most once and holds exactly what its type defines (re-review LOW-1):
+   `IEND` 0 bytes, `sRGB` 1, `gAMA` 4, `cHRM` 32, `pHYs` 9; `PLTE` a multiple of 3 up to 768 and only in a palette
+   image; `tRNS` 2 bytes for grey, 6 for RGB, 1–256 for a palette, never beside an alpha channel; `iCCP` ≤ 64 KiB, a
+   1–79-byte printable profile name, compression method 0 and ONE zlib stream ending at the chunk's end (≤ 1 MiB
+   inflated). The IHDR declares a valid colour type and bit depth, compression and filter method 0 and NO interlacing
+   (a canvas export never is). The IDAT chunks are consecutive and followed only by IEND, nothing after IEND; and
+   their concatenated data is ONE zlib stream that ends exactly at its last byte (nothing after the stream end) and
+   inflates to exactly height × (1 + row bytes), every scanline opening with a filter type 0–4 (re-review LOW-2: a page
+   with no image data, data that is not a zlib stream or does not decode to the declared image is refused, never
+   sealed — the blank guard alone counts undecodable data as content). So nothing rides along OUTSIDE the image. What
+   remains is image content — the pixels and a palette, where any byte value is a colour — so the page is also served
+   only as `image/png` with `nosniff`, never as markup. These checks run on the amendment path only (request and
+   approval), never on the ordinary handwriting save. Refusals are keyed `handwriting_data` (`MESSAGE_INVALID`,
+   `MESSAGE_TOO_LARGE`, `MESSAGE_BLANK`). A named page without a drawing is refused
+   (`MESSAGE_CORRECTS_PAGE_WITHOUT_PAGE`). Inside the transaction, after visit → sheet locks, the requester
+   re-decision and the one-pending check: the proposal may be empty when a page rides with it (a page-only
+   amendment, stored as `[]`; `allowEmpty` also at apply); `corrects_page_number` must name a page of the patient's
+   BOOK holding a stored drawing (`MESSAGE_CORRECTS_PAGE`; page 1 is the legacy row, 2+ the pages table) that the
+   AMENDED ENCOUNTER wrote (review M2, `MESSAGE_CORRECTS_PAGE_ENCOUNTER`): a stamped page's `authored_clinic_visit_id`
+   is the amended sheet's visit; a page from before rule 240 (no stamp) counts only when the amended sheet sealed it
+   (`sealed_by_medical_record_id`). The request form lists exactly those pages, by book number ("Halaman buku RM N").
+   Then, as one unit (rule 224): the object is written to
+   `ClinicalEvidenceStorage` under a fresh server key `handwritings/{branch}/{visit}/amendment_{YmdHis}_{16 hex}.png`
+   (the client never supplies one), then the row (in the savepoint of §6.4) with the key and the SHA-256 of the
+   bytes. A failure in the body — the raced one-pending index included — removes this call's object and only it; a
+   failure after the body (COMMIT, after-commit callbacks) keeps it, because the row may be committed. A second
+   pending request is refused before its object is written.
+4. **Approve and apply.** Inside §7's single transaction, after the visit → sheet → amendment locks, the checker
+   rules, the stale-base check, the chain verification (§5.7, `MESSAGE_CHAIN_BROKEN` — so a broken history is never
+   extended by a page or a version) and the proposal re-validation: the object is read back by
+   `HandwritingPayloadGuard::storedPng()` (present, a PNG, SHA-256 equal) — a missing or tampered object answers
+   `MESSAGE_CORRECTION_PAGE_INTEGRITY`, a storage read fault `MESSAGE_CORRECTION_PAGE_UNREADABLE` ("coba lagi", no
+   new request — review L2), and nothing is written — and re-run through today's canvas rules
+   (`MESSAGE_PROPOSAL_CHANGED`); then the patient's book (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`,
+   R7-1 — the record new pages are written on; the amended sheet when the patient has no book in the RME branches) is
+   locked with `lockForHandwriting()` — the record lock a page save takes — so the lock order is **visit → sheet →
+   amendment → book → page insert → version insert**; the named page must still be in the book and still the amended
+   encounter's own (`MESSAGE_PROPOSAL_CHANGED` otherwise). After the sheet's
+   text and diagnoses are applied, `MedicalRecordHandwritingRepositoryInterface::appendSealedAmendmentPage()` (only
+   inside a transaction) inserts the page as the book's next page on the book's visit, with the pending key and
+   SHA-256, `authored_clinic_visit_id` = the amended sheet's visit (the encounter), `sealed_at` = now,
+   `sealed_by_medical_record_id` = the amended sheet, `rme_amendment_id`, `created_by` = the requester (who drew it),
+   `updated_by` = the approver. Sealed at once: `pageSlotLock()` answers `LOCK_SEALED`, so no encounter — the live one
+   included — overwrites it (§4.2), and a later finalize never re-stamps it. The UNIQUE(record, page) index is the
+   backstop for the number. The approval data (approver, time) is the amendment's `decided_by` / `decided_at`.
+   `recordAmendment()` then writes the next version, whose snapshot lists the page through `lockedBookPages()` (object
+   key, SHA-256 and — on an amendment page only — `rme_amendment_id`; every other page is described exactly as
+   before, so earlier snapshots and hashes are unchanged); `verifyChain()` stays true. A page-only apply changes
+   nothing SATUSEHAT reads, so it refreshes no candidate.
+5. **Display and print.** The label (`RmeAmendment::correctionPageLabel()`, null until applied, review M3) links back
+   to what it corrects: `Halaman koreksi — amandemen #id untuk kunjungan <nomor> (<tanggal> WITA)[, mengoreksi halaman
+   buku RM N]; disetujui <d/m/Y H:i> WITA oleh <nama>`. It shows in the RM workspace (the active page,
+   `data-amendment-page`, beside its book number "Halaman buku RM N" — the workspace's own index may differ), the RME
+   print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` to an amendment page only; its label is
+   §9.5's, per viewer) and the version history (`versionDetailFor()`). The amended sheet's page (the "Amandemen" block, `panelFor()`
+   `correction_pages`) and its print carry, beside "Diamandemen n×", one pointer per applied correction page:
+   `Halaman koreksi: buku RM halaman N (amandemen #id)` (`MedicalRecord::correctionPagePointers()`). Page numbers on
+   the form and the detail page are the book's ("halaman buku RM N"). Images go only through policy-gated,
+   `private, no-store` routes, never an object key: the workspace and version pages link
+   `rme.handwriting-pages.image`, which serves an amendment page only when `storedPng()` verifies it (404 for a
+   missing or tampered object, 503 for a storage read fault, an ids-only warning either way); the print embeds only
+   verified bytes, else "Gambar halaman ini tidak tersedia.". The approver sees the pending page before approval on
+   the detail page through `rme.amendments.correction-page` (route permission
+   `request_rme_amendments|approve_rme_amendments`, `RmeAmendmentPolicy::view` — the requester or an approver in
+   scope, 404 otherwise — and `RmeAmendmentService::correctionPageImage()`, verified, `nosniff`; 404 missing or
+   tampered, 503 unreadable); the approval is not offered unless the object verifies (rule 135 mirror). The detail
+   banner tells a read fault (`data-correction-page-unreadable`, retry) apart from tampering
+   (`data-correction-page-tampered`), and says "tidak dapat diterapkan" only while the amendment is pending (review
+   L3).
+6. **Rejected or cancelled.** The pending object is kept (committed evidence is never deleted, §5.9) and stays on
+   the amendment's own page, marked "tidak diterapkan"; it never becomes a book page (no row links it).
+7. **Audit (ids and digests only, CG-11).** `RME_AMENDMENT_REQUESTED` adds `correction_page_sha256` and
+   `corrects_page_number`; `RME_AMENDMENT_APPLIED` adds `correction_page_id`, `correction_page_number`,
+   `correction_page_medical_record_id` and `correction_page_sha256`. Never the key, the bytes or the image.
+8. **Three layers.** Store: the §6.7 route permission, `RmeAmendmentActionRequest::authorize()` (404 before any
+   validation for an account that may not see the record), `handwriting_data` bounded at the edge (string, ≤
+   `MAX_HANDWRITING_PAYLOAD_LENGTH`) and `corrects_page_number` an int4 ≥ 1, the policy's `request`, and the
+   service deciding everything again on the locked rows (binding Super Admin). Approve: §7 unchanged.
+9. **Tests (§3).** Request: the private object under a fresh server key with key and SHA-256 on the row, no key in
+   the row's array or the audit; non-PNG, SVG, GIF, non-base64, HTML after IEND, a script in a text chunk, a broken
+   CRC, oversized dimensions and payload, a blank canvas — all refused with nothing written; the corrected page
+   validated against the book (and refused without a page); a chart refused; the requester matrix (Super Admin who
+   is neither, a finalizer without the permission, a doctor who may not see the record — no object written; the
+   doctor of record and a permitted finalizer accepted). Apply: the page appended as the next page, sealed, stamped
+   and linked, the original rows and bytes unchanged, an overwrite through `MedicalRecordHandwritingService::save()`
+   refused as sealed, version 2 listing it with key and SHA-256 (the baseline not), `verifyChain()` true, the
+   audit; a page-only amendment; a later sheet appending to the patient's book stamped with its own encounter; a
+   tampered or missing object refused with nothing written; a broken version chain refused before any page or
+   version is written (`MESSAGE_CHAIN_BROKEN`); the checker matrix (requester, finalizer, Super Admin on
+   their own request) appending nothing; the corrected page bound to the amended encounter in the form, at request
+   and at approval, the unstamped-page rule included (review M2); a storage read fault told apart from tampering at
+   apply, on the image route (503) and on the detail page (review L2). Concurrency: two approvals append one page; an approval after a cancel or a
+   reject appends none and keeps the object; a second request refused before writing; the raced one-pending index
+   refused in the savepoint with this call's object removed; rule 224 compensation keeping the earlier evidence.
+   Canvas (review L1, INFO): `tEXT` and `htMl` chunks, an oversized `iCCP` and IDAT split around another chunk
+   refused; a short IHDR refused as a validation answer by `decodeCanvas()` (every canvas path), never a 500; a canvas
+   carrying `sRGB`, `gAMA`, `pHYs`, a small `iCCP` and split consecutive IDATs accepted. Canvas (re-review LOW-1,
+   LOW-2): a payload in `IEND`, `pHYs`, `sRGB`, `gAMA`, `cHRM` or `tRNS`, a `tRNS` beside an alpha channel, a palette
+   beside an alpha channel, an oversized palette, a raw `iCCP` payload or one after its zlib stream, bytes after the
+   IDAT zlib stream, a chunk twice and a chunk after the image data refused; no image data, data that is not a zlib
+   stream, a stream cut before its end, a row short or too many, an unknown filter type, interlacing, an impossible
+   bit depth and a palette image without `PLTE` refused; what libpng (through GD) writes — 900 × 1273 RGBA and RGB,
+   a palette with `tRNS`, `pHYs` beside each — and the RGBA stream in Chromium's IDAT layout (4096-byte chunks and
+   a last 6-byte one) accepted. The book page route answers 503 on a storage read fault (review L2). Display: the label (encounter,
+   corrected page, approval) and the pointer, verified print bytes, a tampered page printed as unavailable. Constraints: the model guard
+   on the three columns, one page per amendment; on PostgreSQL the trigger refusing raw changes, the CHECKs and the
+   constraint names, and the lock order visit → sheet → amendment → book → page → version. HTTP: front desk 403, a
+   treating doctor who is neither and Super Admin 403, a stranger 404 before the canvas is validated, form errors
+   for a bad canvas or page number with nothing written; the pending image private, no-store, `nosniff`, to the
+   requester and an in-scope approver only (out-of-scope approver: show, image, approve and reject 404; stranger 404;
+   front office 403), a tampered one 404 with no approval offered; after approval the label in the workspace, the
+   print (with the embedded bytes) and the version page, no object key anywhere, the page route serving verified
+   bytes and refusing a tampered object, the print saying so, an applied amendment's tampered banner without "tidak
+   dapat diterapkan" (L3), the pointer beside "Diamandemen 1×" on the sheet's page and print, book numbering on the
+   form, the detail and the workspace; a rejected correction never a book page, its object kept and shown on the
+   request as not applied.
+10. **Known limits (follow-ups, not in this PR's `app/` budget).** (a) The existing page route
+    `rme.handwriting-pages.image` keeps its pinned out-of-scope answer, 403 (`RmeClinicalDocumentReadScopeTest`,
+    `ClinicalEvidencePrivacyTest`); the routes this PR adds answer 404. (b) CLOSED by §9 (M3.3 PR7): the clinic
+    oversight viewer and the cashier's clinical summary now label an amendment page and the oversight image route
+    verifies it. (c) The RME print of a visit prints that visit's own sheet's
+    pages (unchanged): a correction appended to a book held by an EARLIER sheet (R7-1) prints with that sheet.
+    (d) A page written before rule 240 has no visit stamp (`authored_clinic_visit_id` null), so §8.3 reads its owner
+    from `sealed_by_medical_record_id`. `MedicalRecordHandwritingRepository::sealBookPages()` stamps EVERY unsealed
+    page of the patient's book at the first finalize after the migration, so a pre-rule page whose encounter was
+    finalized before the migration (and so was never sealed) carries the sealed-by value of that later, unrelated
+    sheet: that later visit can name it as the corrected page and the encounter that really wrote it cannot. The
+    original page is never changed (§8.1), so the effect is a wrong pointer (`mengoreksi halaman buku RM N`) only,
+    never a lost or altered page.
+
+## 9. The amendment page in the oversight and cashier displays (M3.3 PR7)
+
+1. **Oversight (security review M1).** `OversightClinicalRecordService::handwritingBook()` — the patient history and
+   the visit detail of the read-only oversight module (Finance Klinik, Data Analyst) — carries `rme_amendment_id` and
+   the §8.5 label on a page an approved amendment appended (the amendments read in one query,
+   `RmeAmendmentRepositoryInterface::appliedCorrectionPageAmendments()`, applied ones only — the label reader's
+   own filter, because a page row never links a pending, rejected or cancelled amendment in the first place: only
+   `approve()` appends one, in the transaction that applies it, §8.4); the patient and visit pages render "Halaman
+   buku RM N · <label>" (`data-amendment-page`), never an object key.
+   `OversightClinicalRecordController::handwritingPageImage()` serves such a page only through
+   `HandwritingPayloadGuard::storedPng()`: the verified bytes (`image/png`, `nosniff`, `private, no-store`, audited
+   `NATIVE_FILE_STREAMED` as before), 404 when missing or tampered, 503 when the storage read fails (review L2); out of
+   scope stays 404 and every other page streams exactly as before.
+2. **Cashier (review L4).** The cashier's clinical summary (`rme/cashier/partials/clinical-summary.blade.php`) shows
+   the label under the page, as §9.5 decides it for the cashier; the image link is the §8.5 verified route.
+3. **Tests (§3).** `tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php` (existing
+   `ClinicOversight` token, BOTH variants, declared in `critical_gate_mandatory_suites`): the label on the oversight
+   patient and visit pages for both oversight roles, no key; the oversight image route serving verified bytes and
+   auditing them, the original page unchanged, a tampered page 404, a read fault 503, nothing audited when nothing is
+   served; out of scope 404; the label in the cashier summary (a Kasir of the book's branch); a rejected and a pending
+   correction on no display (the patient, visit and print pages, the cashier summary), no page row linking either,
+   and `appliedCorrectionPageAmendments()` answering only the applied one when asked for all three; §9.4: another
+   branch's correction page in full while that branch is in the reader's set, and once it leaves RME the neutral
+   label on the patient, visit and print pages and in the PDF view (for an amendment of that branch and for a
+   drifted sheet row whose amended visit is there), the printed sheet's own pointer whole, the page image still
+   served; §9.5, per surface, with the other branch still in RME: the RME workspace (the page label, and the pointer
+   on the amended sheet's panel), the RME print (the label over HTTP; the pointer through the service, since whoever
+   may print a visit may open it), the cashier summary and the version page — the full label for a viewer who may
+   open the amended visit (Supervisor RME; a billing account without a working branch), the neutral one for a
+   Perawat or a Kasir whose working branch is the book's, never the full label, the approver or the amendment's
+   number.
+4. **Another branch's correction page (re-review).** R7-1 keeps one book per patient across branches, so a book an
+   oversight reader may see (its sheet in a branch of the reader's set) can hold a correction page appended by an
+   amendment of another branch's sheet, and that branch can leave the reader's set (for example it leaves RME).
+   The §8.5 label would then name that branch's visit number and date and its approver — proven by test before the
+   fix. `OversightClinicalRecordService` now decides the label per reader (`correctionPageLabel()`): the full label
+   only when the amendment's branch and its amended visit's branch are both in the reader's oversight set,
+   otherwise `NEUTRAL_CORRECTION_PAGE_LABEL` ("Halaman koreksi") — no visit number, date or approver. This holds on
+   the patient page, the visit page (`visitDetail($visit, $reader)`) and the print and PDF (`printData($visit,
+   $reader)` hands the print body `rmPagesForReader`, which it prints in place of its own pages; every other print is
+   unchanged). The page image itself stays as the R7-1 book shows it. The operational RME surfaces follow §9.5.
+5. **The operational RME surfaces, per viewer (technical safety default).** Not an owner decision: it follows CG-05
+   ("where existence must not leak") and the CC1-ADJ-1 precedent, where a cross-branch visit number shown to Front
+   Office was treated as a leak. On the RME workspace (the active page's label and the amended sheet's pointers in
+   the "Amandemen" block), the RME print and PDF (the page labels and the pointers), the cashier's clinical summary
+   and the version page, a correction page's full §8.5 label — the amended visit's number and date, the approver,
+   "amandemen #id" — shows only when the viewer may open the amended visit through its own policy
+   (`ClinicVisitPolicy::view`, the ability the visit page uses: the working-branch read scope, the active-room rule
+   and, with the encounter-scope flag ON, the doctor scope); otherwise `RmeAmendmentService::
+   NEUTRAL_CORRECTION_PAGE_LABEL` ("Halaman koreksi"). A pointer's amended visit is its sheet's own, so one check
+   decides a sheet's pointers. The page image stays as the R7-1 book shows it. `RmeAmendmentService` decides it per
+   viewer, never Blade (CG-04): `correctionPageLabelsFor()` reads the applied amendments in one query
+   (`RmeAmendmentRepositoryInterface::appliedCorrectionPageAmendments()`, which `OversightClinicalRecordService` now
+   reads too) and checks the policy once per distinct amended visit; `correctionPagesFor()` labels page entries,
+   `correctionPointersFor()` the pointers (`panelFor()`), `sheetPagesFor()` both for a print (`ClinicVisitController`
+   passes `rmPagesForReader` and `correctionPointersForReader`; `RmeInvoiceController` passes `rmPagesForReader` to
+   the cashier summary), `versionDetailFor()` the version page (one query instead of a lookup per page).
+   `MedicalRecordController::show()` relabels the workspace book. `MedicalRecord::orderedHandwritingPages()` now
+   names the amendment (`amendment_id`) and never its details, so a view given no per-viewer pages shows no label
+   and the print body no pointer — fail closed.
+

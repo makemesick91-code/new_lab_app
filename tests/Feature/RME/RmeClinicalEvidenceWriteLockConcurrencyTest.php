@@ -211,7 +211,7 @@ function p6lSaveHandwriting(object $test, int $page): array
     $visit = ClinicVisit::query()->findOrFail($test->visitId);
 
     return app(MedicalRecordHandwritingService::class)->save(
-        fn (): array => [$record, $visit],
+        fn (): array => [$record, $visit, $visit],
         $page,
         p6lPng($page),
         $test->userId,

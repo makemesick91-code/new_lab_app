@@ -62,6 +62,9 @@ or not.
   must stay separate actions.
   - Since Sprint 59 a finalized record is explicitly editable again, so "final"
     was never a reliable proxy for "the examination is over" anyway.
+    **[SUPERSEDED by rule 240 §1 (owner decision 2026-11-17): a final sheet and a
+    finalized odontogram are locked; a correction is a supervised amendment. The
+    point of this bullet stands: finalizing still never ends the examination.]**
 - The ONLY path to `cashier_pending` is an authorized doctor explicitly
   performing **"Selesai Pemeriksaan"** — `rme.visits.transition` guarded by
   `ClinicVisitPolicy::completeExamination` / `complete_rme_examination`
@@ -196,6 +199,10 @@ Anything else **fails closed**, including "there is no encounter at all" and
   editable at any time. Sprint 59's actual subject — that a FINALIZED record is not
   frozen — is preserved: during an authorized consented encounter a finalized
   record is still editable. What is refused is writing with no encounter at all.
+  **[SUPERSEDED by rule 240 §1 and §4 (owner decision 2026-11-17): a final sheet is
+  locked (§1) and its handwriting pages are sealed on finalize (§4) even inside an
+  authorized consented encounter, which may still append new pages; this gate still
+  applies to every write a draft receives.]**
 
 ### 2c. What the gate covers, exactly — and what it does not
 
@@ -245,6 +252,15 @@ same-visit encounter.
   stands where it applies: the FINALIZATION lock is gone, so a finalized chart on
   the LIVE encounter is still revisable. What it may no longer do is reach back
   into an earlier encounter's chart.
+  **[SUPERSEDED in part by rule 240 §1 (owner decision 2026-11-17): a finalized
+  chart is locked on the live encounter too. `OdontogramPolicy::update` now denies
+  a FINALIZED chart — live or history — after the scope check, with the lock reason
+  (HTTP 403); a DRAFT chart of a previous visit is still refused by
+  `OdontogramService` with the history reason, as below, and the page shows the
+  history banner for any previous-visit chart. A finalized chart is corrected only
+  by the supervised amendment of rule 240 — a supervised correction, not a
+  "reopening" in the sense of this section; nothing that happens today reopens a
+  previous visit's chart for ordinary writing.]**
   - Enforced in `OdontogramService`, not by hiding a control, and not by a blanket
     "all odontograms are read-only" policy: `OdontogramPolicy::update` still
     answers only the role/branch/patient-scope question, so the refusal carries a

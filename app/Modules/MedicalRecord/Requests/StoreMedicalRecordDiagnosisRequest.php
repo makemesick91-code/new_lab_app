@@ -10,7 +10,7 @@ class StoreMedicalRecordDiagnosisRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // MedicalRecordPolicy::update is enforced in the controller
+        return true; // MedicalRecordPolicy::editSheet is enforced in the controller (rule 240 §1)
     }
 
     public function rules(): array

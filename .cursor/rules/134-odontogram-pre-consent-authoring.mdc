@@ -59,6 +59,7 @@ subsequently signed.
 | `completed` / `cancelled` | DENY | DENY | n/a |
 | historical native chart (any state) | DENY | DENY | n/a |
 | published Legacy Odontogram | DENY | n/a | n/a |
+| finalized chart (any state) — rule 240 §1 | **DENY** (amendment only) | n/a | n/a |
 
 The `RME = DENY` cells above are about the SERVER. What the page may OFFER in
 those same states — in particular the "Buat Halaman RM Pertama" control on a
@@ -105,7 +106,8 @@ so a refused encounter leaves no trace.
 
 - `OdontogramPolicy` is unchanged and still answers only the
   role/branch/patient-scope question; the refusal carries a clear reason rather
-  than a bare 403.
+  than a bare 403. **[Amended by rule 240 §1: `OdontogramPolicy::update` also
+  denies a finalized chart, after the scope check; this authority is unchanged.]**
 - `getOrCreateForVisit()` still has **zero production callers**, still asserts
   nothing, and must keep having none — pinned by
   `RepositoryArtifactHygieneTest`.
@@ -118,7 +120,9 @@ to change again, it changes in that one method.
 
 `OdontogramService::finalize()` is a **chart-level** lifecycle act. Since Sprint
 59 a finalized chart is still revisable, and finalizing one leaves the visit
-`in_progress`. It routes through the same single assertion as every other
+`in_progress`. **[SUPERSEDED in part by rule 240 §1 (owner decision 2026-11-17): a
+finalized chart is locked and corrected only by a supervised amendment. Finalizing
+still leaves the visit `in_progress`.]** It routes through the same single assertion as every other
 odontogram write, and is therefore also permitted pre-consent. Splitting it out
 would create a second, divergent consent rule for no clinical gain.
 

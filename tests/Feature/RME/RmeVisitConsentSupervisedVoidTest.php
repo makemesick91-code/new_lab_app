@@ -461,6 +461,9 @@ it('CV-16 re-decides the consent under the visit lock inside every consent-gated
     // Rule 241 §2 — writes need the EXECUTED consent (fixture countersignature).
     rmeDoctorCountersignatureFor(rcsvSign($visit));
     $record = MedicalRecord::query()->where('clinic_visit_id', $visit->id)->sole();
+    // Rule 240 §1 (memo M3.3) — a FINAL sheet's diagnoses and override are locked,
+    // so the writes whose lock order this pins run on a draft sheet.
+    $record->forceFill(['status' => MedicalRecord::STATUS_DRAFT, 'finalized_at' => null])->save();
     $author = rmeClinicalAuthor(['manage_clinic_visits']);
     // The override is only relevant on a pilot_enforced branch (never a default).
     DiagnosisRolloutSetting::query()->create([
