@@ -506,17 +506,29 @@ Owner decisions (written, 2026-11-17, after the PR-4 review; CG-22):
      changing one fails the suite until the other follows. The server still validates whatever is submitted (CF-07).
    - **How it is applied.** `createPlaceOfBirthSuggestion()` writes the value with `textContent` only, never HTML. A
      read never writes the field: only the operator's "Gunakan" does — over a typed value too, which the slot then
-     marks "(mengganti isian)"; a typed value equal to it (case and spacing aside) hides the offer. "Gunakan" sets
-     `ktp_ocr_applied`, so `ktp_ocr_verified` is required on submit like every applied OCR value (AIR-PAT-21). Every
-     parse of the photo being read (first read, BACA ULANG, new corners) refreshes the offer through the session's
-     `onParsed` callback; a new or cleared photo withdraws it (`resetResults()`); the field keeps its value.
+     marks "(mengganti isian)"; a typed value equal to it (case and spacing aside) hides the offer. A
+     `low_confidence` read is marked "(perlu dicek)" (the place's own status, passed to `offer()`; a static marker in
+     the slot, toggled). "Gunakan" sets `ktp_ocr_applied`, so `ktp_ocr_verified` is required on submit like every
+     applied OCR value (AIR-PAT-21). Every parse of the photo being read (first read, BACA ULANG, new corners)
+     refreshes the offer through the session's `onParsed` callback; a new or cleared photo withdraws it
+     (`resetResults()`); the field keeps its value.
+   - **Re-attestation (RM PR-5 review, LOW-1).** A tick covers the values that were in the form when it was given.
+     Every newly applied OCR value — "Gunakan" and "Terapkan ke Formulir" alike (`markOcrApplied()`) — clears the
+     `ktp_ocr_verified` box, so "Terapkan → tick → Gunakan" (or the reverse) asks again: the client guard blocks the
+     submit until the box is ticked again. A "Terapkan" that applies nothing leaves the box as it was. The server
+     cannot tell which values a tick saw; it still requires the tick whenever `ktp_ocr_applied` is 1.
+   - **The verification table.** The birth row's "Tempat lahir: …" line points at "Gunakan" only while the offer is
+     on screen (`placeOfBirthOffered()`, the binding's `shown()`), not for a read that is not offered (too long,
+     already in the field). It is re-drawn on the next read, not on typing.
    - **Privacy.** No new request, route or request field (the value comes from the parse response the page already
      receives); nothing is logged or stored (no console, Web Storage or IndexedDB in the KTP modules); the OCR text
      lives only in the slot's text until the photo is cleared.
    - **Limits (recorded).** The suggestion is only as good as the read: an uppercase place as printed, no
      normalisation or gazetteer check; a conflicting double read offers nothing and the operator types it; the OCR
      whitelist (`ktp-roi-ocr.js`) keeps the field box to `A–Z 0–9 ,.-/` and a space; the Pest suite cannot run the
-     browser, so the behaviour is pinned by the JS harness.
+     browser, so the behaviour is pinned by the JS harness, which drives the real `initKtpScan()` with a fake DOM
+     and a fake OCR session (`initKtpScan(root, { loadOcrSession })`, a test-only option the page never passes,
+     consulted only after the D7 consent gate).
    - **Tests.** `tests/js/ktp-place-of-birth-suggestion.test.mjs` (`npm run test:js`, the NSF-R012 quality gate) and
      `tests/Feature/RME/PatientKtpPlaceOfBirthSuggestionTest.php` (token `PatientKtp`, declared in
      `critical_gate_mandatory_suites`).

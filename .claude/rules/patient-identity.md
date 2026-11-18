@@ -112,8 +112,9 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 
 ### KTP camera OCR
 
-- **AIR-PAT-21** OCR output is a suggestion: nothing is written without the operator ticking it and
-  `ktp_ocr_verified` accepted; missing or invalid values are null; the NIK only cross-checks (never derive DOB or
+- **AIR-PAT-21** OCR output is a suggestion: nothing is written without the operator ticking it (or clicking
+  "Gunakan" for the place of birth, `244-…` §5.9) and `ktp_ocr_verified` accepted; each newly applied value
+  withdraws an earlier tick; missing or invalid values are null; the NIK only cross-checks (never derive DOB or
   gender from it) and is exactly 16 digits, never padded; disagreement between the whole-card and field-box reads is a
   `conflict` the operator resolves, never by confidence; a retry never overwrites an operator value. Only existing
   `mst_patients` columns are applied. Source: `177-ktp-camera-ocr-suggestions.mdc` §1–5, `179-ktp-field-based-roi-ocr.mdc` §7–9, §12.
@@ -272,5 +273,5 @@ file.
   the restricted index. A failed patient insert or update logs only the SQLSTATE (never the row), and invalid UTF-8 or
   NUL is a 422 on both registration forms and the edit form. The KTP OCR place of birth is only a suggestion beside
   that field ("Saran dari KTP … Gunakan"): offered when it passes the server rule, written as text, applied only by
-  the operator's click (then `ktp_ocr_verified` is required), never auto-filled, no new request; "Terapkan ke
+  the operator's click (then `ktp_ocr_verified` is required again), never auto-filled, no new request; "Terapkan ke
   Formulir" never applies it. Source: `244-…` §5.3, §5.5, §5.9.

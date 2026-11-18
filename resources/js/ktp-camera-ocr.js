@@ -248,25 +248,30 @@ const samePlace = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim().toUpperC
 
 /**
  * Binds the suggestion slot (settings/patients/_ktp-place-of-birth-suggestion)
- * to the place-of-birth field. `offer(value)` shows a value as TEXT; a read
- * never writes the field. Only the operator's "Gunakan" does — over a typed
- * value too, which the slot then says it replaces — and `onApply` asks for the
- * KTP attestation like every applied OCR value. Nothing is fetched, logged or
- * stored here.
+ * to the place-of-birth field. `offer(value, status)` shows a value as TEXT —
+ * marked "(perlu dicek)" for a `low_confidence` read; a read never writes the
+ * field. Only the operator's "Gunakan" does — over a typed value too, which the
+ * slot then says it replaces — and `onApply` asks for the KTP attestation like
+ * every applied OCR value. `shown()` tells whether the offer is on screen.
+ * Nothing is fetched, logged or stored here.
  */
 export function createPlaceOfBirthSuggestion(slot, input, onApply) {
     const valueEl = slot?.querySelector('[data-ktp-pob-suggestion-value]') ?? null;
+    const checkEl = slot?.querySelector('[data-ktp-pob-suggestion-check]') ?? null;
     const useBtn = slot?.querySelector('[data-ktp-pob-suggestion-use]') ?? null;
     const replacesEl = slot?.querySelector('[data-ktp-pob-suggestion-replaces]') ?? null;
     let offered = null;
+    let lowConfidence = false;
+    let visible = false;
 
     const render = () => {
         if (!slot) return;
         const current = String(input?.value ?? '').trim();
-        const show = offered !== null && input != null && !samePlace(current, offered);
+        visible = offered !== null && input != null && !samePlace(current, offered);
         if (valueEl) valueEl.textContent = offered ?? ''; // never innerHTML: OCR text is untrusted
-        replacesEl?.classList.toggle('hidden', !(show && current !== ''));
-        slot.classList.toggle('hidden', !show);
+        checkEl?.classList.toggle('hidden', !(visible && lowConfidence));
+        replacesEl?.classList.toggle('hidden', !(visible && current !== ''));
+        slot.classList.toggle('hidden', !visible);
     };
 
     input?.addEventListener('input', render);
@@ -280,14 +285,17 @@ export function createPlaceOfBirthSuggestion(slot, input, onApply) {
     });
 
     return {
-        offer(value) {
+        offer(value, status = null) {
             offered = placeOfBirthValue(value);
+            lowConfidence = offered !== null && status === 'low_confidence';
             render();
         },
         clear() {
             offered = null;
+            lowConfidence = false;
             render();
         },
+        shown: () => visible,
     };
 }
 
@@ -443,7 +451,15 @@ export function createKtpTokenBinding(input) {
     };
 }
 
-export function initKtpScan(root) {
+/**
+ * Wires one KTP capture section (`[data-ktp-scan]`).
+ *
+ * `options.loadOcrSession` exists for tests only: it stands in for the lazily
+ * loaded ktp-roi-ui.js so the page wiring can be driven without tesseract or
+ * image decoding. The page (bootKtpScan) never passes it, and it is consulted
+ * only where the real module is loaded — after the D7 consent gate.
+ */
+export function initKtpScan(root, options = {}) {
     const $ = (sel) => root.querySelector(sel);
     const ds = root.dataset;
     const csrf = ds.csrf;
@@ -490,10 +506,16 @@ export function initKtpScan(root) {
     // browsers validate display:none controls too, so a required box in the
     // hidden "Pasien Baru" panel silently refused an existing-patient visit
     // (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1).
+    // A tick covers the values that were in the form when it was given: every
+    // newly applied OCR value ("Terapkan ke Formulir" or "Gunakan") withdraws
+    // it, so the operator checks the card again (rule 244 §5.9, RM PR-5 review).
     const markOcrApplied = () => {
         const applied = $('[data-ktp-ocr-applied]');
         if (applied) applied.value = '1';
-        $('[data-ktp-ocr-verify-wrap]')?.classList.remove('hidden');
+        const wrap = $('[data-ktp-ocr-verify-wrap]');
+        wrap?.classList.remove('hidden');
+        const attest = wrap?.querySelector('input[type=checkbox]');
+        if (attest) attest.checked = false;
     };
 
     // Rule 244 §5.9 (RM PR-5) — the place of birth read from the KTP is offered
@@ -621,7 +643,7 @@ export function initKtpScan(root) {
         setStatus('Menyiapkan pembaca KTP… (diproses di perangkat ini)', 'info');
         const run = ocrRun;
         try {
-            const { createKtpOcrSession } = await import('./ktp-roi-ui.js');
+            const { createKtpOcrSession } = await (options.loadOcrSession?.() ?? import('./ktp-roi-ui.js'));
             // The photo was cleared or replaced while the reader loaded.
             if (run !== ocrRun) return;
             ocrSession = createKtpOcrSession({
@@ -635,8 +657,10 @@ export function initKtpScan(root) {
                 // Every read (first read, BACA ULANG, new corners) refreshes the
                 // place-of-birth offer — never the field itself.
                 onParsed: (parsed) => {
-                    if (run === ocrRun) placeOfBirth.offer(placeOfBirthSuggestion(parsed));
+                    if (run === ocrRun) placeOfBirth.offer(placeOfBirthSuggestion(parsed), parsed?.fields?.birth_place?.status);
                 },
+                // The verification table points at "Gunakan" only while the offer is shown.
+                placeOfBirthOffered: () => placeOfBirth.shown(),
             });
             await ocrSession.read(blob, { cornerHint });
         } catch {

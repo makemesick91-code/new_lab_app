@@ -95,6 +95,7 @@ it('offers the place-of-birth suggestion slot right beside the field on both new
     $value = $xpath->query('.//*[@data-ktp-pob-suggestion-value]', $slot);
     $use = $xpath->query('.//button[@data-ktp-pob-suggestion-use]', $slot);
     $replaces = $xpath->query('.//*[@data-ktp-pob-suggestion-replaces]', $slot);
+    $check = $xpath->query('.//*[@data-ktp-pob-suggestion-check]', $slot);
 
     expect(kpobClasses($slot))->toContain('hidden')
         ->and($value->length)->toBe(1)
@@ -104,6 +105,10 @@ it('offers the place-of-birth suggestion slot right beside the field on both new
         ->and(trim($use->item(0)->textContent))->toBe('Gunakan')
         ->and($replaces->length)->toBe(1)
         ->and(kpobClasses($replaces->item(0)))->toContain('hidden')
+        // RM PR-5 review LOW-2: the low-confidence marker, shown by the browser only for such a read.
+        ->and($check->length)->toBe(1)
+        ->and(kpobClasses($check->item(0)))->toContain('hidden')
+        ->and(trim($check->item(0)->textContent))->toBe('(perlu dicek)')
         ->and($slot->textContent)->toContain('Saran dari KTP:');
 })->with([
     'Master Data → Tambah Pasien' => ['settings.patients.create', 'place_of_birth'],

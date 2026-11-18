@@ -4,15 +4,27 @@
 // applied only by the operator's click, never auto-filled, and it adds no
 // request, log or storage. The server-rendered slot is pinned by
 // tests/Feature/RME/PatientKtpPlaceOfBirthSuggestionTest.php. Fictional values only.
+//
+// RM PR-5 review (LOW-1, LOW-2, INFO-1): any OCR value applied to the form
+// ("Terapkan ke Formulir" or "Gunakan") withdraws an earlier attestation tick,
+// so the operator re-attests; a low-confidence place is marked "(perlu dicek)";
+// the verification table points at "Gunakan" only while the offer is shown.
+// Those are driven through the REAL initKtpScan() with a minimal fake DOM and
+// a fake OCR session (no tesseract, no image decoding in Node).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import {
+
+// The page's same-origin OCR asset directory is a build-time constant (vite);
+// it must exist before the module loads, so the module is imported after it.
+globalThis.__DMS_OCR_ASSET_DIR__ = 'ocr/tesseract-test';
+const {
     PLACE_OF_BIRTH_MAX,
     PLACE_OF_BIRTH_PATTERN,
     placeOfBirthSuggestion,
     createPlaceOfBirthSuggestion,
-} from '../../resources/js/ktp-camera-ocr.js';
+    initKtpScan,
+} = await import('../../resources/js/ktp-camera-ocr.js');
 
 const read = (value, status = 'ok') => ({ ok: true, fields: { birth_place: { value, status, confidence: 91, reasons: [] } }, form: {} });
 
@@ -52,8 +64,9 @@ function fakeNode(extra = {}) {
                 for (const fn of listeners[event.type] ?? []) fn(event);
                 return true;
             },
-            fire(type) {
-                for (const fn of listeners[type] ?? []) fn({ type });
+            // Every listener runs synchronously; the promise settles once async ones finish.
+            fire(type, event = {}) {
+                return Promise.all((listeners[type] ?? []).map((fn) => fn({ type, ...event })));
             },
             // OCR text must never be parsed as HTML: any HTML sink throws.
             set innerHTML(_) {
@@ -74,10 +87,12 @@ function mountSuggestion({ typed = '' } = {}) {
     const value = fakeNode();
     const use = fakeNode();
     const replaces = fakeNode({ classList: new FakeClassList(['hidden']) });
+    const check = fakeNode({ classList: new FakeClassList(['hidden']) });
     const slot = fakeNode({
         classList: new FakeClassList(['hidden']),
         querySelector: (sel) => ({
             '[data-ktp-pob-suggestion-value]': value,
+            '[data-ktp-pob-suggestion-check]': check,
             '[data-ktp-pob-suggestion-use]': use,
             '[data-ktp-pob-suggestion-replaces]': replaces,
         })[sel] ?? null,
@@ -86,7 +101,7 @@ function mountSuggestion({ typed = '' } = {}) {
     let applied = 0;
     const suggestion = createPlaceOfBirthSuggestion(slot, input, () => applied++);
 
-    return { slot, value, use, replaces, input, suggestion, applied: () => applied };
+    return { slot, value, check, use, replaces, input, suggestion, applied: () => applied };
 }
 
 const shown = (slot) => !slot.classList.contains('hidden');
@@ -267,7 +282,7 @@ test('every parse result reaches the page, and only for the photo being read', (
     const page = code('ktp-camera-ocr.js');
 
     assert.match(session, /state\.parsed = parsed;[\s\S]{0,200}deps\.onParsed\?\.\(parsed\)/, 'the session hands each read (first read and BACA ULANG) to the page');
-    assert.match(page, /onParsed: \(parsed\) => \{[^}]*run === ocrRun[^}]*placeOfBirth\.offer\(placeOfBirthSuggestion\(parsed\)\)/);
+    assert.match(page, /onParsed: \(parsed\) => \{[^}]*run === ocrRun[^}]*placeOfBirth\.offer\(placeOfBirthSuggestion\(parsed\), parsed\?\.fields\?\.birth_place\?\.status\)/);
     assert.match(page, /const resetResults = \(\) => \{[\s\S]{0,400}placeOfBirth\.clear\(\)/, 'a new or cleared photo withdraws the offer');
     assert.match(page, /form\?\.querySelector\('\[data-ktp-pob-suggestion\]'\)/);
     assert.match(page, /field\('place_of_birth'\)/, 'the field is resolved with the form prefix (new_patient[...] on the visit form)');
@@ -286,4 +301,255 @@ test('the release adds no request, log or storage to the KTP modules', () => {
         assert.doesNotMatch(src, /console\.|localStorage|sessionStorage|indexedDB|sendBeacon|XMLHttpRequest|WebSocket/, name);
         assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML/, name);
     }
+});
+
+/* ---- review LOW-2: a low-confidence place is marked "(perlu dicek)" ---- */
+
+test('a low-confidence place is offered with "(perlu dicek)"; a clean read is not marked', () => {
+    const m = mountSuggestion();
+
+    m.suggestion.offer('PARE-PARE', 'low_confidence');
+    assert.equal(shown(m.slot), true);
+    assert.equal(m.check.classList.contains('hidden'), false, 'the operator is told to check it against the card');
+
+    m.suggestion.offer('MAKASSAR', 'ok');
+    assert.equal(m.check.classList.contains('hidden'), true);
+
+    m.suggestion.offer('PARE-PARE', 'low_confidence');
+    m.suggestion.clear();
+    assert.equal(m.check.classList.contains('hidden'), true, 'a withdrawn offer carries no marker');
+
+    m.suggestion.offer('PARE-PARE'); // no status given: never marked as checked-clean either way
+    assert.equal(m.check.classList.contains('hidden'), true);
+});
+
+test('the place shown is the place offered: shown() follows the slot', () => {
+    const m = mountSuggestion();
+    assert.equal(m.suggestion.shown(), false);
+    m.suggestion.offer('MAKASSAR', 'ok');
+    assert.equal(m.suggestion.shown(), true);
+    m.input.value = 'Makassar';
+    m.input.fire('input');
+    assert.equal(m.suggestion.shown(), false, 'the field already holds it');
+    m.suggestion.offer('A'.repeat(101), 'ok');
+    assert.equal(m.suggestion.shown(), false, 'too long for the server: nothing offered');
+});
+
+/* ---- the real page wiring: initKtpScan() with a fake OCR session ---- */
+
+globalThis.window ??= { addEventListener() {} };
+globalThis.CSS ??= { escape: (s) => String(s).replace(/([[\]"\\])/g, '\\$1') };
+
+const CONSENT_VERSION = 'D7-TEST';
+
+function mountPage({ prefix = '', selections = { name: 'SITI CONTOH' }, place = { value: 'MAKASSAR', status: 'ok' } } = {}) {
+    const inputName = (f) => (prefix ? `${prefix}[${f}]` : f);
+    const fields = { place_of_birth: fakeNode({ value: '' }), name: fakeNode({ value: '' }) };
+    const suggestion = mountSuggestion(); // only its nodes are used: the page binds them itself
+    const form = fakeNode({
+        querySelector: (sel) => {
+            if (sel === '[data-ktp-pob-suggestion]') return suggestion.slot;
+            const named = /^\[name="(.+)"\]$/.exec(sel);
+            if (!named) return null;
+            const wanted = named[1].replace(/\\(.)/g, '$1');
+            return Object.entries(fields).find(([f]) => inputName(f) === wanted)?.[1] ?? null;
+        },
+    });
+    const attestBox = fakeNode({ checked: false, focus() {}, scrollIntoView() {} });
+    const els = {
+        '[data-ktp-status]': fakeNode({ className: '', scrollIntoView() {} }),
+        '[data-ktp-token]': fakeNode({ value: '' }),
+        '[data-ktp-preview-wrap]': fakeNode({ classList: new FakeClassList(['hidden']) }),
+        '[data-ktp-preview]': fakeNode({ src: '', removeAttribute() {} }),
+        '[data-ktp-confirm-bar]': fakeNode(),
+        '[data-ktp-clear]': fakeNode({ disabled: true }),
+        '[data-ktp-scan-btn]': fakeNode({ disabled: false }),
+        '[data-ktp-consent]': fakeNode({ classList: new FakeClassList(['hidden']), scrollIntoView() {} }),
+        '[data-ktp-consent-accept]': fakeNode(),
+        '[data-ktp-ocr-applied]': fakeNode({ value: '0' }),
+        '[data-ktp-ocr-verify-wrap]': fakeNode({
+            classList: new FakeClassList(['hidden']),
+            querySelector: (sel) => (sel === 'input[type=checkbox]' ? attestBox : null),
+        }),
+        '[data-ktp-apply]': fakeNode(),
+        '[data-ktp-ocr-results]': fakeNode(),
+        '[data-ktp-ocr-rows]': fakeNode({ replaceChildren() {} }),
+    };
+    const root = fakeNode({
+        dataset: {
+            csrf: 'csrf',
+            uploadUrl: '/upload-temp',
+            parseUrl: '/parse-ocr',
+            scanUrl: 'http://agent/scan',
+            healthUrl: 'http://agent/health',
+            ocrEnabled: '1',
+            ocrConsentVersion: CONSENT_VERSION,
+            ocrBuildBase: '/build',
+            fieldPrefix: prefix,
+        },
+        closest: () => form,
+        querySelector: (sel) => els[sel] ?? null,
+        offsetParent: {},
+    });
+
+    // A fake OCR session: the read hands the page one parse response, exactly
+    // as ktp-roi-ui.js does after its parse request.
+    const session = { deps: null, reads: 0, destroyed: 0, loads: 0 };
+    let readDone;
+    session.done = new Promise((resolve) => (readDone = resolve));
+    const loadOcrSession = async () => (session.loads++, {
+        createKtpOcrSession(deps) {
+            session.deps = deps;
+            return {
+                async read() {
+                    session.reads++;
+                    deps.onParsed?.({
+                        ok: true,
+                        outcome: 'success',
+                        form: {},
+                        fields: { birth_place: { ...place, confidence: 90, reasons: [] } },
+                    });
+                    readDone();
+                },
+                selections: () => ({ ...selections }),
+                destroy: () => session.destroyed++,
+            };
+        },
+    });
+
+    globalThis.fetch = async (url) => {
+        if (url === 'http://agent/scan') {
+            return { ok: true, json: async () => ({ ok: true, base64: 'QUJD', mime_type: 'image/jpeg', filename: 'scan.jpg' }) };
+        }
+        if (url === '/upload-temp') return { ok: true, json: async () => ({ ok: true, token: 'tok-1' }) };
+        if (String(url).startsWith('data:')) return { blob: async () => new Blob(['x'], { type: 'image/jpeg' }) };
+        throw new Error('unexpected fetch ' + url);
+    };
+
+    initKtpScan(root, { loadOcrSession });
+
+    /** Scan a card, give the D7 "yes", and let the (fake) read finish (bounded: a wiring regression fails, never hangs). */
+    const readCard = async () => {
+        await els['[data-ktp-scan-btn]'].fire('click');
+        await els['[data-ktp-consent-accept]'].fire('click');
+        let timer;
+        await Promise.race([
+            session.done,
+            new Promise((_, reject) => (timer = setTimeout(() => reject(new Error('the page never handed the read to the injected OCR session')), 2000))),
+        ]).finally(() => clearTimeout(timer));
+    };
+    const submitBlocked = async () => {
+        let blocked = false;
+        await form.fire('submit', { preventDefault: () => (blocked = true) });
+        return blocked;
+    };
+
+    return { els, fields, form, suggestion, attestBox, session, readCard, submitBlocked };
+}
+
+test('the test-only session loader is consulted only after the D7 "yes", like the real module', async () => {
+    const page = mountPage();
+    assert.equal(page.session.loads, 0, 'not at page set-up');
+
+    await page.els['[data-ktp-scan-btn]'].fire('click');
+    assert.equal(page.els['[data-ktp-consent]'].classList.contains('hidden'), false, 'the consent question is asked');
+    assert.equal(page.session.loads, 0, 'not before the KTP holder answered');
+
+    await page.els['[data-ktp-consent-accept]'].fire('click');
+    await page.session.done;
+    assert.equal(page.session.loads, 1);
+    assert.equal((code('ktp-camera-ocr.js').match(/options\.loadOcrSession/g) ?? []).length, 1, 'one use, inside runOcr');
+});
+
+test('a read offers the place beside the field of either form, never filling it', async () => {
+    for (const prefix of ['', 'new_patient']) {
+        const page = mountPage({ prefix });
+        await page.readCard();
+
+        assert.equal(page.session.reads, 1);
+        assert.equal(shown(page.suggestion.slot), true, `offered on the ${prefix || 'master'} form`);
+        assert.equal(page.suggestion.value.textContent, 'MAKASSAR');
+        assert.equal(page.fields.place_of_birth.value, '', 'never auto-filled');
+        assert.equal(page.els['[data-ktp-ocr-applied]'].value, '0', 'nothing applied yet: no attestation asked');
+    }
+});
+
+test('LOW-1: "Gunakan" after an attested "Terapkan" withdraws the tick — the operator re-attests', async () => {
+    const page = mountPage();
+    await page.readCard();
+
+    await page.els['[data-ktp-apply]'].fire('click');
+    assert.equal(page.fields.name.value, 'SITI CONTOH');
+    assert.equal(page.els['[data-ktp-ocr-applied]'].value, '1');
+    page.attestBox.checked = true; // the operator attests the applied name
+    assert.equal(await page.submitBlocked(), false);
+
+    await page.suggestion.use.fire('click');
+
+    assert.equal(page.fields.place_of_birth.value, 'MAKASSAR');
+    assert.equal(page.attestBox.checked, false, 'the earlier tick never covers a value applied after it');
+    assert.equal(page.els['[data-ktp-ocr-verify-wrap]'].classList.contains('hidden'), false);
+    assert.equal(await page.submitBlocked(), true, 'the client guard asks again');
+
+    page.attestBox.checked = true;
+    assert.equal(await page.submitBlocked(), false);
+});
+
+test('LOW-1: "Terapkan" after an attested "Gunakan" withdraws the tick too', async () => {
+    const page = mountPage();
+    await page.readCard();
+
+    await page.suggestion.use.fire('click');
+    assert.equal(page.fields.place_of_birth.value, 'MAKASSAR');
+    assert.equal(page.els['[data-ktp-ocr-applied]'].value, '1', '"Gunakan" requires the attestation');
+    page.attestBox.checked = true;
+
+    await page.els['[data-ktp-apply]'].fire('click');
+
+    assert.equal(page.fields.name.value, 'SITI CONTOH');
+    assert.equal(page.attestBox.checked, false);
+    assert.equal(await page.submitBlocked(), true);
+});
+
+test('LOW-1: a "Terapkan" that applies nothing leaves the attestation as it was', async () => {
+    const page = mountPage({ selections: {} });
+    await page.readCard();
+    page.attestBox.checked = true;
+
+    await page.els['[data-ktp-apply]'].fire('click');
+
+    assert.equal(page.attestBox.checked, true);
+    assert.equal(page.els['[data-ktp-ocr-applied]'].value, '0');
+});
+
+test('LOW-2: the page passes the place\'s own status, so a low-confidence read is marked', async () => {
+    const page = mountPage({ place: { value: 'PARE-PARE', status: 'low_confidence' } });
+    await page.readCard();
+
+    assert.equal(shown(page.suggestion.slot), true);
+    assert.equal(page.suggestion.check.classList.contains('hidden'), false);
+
+    const clean = mountPage();
+    await clean.readCard();
+    assert.equal(clean.suggestion.check.classList.contains('hidden'), true);
+});
+
+test('INFO-1: the session learns whether the offer is actually shown', async () => {
+    const page = mountPage();
+    await page.readCard();
+    assert.equal(page.session.deps.placeOfBirthOffered(), true);
+
+    page.fields.place_of_birth.value = 'makassar';
+    page.fields.place_of_birth.fire('input');
+    assert.equal(page.session.deps.placeOfBirthOffered(), false, 'the field already holds it');
+
+    const tooLong = mountPage({ place: { value: 'A'.repeat(101), status: 'ok' } });
+    await tooLong.readCard();
+    assert.equal(tooLong.session.deps.placeOfBirthOffered(), false, 'not offered: the table must not point at "Gunakan"');
+});
+
+test('INFO-1: the table names "Gunakan" only while the offer is shown', () => {
+    const session = code('ktp-roi-ui.js');
+    assert.match(session, /deps\.placeOfBirthOffered\?\.\(\) === true/);
+    assert.match(code('ktp-camera-ocr.js'), /placeOfBirthOffered: \(\) => placeOfBirth\.shown\(\)/);
 });

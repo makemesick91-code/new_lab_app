@@ -379,7 +379,8 @@ export function createSessionGuard() {
  *   parse request (PHASE-3); without it the server refuses the text;
  *   onParsed(parsed) — optional, handed every parse response of this session
  *   (the page offers the place of birth from it, rule 244 §5.9). Never called
- *   after destroy(): the response is raced against the session's lifetime.
+ *   after destroy(): the response is raced against the session's lifetime;
+ *   placeOfBirthOffered() — optional, true while that offer is on screen.
  */
 export function createKtpOcrSession(deps) {
     const { root } = deps;
@@ -724,7 +725,9 @@ export function createKtpOcrSession(deps) {
                 }
                 valueCell.appendChild(el('div', { class: 'mt-1', dataset: { ktpRoiPending: def.form } }));
                 if (def.info && fields[def.info]?.value) {
-                    valueCell.appendChild(el('p', { class: 'mt-1 text-xs text-gray-500' }, `Tempat lahir: ${fields[def.info].value} (dipakai lewat "Gunakan" di isian Tempat Lahir)`));
+                    // Points at "Gunakan" only while the page actually offers it (rule 244 §5.9).
+                    const offered = deps.placeOfBirthOffered?.() === true;
+                    valueCell.appendChild(el('p', { class: 'mt-1 text-xs text-gray-500' }, `Tempat lahir: ${fields[def.info].value}${offered ? ' (dipakai lewat "Gunakan" di isian Tempat Lahir)' : ''}`));
                 }
                 statusCell.appendChild(badge(statusText(s.status), toneFor(s.status)));
                 if (row?.replaces) statusCell.appendChild(badge('mengganti isian', 'warn'));
