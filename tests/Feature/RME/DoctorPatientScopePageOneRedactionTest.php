@@ -479,10 +479,24 @@ it('DPOR-15 wires the canvas never to save over a stored page whose image did no
     expect($html)->toContain('function rmSaveRefusal(state)')
         ->and($html)->toContain('const refusal = rmSaveRefusal({')
         ->and($html)->toContain('baselineFailed: baselineFailed,')
-        ->and(preg_match('/img\.onerror = function \(\) \{\s*baselineLoaded = false;\s*baselineFailed = true;/', $html))->toBe(1)
+        ->and(preg_match('/img\.onerror = latest\(function \(\) \{\s*baselineLoaded = false;\s*baselineFailed = true;/', $html))->toBe(1)
         ->and($html)->not->toContain('if (existingSrc && !baselineLoaded && !userDrew)');
 });
 
 it('DPOR-16 runs where GD is loaded (a doctor is refused page 1 with 503 without it): CI proves the extension', function () {
     expect(extension_loaded('gd'))->toBeTrue();
+});
+
+it('DPOR-17 wires the page-1 canvas: strokes clipped out of the blank cells, the cells tinted, a stale page load ignored (tests/js runs the helpers)', function () {
+    rmeSignedConsentFor(test()->dporVisit);
+    dporPageOne(dporOldPageOnePng(hiddenInk: false));
+
+    $html = $this->actingAs(test()->dporDoctorUser)->get(route('rme.visits.medical-record.show', test()->dporVisit))->assertOk()->getContent();
+
+    expect(preg_match('/rmStrokeSegment\(\s*ctx,\s*lastPoint \|\| p,\s*p,\s*currentPage <= 1 \? rmHiddenCellRects\(RM_BIO, TEMPLATE\) : \[\],/', $html))->toBe(1)
+        ->and($html)->toContain('ctx.fillStyle = RM_HIDDEN_CELL_TINT;')
+        ->and($html)->toContain('const latest = beginPageLoad();')
+        ->and($html)->toContain('img.onload = latest(function () {')
+        ->and($html)->toContain('img.onerror = latest(function () {')
+        ->and($html)->not->toContain('ctx.lineTo(p.x, p.y);');
 });

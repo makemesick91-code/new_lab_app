@@ -573,6 +573,69 @@
                         bioCols: [0, 150, 470, 620, 900], // label|value|label|value
                     };
 
+                    // rm-page-canvas:start
+                    // Rule 243 §3 (review LOW-A, INFO-2). Plain JS between the
+                    // markers: tests/js/rm-page-save-guard.test.mjs reads it.
+                    const RM_HIDDEN_CELL_TINT = '#f3f4f6';
+
+                    // The page-1 grid cells left blank by the presenter (no
+                    // label): the cells RmPageOneBiodataRedactor blanks.
+                    function rmHiddenCellRects(bio, template) {
+                        const rects = [];
+                        const cols = template.bioCols;
+                        for (let i = 0; i < template.bioRows; i++) {
+                            const top = template.headerH + i * template.bioRowH;
+                            [['left', 0], ['right', 2]].forEach(function (side) {
+                                const cell = bio[side[0]][i] || ['', ''];
+                                if (cell[0] === '') {
+                                    [side[1], side[1] + 1].forEach(function (c) {
+                                        rects.push({ x: cols[c], y: top, w: cols[c + 1] - cols[c], h: template.bioRowH });
+                                    });
+                                }
+                            });
+                        }
+                        return rects;
+                    }
+
+                    // One pen segment; `hidden` cells (1 px inside their grid
+                    // lines) are clipped out, so no ink lands where the
+                    // redactor looks (2 px inside).
+                    function rmStrokeSegment(ctx, from, to, hidden, width, height) {
+                        ctx.save();
+                        if (hidden.length > 0) {
+                            ctx.beginPath();
+                            ctx.rect(0, 0, width, height);
+                            hidden.forEach(function (r) {
+                                ctx.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+                            });
+                            ctx.clip('evenodd');
+                        }
+                        ctx.beginPath();
+                        ctx.moveTo(from.x, from.y);
+                        ctx.lineTo(to.x, to.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Each loadPage() call begins a load; a callback of an
+                    // earlier load (another page) is ignored.
+                    function rmPageLoadSequence() {
+                        let current = 0;
+                        return function begin() {
+                            const mine = ++current;
+                            return function latest(callback) {
+                                return function () {
+                                    if (mine === current) {
+                                        callback.apply(this, arguments);
+                                    }
+                                };
+                            };
+                        };
+                    }
+                    // rm-page-canvas:end
+
+                    const beginPageLoad = rmPageLoadSequence();
+
                     function rmTruncate(text, maxW) {
                         text = String(text);
                         if (ctx.measureText(text).width <= maxW) return text;
@@ -616,6 +679,14 @@
                             ctx.lineTo(x, bottom);
                         });
                         ctx.stroke();
+
+                        // Rule 243 §3 (review LOW-A) — the blank cells read as
+                        // not-for-writing: a light tint (no ink to the redactor,
+                        // luminance >= 200); strokes there are clipped away.
+                        ctx.fillStyle = RM_HIDDEN_CELL_TINT;
+                        rmHiddenCellRects(RM_BIO, TEMPLATE).forEach(function (r) {
+                            ctx.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+                        });
 
                         ctx.fillStyle = '#111827';
                         ctx.textBaseline = 'middle';
@@ -712,6 +783,9 @@
                     // shared canvas. Resets the per-page draw state so the blank
                     // guard and reset stay scoped to the selected page only.
                     function loadPage(src) {
+                        // Review INFO-2 — a load still in flight for another
+                        // page never paints onto this one.
+                        const latest = beginPageLoad();
                         existingSrc = src || '';
                         userDrew = false;
                         baselineImg = null;
@@ -722,15 +796,15 @@
                         if (existingSrc) {
                             const img = new Image();
                             img.crossOrigin = 'anonymous';
-                            img.onload = function () {
+                            img.onload = latest(function () {
                                 baselineImg = img;
                                 baselineLoaded = true;
                                 renderBase();
-                            };
-                            img.onerror = function () {
+                            });
+                            img.onerror = latest(function () {
                                 baselineLoaded = false;
                                 baselineFailed = true;
-                            };
+                            });
                             img.src = existingSrc;
                         }
                     }
@@ -837,14 +911,18 @@
                         };
                     }
 
+                    let lastPoint = null;
+
                     function start(e) {
                         e.preventDefault();
                         drawing = true;
-                        const p = getPos(e);
-                        ctx.beginPath();
-                        ctx.moveTo(p.x, p.y);
+                        lastPoint = getPos(e);
                     }
 
+                    // Rule 243 §3 (review LOW-A) — on page 1 a stroke never
+                    // reaches the blank biodata cells (the doctor's view blanks
+                    // them, and ink there would lock page 1): each segment is
+                    // stroked under a clip that excludes them.
                     function draw(e) {
                         if (!drawing) return;
                         e.preventDefault();
@@ -853,8 +931,15 @@
                         ctx.lineWidth = 2;
                         ctx.lineCap = 'round';
                         ctx.strokeStyle = '#111827';
-                        ctx.lineTo(p.x, p.y);
-                        ctx.stroke();
+                        rmStrokeSegment(
+                            ctx,
+                            lastPoint || p,
+                            p,
+                            currentPage <= 1 ? rmHiddenCellRects(RM_BIO, TEMPLATE) : [],
+                            canvas.width,
+                            canvas.height,
+                        );
+                        lastPoint = p;
                     }
 
                     function stop() { drawing = false; }

@@ -675,7 +675,12 @@ added by their own PRs.
     page 1 renders read-only for the doctor with the reason, and the editor targets the next, new page. A page 1
     drawn after §3.8 (blank hidden cells) stays editable; a non-doctor author is unaffected. The canvas itself never
     saves over a stored page whose image did not load (still loading, or failed — a doctor's 404/503), whatever was
-    drawn (`rmSaveRefusal()` in the workspace view; `tests/js/rm-page-save-guard.test.mjs`).
+    drawn (`rmSaveRefusal()` in the workspace view; `tests/js/rm-page-save-guard.test.mjs`). On page 1 the canvas
+    clips every stroke out of the ten blank cells (1 px inside their grid lines; `rmStrokeSegment()`,
+    `rmHiddenCellRects()`) and tints them `#f3f4f6` (no ink to the redactor, luminance >= 200), so writing never
+    lands where the doctor's view blanks it nor locks page 1; and a page load still in flight when another page is
+    opened ("+ Tambah Halaman RM") is ignored (`rmPageLoadSequence()`), so page 1 — with its full band, for a
+    non-doctor author — never paints onto page 2+.
 11. **Limits, recorded.** (a) Scanned legacy archive pages (published legacy RME and legacy odontogram page images
     rendered from the source PDF) are scans of paper with no known biodata position: they cannot be redacted, and
     doctors keep reading them (§1.5). (b) A page 1 kept inline in its row (a `data:` URI) is embedded in the
@@ -683,8 +688,8 @@ added by their own PRs.
     (`handwriting_path` is varchar(255) on PostgreSQL, and page 1 has been a stored object since Sprint 60, before
     the Hotfix 60.5 grid), and the image route redacts an inline row anyway. (c) The print and PDF embed page 1
     unredacted; a Doctor is refused them (rule 138 §6) except on the oversight print residual of §1.8
-    (OD-MEMO-B-1). (d) A doctor who wrote into a blank hidden cell of a new page 1 can no longer overwrite that page
-    (fail closed; a new page stays offered). (e) Pixels on a screen can be photographed.
+    (OD-MEMO-B-1). (d) A page 1 whose hidden cells nevertheless hold ink (a save from before §3.10's clip, or a crafted
+    request) stays read-only for a doctor (fail closed; a new page stays offered). (e) Pixels on a screen can be photographed.
 12. **Release check (GD).** The PHP-FPM runtime on the host must load the GD extension: without it a doctor is
     refused every page-1 image (503) and every page-1 overwrite. Verify it before a release that carries §3 (the PR
     body and deploy notes carry this line); CI proves it in `DoctorPatientScopePageOneRedactionTest` (DPOR-16). No
@@ -697,5 +702,5 @@ added by their own PRs.
     its blank cells equal to the redacted ones, the whole workspace without a hidden value; a grid-less 900 × 1273
     page served unchanged and an anti-aliased grid redacted, the doctor's page-1 overwrite refused with nothing
     written while a new-template page saves, the refusal bound to the doctor audience in the service, its workspace
-    mirror, the canvas save-guard wiring, GD loaded. `DoctorPatientScopeIdentityFieldsTest` adds the prescription
+    mirror, the canvas save-guard and page-1 canvas wiring (clip, tint, load sequence), GD loaded. `DoctorPatientScopeIdentityFieldsTest` adds the prescription
     recipient and the clinical-day age; `tests/js/rm-page-save-guard.test.mjs` runs the canvas guard.
