@@ -19,10 +19,12 @@ use Throwable;
  *     before anything is decoded — the decompression-bomb guard; a JPEG's
  *     markers are walked too, so a datastream of more than MAX_JPEG_SCANS
  *     scans (a progressive file of thousands of empty scans costs seconds to
- *     minutes of CPU while staying small) or with no EOI is refused undecoded;
+ *     minutes of CPU while staying small) or MAX_JPEG_SEGMENTS segments, with
+ *     a cut-off length or with no EOI is refused undecoded;
  *  4. decoded with GD (no GD: refused; the original is never stored instead,
- *     because it may carry GPS) — a JPEG whose decoder reports a premature end
- *     (a truncated scan, which GD would otherwise fill with grey) is refused —
+ *     because it may carry GPS) — a JPEG whose decoder reports any recoverable
+ *     libjpeg error (a truncated scan, which GD would otherwise fill with grey,
+ *     or an inconsistent progression that would mask one) is refused —
  *     then drawn onto a fresh opaque canvas at most
  *     OUTPUT_LONG_EDGE on its long edge, the EXIF orientation applied, and
  *     encoded as JPEG. Only pixels cross that boundary, so EXIF, GPS, comments
@@ -56,6 +58,14 @@ class ClinicalPhotoNormalizer
      */
     public const MAX_JPEG_SCANS = 64;
 
+    /**
+     * Re-review R2-2 — marker segments outside scan data (APPn, COM, DQT, DHT,
+     * SOF, SOS…). A camera or editor writes a few dozen; exif_read_data() keeps
+     * a copy of every one, so millions of tiny comment segments in a 15 MB file
+     * exhaust the worker's memory before anything is decoded.
+     */
+    public const MAX_JPEG_SEGMENTS = 256;
+
     public const MESSAGE_REQUIRED = 'Foto klinis wajib diunggah.';
 
     public const MESSAGE_TOO_LARGE = 'Ukuran foto klinis melebihi batas 15 MB.';
@@ -71,6 +81,11 @@ class ClinicalPhotoNormalizer
     public const MESSAGE_JPEG_SCANS = 'Struktur berkas JPEG foto klinis tidak wajar (terlalu banyak scan). Simpan ulang foto sebagai JPEG biasa, lalu unggah.';
 
     public const MESSAGE_INCOMPLETE = 'Foto klinis tidak lengkap (berkas terpotong). Unggah ulang foto aslinya.';
+
+    public const MESSAGE_JPEG_SEGMENTS = 'Struktur berkas JPEG foto klinis tidak wajar (terlalu banyak segmen). Simpan ulang foto sebagai JPEG biasa, lalu unggah.';
+
+    /** Re-review R2-4 — a non-standard but repairable file: the remedy is to save it again. */
+    public const MESSAGE_RESAVE = 'Berkas JPEG foto klinis tidak standar. Simpan ulang atau ekspor ulang foto sebagai JPEG dari aplikasi kamera atau galeri, lalu unggah.';
 
     private const JPEG_MAGIC = "\xFF\xD8\xFF";
 
@@ -113,14 +128,10 @@ class ClinicalPhotoNormalizer
         }
 
         if ($type === IMAGETYPE_JPEG) {
-            $scans = $this->jpegScanCount($binary);
+            $structure = $this->jpegStructureRefusal($binary);
 
-            if ($scans === null) {
-                $this->refuse(self::MESSAGE_UNREADABLE);
-            }
-
-            if ($scans > self::MAX_JPEG_SCANS) {
-                $this->refuse(self::MESSAGE_JPEG_SCANS);
+            if ($structure !== null) {
+                $this->refuse($structure);
             }
         }
 
@@ -135,10 +146,13 @@ class ClinicalPhotoNormalizer
             $this->refuse(self::MESSAGE_UNREADABLE);
         }
 
-        foreach ($warnings as $warning) {
-            if (stripos($warning, 'premature end') !== false) {
+        // Re-review R2-3 — libgd reports only libjpeg's FIRST recoverable error,
+        // so an earlier one (an inconsistent progression) can mask a premature
+        // end: any recoverable libjpeg error refuses the JPEG.
+        foreach ($type === IMAGETYPE_JPEG ? $warnings : [] as $warning) {
+            if (stripos($warning, 'libjpeg') !== false && stripos($warning, 'recoverable error') !== false) {
                 imagedestroy($source);
-                $this->refuse(self::MESSAGE_INCOMPLETE);
+                $this->refuse(stripos($warning, 'premature end') !== false ? self::MESSAGE_INCOMPLETE : self::MESSAGE_RESAVE);
             }
         }
 
@@ -181,23 +195,28 @@ class ClinicalPhotoNormalizer
     }
 
     /**
-     * Review M-1 — the number of scans (SOS markers) of a JPEG datastream, read
-     * from its markers without decoding; null when the walk does not end on an
-     * EOI marker (truncated or not a JPEG). Segment headers are skipped by their
-     * length; entropy-coded data by searching for the next marker (0xFF followed
-     * by anything but a stuffed 0x00, a restart marker or a fill byte). Stops
-     * counting once past the limit. Bytes after the EOI are ignored here and
-     * never reach the stored file.
+     * Review M-1, re-review R2-1/R2-2/R2-4 — walk a JPEG's markers without
+     * decoding it; null when the datastream is acceptable, else the refusal.
+     * Segment headers are skipped by their declared length; entropy-coded data
+     * by searching for the next real marker (0xFF followed by anything but a
+     * stuffed 0x00, a restart marker or a fill byte). Every offset is checked
+     * against the length before it is used, so a crafted or cut-off length is
+     * a refusal, never an error. Refused: anything but 0xFF where a marker must
+     * start (MESSAGE_RESAVE: kept strict, the remedy is to save the photo
+     * again); more than MAX_JPEG_SEGMENTS segments or MAX_JPEG_SCANS scans; a
+     * walk that runs out of bytes before the EOI (MESSAGE_INCOMPLETE). Bytes
+     * after the EOI are ignored here and never reach the stored file.
      */
-    private function jpegScanCount(string $binary): ?int
+    private function jpegStructureRefusal(string $binary): ?string
     {
         $length = strlen($binary);
         $offset = 2;
+        $segments = 0;
         $scans = 0;
 
         while ($offset < $length) {
             if ($binary[$offset] !== "\xFF") {
-                return null;
+                return self::MESSAGE_RESAVE;
             }
 
             while ($offset < $length && $binary[$offset] === "\xFF") {
@@ -205,14 +224,18 @@ class ClinicalPhotoNormalizer
             }
 
             if ($offset >= $length) {
-                return null;
+                return self::MESSAGE_INCOMPLETE;
             }
 
             $marker = ord($binary[$offset]);
             $offset++;
 
             if ($marker === 0xD9) {
-                return $scans;
+                return null;
+            }
+
+            if (++$segments > self::MAX_JPEG_SEGMENTS) {
+                return self::MESSAGE_JPEG_SEGMENTS;
             }
 
             // Standalone markers carry no length.
@@ -221,31 +244,35 @@ class ClinicalPhotoNormalizer
             }
 
             if ($offset + 2 > $length) {
-                return null;
+                return self::MESSAGE_INCOMPLETE;
             }
 
             $segment = (ord($binary[$offset]) << 8) | ord($binary[$offset + 1]);
 
             if ($segment < 2) {
-                return null;
+                return self::MESSAGE_RESAVE;
             }
 
             $offset += $segment;
+
+            if ($offset > $length) {
+                return self::MESSAGE_INCOMPLETE;
+            }
 
             if ($marker !== 0xDA) {
                 continue;
             }
 
             if (++$scans > self::MAX_JPEG_SCANS) {
-                return $scans;
+                return self::MESSAGE_JPEG_SCANS;
             }
 
             // Entropy-coded data runs to the next real marker.
             while (true) {
-                $next = strpos($binary, "\xFF", $offset);
+                $next = $offset < $length ? strpos($binary, "\xFF", $offset) : false;
 
                 if ($next === false || $next + 1 >= $length) {
-                    return null;
+                    return self::MESSAGE_INCOMPLETE;
                 }
 
                 $follower = ord($binary[$next + 1]);
@@ -268,7 +295,7 @@ class ClinicalPhotoNormalizer
             }
         }
 
-        return null;
+        return self::MESSAGE_INCOMPLETE;
     }
 
     /**

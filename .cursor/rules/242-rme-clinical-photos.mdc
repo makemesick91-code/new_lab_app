@@ -82,13 +82,22 @@ transaction.
    read with `UploadedFile::getContent()` (a read failure throws; it is never folded into "no photo", review H-1, and
    no `@file_get_contents` enters application code); at most 15 MB; the type sniffed from the bytes (JPEG or PNG
    magic; GIF, SVG, HTML, PHP, anything else refused) and the header must agree; edges 64–8000 px and at most 25 MP
-   read from the HEADER before decoding (decompression-bomb guard); a JPEG's markers walked without decoding — at most
-   `MAX_JPEG_SCANS` (64) scans, else `MESSAGE_JPEG_SCANS` (review M-1: a small progressive file of thousands of empty
-   scans costs seconds to minutes of CPU per decode, and production has five PHP workers), and the walk must end on
-   an EOI; decoded with GD (no GD: refused, the original is never stored instead) — a JPEG from a `tmpfile()` the
-   normalizer owns and closes, with `gd.jpeg_ignore_warning` off for that call only, because only GD's file decoder
-   reports libjpeg's warnings: a "premature end" (a truncated scan, which GD fills with grey) is
-   `MESSAGE_INCOMPLETE` (review L-1); a truncated PNG fails to decode; drawn onto a fresh opaque canvas,
+   read from the HEADER before decoding (decompression-bomb guard); a JPEG's markers walked without decoding
+   (`jpegStructureRefusal()`), every offset checked against the length before use, so a crafted or cut-off segment
+   length is a refusal, never a `ValueError` (re-review R2-1) — at most `MAX_JPEG_SCANS` (64) scans, else
+   `MESSAGE_JPEG_SCANS` (review M-1: a small progressive file of thousands of empty scans costs seconds to minutes of
+   CPU per decode, and production has five PHP workers); at most `MAX_JPEG_SEGMENTS` (256) segments, else
+   `MESSAGE_JPEG_SEGMENTS` (R2-2: `exif_read_data()` copies every segment, and millions of tiny comments exhaust the
+   worker's memory); anything but 0xFF where a marker must start or a segment length under 2 is `MESSAGE_RESAVE`
+   (kept strict; the message tells the user to save or export the photo again as JPEG, R2-4); running out of bytes
+   before the EOI is `MESSAGE_INCOMPLETE`; decoded with GD (no GD: refused, the original is never stored instead) —
+   a JPEG from a `tmpfile()` the normalizer owns and closes, with `gd.jpeg_ignore_warning` off for that call only,
+   because only GD's file decoder reports libjpeg's warnings, and libgd reports only the FIRST one: any recoverable
+   libjpeg error refuses (a "premature end", a truncated scan GD fills with grey, is `MESSAGE_INCOMPLETE`, review
+   L-1; anything else, such as an inconsistent progression that would mask one, is `MESSAGE_RESAVE`, R2-3). The
+   temporary file sits in the PHP-FPM pool's temporary directory (systemd `PrivateTmp` where the unit sets it); a
+   worker killed mid-decode can leave it behind until that directory is cleaned, holding no more than the upload
+   PHP itself already keeps there. A truncated PNG fails to decode; drawn onto a fresh opaque canvas,
    long edge at most 2560, EXIF orientation applied, encoded JPEG (quality 85); the output must decode again. Only
    pixels cross, so EXIF, GPS, comments and a polyglot's payload are gone. The request rules (`file`, `max`, `mimes`,
    `mimetypes`) are the outer shape only.

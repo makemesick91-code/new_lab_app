@@ -48,6 +48,7 @@ use Illuminate\Contracts\Filesystem\Filesystem as FilesystemContract;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -679,7 +680,7 @@ it('CPU-08e refuses a truncated image GD would fill with grey, with or without a
     expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $cut."\xFF\xD9")))
         ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_INCOMPLETE])
         ->and(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $cut)))
-        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_UNREADABLE]);
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_INCOMPLETE]);
 
     $png = rcpuPng(400, 300);
     expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, substr($png, 0, (int) (strlen($png) * 0.5))))[0])
@@ -692,6 +693,77 @@ it('CPU-08e refuses a truncated image GD would fill with grey, with or without a
 
     // The check is the guard: the whole file is accepted.
     expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $whole)))->toBe(['none', '']);
+});
+
+it('CPU-08g a crafted or cut-off segment length is a refusal, never a 500 (re-review R2-1)', function () {
+    $visit = rcpuEncounter();
+    $jpeg = rcpuJpeg();
+    $sos = strpos($jpeg, "\xFF\xDA");
+    $errors = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$errors): void {
+        if (in_array($e->level, ['error', 'critical', 'alert', 'emergency'], true)) {
+            $errors[] = $e->message;
+        }
+    });
+
+    $probes = [
+        'an SOS length past the end' => substr($jpeg, 0, $sos)."\xFF\xDA\xFF\xFF\x01\x02",
+        'cut inside the SOS header' => substr($jpeg, 0, $sos + 5),
+        'cut inside the SOS length' => substr($jpeg, 0, $sos + 3),
+    ];
+
+    foreach ($probes as $label => $bytes) {
+        expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $bytes)))
+            ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_INCOMPLETE], $label);
+        rcpuPost($this->doctor, $visit, $bytes)->assertStatus(422)->assertJsonValidationErrors('photo');
+    }
+
+    expect($errors)->toBe([])
+        ->and(RmeClinicalPhoto::query()->count())->toBe(0)
+        ->and(rcpuObjects())->toBe([]);
+});
+
+it('CPU-08h refuses more than 256 segments before exif_read_data copies them; an ordinary number is accepted and stripped (re-review R2-2)', function () {
+    $visit = rcpuEncounter();
+    $jpeg = rcpuJpeg();
+    $comments = fn (int $count): string => substr($jpeg, 0, 2).str_repeat("\xFF\xFE\x00\x08rcpu-c", $count).substr($jpeg, 2);
+
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $comments(ClinicalPhotoNormalizer::MAX_JPEG_SEGMENTS + 1))))
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_JPEG_SEGMENTS]);
+
+    $photo = rcpuServiceUpload($visit, null, $comments(200));
+    expect(ClinicalEvidenceStorage::disk()->get($photo->getRawOriginal('photo_path')))->not->toContain('rcpu-c');
+});
+
+it('CPU-08i refuses a JPEG on any recoverable libjpeg error, so a first warning cannot mask a premature end (re-review R2-3)', function () {
+    $visit = rcpuEncounter();
+    $progressive = rcpuBusyJpeg(400, 300, true);
+    preg_match_all('/\xFF\xDA/', $progressive, $found, PREG_OFFSET_CAPTURE);
+    [$first, $second] = [$found[0][0][1], $found[0][1][1]];
+
+    // The first scan repeated: libjpeg warns "inconsistent progression" first.
+    $repeated = substr($progressive, 0, $second).substr($progressive, $first, $second - $first).substr($progressive, $second);
+    // ...and then cut short: its "premature end" is never reported (libgd reports the first warning only).
+    $maskedCut = substr($repeated, 0, (int) (strlen($repeated) * 0.8))."\xFF\xD9";
+
+    foreach (['inconsistent progression' => $repeated, 'masked premature end' => $maskedCut] as $label => $bytes) {
+        expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $bytes)))
+            ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_RESAVE], $label);
+    }
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(0);
+    expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, $progressive)))->toBe(['none', '']);
+});
+
+it('CPU-08j keeps refusing a stray byte between segments, with a message that says to save the photo again (re-review R2-4)', function () {
+    $visit = rcpuEncounter();
+    $jpeg = rcpuJpeg();
+    $app0End = 4 + ((ord($jpeg[4]) << 8) | ord($jpeg[5]));
+
+    expect(substr($jpeg, 2, 2))->toBe("\xFF\xE0")
+        ->and(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, substr($jpeg, 0, $app0End)."\x00".substr($jpeg, $app0End))))
+        ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_RESAVE])
+        ->and(ClinicalPhotoNormalizer::MESSAGE_RESAVE)->toContain('Simpan ulang');
 });
 
 it('CPU-08f a read failure is an error, never an empty upload ("wajib diunggah")', function () {
