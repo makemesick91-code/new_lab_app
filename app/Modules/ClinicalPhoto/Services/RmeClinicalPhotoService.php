@@ -73,6 +73,9 @@ class RmeClinicalPhotoService
 
     public const AUDIT_VOIDED = 'RME_CLINICAL_PHOTO_VOIDED';
 
+    /** Owner decision 2026-11-18 — a void-permission holder viewed a voided photo's image. */
+    public const AUDIT_VOIDED_VIEWED = 'RME_CLINICAL_PHOTO_VOIDED_VIEWED';
+
     public const MESSAGE_DISABLED = 'Fitur foto klinis belum diaktifkan.';
 
     public const MESSAGE_UPLOAD_PERMISSION = 'Akun ini tidak berwenang mengunggah foto klinis.';
@@ -282,18 +285,31 @@ class RmeClinicalPhotoService
             && $this->doctorScope->doctorCanAccessVisit($actor, $visit);
     }
 
+    /**
+     * Owner decision 2026-11-18 ("Hide and restrict", rule 242 §9.4) — a voided
+     * photo is seen only by a holder of the void permission (Supervisor RME;
+     * Super Admin through `*`, as every permission check here). Everyone else
+     * is answered exactly as for a photo that does not exist.
+     */
+    public function mayViewVoided(?User $actor): bool
+    {
+        return $actor instanceof User && $actor->can(self::VOID_PERMISSION);
+    }
+
     public function mayView(?User $actor, RmeClinicalPhoto $photo): bool
     {
         $visit = $photo->visit;
 
         return $visit instanceof ClinicVisit
             && (int) $visit->branch_id === (int) $photo->branch_id
-            && $this->mayViewVisit($actor, $visit);
+            && $this->mayViewVisit($actor, $visit)
+            && (! $photo->isVoided() || $this->mayViewVoided($actor));
     }
 
     /**
-     * A visit's photos for this viewer, or none. One scope decision for the
-     * visit, then one query for the photos and one for their uploaders.
+     * A visit's photos in the normal gallery: never a voided one, whoever
+     * views. One scope decision for the visit, then one query for the photos
+     * and one for their uploaders.
      *
      * @return Collection<int, RmeClinicalPhoto>
      */
@@ -304,6 +320,22 @@ class RmeClinicalPhotoService
         }
 
         return $this->photos->forVisit((int) $visit->getKey());
+    }
+
+    /**
+     * The separate "dibatalkan" list (rule 242 §9.4): a visit's voided photos,
+     * only for a void-permission holder inside the read scope; none for anyone
+     * else. One query for the photos, one each for uploaders and voiders.
+     *
+     * @return Collection<int, RmeClinicalPhoto>
+     */
+    public function voidedForVisit(ClinicVisit $visit, ?User $viewer): Collection
+    {
+        if (! $this->mayViewVisit($viewer, $visit) || ! $this->mayViewVoided($viewer)) {
+            return collect();
+        }
+
+        return $this->photos->voidedForVisit((int) $visit->getKey());
     }
 
     /**
@@ -335,7 +367,7 @@ class RmeClinicalPhotoService
             throw new NotFoundHttpException;
         }
 
-        $this->auditLog->log(self::AUDIT_TABLE, (int) $photo->getKey(), self::AUDIT_VIEWED, null, [
+        $this->auditLog->log(self::AUDIT_TABLE, (int) $photo->getKey(), $photo->isVoided() ? self::AUDIT_VOIDED_VIEWED : self::AUDIT_VIEWED, null, [
             'clinic_visit_id' => (int) $photo->clinic_visit_id,
         ], $viewer);
 

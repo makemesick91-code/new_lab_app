@@ -11,12 +11,21 @@ interface RmeClinicalPhotoRepositoryInterface
     public function create(array $attributes): RmeClinicalPhoto;
 
     /**
-     * A visit's photos, oldest first, with the uploader eager-loaded (one query
-     * for the photos, one for the uploaders, whatever the count).
+     * A visit's photos that are NOT voided, oldest first, with the uploader
+     * eager-loaded (one query for the photos, one for the uploaders, whatever
+     * the count).
      *
      * @return Collection<int, RmeClinicalPhoto>
      */
     public function forVisit(int $visitId): Collection;
+
+    /**
+     * A visit's voided photos, in the order they were voided, with the uploader
+     * and the voider eager-loaded (rule 242 §9.4).
+     *
+     * @return Collection<int, RmeClinicalPhoto>
+     */
+    public function voidedForVisit(int $visitId): Collection;
 
     /** The photo row locked FOR NO KEY UPDATE (rule 242 §9; the visit row is locked before it). */
     public function lockForVoid(int $id): ?RmeClinicalPhoto;

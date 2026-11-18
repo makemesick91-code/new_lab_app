@@ -17,8 +17,20 @@ class RmeClinicalPhotoRepository implements RmeClinicalPhotoRepositoryInterface
     {
         return RmeClinicalPhoto::query()
             ->where('clinic_visit_id', $visitId)
+            ->whereNull('voided_at')
             ->with('uploader:id,name')
             ->orderBy('uploaded_at')
+            ->orderBy('id')
+            ->get();
+    }
+
+    public function voidedForVisit(int $visitId): Collection
+    {
+        return RmeClinicalPhoto::query()
+            ->where('clinic_visit_id', $visitId)
+            ->whereNotNull('voided_at')
+            ->with(['uploader:id,name', 'voider:id,name'])
+            ->orderBy('voided_at')
             ->orderBy('id')
             ->get();
     }

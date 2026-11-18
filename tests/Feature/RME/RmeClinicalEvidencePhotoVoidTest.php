@@ -315,8 +315,9 @@ it('CPV-09 the decision is re-made on the locked row: a void committed after the
         ->toBe([ValidationException::class, RmeClinicalPhotoService::MESSAGE_VOID_ALREADY]);
 });
 
-it('CPV-10 never a delete path; the voided photo stays readable in scope and listed as voided; not consent- or encounter-gated', function () {
+it('CPV-10 never a delete path; the void is not consent- or encounter-gated, and the evidence stays', function () {
     $photo = rcpvPhoto();
+    $evidence = rcpvEvidence($photo);
 
     // A voided consent and a finished visit: the correction still happens.
     $consent = RmeVisitConsent::query()->where('clinic_visit_id', $photo->clinic_visit_id)->sole();
@@ -331,10 +332,93 @@ it('CPV-10 never a delete path; the voided photo stays readable in scope and lis
         ->flatMap(fn ($route) => $route->methods())
         ->unique()->values()->all();
     expect($names)->not->toContain('DELETE')
-        ->and(fn () => $photo->fresh()->delete())->toThrow(LogicException::class);
+        ->and(fn () => $photo->fresh()->delete())->toThrow(LogicException::class)
+        ->and(RmeClinicalPhoto::query()->count())->toBe(1)
+        ->and(rcpvEvidence($photo))->toBe($evidence);
+});
 
-    test()->actingAs($this->doctor)->get('/rme/clinical-photos/'.$photo->id.'/image')->assertOk();
+/** Two photos on one visit (like for like); the second voided by the supervisor. */
+function rcpvLiveAndVoided(): array
+{
+    $live = rcpvPhoto();
+    $visit = $live->visit;
+    $voided = app(RmeClinicalPhotoService::class)->upload($visit->fresh(), test()->doctor, UploadedFile::fake()->createWithContent('foto.jpg', rcpvJpeg()));
+    rcpvPost(test()->supervisor, $voided)->assertOk();
 
-    $listed = app(RmeClinicalPhotoService::class)->visibleForVisit($photo->visit->fresh(), $this->doctor);
-    expect($listed)->toHaveCount(1)->and($listed->first()->isVoided())->toBeTrue();
+    return [$visit->fresh(), $live, $voided->fresh()];
+}
+
+/** @return array<string, User> readers in scope WITHOUT the void permission */
+function rcpvPlainReaders(): array
+{
+    return [
+        'treating doctor' => test()->doctor,
+        'Perawat' => tap(userInRole('Perawat'), fn (User $u) => rmeMakePerawatActive($u, test()->branch))->fresh(),
+        'Owner with a view grant' => tap(userInRole('Owner'), fn (User $u) => $u->givePermissionTo(RmeClinicalPhotoService::VIEW_PERMISSION))->fresh(),
+    ];
+}
+
+it('CPV-11a hide (owner, 2026-11-18): a voided photo leaves the normal gallery for every reader, the voider included', function () {
+    [$visit, $live] = rcpvLiveAndVoided();
+    $service = app(RmeClinicalPhotoService::class);
+
+    foreach (rcpvPlainReaders() + ['Supervisor RME' => $this->supervisor, 'Super Admin' => userInRole('Super Admin')] as $label => $reader) {
+        expect($service->visibleForVisit($visit, $reader)->pluck('id')->all())->toBe([$live->id], $label);
+    }
+
+    expect(RmeClinicalPhoto::query()->count())->toBe(2);
+});
+
+it('CPV-11b restrict: only a void-permission holder gets a voided photo\'s image, each view audited with ids only; anyone else 404', function () {
+    [$visit, $live, $voided] = rcpvLiveAndVoided();
+    $service = app(RmeClinicalPhotoService::class);
+
+    foreach (rcpvPlainReaders() as $label => $reader) {
+        test()->actingAs($reader)->get('/rme/clinical-photos/999999999/image')->assertNotFound();
+        test()->actingAs($reader)->get('/rme/clinical-photos/'.$voided->id.'/image')->assertNotFound();
+        expect($service->mayView($reader, $voided))->toBeFalse($label)
+            ->and(fn () => $service->imageFor($voided, $reader))->toThrow(NotFoundHttpException::class);
+        // The live photo is unaffected.
+        test()->actingAs($reader)->get('/rme/clinical-photos/'.$live->id.'/image')->assertOk();
+    }
+    expect(AuditLog::query()->where('action', RmeClinicalPhotoService::AUDIT_VOIDED_VIEWED)->count())->toBe(0);
+
+    $superAdmin = userInRole('Super Admin');
+    foreach ([$this->supervisor, $superAdmin] as $holder) {
+        $response = test()->actingAs($holder)->get('/rme/clinical-photos/'.$voided->id.'/image');
+        $response->assertOk();
+        expect($response->headers->get('Content-Type'))->toBe('image/jpeg')
+            ->and((string) $response->headers->get('Cache-Control'))->toContain('no-store');
+    }
+
+    $logs = AuditLog::query()->where('action', RmeClinicalPhotoService::AUDIT_VOIDED_VIEWED)->orderBy('id')->get();
+    expect($logs)->toHaveCount(2)
+        ->and($logs->pluck('performed_by')->map(fn ($id) => (int) $id)->all())->toBe([$this->supervisor->id, $superAdmin->id])
+        ->and($logs->every(fn (AuditLog $log) => $log->new_values === ['clinic_visit_id' => $visit->id] && (int) $log->entity_id === $voided->id))->toBeTrue()
+        ->and(AuditLog::query()->where('action', RmeClinicalPhotoService::AUDIT_VIEWED)->where('entity_id', $voided->id)->count())->toBe(0)
+        ->and(RmeClinicalPhoto::query()->count())->toBe(2)
+        ->and(ClinicalEvidenceStorage::disk()->exists($voided->getRawOriginal('photo_path')))->toBeTrue();
+});
+
+it('CPV-11c the separate "dibatalkan" list for PR5: void-permission holders only, uploader and voider loaded', function () {
+    [$visit, , $voided] = rcpvLiveAndVoided();
+    $service = app(RmeClinicalPhotoService::class);
+
+    foreach (rcpvPlainReaders() as $label => $reader) {
+        expect($service->mayViewVoided($reader))->toBeFalse($label)
+            ->and($service->voidedForVisit($visit, $reader))->toHaveCount(0);
+    }
+
+    foreach ([$this->supervisor, userInRole('Super Admin')] as $holder) {
+        $list = $service->voidedForVisit($visit, $holder);
+        expect($service->mayViewVoided($holder))->toBeTrue()
+            ->and($list->pluck('id')->all())->toBe([$voided->id])
+            ->and($list->first()->relationLoaded('voider'))->toBeTrue()
+            ->and($list->first()->relationLoaded('uploader'))->toBeTrue()
+            ->and(array_key_exists('void_reason', $list->first()->toArray()))->toBeFalse();
+    }
+
+    // Out of the read scope, even a holder lists nothing.
+    $this->branch->forceFill(['is_rme_enabled' => false])->save();
+    expect($service->voidedForVisit($visit->fresh(), $this->supervisor))->toHaveCount(0);
 });

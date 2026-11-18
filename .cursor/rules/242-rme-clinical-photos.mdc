@@ -143,24 +143,28 @@ transaction.
    which is also where the doctor encounter scope of rule 243 §2 applies while its flag is ON. The policy denies as
    not found; the service re-asserts it (binds Super Admin). Reads are never consent-gated (AIR-RMC-09).
 3. **Honest.** A missing, unreadable or non-JPEG object is a 404 (logged without the key), never an empty image.
-4. **Audit.** Each successful view writes `RME_CLINICAL_PHOTO_VIEWED` with `clinic_visit_id` only.
+4. **Audit.** Each successful view writes `RME_CLINICAL_PHOTO_VIEWED` (a voided photo:
+   `RME_CLINICAL_PHOTO_VOIDED_VIEWED`, §9.4) with `clinic_visit_id` only.
 5. **Lists.** `visibleForVisit(ClinicVisit, ?User)`: one scope decision, then one query for the photos and one for
-   their uploaders, oldest first; nothing for a viewer out of scope.
+   their uploaders, oldest first; never a voided photo (§9.4); nothing for a viewer out of scope.
 
 ## 6. Audit
 
 `RME_CLINICAL_PHOTO_UPLOADED` (entity `trx_rme_clinical_photos`, the photo id) with `clinic_visit_id` and
-`rme_visit_consent_id` only; `RME_CLINICAL_PHOTO_VIEWED` with `clinic_visit_id` only. Never a key, hash, name or
-identity number.
+`rme_visit_consent_id` only; `RME_CLINICAL_PHOTO_VIEWED` and `RME_CLINICAL_PHOTO_VOIDED_VIEWED` with
+`clinic_visit_id` only. Never a key, hash, name or identity number.
 
 ## 7. For the UI (PR5)
 
 The controller (never Blade) asks `RmeClinicalPhotoService::uploadRefusal($visit, $user)` (null = may upload; else the
 message to show; read-only), `canUpload()` and `visibleForVisit()`, and renders each photo through
 `route('rme.clinical-photos.image', $photo)`. Upload posts `photo` to `rme.visits.clinical-photos.store` (201 JSON
-`{id}` for XHR, else a redirect back with `status`). A voided photo is listed with `isVoided()` and should render
-marked as voided; the void form posts `void_reason` to `rme.clinical-photos.void`, offered when the viewer holds
-`void_rme_clinical_photos` and did not upload the photo (`voidAccountRefusal()`). Nothing renders while the flag is off.
+`{id}` for XHR, else a redirect back with `status`). The gallery never shows a voided photo; a separate
+"dibatalkan" list, rendered only when `RmeClinicalPhotoService::mayViewVoided($user)` is true, comes from
+`voidedForVisit($visit, $user)` (uploader and voider eager-loaded; the reason is a hidden attribute the controller
+reads deliberately, §9.6) and links each image through the same route. The void form posts `void_reason` to
+`rme.clinical-photos.void`, offered when the viewer holds `void_rme_clinical_photos` and did not upload the photo
+(`voidAccountRefusal()`). Nothing renders while the flag is off.
 
 ## 8. Deploy
 
@@ -192,8 +196,13 @@ consent void (rule 237 §14.2). Committed evidence is never deleted (rule 224 §
    row (`lockForVoid`, FOR NO KEY UPDATE), and on the locked row: not already voided (`MESSAGE_VOID_ALREADY`, 422 on
    `photo`; a racing second void waits, then is refused) and not the uploader. Only `voided_at` (clinic time),
    `voided_by` and `void_reason` are written (`markVoided`; the model refuses any other change and a second void).
-4. **Kept.** The row, its object and every evidence column stay. A voided photo stays readable in the §5 scope and is
-   listed with `isVoided()`. Purging voided objects is a separate owner phase (plan risk).
+4. **Kept, hidden and restricted** (owner decision 2026-11-18, "Hide and restrict"). The row, its object and every
+   evidence column stay; nothing is deleted. A voided photo leaves the normal gallery (`visibleForVisit()` excludes it
+   for every reader, the voider included). Its image is served only to a holder of `void_rme_clinical_photos`
+   (`mayViewVoided()`, inside `mayView()`, so the policy, the void request and `imageFor()` all decide it; Super Admin
+   through `*`, as every permission check here) and each such view is audited `RME_CLINICAL_PHOTO_VOIDED_VIEWED` with
+   ids only. Anyone else gets 404, as for a missing photo, so its existence does not leak. Holders see the voided
+   photos in their own list, `voidedForVisit()` (§7). Purging voided objects is a separate owner phase (plan risk).
 5. **Not gated** by the live encounter or the consent: a wrong photo found after the visit finished, or after its
    consent was voided, is still corrected.
 6. **Audit.** `RME_CLINICAL_PHOTO_VOIDED` with `clinic_visit_id` only; the reason is free text and stays on the row,
