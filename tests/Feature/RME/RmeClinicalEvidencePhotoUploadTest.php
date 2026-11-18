@@ -41,6 +41,8 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\PatientMerge\Interfaces\PatientMergeOwnershipRepositoryInterface;
+use App\Modules\PatientMerge\Support\PatientOwnedRecordRegistry;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -1049,6 +1051,25 @@ it('CPU-13 authorizes before it validates: a refused account never has its paylo
     rcpuServiceUpload($visit);
     expect($probe->decoded)->toBe(1);
 });
+
+it('CPU-14b a patient merge knows the photos table and moves a photo with its patient, content untouched', function () {
+    $visit = rcpuEncounter();
+    $photo = rcpuServiceUpload($visit)->fresh();
+    $before = collect($photo->getAttributes())->except(['patient_id'])->all();
+    $ownership = app(PatientMergeOwnershipRepositoryInterface::class);
+
+    // The live-schema guard: no patient foreign key is left unregistered.
+    expect(PatientOwnedRecordRegistry::REASSIGN['trx_rme_clinical_photos']['column'] ?? null)->toBe('patient_id')
+        ->and(PatientOwnedRecordRegistry::CONSERVED_GROUPS)->toContain('clinical_photos')
+        ->and($ownership->unregisteredPatientForeignKeys())->toBe([]);
+
+    $canonical = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    expect($ownership->reassign('trx_rme_clinical_photos', 'patient_id', [$photo->id], $canonical->id))->toBe(1);
+
+    $moved = $photo->fresh();
+    expect($moved->patient_id)->toBe($canonical->id)
+        ->and(collect($moved->getAttributes())->except(['patient_id'])->all())->toBe($before);
+})->skip(fn () => DB::getDriverName() !== 'pgsql', 'the live foreign-key inventory is read from PostgreSQL');
 
 it('CPU-14 the stored row: denormalised scope, clinic time, the consent that allowed it, the key hidden; the row refuses delete and edits', function () {
     $visit = rcpuEncounter();

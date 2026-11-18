@@ -129,7 +129,9 @@ transaction.
    object is kept (rule 224 §1a). Never a public disk, never `storeAs`.
 3. **The row is evidence.** `RmeClinicalPhoto` hides `photo_path` and `original_sha256`, throws on delete, and on any
    update other than the void columns (`voided_at`, `voided_by`, `void_reason`, once). The migration is additive,
-   every foreign key `restrictOnDelete`, `photo_path` UNIQUE; `down()` refuses while rows exist.
+   every foreign key `restrictOnDelete`, `photo_path` UNIQUE; `down()` refuses while rows exist. A patient merge
+   re-points `patient_id` only, through the query builder (`PatientOwnedRecordRegistry::REASSIGN`, conserved group
+   `clinical_photos`); without that entry the table's foreign key refused every merge (series rebase finding).
 
 ## 5. Reads
 
