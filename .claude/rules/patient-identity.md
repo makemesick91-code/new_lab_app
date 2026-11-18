@@ -270,4 +270,7 @@ file.
   is read only by Supervisor RME and Owner on the restricted reasons page (audited, ids only); others see the code;
   never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes; the readers list open exceptions on
   the restricted index. A failed patient insert or update logs only the SQLSTATE (never the row), and invalid UTF-8 or
-  NUL is a 422 on both registration forms and the edit form. Source: `244-…` §5.3, §5.5.
+  NUL is a 422 on both registration forms and the edit form. The KTP OCR place of birth is only a suggestion beside
+  that field ("Saran dari KTP … Gunakan"): offered when it passes the server rule, written as text, applied only by
+  the operator's click (then `ktp_ocr_verified` is required), never auto-filled, no new request; "Terapkan ke
+  Formulir" never applies it. Source: `244-…` §5.3, §5.5, §5.9.

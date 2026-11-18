@@ -41,7 +41,7 @@ test('every field region has a row, and only patient columns can be applied', ()
     assert.deepEqual(ROW_DEFS.filter((d) => d.form).map((d) => d.form).sort(),
         ['address', 'date_of_birth', 'gender', 'ktp_number', 'name', 'occupation']);
     for (const def of ROW_DEFS.filter((d) => d.info)) {
-        assert.ok(['birth_place', 'religion', 'marital_status'].includes(def.info), 'fields without a column are info only');
+        assert.ok(['birth_place', 'religion', 'marital_status'].includes(def.info), 'info fields are never applied by "Terapkan ke Formulir"');
     }
 });
 

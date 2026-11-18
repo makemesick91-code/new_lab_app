@@ -62,7 +62,12 @@ export const STATUS_LABELS = Object.freeze({
     ambiguous: 'Ambigu',
 });
 
-/** Fields the parser reads that have NO patient column — shown, never saved. */
+/**
+ * Fields the parser reads that "Terapkan ke Formulir" never applies. Religion
+ * and marital status have no patient column. The place of birth has one since
+ * rule 244 §5; it is offered beside its own field instead and applied only by
+ * the operator's click (placeOfBirthSuggestion, rule 244 §5.9).
+ */
 export const INFO_ONLY_FIELDS = ['birth_place', 'religion', 'marital_status'];
 
 /**
@@ -197,6 +202,93 @@ export function initialSelections(form, currentValues) {
     }
 
     return result;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 RM PR-5 (memo M4.2, rule 244 §5.9) — the
+ * place of birth a KTP read offers beside the "Tempat Lahir" field.
+ *
+ * Mirrors PatientCoreFields::placeOfBirthRules() (pinned against it by
+ * PatientKtpPlaceOfBirthSuggestionTest): one line (no C0 control character
+ * or DEL), at most 100 characters, not blank. It only decides what is worth
+ * offering; the server still validates whatever is submitted.
+ */
+export const PLACE_OF_BIRTH_MAX = 100;
+export const PLACE_OF_BIRTH_PATTERN = /^[^\x00-\x1F\x7F]*$/u;
+
+/** A read that is offered: clean or low confidence. A conflict, an ambiguous or invalid read offers nothing. */
+const PLACE_OF_BIRTH_OFFERED = ['ok', 'low_confidence'];
+
+/** The value trimmed, when the server would accept it as a place of birth; else null. */
+function placeOfBirthValue(value) {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    // Characters, not UTF-16 units (the server counts with mb_strlen); a lone
+    // surrogate is not well-formed text.
+    if (text === '' || [...text].length > PLACE_OF_BIRTH_MAX) return null;
+    if (!PLACE_OF_BIRTH_PATTERN.test(text) || /\p{Cs}/u.test(text)) return null;
+
+    return text;
+}
+
+/**
+ * The place of birth to offer from a parse response. It is the parser's
+ * `fields.birth_place` — already in the response the parse endpoint returns,
+ * so offering it adds no request.
+ */
+export function placeOfBirthSuggestion(parsed) {
+    const read = parsed?.fields?.birth_place;
+    if (!read || !PLACE_OF_BIRTH_OFFERED.includes(read.status)) return null;
+
+    return placeOfBirthValue(read.value);
+}
+
+const samePlace = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim().toUpperCase()
+    === String(b ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
+
+/**
+ * Binds the suggestion slot (settings/patients/_ktp-place-of-birth-suggestion)
+ * to the place-of-birth field. `offer(value)` shows a value as TEXT; a read
+ * never writes the field. Only the operator's "Gunakan" does — over a typed
+ * value too, which the slot then says it replaces — and `onApply` asks for the
+ * KTP attestation like every applied OCR value. Nothing is fetched, logged or
+ * stored here.
+ */
+export function createPlaceOfBirthSuggestion(slot, input, onApply) {
+    const valueEl = slot?.querySelector('[data-ktp-pob-suggestion-value]') ?? null;
+    const useBtn = slot?.querySelector('[data-ktp-pob-suggestion-use]') ?? null;
+    const replacesEl = slot?.querySelector('[data-ktp-pob-suggestion-replaces]') ?? null;
+    let offered = null;
+
+    const render = () => {
+        if (!slot) return;
+        const current = String(input?.value ?? '').trim();
+        const show = offered !== null && input != null && !samePlace(current, offered);
+        if (valueEl) valueEl.textContent = offered ?? ''; // never innerHTML: OCR text is untrusted
+        replacesEl?.classList.toggle('hidden', !(show && current !== ''));
+        slot.classList.toggle('hidden', !show);
+    };
+
+    input?.addEventListener('input', render);
+    useBtn?.addEventListener('click', () => {
+        if (offered === null || !input) return;
+        input.value = offered;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        onApply?.();
+        render();
+    });
+
+    return {
+        offer(value) {
+            offered = placeOfBirthValue(value);
+            render();
+        },
+        clear() {
+            offered = null;
+            render();
+        },
+    };
 }
 
 /** Human message for a getUserMedia failure. */
@@ -393,6 +485,29 @@ export function initKtpScan(root) {
 
     const field = (name) => form?.querySelector(`[name="${CSS.escape(formInputName(prefix, name))}"]`) ?? null;
 
+    // Any OCR value in the form needs the operator's attestation against the
+    // card. Enforced by the submit guard below, NOT by a native `required`:
+    // browsers validate display:none controls too, so a required box in the
+    // hidden "Pasien Baru" panel silently refused an existing-patient visit
+    // (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1).
+    const markOcrApplied = () => {
+        const applied = $('[data-ktp-ocr-applied]');
+        if (applied) applied.value = '1';
+        $('[data-ktp-ocr-verify-wrap]')?.classList.remove('hidden');
+    };
+
+    // Rule 244 §5.9 (RM PR-5) — the place of birth read from the KTP is offered
+    // beside its own field; only the operator's "Gunakan" writes it there.
+    const placeOfBirthSlot = form?.querySelector('[data-ktp-pob-suggestion]') ?? null;
+    const placeOfBirth = createPlaceOfBirthSuggestion(
+        placeOfBirthSlot,
+        placeOfBirthSlot ? field('place_of_birth') : null,
+        () => {
+            markOcrApplied();
+            setStatus('Tempat lahir dari KTP diterapkan. Cocokkan dengan KTP asli, lalu centang konfirmasi sebelum menyimpan.', 'ok');
+        },
+    );
+
     const showPreview = (dataUrl, needsConfirm) => {
         // A different image on screen detaches the saved one: what is shown is
         // what gets attached, never an earlier photo behind it.
@@ -417,6 +532,9 @@ export function initKtpScan(root) {
         $('[data-ktp-ocr-results]')?.classList.add('hidden');
         const body = $('[data-ktp-ocr-rows]');
         if (body) body.replaceChildren();
+        // The offer belongs to this photo's read; the field keeps whatever the
+        // operator already put in it.
+        placeOfBirth.clear();
     };
 
     // A new photo or a different source always replaces the live capture's
@@ -514,6 +632,11 @@ export function initKtpScan(root) {
                 setStatus,
                 formValue: (name) => field(name)?.value ?? '',
                 consent: consentPayload(consent, consentVersion),
+                // Every read (first read, BACA ULANG, new corners) refreshes the
+                // place-of-birth offer — never the field itself.
+                onParsed: (parsed) => {
+                    if (run === ocrRun) placeOfBirth.offer(placeOfBirthSuggestion(parsed));
+                },
             });
             await ocrSession.read(blob, { cornerHint });
         } catch {
@@ -535,12 +658,7 @@ export function initKtpScan(root) {
             setStatus('Tidak ada data yang dipilih untuk diterapkan.', 'error');
             return;
         }
-        $('[data-ktp-ocr-applied]').value = '1';
-        // The attestation is enforced by the submit guard below, NOT by a native
-        // `required`: browsers validate display:none controls too, so a required
-        // box in the hidden "Pasien Baru" panel silently refused an
-        // existing-patient visit (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1).
-        $('[data-ktp-ocr-verify-wrap]').classList.remove('hidden');
+        markOcrApplied();
         setStatus(`${applied} isian diterapkan. Cocokkan dengan KTP asli, lalu centang konfirmasi sebelum menyimpan.`, 'ok');
     });
 
