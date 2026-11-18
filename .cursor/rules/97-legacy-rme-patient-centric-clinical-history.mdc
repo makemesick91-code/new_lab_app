@@ -28,10 +28,20 @@ multi-branch). Nothing here relaxes any of them.
    `DoctorPatientScopeService`. **Same branch is not enough** — a real clinical
    relationship (active patient-doctor assignment, or a visit with that doctor)
    is required.
+   **REVISED IN PART (owner, 2026-11-17, memo M2.1/M2.2, plan default 1) by
+   rule 243 §2.10** (`243-rme-doctor-encounter-scope-downloads-fields.mdc`):
+   with `rme.doctor_encounter_scope` ON access derives from encounters, not
+   assignment rows — an own in-service encounter with the patient (read mode
+   `history`); an assignment row of any type grants nothing, and outside the
+   scope the archive answers 404. Flag OFF: as written.
 6. A legacy archive must **never widen** a doctor's clinical visibility beyond
    their native record access. The history listing and the viewer/print/export
    share one permission set and one clinical scope, so neither can become the
    wider door.
+   **REVISED IN PART by rule 243 §2.10**: the one clinical scope is
+   `DoctorPatientScopeService::authorizeLegacyArchiveRead()`, asked by the
+   viewer policies, the controllers' re-assertion and both history services,
+   so the listing still mirrors the viewer with the flag ON.
 7. Direct legacy viewer / page / source / print / export URLs are authorized
    **server-side** on every request. A hidden button is never the boundary.
 8. Non-PUBLISHED legacy states (uploaded, processing, ready-for-review,

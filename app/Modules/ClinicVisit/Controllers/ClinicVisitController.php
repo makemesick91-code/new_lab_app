@@ -4,6 +4,7 @@ namespace App\Modules\ClinicVisit\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicalPhoto\Support\ClinicalPhotoGalleryPresenter;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\AssignRoomRequest;
@@ -51,6 +52,7 @@ class ClinicVisitController extends Controller
         private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        private readonly ClinicalPhotoGalleryPresenter $clinicalPhotos,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -286,7 +288,9 @@ class ClinicVisitController extends Controller
         $patient = Patient::query()->findOrFail($patientId);
         $access = $this->doctorScope->authorizePatientAccess($request->user(), $patient);
         if ($access instanceof \Illuminate\Auth\Access\Response) {
-            abort_if($access->denied(), 403, $access->message() ?? 'Forbidden');
+            // Rule 243 §2.4 — the scope's own status: 404 out of the encounter
+            // scope (flag ON), so the picker does not confirm the patient exists.
+            abort_if($access->denied(), $access->status() ?? 403, $access->message() ?? 'Forbidden');
         } elseif ($access === false) {
             abort(403);
         }
@@ -379,12 +383,28 @@ class ClinicVisitController extends Controller
             'rmePrescription',
         ]);
 
+        // Rule 243 §2.6 — the viewer is passed so the encounter scope (flag ON)
+        // filters the history and the legacy timeline built from it.
         $patientVisitHistory = $this->visits->patientVisitHistory(
             (int) $clinicVisit->patient_id,
+            viewer: request()->user(),
         );
+
+        // Rule 243 §2.11 (PR A3b) — the follow-up links name only visits the
+        // viewer may open (listsVisitFor(): everything with the encounter scope
+        // OFF and for the exempt roles).
+        $viewer = request()->user();
+        $followUpOf = $clinicVisit->followUpOf !== null && $this->doctorScope->listsVisitFor($viewer, $clinicVisit->followUpOf)
+            ? $clinicVisit->followUpOf
+            : null;
+        $followUpVisits = $clinicVisit->followUpVisits
+            ->filter(fn (ClinicVisit $followUp): bool => $this->doctorScope->listsVisitFor($viewer, $followUp))
+            ->values();
 
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
+            'followUpOf' => $followUpOf,
+            'followUpVisits' => $followUpVisits,
             'patientVisitHistory' => $patientVisitHistory,
             // LEGACY-RME-PDF-1C — native RME history merged with the patient's
             // PUBLISHED legacy archive. The service resolves the legacy side
@@ -397,7 +417,7 @@ class ClinicVisitController extends Controller
                 $patientVisitHistory,
             ),
             'doctorAccessSummary' => $clinicVisit->patient
-                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient)
+                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient, request()->user())
                 : [],
             // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
             // room-assignment selector when the visit still has no room.
@@ -413,6 +433,12 @@ class ClinicVisitController extends Controller
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no
             // prior visit, so the page offers no "Buat Kontrol" from it.
             'canStartKontrolFromHere' => $clinicVisit->status !== ClinicVisit::STATUS_CANCELLED,
+            // DMS memo M4.4, PTM PR5 (rule 242 §10) — the "Foto Klinis" card,
+            // decided here: null (nothing rendered, no photo route) while
+            // `rme.clinical_photos` is OFF or for an account that may neither
+            // read nor upload this visit's photos. RmeClinicalPhotoService
+            // decides every upload, image read and void again.
+            'clinicalPhotoGallery' => $this->clinicalPhotos->forVisit($clinicVisit, request()->user()),
         ] + $this->ptmPresentationFor($clinicVisit));
     }
 

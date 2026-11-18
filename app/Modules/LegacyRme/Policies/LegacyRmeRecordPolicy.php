@@ -55,11 +55,19 @@ class LegacyRmeRecordPolicy
         return $user->canAny(self::READ_PERMISSIONS);
     }
 
-    public function view(User $user, LegacyRmeRecord $record): bool
+    /**
+     * Rule 243 §2.10 (PR A2) — with the encounter scope ON a Doctor outside an
+     * own in-service encounter with the patient is refused as NOT FOUND (404),
+     * never a 403 that would confirm the archive exists; with it OFF the answer
+     * is today's plain bool.
+     */
+    public function view(User $user, LegacyRmeRecord $record): Response|bool
     {
-        return $this->viewAny($user)
-            && $this->inScope($user, $record)
-            && $this->withinClinicalScope($user, $record);
+        if (! $this->viewAny($user) || ! $this->inScope($user, $record)) {
+            return false;
+        }
+
+        return $this->withinClinicalScope($user, $record);
     }
 
     public function void(User $user, LegacyRmeRecord $record): bool
@@ -84,9 +92,15 @@ class LegacyRmeRecordPolicy
      * void was meant to retract. The row itself stays readable — retracted, not
      * erased — so the metadata and the void reason remain auditable.
      */
-    public function viewFile(User $user, LegacyRmeRecord $record): bool
+    public function viewFile(User $user, LegacyRmeRecord $record): Response|bool
     {
-        return $this->view($user, $record) && $record->isPublished();
+        $view = $this->view($user, $record);
+
+        // A2 review INFO-3 — decide on whether `view` allowed, so a future
+        // Response::allow() never passes a VOIDed record through.
+        $allowed = $view instanceof Response ? $view->allowed() : $view === true;
+
+        return $allowed ? $record->isPublished() : $view;
     }
 
     /**
@@ -156,8 +170,13 @@ class LegacyRmeRecordPolicy
      * so the two can never drift into disagreeing about who is treating whom.
      * Non-doctor actors are unaffected: the intake and governance tiers keep
      * branch scope plus their own named permissions.
+     *
+     * Rule 243 §2.10 (PR A2) — the answer is DoctorPatientScopeService's
+     * archive rule, shared with the controller's re-assertion and the history
+     * list: the same relationship with the encounter scope OFF, an own
+     * in-service encounter (read mode `history`) with it ON, 404 outside.
      */
-    private function withinClinicalScope(User $user, LegacyRmeRecord $record): bool
+    private function withinClinicalScope(User $user, LegacyRmeRecord $record): Response|bool
     {
         if (! $this->doctorScope->shouldApplyDoctorScope($user)) {
             return true;
@@ -167,10 +186,6 @@ class LegacyRmeRecordPolicy
             ? $record->patient
             : Patient::query()->find($record->patient_id);
 
-        if (! $patient instanceof Patient) {
-            return false;
-        }
-
-        return $this->doctorScope->doctorCanAccessPatient($user, $patient);
+        return $this->doctorScope->authorizeLegacyArchiveRead($user, $patient instanceof Patient ? $patient : null);
     }
 }

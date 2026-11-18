@@ -14,9 +14,14 @@
         server refuses.
     --}}
     <div class="space-y-6">
+        {{-- Rule 243 §2.11 (PR A3) — the anchor (the patient's first visit) is
+             named only to a viewer who may read it; it may be another doctor's
+             pre-exam visit. --}}
         <x-ui.page-header
             title="Buku RM Tulisan Tangan Pasien"
-            :subtitle="$workspaceVisit->visit_number.' — '.($workspaceVisit->visit_date?->format('d/m/Y') ?? '-')"
+            :subtitle="($workspaceVisitNamed ?? true)
+                ? $workspaceVisit->visit_number.' — '.($workspaceVisit->visit_date?->format('d/m/Y') ?? '-')
+                : 'Buku RM pasien'"
         >
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
         </x-ui.page-header>
@@ -147,7 +152,9 @@
                 <x-ui.empty-state
                     :icon="false"
                     title="Belum ada halaman RM tulisan tangan untuk pasien ini."
-                    :description="'Buat halaman RM pertama pada kunjungan pertama pasien (Kunjungan #'.$workspaceVisit->visit_number.').'"
+                    :description="($workspaceVisitNamed ?? true)
+                        ? 'Buat halaman RM pertama pada kunjungan pertama pasien (Kunjungan #'.$workspaceVisit->visit_number.').'
+                        : 'Buat halaman RM pertama pada buku RM pasien.'"
                 >
                     <x-slot:action>
                         <form method="POST" action="{{ route('rme.visits.medical-record.store', $workspaceVisit) }}">
@@ -177,8 +184,10 @@
             'clinicalHistory' => $clinicalHistory ?? collect(),
         ])
 
-        <div>
-            <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
-        </div>
+        @if ($sourceVisit || ($workspaceVisitNamed ?? true))
+            <div>
+                <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
+            </div>
+        @endif
     </div>
 </x-settings-shell>

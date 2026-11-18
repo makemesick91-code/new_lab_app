@@ -12,6 +12,7 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\ClinicalPhoto\Controllers\RmeClinicalPhotoController;
 use App\Modules\ClinicOversight\Controllers\OversightBillingCorrectionController;
 use App\Modules\ClinicOversight\Controllers\OversightClinicalRecordController;
 use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
@@ -1419,6 +1420,32 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');
+
+        /*
+         * DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos. Three
+         * layers: the route permission; the FormRequest / controller answering
+         * 404 while `rme.clinical_photos` is OFF, then RmeClinicalPhotoPolicy;
+         * RmeClinicalPhotoService, which re-decides everything (Doctor/Perawat
+         * allowlist, live encounter, executed PTM with clinical documentation YA,
+         * visit row locked first) and binds Super Admin. The image is read only
+         * here, never from a public URL. `clinicalPhoto` is a generic name, so it
+         * is constrained per route (rule 222 §1.6). The gallery UI is PR5.
+         */
+        // No `visit.room` (review L-2): the room gate only redirects a pre-exam visit,
+        // an upload needs the in_progress encounter anyway, and the gate would answer
+        // 302 ahead of the flag's 404.
+        Route::post('visits/{clinicVisit}/clinical-photos', [RmeClinicalPhotoController::class, 'store'])
+            ->middleware('permission:upload_rme_clinical_photos')
+            ->name('visits.clinical-photos.store');
+        Route::get('clinical-photos/{clinicalPhoto}/image', [RmeClinicalPhotoController::class, 'image'])
+            ->middleware(['permission:view_rme_clinical_photos', 'cache.headers:private;no_store;max_age=0'])
+            ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
+            ->name('clinical-photos.image');
+        // Rule 242 §9 — the supervised void (own permission); there is no delete route.
+        Route::post('clinical-photos/{clinicalPhoto}/void', [RmeClinicalPhotoController::class, 'void'])
+            ->middleware('permission:void_rme_clinical_photos')
+            ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
+            ->name('clinical-photos.void');
 
         /*
          * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — authorised read path for native

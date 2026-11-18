@@ -918,6 +918,48 @@ return [
         // Selected by the existing `DoctorRoomScoped` token in BOTH critical variants.
         'tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2, PR A1) —
+        // the doctor encounter scope behind `rme.doctor_encounter_scope`: flag OFF
+        // is the Sprint 66.2 scope exactly; flag ON = in-service window (WITA),
+        // read modes, 404 out of scope, writes on the own in-service encounter
+        // only, lists mirroring records. Selected by the existing
+        // `DoctorPatientScope` token in BOTH critical variants.
+        'tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php',
+        // PR A1b (rule 243 §2.5, §2.6) — the sheet write rule re-asserted in the
+        // services, histories scoped to the viewer, the access panel and the
+        // prior-visit picker status. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php',
+        // PR A3a (rule 243 §2.11) — the patient's RM workspace under the scope:
+        // opened in read mode history or own (the after-service workspace), its
+        // sheet navigation, document rail and book page sequence mirroring the
+        // sheet read rule, the consent banner never naming another doctor's
+        // encounter, the book started on an anchor the doctor may not read
+        // (`startBook` = the `appendPage` rule) without naming it or showing its
+        // anchor-bound content, a roomless anchor, the working-branch scope at
+        // the address, flag OFF parity and the query budget. Same
+        // `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopePostServiceWorkspaceTest.php',
+        // PR A3b (rule 243 §2.11) — the unified RM pages (latest record, patient
+        // page, the native leg's count, sort and search), the prescription history
+        // and the visit page's follow-up links / the odontogram page's parent card
+        // list only records whose visit the doctor may read; flag OFF parity and
+        // the index's query count. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeListSurfacesTest.php',
+        // Integration onto M3.3 + PTM (rule 243 §2.8, §2.11) — the book's pages
+        // by their author stamp (sequence, image routes, version page, print),
+        // a book on an unreadable anchor without versions or amendments (the
+        // requester included), the PTM banner never describing another doctor's
+        // encounter; flag OFF parity. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php',
+        // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
+        // archives under the encounter scope: read only inside an own in-service
+        // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and
+        // rule 97 §5/§6 revised), lists mirroring records, the controller
+        // re-assertion past a bypassed policy, flag OFF parity. Selected by the
+        // existing `LegacyRme` and `LegacyOdontogram` tokens in BOTH critical variants.
+        'tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php',
+        'tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php',
+
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,
         // audit, and the guarantee that authentication is NOT coupled to the
@@ -1768,6 +1810,26 @@ return [
         // visit's recorded PTM shown for information only, no consent row created or changed. Selected by the
         // existing `MedicalRecordFinalization` token in BOTH critical variants.
         'tests/Feature/RME/MedicalRecordFinalizationAmendmentPtmStateTest.php',
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos behind the risky flag
+        // rme.clinical_photos (OFF ⇒ 404 and refused): Doctor/Perawat only (binds Super Admin), the
+        // live encounter, an EXECUTED PTM with clinical documentation YA (clause 9 never read), the
+        // image validated and re-encoded before any write (EXIF/GPS stripped), row + object one unit
+        // under the visit lock, private no-store reads in the clinical scope (never Front Office,
+        // Kasir or Admin Klinik), audit ids only. Selected by the existing `ClinicalEvidence` token
+        // in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php',
+        'tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php',
+        // PTM PR4b (rule 242 §9) — the supervised void: own permission, read scope first (404),
+        // maker ≠ checker binding Super Admin, a 10–1000 character reason, once, visit row then
+        // photo row locked, object and evidence columns kept, no delete path, audit ids only.
+        // Selected by the existing `ClinicalEvidence` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php',
+        // PTM PR5 (rule 242 §10) — the photos UI on Detail Kunjungan: nothing while the flag is OFF,
+        // the upload form only when the server would accept it (else its reason), live photos only
+        // through the private image route, the voided list and the void form only for holders (never
+        // on the viewer's own upload), the reason never outside the holders' list, the read scope,
+        // constant queries. Selected by the existing `ClinicalEvidence` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalEvidencePhotoGalleryUiTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

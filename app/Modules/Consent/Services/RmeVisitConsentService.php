@@ -175,6 +175,20 @@ class RmeVisitConsentService
     /** The clause-8 message of every version without a separate clause 9 (unchanged). */
     public const MESSAGE_DOCUMENTATION_ANSWER = 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.';
 
+    /*
+     * DMS memo M4.4 / M1.x, PTM plan PR4 (rule 242 §3) — the clinical-photo
+     * authority's refusals (assertClinicalPhotoAuthoringAllowed()).
+     */
+    public const MESSAGE_PHOTO_NOT_IN_EXAMINATION = 'Foto klinis hanya dapat diunggah pada kunjungan yang pemeriksaannya sedang berlangsung.';
+
+    public const MESSAGE_PHOTO_ACTOR = 'Anda tidak berwenang mengunggah foto klinis untuk pemeriksaan pasien ini.';
+
+    public const MESSAGE_PHOTO_AWAITING_PATIENT = 'Foto klinis belum dapat diunggah karena Persetujuan Tindakan Medis belum ditandatangani.';
+
+    public const MESSAGE_PHOTO_AWAITING_DOCTOR = 'Foto klinis belum dapat diunggah karena Persetujuan Tindakan Medis belum ditandatangani dokter.';
+
+    public const MESSAGE_PHOTO_DOCUMENTATION_REFUSED = 'Pasien tidak menyetujui dokumentasi klinis pada Persetujuan Tindakan Medis kunjungan ini, sehingga foto klinis tidak dapat diunggah.';
+
     public function __construct(
         private readonly RmeVisitConsentRepositoryInterface $consents,
         private readonly RmeVisitConsentNumberGeneratorService $numbers,
@@ -828,6 +842,86 @@ class RmeVisitConsentService
         return $encounter;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Clinical-photo authoring authority (rule 242)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * DMS memo M4.4 / M1.x, PTM PR4 (rule 242 §3) — may this account add a
+     * clinical photo to this visit now? The performed-treatment conditions plus
+     * the patient's documentation answer, checked in this order so the refusal
+     * names the real reason:
+     *
+     *   1. the patient HAS a single current `in_progress` encounter;
+     *   2. the actor may work on it (actorMayWorkOnEncounter: never the front
+     *      desk, a clinical role, manage_clinic_visits, working branch, doctor
+     *      room, doctor-patient scope) — a 403;
+     *   3. the visit being written IS that encounter (else it is history);
+     *   4. its consent is EXECUTED (rule 241 §2: patient + treating doctor);
+     *   5. that consent allows clinical documentation:
+     *      RmeVisitConsent::allowsClinicalDocumentation() — on 2026.1 the
+     *      combined clause 8, on v2026.2 clause 8. Clause 9 (publication) is
+     *      never read here (rule 241 §6.5).
+     *
+     * Inside a write transaction the visit row is locked FIRST (FOR NO KEY
+     * UPDATE, the lock sign(), void(), countersign() and transitionStatus() take)
+     * and 1, 4 and 5 are decided again on it, so a void or a finish committed
+     * meanwhile is seen and one that comes later waits; the locked row is
+     * returned. The Doctor/Perawat allowlist that binds Super Admin is
+     * RmeClinicalPhotoService's. The PTM is read through ptmStateFor(), not the
+     * private gate helper, so this authority's refusals are its own.
+     */
+    public function assertClinicalPhotoAuthoringAllowed(ClinicVisit $visit, User $actor): ClinicVisit
+    {
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($visit->patient_id);
+
+        if ($encounter === null) {
+            throw ValidationException::withMessages(['photo' => self::MESSAGE_PHOTO_NOT_IN_EXAMINATION]);
+        }
+
+        if (! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            throw new AuthorizationException(self::MESSAGE_PHOTO_ACTOR);
+        }
+
+        if ((int) $encounter->id !== (int) $visit->id) {
+            throw ValidationException::withMessages(['photo' => self::MESSAGE_PHOTO_NOT_IN_EXAMINATION]);
+        }
+
+        $this->assertClinicalDocumentationConsent($encounter);
+
+        if (DB::transactionLevel() > 0) {
+            $locked = $this->visits->lockForStatusDecision((int) $encounter->getKey());
+
+            if ($locked === null || $locked->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+                throw ValidationException::withMessages(['photo' => self::MESSAGE_PHOTO_NOT_IN_EXAMINATION]);
+            }
+
+            $this->assertClinicalDocumentationConsent($locked);
+
+            return $locked;
+        }
+
+        return $encounter;
+    }
+
+    /** Rule 242 §3, conditions 4 and 5 — persisted evidence only (AIR-RMC-10). */
+    private function assertClinicalDocumentationConsent(ClinicVisit $visit): void
+    {
+        $state = $this->ptmStateFor($visit);
+
+        if ($state !== self::PTM_EXECUTED) {
+            throw ValidationException::withMessages(['photo' => $state === self::PTM_AWAITING_DOCTOR
+                ? self::MESSAGE_PHOTO_AWAITING_DOCTOR
+                : self::MESSAGE_PHOTO_AWAITING_PATIENT]);
+        }
+
+        if ($this->validConsentFor($visit)?->allowsClinicalDocumentation() !== true) {
+            throw ValidationException::withMessages(['photo' => self::MESSAGE_PHOTO_DOCUMENTATION_REFUSED]);
+        }
+    }
+
     /**
      * May this actor work on this encounter? Branch scope plus the same clinical
      * patient scope every single-record ability already applies.
@@ -875,7 +969,10 @@ class RmeVisitConsentService
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->doctorCanAccessVisit($actor, $encounter);
+        // Rule 243 §2 (owner M2.1) — with the encounter scope ON a Doctor works
+        // only on their OWN in-service encounter, never another doctor's (the
+        // OD-5-1 co-authoring ends); with it OFF this is exactly the read scope.
+        return app(DoctorPatientScopeService::class)->doctorMayWriteVisit($actor, $encounter);
     }
 
     /*
@@ -1756,7 +1853,8 @@ class RmeVisitConsentService
      */
     private function assertOperatorWithinScope(User $operator, ClinicVisit $visit): void
     {
-        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($operator, $visit);
+        // Rule 243 §2 — signing and voiding are writes on the encounter.
+        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitWrite($operator, $visit);
 
         if (! app(RmeWorkingBranchScope::class)->allows($operator, $visit->branch_id)
             || $patientScope === false

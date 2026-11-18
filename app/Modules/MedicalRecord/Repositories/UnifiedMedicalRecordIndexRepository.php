@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\MedicalRecord\Repositories;
 
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\MedicalRecord\Interfaces\UnifiedMedicalRecordIndexRepositoryInterface;
@@ -139,6 +140,7 @@ class UnifiedMedicalRecordIndexRepository implements UnifiedMedicalRecordIndexRe
             ->with(['clinicVisit.clinicRoom', 'doctor'])
             ->whereIn('patient_id', $patientIds)
             ->whereIn('branch_id', $scope->nativeBranchIds)
+            ->when($scope->nativeVisitScope !== null, fn (EloquentBuilder $records) => $records->whereHas('clinicVisit', $scope->nativeVisitScope))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get()
@@ -156,6 +158,7 @@ class UnifiedMedicalRecordIndexRepository implements UnifiedMedicalRecordIndexRe
             ->with(['clinicVisit.clinicRoom', 'doctor', 'branch'])
             ->where('patient_id', $patientId)
             ->whereIn('branch_id', $scope->nativeBranchIds)
+            ->when($scope->nativeVisitScope !== null, fn (EloquentBuilder $records) => $records->whereHas('clinicVisit', $scope->nativeVisitScope))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
@@ -338,6 +341,17 @@ class UnifiedMedicalRecordIndexRepository implements UnifiedMedicalRecordIndexRe
         }
 
         $query->whereIn('mr.branch_id', $scope->nativeBranchIds);
+
+        // Rule 243 §2.11 (PR A3b) — with the encounter scope ON, a doctor's
+        // native leg counts, sorts and searches only records whose visit the
+        // doctor may read: eligibility, the per-row count, the sort key and the
+        // search all go through this one builder, so none of them can hint at a
+        // sheet the record pages would not list.
+        if ($scope->nativeVisitScope !== null) {
+            $query->whereExists(($scope->nativeVisitScope)(
+                ClinicVisit::query()->selectRaw('1')->whereColumn('trx_clinic_visits.id', 'mr.clinic_visit_id'),
+            )->toBase());
+        }
 
         if ($status) {
             $query->where('mr.status', $status);

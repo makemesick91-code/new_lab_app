@@ -8,7 +8,10 @@
     defaulting to the visit the doctor came from. No KTP/NIK is rendered.
 
     Expects: $sheets, $activeSheet, $workspaceVisit, $sourceVisit, $addSheetVisit,
-             $canEdit (bool), $addSheetConsentRequired (bool, optional).
+             $canEdit (bool), $addSheetConsentRequired (bool, optional),
+             $unnamedSheetIds (optional; rule 243 §2.11 — sheets whose own visit
+             this viewer may not read, only ever the book: no visit number,
+             date or status in their tab).
 --}}
 @php
     $sheetBase = array_filter(['source_visit_id' => $sourceVisit?->id], fn ($v) => $v !== null);
@@ -21,6 +24,7 @@
 
     $navBtn = 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
     $patientKey = $workspaceVisit->patient_id;
+    $unnamedSheetIds = $unnamedSheetIds ?? [];
 @endphp
 
 <div
@@ -39,7 +43,10 @@
         {{-- Sheet tabs / dropdown --}}
         <div class="mb-3 flex flex-wrap items-center gap-1">
             @foreach ($sheets as $i => $sheet)
-                @php $isCancelled = $sheet->clinicVisit?->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED; @endphp
+                @php
+                    $visitNamed = ! in_array((int) $sheet->id, $unnamedSheetIds, true);
+                    $isCancelled = $visitNamed && $sheet->clinicVisit?->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED;
+                @endphp
                 <a href="{{ $sheetUrl($sheet) }}"
                    data-sheet-tab="{{ $sheet->id }}"
                    @class([
@@ -48,7 +55,7 @@
                        'border-hairline bg-surface text-ink hover:bg-navy-50' => $sheet->id !== $activeSheet->id,
                    ])
                    @if ($sheet->id === $activeSheet->id) aria-current="true" @endif
-                   title="{{ $sheet->clinicVisit?->visit_number }} — {{ $sheet->clinicVisit?->visit_date?->format('d/m/Y') }}">
+                   title="{{ $visitNamed ? $sheet->clinicVisit?->visit_number.' — '.$sheet->clinicVisit?->visit_date?->format('d/m/Y') : 'Buku RM pasien' }}">
                     Lembar {{ $i + 1 }}@if ($isCancelled) <span class="ml-1 text-[10px]">(batal)</span>@endif
                 </a>
             @endforeach

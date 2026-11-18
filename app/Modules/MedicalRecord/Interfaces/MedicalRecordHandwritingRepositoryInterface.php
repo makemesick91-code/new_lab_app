@@ -94,4 +94,15 @@ interface MedicalRecordHandwritingRepositoryInterface
 
     /** Rule 240 §8 — the book page an applied amendment appended, if any. */
     public function findAmendmentPage(int $amendmentId): ?MedicalRecordHandwritingPage;
+
+    /**
+     * Rule 243 §2.8 (doctor encounter scope) — the authoring encounters of a
+     * record's pages (rule 240 §4.4, `authored_clinic_visit_id`), keyed by page
+     * number: page 1 from every legacy row of the record, page N from its pages
+     * row. Unstamped rows (written before rule 240) name nothing, so a page with
+     * no stamped row is absent. Two queries, whatever the page count.
+     *
+     * @return array<int, list<int>>
+     */
+    public function pageAuthors(int $medicalRecordId): array;
 }

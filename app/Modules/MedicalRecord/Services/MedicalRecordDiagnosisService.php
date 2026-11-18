@@ -61,6 +61,11 @@ class MedicalRecordDiagnosisService
 
         app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
+
         $master = ClinicalDiagnosis::query()->find((int) $data['clinical_diagnosis_id']);
         if ($master === null || $master->status !== ClinicalDiagnosis::STATUS_ACTIVE) {
             throw ValidationException::withMessages([
@@ -85,6 +90,10 @@ class MedicalRecordDiagnosisService
                 $actor,
                 fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
             );
+
+            // Rule 243 §2.5 — re-decided on the LOCKED sheet (its own visit is
+            // read fresh, after the gate above locked the live encounter).
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($record, $actor);
 
             $duplicate = MedicalRecordDiagnosis::query()
                 ->where('medical_record_id', $record->id)
@@ -168,6 +177,11 @@ class MedicalRecordDiagnosisService
 
         app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
+
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
         }
@@ -182,6 +196,10 @@ class MedicalRecordDiagnosisService
                 $actor,
                 fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
             );
+
+            // Rule 243 §2.5 — re-decided on the LOCKED sheet (its own visit is
+            // read fresh, after the gate above locked the live encounter).
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($record, $actor);
 
             /** @var MedicalRecordDiagnosis $target */
             $target = MedicalRecordDiagnosis::query()->lockForUpdate()->findOrFail($diagnosis->id);
@@ -245,6 +263,11 @@ class MedicalRecordDiagnosisService
 
         app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
+
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
         }
@@ -260,6 +283,9 @@ class MedicalRecordDiagnosisService
                 $actor,
                 fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
             );
+
+            // Rule 243 §2.5 — re-decided inside the transaction.
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
             $code = $diagnosis->clinicalDiagnosis?->code;
             $diagnosis->delete();
