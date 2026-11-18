@@ -554,6 +554,9 @@
                     let userDrew = false;
                     let baselineImg = null;
                     let baselineLoaded = false;
+                    // Rule 243 §3 (review MEDIUM-3) — the stored page's image
+                    // failed to load (a doctor may get 404/503 for a page 1).
+                    let baselineFailed = false;
 
                     // Hotfix 60.5 — official Daengtisia Rekam Medik template baked
                     // onto the canvas. Every page renders the three-line RM header;
@@ -713,6 +716,7 @@
                         userDrew = false;
                         baselineImg = null;
                         baselineLoaded = false;
+                        baselineFailed = false;
                         renderBase();
 
                         if (existingSrc) {
@@ -723,7 +727,10 @@
                                 baselineLoaded = true;
                                 renderBase();
                             };
-                            img.onerror = function () { baselineLoaded = false; };
+                            img.onerror = function () {
+                                baselineLoaded = false;
+                                baselineFailed = true;
+                            };
                             img.src = existingSrc;
                         }
                     }
@@ -868,19 +875,37 @@
                         renderBase();
                     });
 
-                    form.addEventListener('submit', function (e) {
-                        // Guard: never overwrite an existing page with a blank
-                        // canvas while its baseline is still loading.
-                        if (existingSrc && !baselineLoaded && !userDrew) {
-                            e.preventDefault();
-                            window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
-                            return;
+                    // rm-save-guard:start
+                    // Why a save is refused, or null. Rule 243 §3 (review
+                    // MEDIUM-3): a stored page whose image is not loaded (still
+                    // loading, or failed — a doctor may get 404/503 for a page
+                    // 1) is never saved, whatever was drawn: the canvas would
+                    // replace it with the template plus the new strokes. A new
+                    // page with no strokes would persist the empty template.
+                    // Plain JS between the markers: tests/js reads it.
+                    function rmSaveRefusal(state) {
+                        if (state.existingSrc && !state.baselineLoaded) {
+                            return state.baselineFailed
+                                ? 'Gambar halaman tersimpan gagal dimuat, sehingga halaman ini tidak dapat disimpan tanpa menghapus tulisan lama. Muat ulang halaman, atau tulis pada halaman baru.'
+                                : 'Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.';
                         }
-                        // Guard: a brand-new page with no strokes would only
-                        // persist the empty template — block it.
-                        if (!existingSrc && !userDrew) {
+                        if (!state.existingSrc && !state.userDrew) {
+                            return 'Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.';
+                        }
+                        return null;
+                    }
+                    // rm-save-guard:end
+
+                    form.addEventListener('submit', function (e) {
+                        const refusal = rmSaveRefusal({
+                            existingSrc: existingSrc,
+                            baselineLoaded: baselineLoaded,
+                            baselineFailed: baselineFailed,
+                            userDrew: userDrew,
+                        });
+                        if (refusal !== null) {
                             e.preventDefault();
-                            window.alert('Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.');
+                            window.alert(refusal);
                             return;
                         }
                         input.value = canvas.toDataURL('image/png');

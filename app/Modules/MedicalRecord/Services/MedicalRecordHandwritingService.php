@@ -2,10 +2,12 @@
 
 namespace App\Modules\MedicalRecord\Services;
 
+use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Closure;
 use Illuminate\Support\Facades\DB;
@@ -57,9 +59,18 @@ final class MedicalRecordHandwritingService
     /** Rule 240 §4.4 (plan default 4) — an overwrite of a page another encounter wrote, or of an unstamped pre-rule page no finalize covers. */
     public const MESSAGE_EARLIER_ENCOUNTER_PAGE = 'Halaman RM ini ditulis di luar pemeriksaan yang sedang berlangsung dan tidak dapat ditimpa. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
 
+    /**
+     * Rule 243 §3 (memo M3.1, review MEDIUM-1) — a Doctor's overwrite of a page 1
+     * whose biodata grid still shows fields a doctor is not served: the editor
+     * only ever held the redacted copy, so the save would erase them for everyone.
+     */
+    public const MESSAGE_PAGE_ONE_HIDDEN_FIELDS = 'Halaman 1 memuat data pasien yang disembunyikan; tulis pada halaman baru.';
+
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
+        private readonly RmPageOneBiodataRedactor $pageOne,
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     /**
@@ -140,6 +151,17 @@ final class MedicalRecordHandwritingService
                     ]);
                 }
 
+                // Rule 243 §3 (review MEDIUM-1) — a Doctor never overwrites a page 1
+                // whose biodata grid still shows hidden fields: their editor held
+                // only the redacted copy. Decided under the record lock, on the
+                // page as stored now, before any object is written (binds every
+                // caller; the saver is the doctor audience of rule 138).
+                if ($page === 1 && $this->pageOneHidesFieldsFrom($medicalRecord, $actorId !== null ? User::query()->find($actorId) : null)) {
+                    throw ValidationException::withMessages([
+                        'handwriting_data' => self::MESSAGE_PAGE_ONE_HIDDEN_FIELDS,
+                    ]);
+                }
+
                 $writtenKey = $this->objectKey($storageVisit, $page);
                 ClinicalEvidenceStorage::disk()->put($writtenKey, $png);
                 $hash = hash('sha256', $png);
@@ -177,21 +199,47 @@ final class MedicalRecordHandwritingService
      * page may not be overwritten by the live encounter, or null when it may. The
      * page renders read-only with this reason, so it offers no save the server
      * would refuse (rule 135). Never the authority.
+     *
+     * Rule 243 §3 (review MEDIUM-1) — with `$viewer`, page 1 also answers the
+     * hidden-fields refusal for a Doctor, so the editor for that page is withheld
+     * with the reason while a new page stays offered.
      */
-    public function pageLockMessage(MedicalRecord $medicalRecord, int $page, ?int $liveEncounterId): ?string
+    public function pageLockMessage(MedicalRecord $medicalRecord, int $page, ?int $liveEncounterId, ?User $viewer = null): ?string
     {
-        return self::lockMessage($this->handwritings->pageSlotLock(
+        $message = self::lockMessage($this->handwritings->pageSlotLock(
             (int) $medicalRecord->getKey(),
             $page,
             (int) $medicalRecord->patient_id,
             $liveEncounterId,
         ));
+
+        if ($message === null && $page === 1 && $viewer !== null && $this->pageOneHidesFieldsFrom($medicalRecord, $viewer)) {
+            return self::MESSAGE_PAGE_ONE_HIDDEN_FIELDS;
+        }
+
+        return $message;
     }
 
     /** Rule 240 §4 — is the stored page sealed (by a finalize, or a pre-rule page a finalize covered)? */
     public function isPageSealed(MedicalRecord $medicalRecord, int $page): bool
     {
         return $this->pageLockMessage($medicalRecord, $page, null) === self::MESSAGE_SEALED_PAGE;
+    }
+
+    /**
+     * Rule 243 §3 — the saver is the doctor audience (PatientIdentityPresenter,
+     * rule 138's one Doctor predicate; no account at all counts as one) and the
+     * stored page 1 still shows hidden cells of a real biodata grid.
+     */
+    private function pageOneHidesFieldsFrom(MedicalRecord $medicalRecord, ?User $saver): bool
+    {
+        if ($this->identities->audienceFor($saver) !== PatientIdentityPresenter::AUDIENCE_DOCTOR) {
+            return false;
+        }
+
+        $path = $medicalRecord->latestHandwriting()?->handwriting_path;
+
+        return filled($path) && $this->pageOne->storedPageShowsHiddenCells($path);
     }
 
     private static function lockMessage(?string $lock): ?string

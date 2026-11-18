@@ -37,10 +37,13 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientIdentityPresenter;
+use App\Modules\Prescription\Models\PrescriptionWhatsAppDelivery;
+use App\Modules\Prescription\Models\RmePrescription;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 const DPIF_FLAG = 'rme.doctor_encounter_scope';
@@ -400,4 +403,59 @@ it('DPIF-10 builds the identity of many patients without a query per patient onc
 
         expect($queries)->toBe(0);
     }
+});
+
+it('DPIF-11 tells a Doctor a prescription went to "nomor WhatsApp pasien" with no digit of it, page and flash; an exempt sender still sees the masked number', function () {
+    Http::preventStrayRequests();
+    rmeSignedConsentFor(test()->dpifVisit);
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
+        'clinic_visit_id' => test()->dpifVisit->id,
+        'branch_id' => test()->dpifVisit->branch_id,
+        'patient_id' => test()->dpifVisit->patient_id,
+        'doctor_id' => test()->dpifVisit->doctor_id,
+    ]);
+    $delivery = PrescriptionWhatsAppDelivery::query()->create([
+        'rme_prescription_id' => $prescription->id,
+        'clinic_visit_id' => test()->dpifVisit->id,
+        'patient_id' => test()->dpifPatient->id,
+        'branch_id' => test()->dpifVisit->branch_id,
+        'recipient_msisdn' => '6281299007322',
+        'status' => PrescriptionWhatsAppDelivery::STATUS_SENT,
+        'idempotency_key' => 'dpif-'.$prescription->id,
+        'sent_by' => test()->dpifDoctorUser->id,
+        'sent_at' => now(),
+        'attempts' => 1,
+    ]);
+    $exempt = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits', 'send_prescription_whatsapp']);
+    $page = fn ($user) => $this->actingAs($user)->get(route('rme.visits.prescription.show', test()->dpifVisit))->assertOk()->getContent();
+
+    $doctorPage = $page(test()->dpifDoctorUser);
+
+    expect($doctorPage)->toContain('Terkirim ke nomor WhatsApp pasien')
+        ->and($doctorPage)->not->toContain($delivery->maskedRecipient())
+        ->and($doctorPage)->not->toContain('7322')
+        ->and($page($exempt))->toContain('Terkirim ke '.$delivery->maskedRecipient());
+
+    // The send itself (the Cloud API faked): the flash names no digit either.
+    config()->set('whatsapp.enabled', true);
+    config()->set('whatsapp.driver', 'cloud_api');
+    config()->set('whatsapp.cloud_api.phone_number_id', '1234567890');
+    config()->set('whatsapp.cloud_api.access_token', 'DPIF-TOKEN');
+    config()->set('whatsapp.prescription_template.name', 'resep_siap');
+    config()->set('whatsapp.prescription_template.language', 'id');
+    Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.DPIF']]], 200)]);
+
+    $this->actingAs(test()->dpifDoctorUser)
+        ->post(route('rme.prescriptions.whatsapp.send', $prescription), ['confirm' => 1, 'resend' => 1])
+        ->assertSessionHas('status', 'Resep berhasil dikirim ke nomor WhatsApp pasien.');
+});
+
+it('DPIF-12 counts the age to the clinical day: at 00:30 WITA on the birthday the doctor view and the new page 1 already say the new age', function () {
+    Carbon::setTestNow(Carbon::parse('2026-01-31 16:30:00', 'UTC')); // 2026-02-01 00:30 WITA
+    $patient = test()->dpifPatient->fresh();
+    $presenter = app(PatientIdentityPresenter::class);
+
+    expect($patient->age())->toBe(35) // the server's UTC day: the day before the birthday
+        ->and($presenter->forViewer($patient, test()->dpifDoctorUser)->birthPlaceDateAge)->toBe('Parepare, 01-02-1990 / 36 tahun')
+        ->and($presenter->rmPageOneBiodata($patient)['left'][1])->toBe(['TTL / Umur', 'Parepare, 01-02-1990 / 36 tahun']);
 });

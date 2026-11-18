@@ -5,7 +5,9 @@ namespace App\Modules\Prescription\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\Prescription\Exceptions\WhatsAppDeliveryException;
+use App\Modules\Prescription\Models\PrescriptionWhatsAppDelivery;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Requests\SendPrescriptionWhatsAppRequest;
 use App\Modules\Prescription\Requests\StoreRmePrescriptionRequest;
@@ -24,6 +26,7 @@ class RmePrescriptionController extends Controller
     public function __construct(
         private readonly RmePrescriptionService $service,
         private readonly PrescriptionAuthoringAuthority $authority,
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     public function show(ClinicVisit $clinicVisit): View
@@ -50,11 +53,17 @@ class RmePrescriptionController extends Controller
         // the operator is actually authorised to transmit.
         $canSendWhatsApp = $prescription !== null
             && (auth()->user()?->can('sendWhatsApp', $prescription) ?? false);
+        $lastWhatsAppDelivery = $prescription?->whatsAppDeliveries()->latest('id')->first();
 
         return view('rme.visits.prescription.show', [
             'canSendWhatsApp' => $canSendWhatsApp,
             'whatsAppEnabled' => app(PrescriptionWhatsAppDeliveryService::class)->isEnabled(),
-            'lastWhatsAppDelivery' => $prescription?->whatsAppDeliveries()->latest('id')->first(),
+            'lastWhatsAppDelivery' => $lastWhatsAppDelivery,
+            // Rule 243 §3 (memo M3.1, review LOW-1) — who it went to, as this
+            // viewer may see it: a Doctor sees no digit of the number.
+            'whatsAppRecipientLabel' => $lastWhatsAppDelivery !== null
+                ? $this->recipientLabel($lastWhatsAppDelivery)
+                : null,
             'clinicVisit' => $clinicVisit,
             'prescription' => $data['prescription'],
             'defaults' => $data['defaults'],
@@ -99,10 +108,26 @@ class RmePrescriptionController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        // Rule 243 §3 (review LOW-1) — no digit of the number for a Doctor.
         return back()->with(
             'status',
-            'Resep berhasil dikirim ke WhatsApp pasien ('.$sent->maskedRecipient().').'
+            $this->identities->audienceFor($request->user()) === PatientIdentityPresenter::AUDIENCE_DOCTOR
+                ? 'Resep berhasil dikirim ke nomor WhatsApp pasien.'
+                : 'Resep berhasil dikirim ke WhatsApp pasien ('.$sent->maskedRecipient().').'
         );
+    }
+
+    /**
+     * Rule 243 §3 (memo M3.1, review LOW-1) — the recipient of a sent prescription
+     * as the viewer may see it: "nomor WhatsApp pasien" for a Doctor (the phone and
+     * WhatsApp number are hidden from doctor screens), the masked number
+     * (first and last four) for everyone else, as before.
+     */
+    private function recipientLabel(PrescriptionWhatsAppDelivery $delivery): string
+    {
+        return $this->identities->audienceFor(request()->user()) === PatientIdentityPresenter::AUDIENCE_DOCTOR
+            ? 'nomor WhatsApp pasien'
+            : $delivery->maskedRecipient();
     }
 
     public function store(StoreRmePrescriptionRequest $request, ClinicVisit $clinicVisit): RedirectResponse

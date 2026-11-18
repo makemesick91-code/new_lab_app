@@ -58,6 +58,8 @@ globs:
   - "app/Modules/Patient/Support/PatientIdentityView.php"
   - "app/Modules/MedicalRecord/Services/RmPageOneBiodataRedactor.php"
   - "app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php"
+  - "app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php"
+  - "app/Modules/Prescription/Controllers/RmePrescriptionController.php"
   - "resources/views/rme/visits/show.blade.php"
 alwaysApply: false
 ---
@@ -621,12 +623,22 @@ added by their own PRs.
    pre-rule-241 fixture comparisons still hold). Already showing the allowed fields only, unchanged and now pinned
    by tests: the odontogram page, the prescription page (its printed identity is the prescription's own snapshot,
    AIR-RMC-47), the empty workspace, the unified RM index and patient page. "TTL / Umur" now carries the place of
-   birth (memo M4.2 column) when one is recorded, for every audience.
+   birth (memo M4.2 column) when one is recorded, for every audience, and the presenter counts the age to the
+   clinical day (`ClinicalClock`, CG-12), never the server's UTC day (`Patient::age()`), so a page 1 drawn between
+   00:00 and 08:00 WITA on a birthday bakes the right age. The prescription page tells a Doctor that a sent
+   prescription went to "nomor WhatsApp pasien", page and flash, with no digit of the number (others keep the masked
+   number; decided in `RmePrescriptionController`).
 5. **Every other role is unchanged:** the full workspace table (marital status and religion have no column and stay
    "-"), the phone and WhatsApp number on the visit page, the full consent page and print.
-6. **Recorded residual (follow-up OD-MEMO-C-1).** The oversight visit and patient pages and the room-patients monitor
-   show the phone to their oversight roles; a Doctor who also holds Finance Klinik or Data Analyst still sees it
-   there — the same dual-role oversight family as OD-MEMO-B-1 (§1.8), not a doctor screen.
+6. **Recorded residual (follow-up OD-MEMO-C-1, not built).** Screens of another role still show the phone or
+   WhatsApp number to a Doctor who also holds that role: the oversight visit and patient pages, the room-patients
+   monitor and its export/print (`OversightMonitoringController`) for Finance Klinik or Data Analyst — the
+   dual-role oversight family of OD-MEMO-B-1 (§1.8); and the cashier screens for Kasir, Admin Klinik or Front Office:
+   the clinical summary (`rme/cashier/partials/clinical-summary.blade.php`), the payment form
+   (`rme/cashier/payment/create.blade.php`), the receivables list (`rme/cashier/receivables.blade.php`), the
+   follow-up form (`rme/cashier/follow-ups/create.blade.php`) and the receipt's invoice document
+   (`rme/cashier/receipt/partials/invoice-document.blade.php`). None is a doctor screen; the follow-up is to route
+   them through the presenter too.
 7. **Tests (C1).** `tests/Feature/RME/DoctorPatientScopeIdentityFieldsTest.php` (critical-gate token
    `DoctorPatientScope`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`): every doctor screen
    (flag OFF and ON on the visit page), non-doctor parity, the consent page masked and the print whole, the dual
@@ -639,29 +651,51 @@ added by their own PRs.
 9. **An old page 1 to a Doctor (C2).** `rme.handwritings.image` (page 1: the workspace, the book, the version pages)
    and `oversight.rme.handwritings.image` answer the §3.2 doctor audience with a copy made by
    `App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor`. On a template-shaped image (900 × 1273, or that
-   page scaled, height within a pixel) it fills white, 2 px inside the grid lines and scaled by width / 900, the ten
-   cells a new page leaves blank: band rows of 28 px from y = 96, columns 0 | 150 | 470 | 620 | 900; left rows 4–5
-   (marital status, address) and right rows 2–4 (religion, phone/WhatsApp, email), label and value. An old page then
-   reads like a new one; a new page is unchanged. GD works in memory after the handwriting payload bounds; the stored
-   object is never written. Every other role (Front Office, Admin Klinik, Supervisor RME, Super Admin, the oversight
-   roles) gets the stored bytes. Responses stay `image/png`, `nosniff`, `private, no-store`. A missing or
-   undecodable image answers a doctor 404, GD unavailable or a storage read fault 503 — never the unredacted bytes
-   (release check: GD loaded for PHP-FPM on the host). The oversight door audits the read with `variant`
-   `handwriting_redacted`; the clinical door audits no image read and gains none. An image of another shape predates the template (Sprint 60's
-   900 × 1100 canvas had no biodata grid) and is served unchanged.
-10. **Limits, recorded.** (a) Scanned legacy archive pages (published legacy RME and legacy odontogram page images
+   page scaled, height within a pixel) that really carries the Hotfix 60.5 grid (97ffaaa8) — each of the six band
+   lines dark at five of six sample columns and the separators at x = 150 / 470 / 620 at four of the five row
+   middles, a pixel either side accepted so an anti-aliased grey stroke counts — it fills white, 2 px inside the grid
+   lines and scaled by width / 900, the ten cells a new page leaves blank: band rows of 28 px from y = 96, columns
+   0 | 150 | 470 | 620 | 900; left rows 4–5 (marital status, address) and right rows 2–4 (religion, phone/WhatsApp,
+   email), label and value. An old page then reads like a new one; a new page is unchanged. A page without the grid
+   is served unchanged: Sprint 60 (7502c84d) drew 900 × 1273 pages with no grid (writing from y = 80) until Hotfix
+   60.5, and an older page (900 × 500, or 900 × 1100 since hotfix b84f0db8) re-saved after it covers the grid with
+   its own image — their ink in that area is clinical writing; an image of another shape too. GD works in memory
+   after the handwriting payload bounds; the stored object is never written. Every other role (Front Office, Admin
+   Klinik, Supervisor RME, Super Admin, the oversight roles) gets the stored bytes. Responses stay `image/png`,
+   `nosniff`, `private, no-store`. A missing or undecodable image answers a doctor 404, GD unavailable or a storage
+   read fault 503 — never the unredacted bytes. The oversight door audits the read with `variant`
+   `handwriting_redacted`; the clinical door audits no image read and gains none.
+10. **A doctor never saves the redacted copy over page 1 (C2 review).** A doctor's editor only ever holds the
+    redacted copy, so saving it over an old page 1 would erase those fields for everyone.
+    `MedicalRecordHandwritingService::save()` therefore refuses (422, `MESSAGE_PAGE_ONE_HIDDEN_FIELDS`: "Halaman 1
+    memuat data pasien yang disembunyikan; tulis pada halaman baru.") a page-1 save by the doctor audience when the
+    stored page 1 has the grid and ink in any of the ten hidden cells — inside the transaction, under the record
+    lock, after the rule 240 §4 lock and before any object is written (binds every caller; no account counts as a
+    doctor; a storage fault or GD absent fails closed). `pageLockMessage(…, $viewer)` mirrors it (rule 135): that
+    page 1 renders read-only for the doctor with the reason, and the editor targets the next, new page. A page 1
+    drawn after §3.8 (blank hidden cells) stays editable; a non-doctor author is unaffected. The canvas itself never
+    saves over a stored page whose image did not load (still loading, or failed — a doctor's 404/503), whatever was
+    drawn (`rmSaveRefusal()` in the workspace view; `tests/js/rm-page-save-guard.test.mjs`).
+11. **Limits, recorded.** (a) Scanned legacy archive pages (published legacy RME and legacy odontogram page images
     rendered from the source PDF) are scans of paper with no known biodata position: they cannot be redacted, and
     doctors keep reading them (§1.5). (b) A page 1 kept inline in its row (a `data:` URI) is embedded in the
     workspace by `MedicalRecordHandwriting::previewUrl()` without redaction; no such row can hold a template page
     (`handwriting_path` is varchar(255) on PostgreSQL, and page 1 has been a stored object since Sprint 60, before
-    the Hotfix 60.5 grid), and the image route redacts an inline row anyway.
-    (c) The print and PDF embed page 1 unredacted; a Doctor is refused them (rule 138 §6) except on the oversight
-    print residual of §1.8 (OD-MEMO-B-1). (d) A doctor re-saving an old page 1 saves what the canvas holds, the
-    redacted copy (an overwrite is allowed only on an unsealed page the live encounter wrote, rule 240 §4).
-    (e) Pixels on a screen can be photographed.
-11. **Tests (C2).** `tests/Feature/RME/DoctorPatientScopePageOneRedactionTest.php` (token `DoctorPatientScope`,
+    the Hotfix 60.5 grid), and the image route redacts an inline row anyway. (c) The print and PDF embed page 1
+    unredacted; a Doctor is refused them (rule 138 §6) except on the oversight print residual of §1.8
+    (OD-MEMO-B-1). (d) A doctor who wrote into a blank hidden cell of a new page 1 can no longer overwrite that page
+    (fail closed; a new page stays offered). (e) Pixels on a screen can be photographed.
+12. **Release check (GD).** The PHP-FPM runtime on the host must load the GD extension: without it a doctor is
+    refused every page-1 image (503) and every page-1 overwrite. Verify it before a release that carries §3 (the PR
+    body and deploy notes carry this line); CI proves it in `DoctorPatientScopePageOneRedactionTest` (DPOR-16). No
+    composer requirement is added.
+13. **Tests (C2).** `tests/Feature/RME/DoctorPatientScopePageOneRedactionTest.php` (token `DoctorPatientScope`,
     declared in `critical_gate_mandatory_suites`): pixel checks of every blanked and every kept cell, the headers,
     Front Office and Supervisor RME bytes unchanged, the stored object's hash unchanged, the dual role, the inline
     read path, a scaled and an off-template image, an unredactable page never served, a storage fault 503, the
     oversight door and its audit variant, the new page-1 grid the treating doctor draws (no viewer parameter) with
-    its blank cells equal to the redacted ones, the whole workspace without a hidden value.
+    its blank cells equal to the redacted ones, the whole workspace without a hidden value; a grid-less 900 × 1273
+    page served unchanged and an anti-aliased grid redacted, the doctor's page-1 overwrite refused with nothing
+    written while a new-template page saves, the refusal bound to the doctor audience in the service, its workspace
+    mirror, the canvas save-guard wiring, GD loaded. `DoctorPatientScopeIdentityFieldsTest` adds the prescription
+    recipient and the clinical-day age; `tests/js/rm-page-save-guard.test.mjs` runs the canvas guard.

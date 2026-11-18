@@ -7,6 +7,7 @@ use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Support\PatientIdentityView;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Support\Clinical\ClinicalClock;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.1 — PR C1 (rule 243 §3): which of a
@@ -45,6 +46,7 @@ final class PatientIdentityPresenter
     public function __construct(
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly PatientDataCompletenessService $completeness,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function audienceFor(?User $viewer): string
@@ -150,7 +152,10 @@ final class PatientIdentityPresenter
 
     /**
      * "TTL / Umur": the place of birth (memo M4.2 column, when recorded), the
-     * date of birth and the age — "Parepare, 01-02-1990 / 36 tahun".
+     * date of birth and the age — "Parepare, 01-02-1990 / 36 tahun". The age
+     * counts to the CLINICAL day (ClinicalClock, CG-12), never the server's UTC
+     * day, so a page 1 drawn between 00:00 and 08:00 WITA on a birthday bakes
+     * the right age.
      */
     private function birthPlaceDateAge(?Patient $patient): ?string
     {
@@ -159,7 +164,7 @@ final class PatientIdentityPresenter
 
         if ($patient?->date_of_birth !== null) {
             $date = $patient->date_of_birth->format('d-m-Y');
-            $age = $patient->age();
+            $age = $this->clinicalAge($patient);
 
             if ($age !== null) {
                 $date .= ' / '.$age.' tahun';
@@ -169,6 +174,16 @@ final class PatientIdentityPresenter
         $parts = array_values(array_filter([$place, $date], fn (?string $part): bool => $part !== null));
 
         return $parts === [] ? null : implode(', ', $parts);
+    }
+
+    /** Whole years from the date of birth to the clinical today; null for a future date. */
+    private function clinicalAge(Patient $patient): ?int
+    {
+        $birth = $patient->date_of_birth;
+        $today = $this->clock->today();
+        $age = $today->year - $birth->year - ($today->format('md') < $birth->format('md') ? 1 : 0);
+
+        return $age < 0 ? null : $age;
     }
 
     private function genderLabel(?Patient $patient): ?string

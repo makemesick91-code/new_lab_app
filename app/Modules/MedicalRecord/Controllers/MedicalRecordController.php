@@ -443,6 +443,9 @@ class MedicalRecordController extends Controller
             $handwritingFormRecord,
             $storagePageNumber,
             $currentEncounter !== null ? (int) $currentEncounter->getKey() : null,
+            // Rule 243 §3 (review MEDIUM-1) — a Doctor's page 1 that still shows
+            // hidden biodata fields is read-only for them; a new page stays offered.
+            $viewer,
         );
         $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
             $handwritingRecord?->clinicVisit ?? $workspaceVisit,

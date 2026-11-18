@@ -235,9 +235,11 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   date of birth, age, occupation, planned treatment and gender, never the phone, WhatsApp, email, address or NIK, on
   every clinical screen. One decision, `PatientIdentityPresenter` (controllers pass its view; Blade only renders); the
   doctor's consent page masks the NIK and hides the addresses, the print is unchanged; a new RM page 1 is drawn with
-  the allowed fields only, and an old page 1 reaches a Doctor (clinical and oversight doors) with those biodata cells
-  blanked in a copy (`RmPageOneBiodataRedactor`; never the stored bytes, 404/503 when it cannot redact); the master
-  form stays whole for the non-doctor role. Not behind the encounter-scope flag. Source:
+  the allowed fields only, and an old page 1 that really carries the biodata grid reaches a Doctor (clinical and
+  oversight doors) with those cells blanked in a copy (`RmPageOneBiodataRedactor`; never the stored bytes, 404/503
+  when it cannot redact; a page without the grid unchanged); a Doctor never saves over a page 1 that still shows
+  them (422 in `MedicalRecordHandwritingService::save()`, mirrored read-only); the master form stays whole for the
+  non-doctor role. Not behind the encounter-scope flag; GD required on the host. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §3.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
