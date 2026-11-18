@@ -4,6 +4,7 @@ namespace App\Modules\ClinicVisit\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicalPhoto\Support\ClinicalPhotoGalleryPresenter;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\AssignRoomRequest;
@@ -51,6 +52,7 @@ class ClinicVisitController extends Controller
         private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        private readonly ClinicalPhotoGalleryPresenter $clinicalPhotos,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -431,6 +433,12 @@ class ClinicVisitController extends Controller
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no
             // prior visit, so the page offers no "Buat Kontrol" from it.
             'canStartKontrolFromHere' => $clinicVisit->status !== ClinicVisit::STATUS_CANCELLED,
+            // DMS memo M4.4, PTM PR5 (rule 242 §10) — the "Foto Klinis" card,
+            // decided here: null (nothing rendered, no photo route) while
+            // `rme.clinical_photos` is OFF or for an account that may neither
+            // read nor upload this visit's photos. RmeClinicalPhotoService
+            // decides every upload, image read and void again.
+            'clinicalPhotoGallery' => $this->clinicalPhotos->forVisit($clinicVisit, request()->user()),
         ] + $this->ptmPresentationFor($clinicVisit));
     }
 

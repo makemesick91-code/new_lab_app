@@ -16,6 +16,10 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\ClinicalPhoto\Interfaces\RmeClinicalPhotoRepositoryInterface;
+use App\Modules\ClinicalPhoto\Models\RmeClinicalPhoto;
+use App\Modules\ClinicalPhoto\Policies\RmeClinicalPhotoPolicy;
+use App\Modules\ClinicalPhoto\Repositories\RmeClinicalPhotoRepository;
 use App\Modules\ClinicOversight\Interfaces\OversightBillingCorrectionRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
@@ -483,6 +487,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed consent as the payment gate
         RmeVisitConsentRepositoryInterface::class => RmeVisitConsentRepository::class,
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos
+        RmeClinicalPhotoRepositoryInterface::class => RmeClinicalPhotoRepository::class,
         // Sprint 66.0 — RME online context
         UserOnlineContextRepositoryInterface::class => UserOnlineContextRepository::class,
         // Sprint 20 Phase 1.8
@@ -616,6 +622,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePrescription::class => RmePrescriptionPolicy::class,
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01
         RmeVisitConsent::class => RmeVisitConsentPolicy::class,
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242)
+        RmeClinicalPhoto::class => RmeClinicalPhotoPolicy::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoice::class => RmeInvoicePolicy::class,
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190)

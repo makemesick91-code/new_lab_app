@@ -616,6 +616,21 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is written or deleted by this flag: it only narrows reads and writes at request time, so switching it off restores the relationship scope (assignments, any visit with the doctor, co-authoring) immediately for the next request.',
         ],
+
+        // --- DMS memo M4.4 / M1.x, PTM plan PR4 (rule 242) — clinical photos (built OFF) ---
+
+        'rme.clinical_photos' => [
+            'name' => 'RME Clinical Photos (Foto Klinis)',
+            'description' => 'MUTATION and READ capability for clinical photos of an encounter (memo M4.4, rule 242). Upload: a Doctor or Perawat (a role allowlist in RmeClinicalPhotoService, so Super Admin is bound too) on the live in_progress encounter they may work on, only while its PERSETUJUAN TINDAKAN MEDIS is EXECUTED (patient + treating-doctor countersignature, rule 241 §2) and its clinical-documentation answer is YA (2026.1: the combined clause 8; v2026.2: clause 8). Clause 9 (publication) never gates or permits anything. The image is validated before any write (JPEG or PNG sniffed from the bytes, size and pixel bounds from the header) and re-encoded as JPEG (EXIF and GPS stripped, orientation applied, long edge at most 2560), stored only on the private clinical evidence disk (rule 121) under a fresh random key, row and object one unit with the visit row locked first (rule 224), audited with ids only. Read: the image route only (private, no-store, nosniff, every view audited), in the RME clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope; never Front Office, Kasir or Admin Klinik. While this flag is off every photo route answers 404 to the accounts holding its permission and every service call is refused.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_CLINICAL_PHOTOS',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-MEMO-PTM-PR4',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted or reverted: stored photo rows and their private objects stay as clinical evidence, unreachable while the flag is off. Never delete a photo row or object to undo a rollout.',
+        ],
     ],
 ];
 
