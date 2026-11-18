@@ -248,6 +248,13 @@ Plan PR split item 5 ("Photos UI"). The plan names no host page, so the UI lives
    upload, 5 workers ≈ 2.3–2.7 GB); **recommended follow-up: a per-user upload rate limit** on
    `rme.visits.clinical-photos.store` (not built); WATCH the audit volume (every thumbnail load is a view row) and
    the `MESSAGE_RESAVE` rate. No new Tailwind utility: every class in the partial is already used elsewhere.
+   **Open owner decision before ON (PR5 review, LOW):** every Detail Kunjungan view downloads each live photo at full
+   stored size (up to a 2560 px JPEG, `no-store`, so never cached) and writes one `RME_CLINICAL_PHOTO_VIEWED` row per
+   photo, so the audit trail records page opens rather than deliberate looks, and the page grows with the photo
+   count. Before the flag is turned on the owner decides between (a) small stored thumbnails (~320 px, written with
+   the photo as one more private object) served with a lighter audit or one gallery-view row per page, the full image
+   audited only when opened, or (b) click-to-view (no image until a photo is opened, each opening audited). Until
+   then the gallery stays as built, behind the OFF flag.
 7. **Tests.** `tests/Feature/RME/RmeClinicalEvidencePhotoGalleryUiTest.php` (token `ClinicalEvidence`, declared in
    `critical_gate_mandatory_suites`): flag OFF renders nothing for every role, the upload form and the refusal
    reasons, live photos only, the voided list and the void form for holders only (never on the viewer's own
