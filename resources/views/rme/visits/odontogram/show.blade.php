@@ -7,8 +7,11 @@
         // stays table-only with the official columns GIGI / DIAGNOSA / PERAWATAN /
         // DOKTER. The FDI visual (permanent + primary teeth) and the Jumlah
         // D/M/F/DMF-T tally are generated, read-only outputs derived only from the
-        // saved table data; the doctor never draws on the image. Odontogram remains
-        // editable after finalization (Sprint 59).
+        // saved table data; the doctor never draws on the image.
+        //
+        // Rule 240 §1 (memo M3.3) — a FINALIZED chart is locked (this supersedes
+        // the Sprint 59 "editable after finalization" behaviour): no save form,
+        // and a correction goes through a supervised amendment.
         //
         // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — authoring requires a
         // live, in-scope encounter whose chart this is; it no longer requires a
@@ -27,7 +30,10 @@
         // Ask for the ability the SERVER will actually enforce on submit:
         // `update` for a revision of a saved chart, `author` for the first one.
         // Asking the wrong one could render a save form the server then refuses.
+        // `! $isFinalized` mirrors OdontogramService for Super Admin, whom
+        // Gate::before lets past OdontogramPolicy::update (rule 240 §1).
         $canUpdate = ($odontogramAuthoringAllowed ?? false)
+            && (! $isFinalized)
             && ($odontogramExists
                 ? (auth()->user()?->can('update', $odontogram) ?? false)
                 : (auth()->user()?->can('author', [\App\Modules\Odontogram\Models\Odontogram::class, $clinicVisit]) ?? false));
@@ -117,20 +123,26 @@
 
         {{-- Flash messages render as global toasts (see <x-flash-toasts />) --}}
 
-        {{-- Finalized notice --}}
-        @if ($isFinalized)
+        {{-- Finalized notice — rule 240 §1.7: a finalized chart of the LIVE
+             encounter (a finalized history chart shows the history banner below);
+             decided by OdontogramController. The wording equals
+             OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED (pinned by
+             OdontogramFinalizedLockTest). --}}
+        @if ($odontogramLockedNotice ?? false)
             <x-ui.alert variant="info">
-                Odontogram sudah final namun masih dapat direvisi oleh dokter.
-                @if ($odontogram->finalized_at)
-                    Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
-                    @if ($odontogram->finalizer)
-                        oleh {{ $odontogram->finalizer->name }}.
-                    @else
-                        .
-                    @endif
+                Odontogram ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
+                @if ($odontogramFinalizedLine ?? null)
+                    {{ $odontogramFinalizedLine }}
                 @endif
             </x-ui.alert>
+        @elseif ($odontogramFinalizedLine ?? null)
+            {{-- Any other finalized chart (history, or a viewer outside the live
+                 encounter's banner): when and by whom, as before the lock. --}}
+            <p class="text-sm text-gray-600">{{ $odontogramFinalizedLine }}</p>
         @endif
+
+        {{-- Rule 240 §6 (memo M3.3 PR4) — amendment status and the request offer. --}}
+        @include('rme.amendments.partials.record-panel')
 
         {{-- Header --}}
         <x-ui.page-header
@@ -168,7 +180,7 @@
 
                 @if ($canFinalize)
                     <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
-                          onsubmit="return confirm('Finalisasi odontogram ini? Data masih dapat direvisi setelah final.')">
+                          onsubmit="return confirm('Finalisasi odontogram ini? Setelah final, odontogram terkunci dan hanya dapat dikoreksi melalui amandemen yang disetujui.')">
                         @csrf
                         <x-ui.button type="submit" variant="primary">Finalisasi Odontogram</x-ui.button>
                     </form>
@@ -176,26 +188,48 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        {{-- REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the signature no
-             longer blocks charting, so this is a REMINDER, not a refusal. It
-             names the two things still waiting on it, because the doctor can now
-             finish the whole chart without ever meeting the gate. --}}
-        @if (($consentPendingForRme ?? false) && ($odontogramAuthoringAllowed ?? false))
-            <x-ui.alert variant="info" title="Persetujuan Tindakan Medis belum ditandatangani">
-                <p class="text-sm">
-                    Odontogram sudah dapat dicatat dan disimpan sekarang.
-                    Rekam Medis kunjungan ini dan tombol Selesai Pemeriksaan masih
-                    terkunci sampai pasien menandatangani Persetujuan Tindakan Medis.
-                </p>
-                <div class="mt-3">
-                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
-                        Buka Detail Kunjungan
-                    </x-ui.button>
-                </div>
-            </x-ui.alert>
-        @elseif (! ($odontogramAuthoringAllowed ?? false)
-            && (auth()->user()?->can('update', $odontogram) ?? false)
-            && app(\App\Modules\ClinicVisit\Services\ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit))
+        {{-- DMS memo M1.1–M1.3 PR2 (rule 241 §2–§3) — charting waits for BOTH
+             PTM signatures (supersedes the rule 134 pre-consent reminder). When
+             only the PTM stands between this account and the live chart, the page
+             names it; the controller decides the state and the countersign link
+             (MEMO-F5). Reading the chart and its history stays open. A FINALIZED
+             chart shows its lock instead (rule 240 §1.8). --}}
+        @if (($odontogramPtmBlock ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_DOCTOR)
+            <div data-ptm-state="awaiting_doctor">
+                <x-ui.alert variant="warning" title="Odontogram menunggu tanda tangan dokter">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Pasien sudah menandatangani Persetujuan Tindakan Medis. Odontogram, rekam medis
+                            dan tombol Selesai Pemeriksaan menunggu tanda tangan dokter yang menangani;
+                            odontogram dan riwayatnya tetap dapat dibaca.
+                        </p>
+                        @if ($countersignConsent ?? null)
+                            <x-ui.button variant="primary" :href="route('rme.consents.countersign.create', $countersignConsent)" data-testid="odontogram-countersign-ptm">
+                                Tanda Tangani PTM
+                            </x-ui.button>
+                        @endif
+                    </div>
+                    @if (($countersignRefusal ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF)
+                        <p class="mt-2 text-xs" data-testid="odontogram-countersign-self-captured">{{ $countersignRefusal }}</p>
+                    @endif
+                </x-ui.alert>
+            </div>
+        @elseif (($odontogramPtmBlock ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_PATIENT)
+            <div data-ptm-state="awaiting_patient">
+                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Odontogram, rekam medis dan tombol Selesai Pemeriksaan menunggu Surat Persetujuan
+                            Tindakan Medis ditandatangani pasien, lalu oleh dokter yang menangani. Odontogram dan
+                            riwayatnya tetap dapat dibaca.
+                        </p>
+                        <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                            Buka Detail Kunjungan
+                        </x-ui.button>
+                    </div>
+                </x-ui.alert>
+            </div>
+        @elseif (($odontogramReadOnlyNotice ?? null) === 'front_office')
             {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — this IS the live
                  encounter's chart, so "past visit" would be the wrong reason: the
                  account itself may not chart it (e.g. the front office). --}}
@@ -205,9 +239,10 @@
                     yang memeriksa pasien. Akun ini dapat membaca odontogram dan riwayatnya.
                 </p>
             </x-ui.alert>
-        @elseif (! ($odontogramAuthoringAllowed ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
+        @elseif (($odontogramReadOnlyNotice ?? null) === 'history')
             {{-- Not the live encounter: this chart is clinical evidence of a past
-                 visit, and consent signed today does not reopen it. --}}
+                 visit, and consent signed today does not reopen it. Finalized or
+                 not, this is the banner a history chart shows (rule 240 §1.7). --}}
             <x-ui.alert variant="info" title="Odontogram riwayat — hanya-baca">
                 <p class="text-sm">
                     Odontogram ini milik kunjungan yang tidak sedang berjalan, sehingga

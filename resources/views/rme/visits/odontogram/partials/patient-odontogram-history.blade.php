@@ -12,8 +12,8 @@
       * the active odontogram editor above is a separate surface and is
         deliberately UNCHANGED by this sprint.
 
-    Correcting a past chart is still done by opening that visit's own odontogram
-    page, which keeps the Sprint 59 "any visit is revisable" behaviour intact.
+    A past chart is read-only (rule 109 §4, CORRECTIVE-03) and a finalized chart
+    is locked (rule 240 §1); this card never offers a correction.
 
     Expects:
       $odontogramHistory  Collection<int, array>  — read-only view-model rows

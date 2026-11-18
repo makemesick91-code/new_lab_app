@@ -70,6 +70,12 @@
                             Halaman {{ $page['position'] }} · Kunjungan {{ $page['visit_number'] ?? '-' }}
                             ({{ $page['visit_date']?->format('d-m-Y') ?? '-' }})
                         </figcaption>
+                        {{-- Rule 240 §8.10 / §9 (M3.3 PR7) — a page appended by an approved amendment says so. --}}
+                        @if (($page['amendment_label'] ?? null) !== null)
+                            <p class="mb-2 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $page['rme_amendment_id'] }}">
+                                Halaman buku RM {{ $page['page_number'] }} · {{ $page['amendment_label'] }}
+                            </p>
+                        @endif
                         <img loading="lazy" class="w-full rounded border border-hairline bg-white"
                              alt="Halaman RM {{ $page['position'] }}"
                              src="{{ $page['kind'] === 'handwriting'

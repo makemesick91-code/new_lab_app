@@ -12,6 +12,7 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\ClinicalPhoto\Controllers\RmeClinicalPhotoController;
 use App\Modules\ClinicOversight\Controllers\OversightBillingCorrectionController;
 use App\Modules\ClinicOversight\Controllers\OversightClinicalRecordController;
 use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
@@ -123,6 +124,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\RmeAmendment\Controllers\RmeAmendmentController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeController;
@@ -282,7 +284,10 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::post('/', [LegacyPatientImportController::class, 'store'])->name('store');
             Route::get('{batch}', [LegacyPatientImportController::class, 'show'])->name('show');
             Route::get('{batch}/errors', [LegacyPatientImportController::class, 'errors'])->name('errors');
-            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit');
+            // Rule 244 §4 (plan default 4) — the commit stores typed Nomor RM:
+            // paper-card permission only (Supervisor RME; Super Admin via '*').
+            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit')
+                ->middleware('permission:register_patient_paper_card_rm');
             Route::post('{batch}/rollback', [LegacyPatientImportController::class, 'rollback'])->name('rollback');
             Route::delete('{batch}', [LegacyPatientImportController::class, 'destroy'])->name('destroy');
         });
@@ -335,6 +340,28 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->where(['patient' => DatabaseRouteKey::PATTERN, 'document' => DatabaseRouteKey::PATTERN])
             ->middleware('throttle:patient-document')
             ->name('patients.documents.destroy');
+    });
+
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b; owner
+    // decision 2026-11-17, "PAPER-CARD REASON: store text, restricted") — the
+    // stored paper-card reasons. Deliberately OUTSIDE `manage patients`: the
+    // Owner reads them without managing patients. The read permission is on the
+    // route, the policy and the service (CG-06); `private, no-store` because the
+    // note may carry personal data; the per-patient page answers 404 outside the
+    // reader's working-branch scope (CG-05). `{patient}` is mst_patients.id
+    // (rule 222: DatabaseRouteKey::PATTERN per route). Rule 244 §5.3 (owner
+    // decision 2026-11-17) — the per-patient page also shows the open no-phone
+    // exception note, under the same three layers.
+    Route::middleware(['permission:view_patient_rm_paper_card_reasons', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('patients/paper-card-registrations', [PatientController::class, 'paperCardRegistrations'])
+            ->name('patients.paper-card-registrations.index');
+        // PR-3b review B3 — a soft-deleted patient keeps its reason (and the
+        // list links to it), so the binding includes trashed rows; the branch
+        // scope is unchanged.
+        Route::get('patients/{patient}/paper-card-registrations', [PatientController::class, 'paperCardRegistrationsForPatient'])
+            ->where('patient', DatabaseRouteKey::PATTERN)
+            ->withTrashed()
+            ->name('patients.paper-card-registrations.show');
     });
 
     // FEATURE-LEGACY-IMPORT-HUB-1 — Import Data Legacy (the landing page).
@@ -1293,7 +1320,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/handwriting', [MedicalRecordHandwritingController::class, 'store'])
                 ->name('visits.medical-record.handwriting.store');
             // SATUSEHAT-4A — structured diagnosis entry (never auto-created;
-            // reuses MedicalRecordPolicy::update inside the controller).
+            // MedicalRecordPolicy::editSheet inside the controller, rule 240 §1).
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses', [MedicalRecordDiagnosisController::class, 'store'])
                 ->name('visits.medical-record.diagnoses.store');
             Route::delete('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}', [MedicalRecordDiagnosisController::class, 'destroy'])
@@ -1380,9 +1407,45 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->middleware('permission:void_rme_consents')
             ->where('consent', DatabaseRouteKey::PATTERN)
             ->name('consents.void');
+        // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+        // countersignature, own permission; identity and state in the service.
+        Route::get('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersignForm'])
+            ->middleware('permission:countersign_rme_consents')
+            ->middleware('cache.headers:private;no_store;max_age=0')
+            ->name('consents.countersign.create');
+        // {consent} is constrained globally by DatabaseRouteKey (AIR-RMC-37).
+        Route::post('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersign'])
+            ->middleware('permission:countersign_rme_consents')
+            ->name('consents.countersign');
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');
+
+        /*
+         * DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos. Three
+         * layers: the route permission; the FormRequest / controller answering
+         * 404 while `rme.clinical_photos` is OFF, then RmeClinicalPhotoPolicy;
+         * RmeClinicalPhotoService, which re-decides everything (Doctor/Perawat
+         * allowlist, live encounter, executed PTM with clinical documentation YA,
+         * visit row locked first) and binds Super Admin. The image is read only
+         * here, never from a public URL. `clinicalPhoto` is a generic name, so it
+         * is constrained per route (rule 222 §1.6). The gallery UI is PR5.
+         */
+        // No `visit.room` (review L-2): the room gate only redirects a pre-exam visit,
+        // an upload needs the in_progress encounter anyway, and the gate would answer
+        // 302 ahead of the flag's 404.
+        Route::post('visits/{clinicVisit}/clinical-photos', [RmeClinicalPhotoController::class, 'store'])
+            ->middleware('permission:upload_rme_clinical_photos')
+            ->name('visits.clinical-photos.store');
+        Route::get('clinical-photos/{clinicalPhoto}/image', [RmeClinicalPhotoController::class, 'image'])
+            ->middleware(['permission:view_rme_clinical_photos', 'cache.headers:private;no_store;max_age=0'])
+            ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
+            ->name('clinical-photos.image');
+        // Rule 242 §9 — the supervised void (own permission); there is no delete route.
+        Route::post('clinical-photos/{clinicalPhoto}/void', [RmeClinicalPhotoController::class, 'void'])
+            ->middleware('permission:void_rme_clinical_photos')
+            ->where('clinicalPhoto', DatabaseRouteKey::PATTERN)
+            ->name('clinical-photos.void');
 
         /*
          * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — authorised read path for native
@@ -1542,6 +1605,69 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('refund-requests/{refundRequest}/reject', [RmeRefundRequestController::class, 'reject'])
                 ->whereNumber('refundRequest')->name('refund-requests.reject');
         });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — the supervised
+    | amendment of a final sheet or a finalized odontogram. Three layers: the route
+    | permission (request_rme_amendments: Doctor; approve_rme_amendments:
+    | Supervisor RME; Super Admin via '*'), RmeAmendmentPolicy (an amendment the
+    | account may not see answers 404), and RmeAmendmentService, which re-decides
+    | requester identity, branch scope and maker != checker inside the
+    | transaction (binding Super Admin). Every page is private, no-store. Approve
+    | and apply is M3.3 PR5.
+    */
+    Route::middleware(['permission:request_rme_amendments|approve_rme_amendments', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('amendments/{amendment}', [RmeAmendmentController::class, 'show'])
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.show');
+        // Rule 240 §8 (M3.3 PR6) — the handwriting correction page an amendment
+        // carries: its requester or an approver in scope (404 otherwise), the
+        // object verified against its SHA-256, never its key.
+        Route::get('amendments/{amendment}/correction-page', [RmeAmendmentController::class, 'correctionPage'])
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.correction-page');
+
+        Route::middleware('permission:approve_rme_amendments')->group(function () {
+            Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');
+            Route::post('amendments/{amendment}/reject', [RmeAmendmentController::class, 'reject'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.reject');
+            // Rule 240 §7 (M3.3 PR5) — approve AND apply, one transaction.
+            Route::post('amendments/{amendment}/approve', [RmeAmendmentController::class, 'approve'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.approve');
+        });
+
+        Route::middleware('permission:request_rme_amendments')->group(function () {
+            Route::get('medical-records/{medicalRecord}/amendments/create', [RmeAmendmentController::class, 'createForSheet'])
+                ->name('amendments.create-sheet');
+            Route::post('medical-records/{medicalRecord}/amendments', [RmeAmendmentController::class, 'storeForSheet'])
+                ->name('amendments.store-sheet');
+            Route::get('odontograms/{odontogram}/amendments/create', [RmeAmendmentController::class, 'createForChart'])
+                ->name('amendments.create-chart');
+            Route::post('odontograms/{odontogram}/amendments', [RmeAmendmentController::class, 'storeForChart'])
+                ->name('amendments.store-chart');
+            Route::post('amendments/{amendment}/cancel', [RmeAmendmentController::class, 'cancel'])
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.cancel');
+        });
+    });
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR5 (rule 240 §7) — the version
+    | history of a final sheet or a finalized chart, read like the record itself:
+    | the clinic-visit read permission here, the record's own `view` policy in
+    | RmeAmendmentService (404 outside its scope), private and no-store.
+    | `{medicalRecord}` / `{odontogram}` are governed keys, constrained globally
+    | (DatabaseRouteKey, AIR-RMC-37: never per route); `{amendment}` takes the
+    | bigint key pattern per route and `{version}` a 1-based int4 number (the
+    | PAGE_NUMBER_PATTERN bounds), so an out-of-range segment is a 404, never a 500.
+    */
+    Route::middleware(['permission:view_clinic_visits|manage_clinic_visits', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('medical-records/{medicalRecord}/versions', [RmeAmendmentController::class, 'sheetVersions'])
+            ->name('amendments.versions.sheet');
+        Route::get('medical-records/{medicalRecord}/versions/{version}', [RmeAmendmentController::class, 'sheetVersion'])
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.sheet.show');
+        Route::get('odontograms/{odontogram}/versions', [RmeAmendmentController::class, 'chartVersions'])
+            ->name('amendments.versions.chart');
+        Route::get('odontograms/{odontogram}/versions/{version}', [RmeAmendmentController::class, 'chartVersion'])
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.chart.show');
     });
 
     /*

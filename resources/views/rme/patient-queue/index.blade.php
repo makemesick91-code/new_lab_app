@@ -102,6 +102,8 @@
                                         <x-ui.badge :status="$visit->status">
                                             {{ $statusLabels[$visit->status] ?? $visit->status }}
                                         </x-ui.badge>
+                                        {{-- Rule 241 §3 — the PTM state (controller-decided). --}}
+                                        @include('rme.visits.partials.ptm-state-badge', ['ptmState' => $ptmStates[$visit->id] ?? null])
                                     </td>
                                     <td class="px-3 py-3 text-ink-soft">
                                         @unless ($visit->clinicRoom)

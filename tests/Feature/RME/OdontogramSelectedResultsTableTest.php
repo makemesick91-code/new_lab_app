@@ -275,9 +275,9 @@ it('finalization does not clear per-row additional_note', function () {
         ->toBe('Pertahankan catatan');
 });
 
-// --- 14: finalized rows stay editable for a manager (Sprint 59) ---
+// --- 14: finalized rows are read-only (rule 240 §1; flipped from Sprint 59 "stay editable") ---
 
-it('finalized odontogram keeps rows editable for a manager (Sprint 59)', function () {
+it('finalized odontogram renders its rows read-only for a manager (rule 240 §1, supersedes Sprint 59)', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
@@ -296,8 +296,8 @@ it('finalized odontogram keeps rows editable for a manager (Sprint 59)', functio
         ->assertOk()
         ->assertSee('FinalKondisiRow')
         ->assertSee('FinalCatatanRow')
-        // Sprint 59 — finalized odontograms remain editable, so the table editor renders.
-        ->assertSee('setAdditional', false);
+        // Rule 240 §1 — a finalized chart is locked, so the table editor does not render.
+        ->assertDontSee('setAdditional', false);
 });
 
 // --- 15: print page shows the selected results table ---

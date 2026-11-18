@@ -74,6 +74,8 @@ const RSCC_TABLES = [
     'trx_rme_payment_submissions',
     'trx_rme_payments',
     'trx_rme_invoice_items',
+    // Rule 241 — the consent countersignature, deleted before its consent (FK).
+    'trx_rme_visit_consent_doctor_signatures',
     'trx_rme_visit_consents',
     'trx_medical_records',
     'trx_daily_branch_contexts',
@@ -142,7 +144,7 @@ afterEach(function () {
         'trx_rme_overpayment_obligations', 'trx_rme_receipt_snapshots', 'trx_rme_invoice_correction_events',
         'trx_rme_invoice_correction_lines', 'trx_rme_invoice_document_versions', 'trx_rme_invoice_corrections',
         'trx_rme_payment_submissions', 'trx_rme_payments', 'trx_rme_invoice_items', 'trx_rme_invoices',
-        'trx_rme_visit_consents', 'trx_medical_records', 'trx_clinic_visits', 'trx_daily_branch_contexts',
+        'trx_rme_visit_consent_doctor_signatures', 'trx_rme_visit_consents', 'trx_medical_records', 'trx_clinic_visits', 'trx_daily_branch_contexts',
         'trx_user_online_contexts', 'mst_clinic_rooms', 'mst_patients', 'mst_doctors', 'mst_clinics', 'mst_treatments',
         'mst_treatment_categories', 'mst_branches', 'users',
     ];

@@ -21,9 +21,19 @@
 | When the substance changes, bump `version` so new consents are
 | distinguishable from historical ones.
 |
+| DMS memo M4.4, PTM plan PR3 (rule 241 §6) — `candidate_templates` holds the
+| NEXT version of a form (v2026.2: clause 8 = clinical documentation, clause 9 =
+| publication/promotion, two separate YA/TIDAK answers). It is never a
+| selectable form of its own: RmeVisitConsentService signs a NEW consent on it
+| only while the risky flag `rme.consent_template_v2026_2` is on AND its
+| `wording_status` is exactly `approved` with no draft marker left in its text;
+| otherwise new consents keep the current template exactly as before. The
+| wording is a product decision (rule 100 §4) still pending from the owner, so
+| it ships as a marked DRAFT. Historical consents never change (their snapshot).
+|
 */
 
-return [
+$registry = [
 
     /*
     | The form offered by default when the operator opens "Pilih Form Consent".
@@ -38,10 +48,18 @@ return [
     | files are served only through the policy-gated consent signature route.
     |
     | `legacy_signature_disk` names where signatures were written BEFORE that
-    | change. Only `rme:consent-signatures-migrate` reads it (copy phase, key
-    | for key, SHA-256 verified); no reader falls back to it (rule 121 §5).
+    | change. `rme:consent-signatures-migrate` copies from it (key for key,
+    | SHA-256 verified, never deleting).
+    |
+    | `legacy_read_fallback` — release 2, owner decision 2026-11-17 (rule 237
+    | §14.5a, a temporary exception to rule 121 §5): while true, a READER whose
+    | object is not yet on the clinical evidence disk reads it, read-only, from
+    | `legacy_signature_disk`. It stays true until the copy is applied and
+    | verified; turning it off is a separate owner-approved change. Never an
+    | environment override (no env read here).
     */
     'legacy_signature_disk' => 'local',
+    'legacy_read_fallback' => true,
     'signature_directory' => 'rme-consents',
 
     /*
@@ -123,4 +141,44 @@ return [
 
     ],
 
+    /*
+    | Rule 241 §6 — the visible marker of wording that is NOT approved. Any text
+    | of a candidate that still carries it refuses activation, even when its
+    | `wording_status` says `approved` (fail closed).
+    */
+    'draft_marker' => '[DRAF — menunggu persetujuan redaksi]',
+
 ];
+
+/*
+|--------------------------------------------------------------------------
+| PERSETUJUAN TINDAKAN MEDIS v2026.2 — DRAFT, inactive (rule 241 §6)
+|--------------------------------------------------------------------------
+|
+| Derived from 2026.1 so that everything except clauses 8 and 9 stays verbatim:
+| clauses 1–7, title, statement, declaration, signature labels and location are
+| the printed form's text, copied, never retyped. Clauses 8 and 9 below are a
+| DRAFT adapted from the 2026.1 clause 8 and are NOT the clinic's wording: the
+| owner sends the final text, which replaces them word for word together with
+| `wording_status => 'approved'` in a reviewed change. Until then activation is
+| refused even with the flag on, and the draft marker stays in the text so the
+| draft can never be mistaken for approved wording wherever it is previewed.
+*/
+$ptm2026_1 = $registry['templates']['PERSETUJUAN_TINDAKAN_MEDIS'];
+
+$registry['candidate_templates'] = [
+    'PERSETUJUAN_TINDAKAN_MEDIS' => array_replace($ptm2026_1, [
+        'version' => '2026.2',
+        'wording_status' => 'draft',
+        'clauses' => array_replace($ptm2026_1['clauses'], [
+            8 => $registry['draft_marker'].' Saya memberikan persetujuan kepada klinik gigi daengtisia secara sadar dan tanpa paksaan dari pihak manapun untuk dokumentasi medis berupa foto/video perawatan saya sebagai bagian dari rekam medis (YA/TIDAK).',
+            9 => $registry['draft_marker'].' Saya memberikan persetujuan kepada klinik gigi daengtisia secara sadar dan tanpa paksaan dari pihak manapun untuk mempublikasikan foto/video perawatan saya untuk keperluan edukasi/promosi (YA/TIDAK) dengan syarat tidak menampilkan informasi pribadi. Menolak publikasi tidak memengaruhi perawatan saya.',
+        ]),
+        // Two answers: clause 8 is stored in `documentation_consent`, clause 9
+        // in `publication_consent`. No workflow reads clause 9 (rule 241 §6.5).
+        'documentation_clause' => 8,
+        'publication_clause' => 9,
+    ]),
+];
+
+return $registry;

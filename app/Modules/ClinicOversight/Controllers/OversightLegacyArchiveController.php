@@ -12,6 +12,7 @@ use App\Modules\LegacyOdontogram\Services\LegacyOdontogramStorageService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
@@ -35,6 +36,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * Only a PUBLISHED archive renders or streams. That rule is asserted here and
  * not only in the gate, because Super Admin passes every gate.
+ *
+ * RULE 243 §1 — a Doctor who also holds an oversight role is still a Doctor
+ * (rule 138's one definition): the source, print and PDF doors refuse them
+ * (403, audited through DoctorRoomScopeService) and the show screens offer no
+ * export control; the page images stay readable.
  */
 class OversightLegacyArchiveController extends Controller
 {
@@ -50,6 +56,7 @@ class OversightLegacyArchiveController extends Controller
         private readonly LegacyRmeStorageService $rmeStorage,
         private readonly LegacyOdontogramStorageService $odontogramStorage,
         private readonly OversightAuditService $audit,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     // ------------------------------------------------------------------
@@ -65,7 +72,7 @@ class OversightLegacyArchiveController extends Controller
         return view('oversight.legacy.rme-show', [
             'record' => $archive->load(['patient', 'originBranch', 'publishedBy']),
             'pages' => $this->legacyRme->pagesFor($archive),
-            'canExport' => $request->user()->can('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL),
+            'canExport' => $this->mayExportArchive($request),
         ]);
     }
 
@@ -73,6 +80,7 @@ class OversightLegacyArchiveController extends Controller
     {
         $archive = $this->resolveRme($request, $record);
         $this->authorize('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL);
+        $this->refuseDoctorDownload($request, $archive, 'oversight_source');
 
         $path = (string) $archive->source_pdf_path;
         $disk = $this->rmeStorage->diskFor($archive->source_disk);
@@ -106,6 +114,7 @@ class OversightLegacyArchiveController extends Controller
     {
         $archive = $this->resolveRme($request, $record);
         $this->authorize('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL);
+        $this->refuseDoctorDownload($request, $archive, 'oversight_print');
 
         $this->auditLegacy(OversightAuditService::LEGACY_RME_PRINTED, 'legacy_rme', $archive->id, (int) $archive->patient_id, $request, ['format' => 'print']);
 
@@ -125,6 +134,7 @@ class OversightLegacyArchiveController extends Controller
     {
         $archive = $this->resolveRme($request, $record);
         $this->authorize('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL);
+        $this->refuseDoctorDownload($request, $archive, 'oversight_pdf');
 
         $pages = $this->legacyRme->pagesFor($archive);
         $embedded = $this->embed($pages, fn ($p) => [$p->background_disk, $p->background_path], $this->rmeStorage);
@@ -158,7 +168,7 @@ class OversightLegacyArchiveController extends Controller
         return view('oversight.legacy.odontogram-show', [
             'record' => $archive->load(['patient', 'branch', 'publishedBy']),
             'pages' => $this->legacyOdontogram->pagesFor($archive),
-            'canExport' => $request->user()->can('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL),
+            'canExport' => $this->mayExportArchive($request),
         ]);
     }
 
@@ -166,6 +176,7 @@ class OversightLegacyArchiveController extends Controller
     {
         $archive = $this->resolveOdontogram($request, $record);
         $this->authorize('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL);
+        $this->refuseDoctorDownload($request, $archive, 'oversight_source');
 
         $path = (string) $archive->source_pdf_path;
         $disk = $this->odontogramStorage->diskFor($archive->source_disk);
@@ -199,6 +210,7 @@ class OversightLegacyArchiveController extends Controller
     {
         $archive = $this->resolveOdontogram($request, $record);
         $this->authorize('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL);
+        $this->refuseDoctorDownload($request, $archive, 'oversight_print');
 
         $this->auditLegacy(OversightAuditService::LEGACY_ODONTOGRAM_PRINTED, 'legacy_odontogram', $archive->id, (int) $archive->patient_id, $request, ['format' => 'print']);
 
@@ -215,6 +227,41 @@ class OversightLegacyArchiveController extends Controller
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * Rule 243 §1 — after the export gate (so only a reader who could export is
+     * audited), refuse a Doctor through the one print-deny authority. There is
+     * no download/print policy here (the per-record read policy and the export gate do not apply the print-deny), so this is both the refusal and the re-check.
+     */
+    private function refuseDoctorDownload(Request $request, LegacyRmeRecord|LegacyOdontogramRecord $archive, string $action): void
+    {
+        $user = $request->user();
+
+        if ($user === null || ! $this->printDeny->deniesClinicalPrint($user)) {
+            return;
+        }
+
+        if ($archive instanceof LegacyRmeRecord) {
+            $this->printDeny->auditLegacyRmePrintRejected($user, $archive, $action);
+        } else {
+            $this->printDeny->auditLegacyOdontogramPrintRejected($user, $archive, $action);
+        }
+
+        $this->printDeny->assertClinicalPrintAllowed($user);
+    }
+
+    /**
+     * The show screens' export controls mirror the doors above: the export
+     * gate AND not a Doctor (rule 243 §1). Presentation only — every door
+     * re-decides on its own.
+     */
+    private function mayExportArchive(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user->can('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL)
+            && ! $this->printDeny->deniesClinicalPrint($user);
+    }
 
     private function resolveRme(Request $request, int $id): LegacyRmeRecord
     {

@@ -23,8 +23,14 @@
                     once it is retracted. The server enforces this too (the
                     controller refuses a non-published record); hiding a button
                     is presentation, never the boundary.
+
+                    Rule 243 §1 (owner revision of rule 93 §12, 2026-11-17) — a
+                    Doctor reads the archive through the page gallery below and is
+                    refused the source PDF, the print and the export; the policy
+                    `download` ability mirrors that refusal here.
                 --}}
                 @if (! $record->isVoided())
+                @can('download', $record)
                     <x-ui.button
                         variant="secondary"
                         :href="route('rme.legacy-records.source', $record->getKey())"
@@ -49,6 +55,7 @@
                     >
                         Unduh PDF
                     </x-ui.button>
+                @endcan
                 @endif
             </x-slot:actions>
         </x-ui.page-header>

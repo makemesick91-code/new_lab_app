@@ -97,7 +97,7 @@
                      draggable="false"
                      x-show="!failed"
                      x-on:error="failed = true"
-                     x-bind:style="'width:' + (zoom * 100) + '%'"
+                     x-bind:style="{ width: (zoom * 100) + '%' }"
                      class="mx-auto block h-auto max-w-none select-none rounded bg-white shadow-sm" />
             @endif
 
@@ -108,7 +108,9 @@
                  usable. --}}
             <div @if ($legacyPage->hasRenderedPage()) x-show="failed" x-cloak @endif
                  data-legacy-page-fallback>
-                @if ($legacyPage->legacySourceUrl)
+                {{-- Rule 243 §1 — the source PDF link renders only for a reader who
+                     may download it; a Doctor is refused it by the server too. --}}
+                @if ($legacyPage->legacySourceUrl && (auth()->user()?->can('downloadAny', \App\Modules\LegacyRme\Models\LegacyRmeRecord::class) ?? false))
                     <div class="rounded border border-dashed border-gray-300 bg-white p-4 text-center">
                         <p class="text-sm text-gray-700">Gambar halaman arsip ini belum tersedia.</p>
                         <p class="mt-1 text-xs text-gray-500">Dokumen sumber tetap dapat dibuka (hanya baca).</p>

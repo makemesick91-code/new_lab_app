@@ -23,6 +23,12 @@
 // These tests pin the clinical calendar as the authority by freezing real UTC
 // instants either side of the WITA boundary. They never assert on the machine's
 // local timezone.
+//
+// DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the typed number
+// and the request pre-checks are gone: a new patient's number is automatic and
+// `registered_at` is stamped by PatientService::create() from the same clinical
+// clock (resolveRegisteredAt() went with the typed number). MAIN is never an RME
+// branch, so the fixture registers under an ordinary RME branch.
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Patient\Models\Patient;
@@ -35,7 +41,7 @@ use Database\Seeders\BranchSeeder;
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
     $this->rmNumbers = app(PatientMedicalRecordNumberService::class);
-    $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->branch = Branch::factory()->create(['code' => 'PRC1', 'is_active' => true, 'is_rme_enabled' => true]);
 });
 
 afterEach(function () {
@@ -106,29 +112,27 @@ it('stamps registered_at on the clinical day when none is supplied', function ()
     $patient = app(PatientService::class)->create([
         'name' => 'Boundary Patient',
         'branch_id' => $this->branch->id,
-        'manual_rm_number' => '0042',
     ]);
 
     expect($patient->registered_at->toDateString())->toBe('2026-06-15')
-        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2026-0042');
+        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2026-0001');
 });
 
-it('persists the same RM year the request-time pre-check would have composed', function () {
-    // The uniqueness pre-check (FormRequest) and the persist (PatientService)
-    // used to derive "today" independently. At the year boundary they could
-    // disagree, so the value validated was not the value stored.
+it('issues the automatic number in the same clinical year composeForRegistration() reads', function () {
+    // The pre-check (FormRequest) and the persist (PatientService) used to derive
+    // "today" independently. The pre-check is gone (rule 244); the persisted year
+    // must still be the clinical one at the year boundary.
     freezeUtc('2026-12-31 16:30:00'); // 2027-01-01 00:30 WITA
 
-    $precomposed = $this->rmNumbers->composeForRegistration($this->branch->code, null, '0007');
+    $precomposed = $this->rmNumbers->composeForRegistration($this->branch->code, null, '0001');
 
     $patient = app(PatientService::class)->create([
         'name' => 'New Year Patient',
         'branch_id' => $this->branch->id,
-        'manual_rm_number' => '0007',
     ]);
 
     expect($patient->medical_record_number)->toBe($precomposed)
-        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2027-0007');
+        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2027-0001');
 });
 
 /*
@@ -144,7 +148,9 @@ it('honours an explicitly supplied registration date verbatim', function () {
         ->toBe('DG-TLK1-2024-9985');
 });
 
-it('never timezone-shifts a supplied registration date across a day boundary', function () {
+it('never takes a supplied registration date for a new patient: the server stamps the clinical day', function () {
+    // Rule 244 §2.1 — a backdated registration would also have chosen the RM
+    // year; the date is now the server's, never shifted and never supplied.
     freezeUtc('2027-03-01 09:00:00');
 
     $patient = app(PatientService::class)->create([
@@ -154,8 +160,8 @@ it('never timezone-shifts a supplied registration date across a day boundary', f
         'registered_at' => '2025-01-01',
     ]);
 
-    expect($patient->registered_at->toDateString())->toBe('2025-01-01')
-        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2025-0100');
+    expect($patient->registered_at->toDateString())->toBe('2027-03-01')
+        ->and($patient->medical_record_number)->toBe('DG-'.$this->branch->code.'-2027-0001');
 });
 
 /*
@@ -208,7 +214,6 @@ it('agrees with the clinical day ClinicVisitService already uses for visit_date'
     $patient = app(PatientService::class)->create([
         'name' => 'Consistency Patient',
         'branch_id' => $this->branch->id,
-        'manual_rm_number' => '0500',
     ]);
 
     expect($clinicalDay)->toBe('2027-01-01')

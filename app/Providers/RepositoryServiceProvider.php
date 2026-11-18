@@ -16,6 +16,10 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\ClinicalPhoto\Interfaces\RmeClinicalPhotoRepositoryInterface;
+use App\Modules\ClinicalPhoto\Models\RmeClinicalPhoto;
+use App\Modules\ClinicalPhoto\Policies\RmeClinicalPhotoPolicy;
+use App\Modules\ClinicalPhoto\Repositories\RmeClinicalPhotoRepository;
 use App\Modules\ClinicOversight\Interfaces\OversightBillingCorrectionRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
@@ -234,6 +238,7 @@ use App\Modules\Odontogram\Policies\OdontogramPolicy;
 use App\Modules\Odontogram\Repositories\OdontogramRepository;
 use App\Modules\Patient\Interfaces\PatientDocumentProvenanceRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
+use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
@@ -241,6 +246,7 @@ use App\Modules\Patient\Policies\PatientDocumentPolicy;
 use App\Modules\Patient\Policies\PatientPolicy;
 use App\Modules\Patient\Repositories\PatientDocumentProvenanceRepository;
 use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\Patient\Repositories\PatientRmPaperCardRegistrationRepository;
 use App\Modules\Patient\Repositories\PatientRmSequenceRepository;
 use App\Modules\PatientMerge\Interfaces\PatientDuplicateCandidateRepositoryInterface;
 use App\Modules\PatientMerge\Interfaces\PatientMergeCaseRepositoryInterface;
@@ -285,6 +291,12 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
+use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Policies\RmeAmendmentPolicy;
+use App\Modules\RmeAmendment\Repositories\RmeAmendmentRepository;
+use App\Modules\RmeAmendment\Repositories\RmeRecordVersionRepository;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeReviewerRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
@@ -401,6 +413,8 @@ class RepositoryServiceProvider extends ServiceProvider
         PatientRepositoryInterface::class => PatientRepository::class,
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244) — automatic Nomor RM counters
         PatientRmSequenceRepositoryInterface::class => PatientRmSequenceRepository::class,
+        // Rule 244 §4.3 (PR-3b) — the paper-card reason (append and read only).
+        PatientRmPaperCardRegistrationRepositoryInterface::class => PatientRmPaperCardRegistrationRepository::class,
         // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — capture-branch backfill
         PatientDocumentProvenanceRepositoryInterface::class => PatientDocumentProvenanceRepository::class,
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
@@ -473,6 +487,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed consent as the payment gate
         RmeVisitConsentRepositoryInterface::class => RmeVisitConsentRepository::class,
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos
+        RmeClinicalPhotoRepositoryInterface::class => RmeClinicalPhotoRepository::class,
         // Sprint 66.0 — RME online context
         UserOnlineContextRepositoryInterface::class => UserOnlineContextRepository::class,
         // Sprint 20 Phase 1.8
@@ -489,6 +505,10 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeRefundRequestRepositoryInterface::class => RmeRefundRequestRepository::class,
         RmeRefundSettlementRepositoryInterface::class => RmeRefundSettlementRepository::class,
         RmeReceiptSnapshotRepositoryInterface::class => RmeReceiptSnapshotRepository::class,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §5) — immutable record versions.
+        RmeRecordVersionRepositoryInterface::class => RmeRecordVersionRepository::class,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 PR4 (rule 240 §6) — supervised amendments.
+        RmeAmendmentRepositoryInterface::class => RmeAmendmentRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
         RmeBillingDisputeReviewerRepositoryInterface::class => RmeBillingDisputeReviewerRepository::class,
@@ -602,6 +622,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePrescription::class => RmePrescriptionPolicy::class,
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01
         RmeVisitConsent::class => RmeVisitConsentPolicy::class,
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242)
+        RmeClinicalPhoto::class => RmeClinicalPhotoPolicy::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoice::class => RmeInvoicePolicy::class,
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190)
@@ -610,6 +632,9 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeBillingDispute::class => RmeBillingDisputePolicy::class,
         RmeRefundRequest::class => RmeRefundRequestPolicy::class,
         RmeRefundSettlement::class => RmeRefundSettlementPolicy::class,
+        // Memo M3.3 PR4 (rule 240 §6) — Gate::before skips it for Super Admin, so
+        // the separation-of-duties rules live in RmeAmendmentService's transaction.
+        RmeAmendment::class => RmeAmendmentPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

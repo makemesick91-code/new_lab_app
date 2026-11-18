@@ -13,6 +13,13 @@
     "No KTP/SIM", it is reachable only through the consent policy (permission +
     branch scope + patient scope), and the value is never logged, never listed
     and never serialised (the model marks it $hidden).
+
+    Rule 243 §3 (memo M3.1, PR C1) — the identity numbers and addresses come
+    from $consentIdentity (PatientIdentityPresenter, decided by the controller):
+    the document's own values on the print and every non-doctor page; on a
+    Doctor's page (view, countersignature) the numbers masked and the two
+    "Alamat" rows not rendered. Column-0 directives, so a non-doctor render is
+    byte for byte what it was.
 --}}
 @php
     $snapshot = $consent->content_snapshot ?? [];
@@ -25,6 +32,25 @@
 
         return ($age !== '' ? $age.' tahun' : '—').' / '.$genderLabel($gender);
     };
+
+    // Rule 241 §1.6 — the treating doctor's countersignature (its own record).
+    // The controller decides both values; the template only renders them:
+    //  - $doctorCountersignature: the record, or null;
+    //  - $doctorCountersignaturePending: true only while a countersignature is
+    //    still possible (live consent, visit in progress, none yet).
+    // A historical consent (neither) renders byte for byte as before rule 241,
+    // which is why the additions below use column-0 directives and no Blade
+    // comments: they emit nothing when they do not apply. The legacy optional
+    // doctor drawing ($doctorSignature) is display history and always renders
+    // as it did, also beside a countersignature.
+    $doctorCountersignature = $doctorCountersignature ?? null;
+    $doctorCountersignaturePending = (bool) ($doctorCountersignaturePending ?? false);
+
+    // Rule 241 §6 — v2026.2 answers clause 9 (publication) separately; the
+    // snapshot says so. A version without it (2026.1 and older) renders byte for
+    // byte as before: the addition below is a column-0 directive that emits
+    // nothing (pinned against tests/Fixtures/rme-consent-document-pre-v2026-2.blade.php.txt).
+    $publicationClause = $snapshot['publication_clause'] ?? null;
 @endphp
 
 <div class="consent-document">
@@ -54,15 +80,17 @@
             <td class="consent-sep">:</td>
             <td class="consent-value">{{ $ageGender($consent->consenter_age, $consent->consenter_gender) }}</td>
         </tr>
+@if ($consentIdentity['addresses_visible'])
         <tr>
             <td class="consent-label">Alamat</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->consenter_address ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['consenter_address'] ?: '—' }}</td>
         </tr>
+@endif
         <tr>
             <td class="consent-label">No KTP/SIM</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->consenter_identity_number ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['consenter_identity_number'] ?: '—' }}</td>
         </tr>
     </table>
 
@@ -87,15 +115,17 @@
             <td class="consent-sep">:</td>
             <td class="consent-value">{{ $ageGender($consent->patient_age_snapshot, $consent->patient_gender_snapshot) }}</td>
         </tr>
+@if ($consentIdentity['addresses_visible'])
         <tr>
             <td class="consent-label">Alamat</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->patient_address_snapshot ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['patient_address'] ?: '—' }}</td>
         </tr>
+@endif
         <tr>
             <td class="consent-label">No KTP/SIM</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->patient_identity_number_snapshot ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['patient_identity_number'] ?: '—' }}</td>
         </tr>
         <tr>
             <td class="consent-label">Jenis Perawatan</td>
@@ -122,6 +152,11 @@
                             Jawaban: {{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}
                         </span>
                     @endif
+@if ($publicationClause !== null && (int) $number === (int) $publicationClause)
+                        <span class="consent-documentation-answer">
+                            Jawaban: {{ $consent->publication_consent === null ? '—' : ($consent->publication_consent ? 'YA' : 'TIDAK') }}
+                        </span>
+@endif
                 </td>
             </tr>
         @endforeach
@@ -149,6 +184,18 @@
                 @if (! empty($doctorSignature))
                     <img src="{{ $doctorSignature }}" alt="Tanda tangan dokter" class="consent-signature-image">
                 @endif
+@if ($doctorCountersignature)
+                <div class="consent-countersignature" data-testid="consent-doctor-countersignature">
+                    <div class="consent-signature-meta">Tanda tangan dokter (PTM)</div>
+@if (! empty($doctorCountersignatureImage))
+                    <img src="{{ $doctorCountersignatureImage }}" alt="Tanda tangan dokter (PTM)" class="consent-signature-image">
+@else
+                    <span class="consent-signature-note">Gambar tanda tangan dokter tidak tersedia.</span>
+@endif
+                </div>
+@elseif ($doctorCountersignaturePending)
+                <span class="consent-signature-note">Belum ditandatangani dokter</span>
+@endif
             </td>
             <td class="consent-signature-cell consent-signature-box">
                 @if (! empty($consenterSignature))
@@ -159,6 +206,12 @@
         <tr>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->doctor_name_snapshot ?: '—' }}
+@if ($doctorCountersignature)
+                <div class="consent-signature-meta">
+                    Tanda tangan dokter (PTM): {{ $doctorCountersignature->doctor?->name ?? ($consent->doctor_name_snapshot ?: '—') }},
+                    {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                </div>
+@endif
             </td>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->consenter_name ?: '—' }}

@@ -4,6 +4,7 @@ namespace App\Modules\Odontogram\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
@@ -12,7 +13,11 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
+use App\Support\Clinical\ClinicalClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,6 +30,7 @@ class OdontogramController extends Controller
     public function __construct(
         private readonly OdontogramService $service,
         private readonly DoctorRoomScopeService $doctorRoomScope,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     public function show(
@@ -54,12 +60,25 @@ class OdontogramController extends Controller
 
         $clinicVisit->loadMissing(['followUpOf.odontogram', 'patient', 'doctor']);
 
-        $parentOdontogram = $clinicVisit->followUpOf?->odontogram;
+        // Rule 243 §2.11 (PR A3b) — the parent card ("Odontogram Kunjungan
+        // Sebelumnya") names the parent visit, so it appears only when the
+        // viewer may open that visit (always with the encounter scope OFF).
+        $parentOdontogram = $clinicVisit->followUpOf !== null
+            && $this->doctorScope->listsVisitFor($request->user(), $clinicVisit->followUpOf)
+                ? $clinicVisit->followUpOf->odontogram
+                : null;
 
         // Prev/next arrow navigation across the patient's visits. Scoped to the
         // visit, not to the odontogram, so it is unaffected by whether this
-        // visit has been charted yet (Sprint 59).
-        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
+        // visit has been charted yet (Sprint 59). Only a visit whose odontogram
+        // page this viewer may open (the `create` ability authorized above) is
+        // offered (DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1, rule 227 §1.8c).
+        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits(
+            $clinicVisit,
+            $request->user(),
+            'create',
+            Odontogram::class,
+        );
 
         // Sprint 63.1.1 — read-only saved-result table rendered below the visual
         // preview. Reuses the Sprint 63.1 print formatter row-building logic so the
@@ -127,17 +146,80 @@ class OdontogramController extends Controller
         $odontogramAuthoringAllowed = $consents->canAuthorOdontogramFor($clinicVisit, $request->user());
 
         /*
-         * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — an unsigned consent
-         * no longer blocks THIS page, so the old "you may not chart yet" warning
-         * would now be false. It is replaced by what is still true: the signature
-         * is outstanding, and it still gates the RME and "Selesai Pemeriksaan".
-         *
-         * Saying so here is not decoration. The doctor can now complete the whole
-         * chart without ever meeting the gate, and would otherwise first learn the
-         * visit is stuck when they try to finish it.
+         * DMS memo M1.1–M1.3 PR2 (rule 241 §2–§3; supersedes the
+         * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 reminder) — charting
+         * now waits for BOTH PTM signatures. When the live encounter would be
+         * chartable by this account but for the PTM, the page names that state
+         * (awaiting the patient / the treating doctor) instead of offering a
+         * form the server refuses; the treating doctor gets the countersign link,
+         * or the reason they cannot sign (MESSAGE_COUNTERSIGN_SELF). The page
+         * and the history stay readable either way. Decided here (MEMO-F5).
          */
-        $consentPendingForRme = $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS
-            && ! $consents->hasValidConsent($clinicVisit);
+        $odontogramPtmBlock = $consents->odontogramPtmBlockFor($clinicVisit, $request->user());
+        // MEMO-F5 — "is this the live encounter's chart?", asked here rather than from Blade.
+        $odontogramIsLiveEncounter = app(ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit);
+
+        /*
+         * Rule 240 §1.7 (memo M3.3) — which state banners the page shows, decided
+         * here so the Blade only renders them. Each banner has one reason (an
+         * account may see two, e.g. the front office on a finalized live chart
+         * sees the lock and its own read-only banner, as before the lock):
+         *
+         *  - `lockedNotice`: a FINALIZED chart of the live encounter. It is locked
+         *    (OdontogramPolicy::update and OdontogramService refuse it); a
+         *    correction is a supervised amendment. It answers before the PTM
+         *    (rule 240 §1.8): a finalized chart shows no PTM banner, because
+         *    signing the PTM would not make it writable.
+         *  - the PTM banner (rule 241 §3): a draft live chart this account may
+         *    chart but for the PTM.
+         *  - `readOnlyNotice = history`: a chart of a visit that is not the live
+         *    encounter, finalized or not, shown to an account that could otherwise
+         *    chart that visit. "Past visit" is the reason it cannot be written; a
+         *    finalized history chart therefore shows the history banner, not the
+         *    lock banner.
+         *  - `readOnlyNotice = front_office`: the live encounter's chart, and the
+         *    account itself may not chart it (CW5-05) — not merely the PTM.
+         *
+         * `author` is the scope-only twin of `update` for this visit's chart (manage
+         * permission, RME branch, room, doctor-patient scope; no lock), so the
+         * audience stays exactly the one the banners had before the lock.
+         */
+        $mayChartThisVisit = $request->user()?->can('author', [Odontogram::class, $clinicVisit]) ?? false;
+        $odontogramLockedNotice = $odontogramIsLiveEncounter && $odontogram->isFinalized();
+        $odontogramReadOnlyNotice = match (true) {
+            ! $mayChartThisVisit => null,
+            ! $odontogramIsLiveEncounter => 'history',
+            ! $odontogramAuthoringAllowed && $odontogramPtmBlock === null => 'front_office',
+            default => null,
+        };
+
+        if ($odontogram->isFinalized()) {
+            $odontogramPtmBlock = null;
+        }
+
+        $countersignOutlook = $odontogramPtmBlock === RmeVisitConsentService::PTM_AWAITING_DOCTOR
+            ? ($consents->countersignOutlookFor($request->user(), [$clinicVisit])[(int) $clinicVisit->getKey()] ?? null)
+            : null;
+        $countersignConsent = $countersignOutlook !== null && $countersignOutlook['refusal'] === null ? $countersignOutlook['consent'] : null;
+        $countersignRefusal = $countersignOutlook['refusal'] ?? null;
+
+        // When and by whom ANY finalized chart was finalized — live or history,
+        // for every viewer, as before the lock. Clinic-local time (CG-12, WITA).
+        $odontogramFinalizedLine = null;
+        if ($odontogram->isFinalized() && $odontogram->finalized_at !== null) {
+            $odontogramFinalizedLine = 'Difinalisasi pada '
+                .CarbonImmutable::instance($odontogram->finalized_at)
+                    ->setTimezone(app(ClinicalClock::class)->timezone())
+                    ->format('d/m/Y H:i')
+                .' WITA'
+                .($odontogram->finalizer?->name !== null ? ' oleh '.$odontogram->finalizer->name : '')
+                .'.';
+        }
+
+        // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a finalized chart
+        // (null on a draft or an unsaved chart); the request offer is the
+        // service's own answer, so it binds Super Admin like the service does.
+        $amendmentPanel = app(RmeAmendmentService::class)->panelFor($odontogram, $request->user());
 
         return view('rme.visits.odontogram.show', compact(
             'clinicVisit',
@@ -147,7 +229,13 @@ class OdontogramController extends Controller
             'structured',
             'odontogramHistory',
             'odontogramAuthoringAllowed',
-            'consentPendingForRme',
+            'odontogramPtmBlock',
+            'countersignConsent',
+            'countersignRefusal',
+            'odontogramLockedNotice',
+            'odontogramReadOnlyNotice',
+            'odontogramFinalizedLine',
+            'amendmentPanel',
         ));
     }
 

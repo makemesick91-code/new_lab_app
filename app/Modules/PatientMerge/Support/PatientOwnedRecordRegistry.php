@@ -47,6 +47,11 @@ final class PatientOwnedRecordRegistry
         'trx_rme_prescriptions' => ['column' => 'patient_id', 'label' => 'Resep', 'group' => 'prescriptions'],
         'trx_rme_prescription_whatsapp_deliveries' => ['column' => 'patient_id', 'label' => 'Pengiriman Resep WhatsApp', 'group' => 'prescriptions'],
         'trx_rme_visit_consents' => ['column' => 'patient_id', 'label' => 'Persetujuan Tindakan', 'group' => 'consents'],
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242 §4.3) — a clinical photo belongs to its
+        // visit's patient and moves with it; its object, hashes and void columns are
+        // untouched (the model refuses any other write; merge re-points through the
+        // query builder). Without this entry its foreign key blocked every merge.
+        'trx_rme_clinical_photos' => ['column' => 'patient_id', 'label' => 'Foto Klinis', 'group' => 'clinical_photos'],
         'mst_patient_documents' => ['column' => 'patient_id', 'label' => 'Dokumen Pasien', 'group' => 'documents'],
         'trx_lab_case_candidates' => ['column' => 'patient_id', 'label' => 'Kandidat Lab', 'group' => 'lab'],
         'trx_lab_orders' => ['column' => 'patient_id', 'label' => 'Order Lab', 'group' => 'lab'],
@@ -81,13 +86,18 @@ final class PatientOwnedRecordRegistry
         'trx_patient_merge_cases.source_patient_id' => 'Merge case provenance.',
         // No foreign key: import evidence of which row a legacy CSV created.
         'stg_legacy_patient_imports.committed_patient_id' => 'Legacy patient import provenance.',
+        // Rule 244 §4.3 (PR-3b) — immutable: records which patient an old
+        // paper-card Nomor RM was registered for, and why. It stays with that
+        // patient (whose number stays reserved), exactly like the RM alias
+        // source above; a merge never rewrites it.
+        'trx_patient_rm_paper_card_registrations.patient_id' => 'Records which patient the old paper-card Nomor RM was registered for (immutable reason).',
     ];
 
     /** Groups that must be conserved exactly: canonical_after == A + B. */
     public const CONSERVED_GROUPS = [
         'visits', 'medical_records', 'invoices', 'payments', 'prescriptions', 'consents',
         'documents', 'lab', 'legacy_rme', 'legacy_rme_imports', 'legacy_odontogram',
-        'legacy_odontogram_imports', 'legacy_staging', 'satusehat', 'doctor_assignments',
+        'legacy_odontogram_imports', 'legacy_staging', 'satusehat', 'doctor_assignments', 'clinical_photos',
     ];
 
     /** The groups an operator sees in the preview, in reading order. */

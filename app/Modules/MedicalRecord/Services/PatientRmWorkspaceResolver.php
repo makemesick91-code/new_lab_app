@@ -2,8 +2,10 @@
 
 namespace App\Modules\MedicalRecord\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use Closure;
 use Illuminate\Support\Collection;
@@ -154,15 +156,28 @@ class PatientRmWorkspaceResolver
      * Each entry extends orderedHandwritingPages() with:
      * virtual_page_number, medical_record_id, clinic_visit_id, storage_page_number.
      *
+     * Rule 243 §2.11 (PR A3) — with $viewer, only the pages of the sheets that
+     * viewer may read ({@see sheetsForPatient()}), numbered in that viewer's own
+     * sequence, so a page of a sheet the doctor may not open is never listed and
+     * the page indices the workspace and the save redirect use agree. Rule 243
+     * §2.8 — and of the BOOK only the pages whose authoring encounter the viewer
+     * may read (MedicalRecordSheetWriteScope::readableBookPages(), on rule 240's
+     * author stamp; unchanged with the encounter scope OFF).
+     *
      * @return Collection<int, array<string, mixed>>
      */
-    public function orderedHandwritingBookForPatient(int $patientId): Collection
+    public function orderedHandwritingBookForPatient(int $patientId, ?User $viewer = null): Collection
     {
         $virtualPages = collect();
         $virtualIndex = 1;
+        $sheetScope = $viewer !== null ? app(MedicalRecordSheetWriteScope::class) : null;
+        $sheets = $this->sheetsForPatient($patientId, $viewer);
+        $bookId = $sheetScope?->scopedBookId($viewer, $patientId);
 
-        foreach ($this->sheetsForPatient($patientId) as $sheet) {
-            foreach ($sheet->orderedHandwritingPages() as $page) {
+        foreach ($sheets as $sheet) {
+            $pages = $sheet->orderedHandwritingPages();
+
+            foreach ($sheetScope?->readableBookPages($viewer, $sheet, $pages, $bookId) ?? $pages as $page) {
                 $virtualPages->push(array_merge($page, [
                     'virtual_page_number' => $virtualIndex,
                     'medical_record_id' => $sheet->id,
@@ -181,11 +196,17 @@ class PatientRmWorkspaceResolver
      * ordered chronologically by their source visit (visit_date, id). This is the
      * swipe order shown in the workspace.
      *
+     * Rule 243 §2.11 (PR A3) — with $viewer, only the sheets that viewer may
+     * read (MedicalRecordSheetWriteScope::readableSheets(), the list mirror of
+     * MedicalRecordPolicy::view; unchanged with the encounter scope OFF). Every
+     * list shown to a person passes the viewer; server-side facts (whether the
+     * patient has sheets at all, a sheet's rank) never do.
+     *
      * @return Collection<int, MedicalRecord>
      */
-    public function sheetsForPatient(int $patientId): Collection
+    public function sheetsForPatient(int $patientId, ?User $viewer = null): Collection
     {
-        return MedicalRecord::query()
+        $sheets = MedicalRecord::query()
             ->select('trx_medical_records.*')
             ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_medical_records.clinic_visit_id')
             ->whereIn('trx_medical_records.branch_id', $this->rmeBranchIds())
@@ -194,6 +215,43 @@ class PatientRmWorkspaceResolver
             ->orderBy('trx_clinic_visits.visit_date')
             ->orderBy('trx_clinic_visits.id')
             ->get();
+
+        // Resolved here, not injected: MedicalRecordSheetWriteScope depends on
+        // this resolver for the book.
+        return $viewer === null ? $sheets : app(MedicalRecordSheetWriteScope::class)->readableSheets($viewer, $sheets);
+    }
+
+    /**
+     * Rule 243 §2.13 (PR A4, closes §2.8 item 8 (a); review LOW-1) — the visit a
+     * doctor works from at the patient's workspace address, chosen on the
+     * server, in this order: the patient's live encounter when it is the
+     * doctor's own ({@see ActiveEncounterResolver::currentFor()}); else the visit
+     * `$sourceVisitId` names when it is ANY RME visit of the doctor's own with
+     * the patient (a cashier_pending or past one needs no room, so the gate lets
+     * it through); else the doctor's latest own pre-exam visit (visit_date, id).
+     * A source id naming another doctor's visit chooses nothing. Null when the
+     * doctor has none of these.
+     */
+    public function doctorWorkingVisit(int $patientId, int $doctorId, ?int $sourceVisitId): ?ClinicVisit
+    {
+        $live = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        if ($live !== null && (int) $live->doctor_id === $doctorId) {
+            return $live;
+        }
+
+        $own = fn () => ClinicVisit::query()
+            ->whereIn('branch_id', $this->rmeBranchIds())
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId);
+
+        $source = $sourceVisitId === null ? null : $own()->whereKey($sourceVisitId)->first();
+
+        return $source ?? $own()
+            ->whereIn('status', ClinicVisit::PRE_EXAM_STATUSES)
+            ->orderByDesc('visit_date')
+            ->orderByDesc('id')
+            ->first();
     }
 
     /**

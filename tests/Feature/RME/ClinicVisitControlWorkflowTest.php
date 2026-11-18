@@ -167,11 +167,11 @@ it('rejects control visit in new patient mode', function () {
             'follow_up_of_visit_id' => $parent->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Kontrol',
                 'branch_id' => $this->rmeBranch->id,
                 'manual_rm_number' => '0099',
-            ],
+            ]),
         ])
         ->assertSessionHasErrors('visit_type');
 });

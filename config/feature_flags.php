@@ -588,6 +588,49 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted: recorded rows and declarations stay as clinical evidence (read-only, never consulted while off), and the rule 218 cross-check returns to its version 1 snapshot.',
         ],
+
+        // --- DMS memo M4.4, PTM plan PR3 (rule 241 §6) — consent template v2026.2 (built INACTIVE) ---
+
+        'rme.consent_template_v2026_2' => [
+            'name' => 'RME Consent Template v2026.2 (clause 8 documentation / clause 9 publication)',
+            'description' => 'Selects PERSETUJUAN TINDAKAN MEDIS version 2026.2 for NEW consents: clause 8 (clinical documentation) and clause 9 (publication/promotion) become two separate explicit YA/TIDAK answers, stored in documentation_consent and publication_consent (memo M4.4, rule 241 §6). THIS FLAG ALONE NEVER ACTIVATES IT: RmeVisitConsentService also requires the v2026.2 candidate in config/rme_consent.php to carry wording_status approved and no draft marker; otherwise it logs a refusal (form code, version and reason only, no patient data) and new consents keep version 2026.1 exactly as before. The wording is a product decision (rule 100 §4) still pending from the owner, so activation is blocked on the approved text. Historical consents keep their version, snapshot and single clause-8 answer and render unchanged whatever this flag says. No workflow reads the clause-9 answer: refusing publication never affects care, payment or any clinical write. Grants no role any access to photos or clinical documentation.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_CONSENT_TEMPLATE_V2026_2',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-MEMO-PTM-PR3',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user; new consents return to version 2026.1. Nothing is reverted or deleted: consents already signed on 2026.2 keep their version, snapshot and both answers and keep rendering them. Never edit a signed consent to undo a rollout; a wrong consent is voided (supervised) and signed again.',
+        ],
+
+        'rme.doctor_encounter_scope' => [
+            'name' => 'RME Doctor Encounter Scope',
+            'description' => 'ACCESS-SCOPE switch (DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2, rule 243 §2; owner decisions 2026-11-17) for what a Doctor account may read and write in the RME. While it is OFF the Sprint 66.2 relationship scope applies exactly as before: an active patient-doctor assignment or any visit with the doctor grants the whole patient record, refusals answer 403, and another clinician may co-author an encounter in the same room (OD-5-1). While it is ON, for a Doctor (Owner, Super Admin and Supervisor RME stay exempt): a visit is "in service" while registered, waiting, in progress or at the cashier, or completed TODAY on the clinical calendar (WITA); a cancelled visit never is. The doctor reads their own visits at any date, and the patient\'s other non-pre-exam visits and documents only while an own in-service encounter exists; assignment rows grant nothing; out-of-scope reads answer 404; writes are allowed only on the doctor\'s own in-service encounter (403 "ditangani dokter lain"), re-asserted in the RME authoring and prescription services. BranchContext, the rule 138 room scope and the session lock are unchanged. It also governs two queue writes (rule 243 §2.13, PR A4): an in-progress visit keeps its examining doctor and moves only into the room where that doctor is already online (any other move is refused, Super Admin included), and a doctor change on a queued visit or a cancel ends the former doctor\'s automatic patient assignment (unassigned_at and a reason code, audited with ids only). Turning it ON is a separate owner decision after a reviewed dry run of rme:doctor-assignments-reconcile and doctor UAT, once every encounter-scope PR (A1-A4) is merged: doctors lose the history of returning patients outside a service.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_DOCTOR_ENCOUNTER_SCOPE',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1 (rule 243 §2)',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. The flag deletes nothing: it narrows reads and writes at request time, so switching it off restores the relationship scope (assignments, any visit with the doctor, co-authoring) immediately for the next request. The only rows it wrote while ON are ended automatic assignments (unassigned_at set on a row no live visit supports any more); they stay ended, which is correct with the flag OFF too, and in-progress room moves made while ON kept their doctor.',
+        ],
+
+        // --- DMS memo M4.4 / M1.x, PTM plan PR4 (rule 242) — clinical photos (built OFF) ---
+
+        'rme.clinical_photos' => [
+            'name' => 'RME Clinical Photos (Foto Klinis)',
+            'description' => 'MUTATION and READ capability for clinical photos of an encounter (memo M4.4, rule 242). Upload: a Doctor or Perawat (a role allowlist in RmeClinicalPhotoService, so Super Admin is bound too) on the live in_progress encounter they may work on, only while its PERSETUJUAN TINDAKAN MEDIS is EXECUTED (patient + treating-doctor countersignature, rule 241 §2) and its clinical-documentation answer is YA (2026.1: the combined clause 8; v2026.2: clause 8). Clause 9 (publication) never gates or permits anything. The image is validated before any write (JPEG or PNG sniffed from the bytes, size and pixel bounds from the header) and re-encoded as JPEG (EXIF and GPS stripped, orientation applied, long edge at most 2560), stored only on the private clinical evidence disk (rule 121) under a fresh random key, row and object one unit with the visit row locked first (rule 224), audited with ids only. Read: the image route only (private, no-store, nosniff, every view audited), in the RME clinical-document read scope narrowed to clinical roles and Owner plus the doctor-patient scope; never Front Office, Kasir or Admin Klinik. While this flag is off every photo route answers 404 to the accounts holding its permission and every service call is refused.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_CLINICAL_PHOTOS',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-MEMO-PTM-PR4',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted or reverted: stored photo rows and their private objects stay as clinical evidence, unreachable while the flag is off. Never delete a photo row or object to undo a rollout.',
+        ],
     ],
 ];
 

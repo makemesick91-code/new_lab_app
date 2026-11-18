@@ -173,9 +173,14 @@ it('refuses to finalize at all when the patient is not under examination', funct
     expect($record->refresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 
-// ─── Part C: Finalized RME remains editable (Sprint 59) ──────────────────────
+// ─── Part C: A finalized RME is locked (rule 240 §1, supersedes Sprint 59) ────
+//
+// Owner decision 2026-11-17 (memo M3.3): a final sheet is no longer editable; a
+// correction goes through a supervised amendment. These three tests pinned the
+// Sprint 59 "still editable after final" behaviour and are flipped to the lock.
+// Full coverage: MedicalRecordFinalizationLockTest.
 
-it('finalized RME can still be edited via service updateDraft', function () {
+it('finalized RME is refused by service updateDraft (rule 240 §1)', function () {
     $this->actingAs($this->manager);
 
     [$visit, $record] = makeVisitWithDraft($this->branch);
@@ -184,15 +189,16 @@ it('finalized RME can still be edited via service updateDraft', function () {
     $service = app(MedicalRecordService::class);
     $service->finalize($record);
 
-    $updated = $service->updateDraft($record->fresh(), ['notes' => 'revisi setelah final']);
+    expect(fn () => $service->updateDraft($record->fresh(), ['notes' => 'revisi setelah final']))
+        ->toThrow(ValidationException::class, MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED);
 
-    expect($updated->notes)->toBe('revisi setelah final')
-        // Status/finalized columns are preserved for backward compatibility.
-        ->and($updated->status)->toBe(MedicalRecord::STATUS_FINAL)
-        ->and($updated->finalized_at)->not->toBeNull();
+    $fresh = $record->fresh();
+    expect($fresh->notes)->toBeNull()
+        ->and($fresh->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and($fresh->finalized_at)->not->toBeNull();
 });
 
-it('finalized RME can still be edited via HTTP PATCH', function () {
+it('finalized RME is refused by HTTP PATCH (rule 240 §1)', function () {
     [$visit, $record] = makeVisitWithDraft($this->branch);
     addHandwriting($record, $visit);
 
@@ -203,13 +209,12 @@ it('finalized RME can still be edited via HTTP PATCH', function () {
         ->patch(route('rme.visits.medical-record.update', [$visit, $record->fresh()]), [
             'notes' => 'revisi via http',
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertForbidden();
 
-    expect($record->fresh()->notes)->toBe('revisi via http');
+    expect($record->fresh()->notes)->toBeNull();
 });
 
-it('updating a finalized RME does not blank fields the doctor did not submit', function () {
+it('a refused update of a finalized RME blanks nothing (rule 240 §1)', function () {
     [$visit, $record] = makeVisitWithDraft($this->branch);
     $record->update(['subjective' => 'keluhan awal']);
     addHandwriting($record, $visit);
@@ -217,11 +222,12 @@ it('updating a finalized RME does not blank fields the doctor did not submit', f
     $this->actingAs($this->manager);
     app(MedicalRecordService::class)->finalize($record);
 
-    // Submit only notes — subjective must survive.
-    app(MedicalRecordService::class)->updateDraft($record->fresh(), ['notes' => 'catatan baru']);
+    // Submit only notes — refused, and subjective survives untouched.
+    expect(fn () => app(MedicalRecordService::class)->updateDraft($record->fresh(), ['notes' => 'catatan baru']))
+        ->toThrow(ValidationException::class);
 
     $fresh = $record->fresh();
-    expect($fresh->notes)->toBe('catatan baru')
+    expect($fresh->notes)->toBeNull()
         ->and($fresh->subjective)->toBe('keluhan awal');
 });
 

@@ -14,9 +14,14 @@
         server refuses.
     --}}
     <div class="space-y-6">
+        {{-- Rule 243 §2.11 (PR A3) — the anchor (the patient's first visit) is
+             named only to a viewer who may read it; it may be another doctor's
+             pre-exam visit. --}}
         <x-ui.page-header
             title="Buku RM Tulisan Tangan Pasien"
-            :subtitle="$workspaceVisit->visit_number.' — '.($workspaceVisit->visit_date?->format('d/m/Y') ?? '-')"
+            :subtitle="($workspaceVisitNamed ?? true)
+                ? $workspaceVisit->visit_number.' — '.($workspaceVisit->visit_date?->format('d/m/Y') ?? '-')
+                : 'Buku RM pasien'"
         >
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
         </x-ui.page-header>
@@ -123,42 +128,7 @@
              refused act, which is exactly the regression this sprint closed and
              exactly the shape that produces no error and no log line. --}}
         @if ($canEdit && ($addSheetConsentRequired ?? true))
-            @if (($activeEncounter ?? null) === null)
-                <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
-                        pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
-                        arsip RME lama dan odontogram pasien tetap dapat dibaca.
-                    </p>
-                </x-ui.alert>
-            @elseif (app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($activeEncounter))
-                {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the encounter IS
-                     consented, so the reason is this account, not the signature. --}}
-                <x-ui.alert variant="info" title="Hanya dapat dibaca">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis pemeriksaan yang sedang berjalan
-                        (Kunjungan #{{ $activeEncounter->visit_number }}) ditulis oleh tenaga
-                        klinis yang memeriksa pasien. Akun ini dapat membaca rekam medis,
-                        arsip RME lama dan odontogram pasien.
-                    </p>
-                </x-ui.alert>
-            @else
-                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <p class="max-w-2xl text-sm">
-                            Halaman RM pertama untuk pemeriksaan yang sedang berjalan
-                            (Kunjungan #{{ $activeEncounter->visit_number }}) belum dapat dibuat sampai
-                            Surat Persetujuan Tindakan Medis ditandatangani. Odontogram, riwayat rekam
-                            medis dan arsip RME lama pasien tetap dapat diakses.
-                        </p>
-                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $activeEncounter])
-                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $activeEncounter)">
-                                Pilih Form Consent
-                            </x-ui.button>
-                        @endcan
-                    </div>
-                </x-ui.alert>
-            @endif
+            @include('rme.visits.partials.ptm-authoring-banner', ['ptmBannerSubject' => 'pembuatan halaman RM pertama'])
         @endif
 
         <x-ui.card title="Buku RM Tulisan Tangan">
@@ -182,7 +152,9 @@
                 <x-ui.empty-state
                     :icon="false"
                     title="Belum ada halaman RM tulisan tangan untuk pasien ini."
-                    :description="'Buat halaman RM pertama pada kunjungan pertama pasien (Kunjungan #'.$workspaceVisit->visit_number.').'"
+                    :description="($workspaceVisitNamed ?? true)
+                        ? 'Buat halaman RM pertama pada kunjungan pertama pasien (Kunjungan #'.$workspaceVisit->visit_number.').'
+                        : 'Buat halaman RM pertama pada buku RM pasien.'"
                 >
                     <x-slot:action>
                         <form method="POST" action="{{ route('rme.visits.medical-record.store', $workspaceVisit) }}">
@@ -212,8 +184,10 @@
             'clinicalHistory' => $clinicalHistory ?? collect(),
         ])
 
-        <div>
-            <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
-        </div>
+        @if ($sourceVisit || ($workspaceVisitNamed ?? true))
+            <div>
+                <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
+            </div>
+        @endif
     </div>
 </x-settings-shell>

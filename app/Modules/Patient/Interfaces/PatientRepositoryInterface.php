@@ -64,14 +64,39 @@ interface PatientRepositoryInterface
     public function forAudit(array $filters = []): Collection;
 
     /**
+     * Rule 244 §5.3 (RM PR-4b) — a unique violation is passed on for the caller
+     * to interpret; any other database failure is a RuntimeException carrying
+     * only the SQLSTATE (the driver's message holds the row: NIK, note).
+     *
      * @param  array<string, mixed>  $data
      */
     public function create(array $data): Patient;
 
     /**
+     * Rule 244 §5.3 (RM PR-4b) — as create(): a unique violation is passed on
+     * (PatientService maps a NIK collision to its 422); any other database
+     * failure is a RuntimeException carrying only the SQLSTATE.
+     *
      * @param  array<string, mixed>  $data
      */
     public function update(Patient $patient, array $data): Patient;
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review L2) — the OPEN no-phone exceptions of
+     * patients in `$branchIds`, newest first: id, name, Nomor RM, branch, reason
+     * code and when it was recorded — never the note.
+     *
+     * @param  array<int, int>  $branchIds
+     */
+    public function paginateOpenNoPhoneExceptions(array $branchIds, int $perPage, string $pageName): LengthAwarePaginator;
+
+    /**
+     * Rule 244 §5.4 (memo M4.2) — close the patient's OPEN no-phone exception:
+     * reads it under a row lock (FOR UPDATE, in the caller's transaction), clears
+     * the three exception columns, refreshes `$patient` and returns the closed
+     * reason code; null when none was open, so a caller audits each close once.
+     */
+    public function closeNoPhoneException(Patient $patient): ?string;
 
     public function delete(Patient $patient): bool;
 

@@ -10,9 +10,22 @@
                     {{ $consent->isVoided() ? 'Dibatalkan' : 'Ditandatangani' }}
                 </x-ui.badge>
 
-                <x-ui.button variant="secondary" :href="route('rme.consents.print', $consent)" target="_blank">
-                    Cetak Persetujuan
-                </x-ui.button>
+                {{-- Rule 241 §1 — canCountersign is decided in the controller by the
+                     consent service (identity binds Super Admin); the route, the
+                     policy and the service decide again. --}}
+                @if ($canCountersign ?? false)
+                    <x-ui.button variant="primary" :href="route('rme.consents.countersign.create', $consent)" data-testid="consent-countersign-ptm">
+                        Tanda Tangani PTM
+                    </x-ui.button>
+                @endif
+
+                {{-- Rule 243 §1 — a Doctor reads the PTM here but never prints it;
+                     the server refuses the print route too. --}}
+                @can('print', $consent)
+                    <x-ui.button variant="secondary" :href="route('rme.consents.print', $consent)" target="_blank">
+                        Cetak Persetujuan
+                    </x-ui.button>
+                @endcan
 
                 @if ($consent->clinicVisit)
                     <x-ui.button variant="secondary" :href="route('rme.visits.show', $consent->clinicVisit)">
@@ -24,16 +37,30 @@
 
         @if ($consent->isVoided())
             <x-ui.alert variant="danger" title="Persetujuan ini telah dibatalkan.">
-                Persetujuan yang dibatalkan tidak lagi membuka pembayaran. Tanda tangan baru harus diambil
-                untuk kunjungan ini.
+                Persetujuan yang dibatalkan tidak lagi membuka penulisan rekam medis dan odontogram. Tanda
+                tangan baru pasien dan dokter harus diambil untuk kunjungan ini.
                 @if ($consent->void_reason)
                     <span class="block mt-1">Alasan: {{ $consent->void_reason }}</span>
                 @endif
             </x-ui.alert>
         @else
-            <x-ui.alert variant="success" title="Persetujuan tindakan medis sudah ditandatangani.">
-                Pembayaran untuk kunjungan ini sudah dapat diproses oleh kasir.
-            </x-ui.alert>
+            {{-- Rule 241 §3 — consent gates clinical writing, never payment
+                 (AIR-RMC-11); the state is decided in the controller. --}}
+            @if ($doctorCountersignaturePending ?? false)
+                <x-ui.alert variant="warning" title="Persetujuan tindakan medis menunggu tanda tangan dokter.">
+                    Pasien sudah menandatangani. Rekam medis dan odontogram kunjungan ini dapat ditulis setelah
+                    dokter yang menangani menandatanganinya.
+                    @if (($countersignRefusal ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF)
+                        <span class="mt-1 block" data-testid="consent-countersign-self-captured">{{ $countersignRefusal }}</span>
+                    @endif
+                </x-ui.alert>
+            @else
+                <x-ui.alert variant="success" title="Persetujuan tindakan medis sudah ditandatangani.">
+                    @if ($doctorCountersignature ?? null)
+                        Ditandatangani pasien dan dokter yang menangani.
+                    @endif
+                </x-ui.alert>
+            @endif
         @endif
 
         <x-ui.card>
@@ -77,10 +104,39 @@
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Dicatat oleh</dt>
                     <dd class="mt-1 text-ink">{{ $consent->signedBy?->name ?? '—' }}</dd>
                 </div>
-                <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>
-                    <dd class="mt-1 text-ink">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
-                </div>
+                {{-- Rule 241 §1.6 — only where the step exists: a recorded
+                     countersignature, or one still possible. A historical consent
+                     shows no such row. --}}
+                @if (($doctorCountersignature ?? null) || ($doctorCountersignaturePending ?? false))
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Tanda Tangan Dokter (PTM)</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-doctor-countersign-state">
+                            @if ($doctorCountersignature ?? null)
+                                Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                                &middot; {{ $doctorCountersignature->doctor?->name ?? '—' }}
+                            @else
+                                Belum ditandatangani dokter
+                            @endif
+                        </dd>
+                    </div>
+                @endif
+                {{-- Rule 241 §6 — a version with a separate clause 9 (v2026.2) shows two
+                     answers; 2026.1 and older keep the single combined row. --}}
+                @if ($consent->publicationClause() !== null)
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi Klinis (poin {{ $consent->content_snapshot['documentation_clause'] ?? '—' }})</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-documentation-answer">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Publikasi/Promosi (poin {{ $consent->publicationClause() }})</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-publication-answer">{{ $consent->publication_consent === null ? '—' : ($consent->publication_consent ? 'YA' : 'TIDAK') }}</dd>
+                    </div>
+                @else
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>
+                        <dd class="mt-1 text-ink">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
+                    </div>
+                @endif
                 <div>
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Cabang</dt>
                     <dd class="mt-1 text-ink">{{ $branch?->name ?? '—' }}</dd>

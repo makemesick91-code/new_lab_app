@@ -5,7 +5,6 @@ namespace App\Modules\MedicalRecord\Services;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchService;
-use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
@@ -221,9 +220,13 @@ class DiagnosisRolloutService
          * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — granting an
          * emergency override is an authoring act on this visit's record (it
          * unlocks finalization), so it waits for consent like every other write.
+         * Rule 240 §1.8 — a final sheet answers with its lock before a missing PTM.
          */
-        app(RmeVisitConsentService::class)
-            ->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+        // Rule 243 §2.5 — with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
         $mode = $this->modeForBranch((int) $medicalRecord->branch_id);
         if ($mode !== DiagnosisRolloutSetting::MODE_PILOT_ENFORCED) {
@@ -241,7 +244,18 @@ class DiagnosisRolloutService
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — the
             // override unlocks finalization, so it is re-decided under the
             // encounter's visit lock like every consent-gated write.
-            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+            // Rule 240 §1 (memo M3.3) — the override unlocks a FINALIZATION; a final
+            // sheet has none left to unlock and is locked. Decided on the sheet row
+            // locked after the visit (rule 223 §1 item 6), binding Super Admin, before a
+            // missing PTM (§1.8).
+            app(MedicalRecordService::class)->assertSheetAuthoringAllowed(
+                $medicalRecord,
+                $actor,
+                fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
+            );
+
+            // Rule 243 §2.5 — re-decided under the encounter's visit lock.
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
             $ttl = max(1, (int) config('clinical_diagnosis_rollout.override.ttl_hours', 24));
 

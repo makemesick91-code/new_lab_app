@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
@@ -33,24 +34,30 @@ it('filters patients by clinic', function () {
 it('creates a patient (happy path)', function () {
     $clinic = Clinic::factory()->create();
     $doctor = Doctor::factory()->create(['clinic_id' => $clinic->id]);
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — a branch is
+    // required and the Nomor RM is automatic; the retired free override is ignored.
+    $branch = Branch::factory()->create(['code' => 'MDP1', 'is_active' => true, 'is_rme_enabled' => true]);
 
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.store'), [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $clinic->id,
             'doctor_id' => $doctor->id,
+            'branch_id' => $branch->id,
             'medical_record_number' => 'MRN-001',
             'name' => 'John Patient',
             'gender' => 'Male',
             'is_active' => 1,
-        ])
+        ]))
         ->assertRedirect(route('settings.patients.index'));
 
-    expect(Patient::where('medical_record_number', 'MRN-001')->exists())->toBeTrue();
+    expect(Patient::where('medical_record_number', 'MRN-001')->exists())->toBeFalse()
+        ->and(Patient::where('name', 'John Patient')->value('medical_record_number'))
+        ->toStartWith('DG-MDP1-')->toEndWith('-0001');
 });
 
 it('requires clinic_id, doctor_id and name', function () {
     $this->actingAs(superAdmin())
-        ->post(route('settings.patients.store'), ['name' => ''])
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), ['name' => '']))
         ->assertSessionHasErrors(['clinic_id', 'doctor_id', 'name']);
 });
 

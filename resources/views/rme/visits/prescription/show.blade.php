@@ -55,7 +55,7 @@
                     &larr; Kembali ke Kunjungan
                 </x-ui.button>
                 @include('rme.visits.partials.visit-nav-arrows', [
-                    'prev' => $adjacentVisits['prev'] ?? null,
+                    'prev' => $adjacentVisits['previous'] ?? null,
                     'next' => $adjacentVisits['next'] ?? null,
                     'routeName' => 'rme.visits.prescription.show',
                 ])
@@ -94,7 +94,7 @@
 
                 @if ($lastDelivery?->isSent())
                     <x-ui.alert variant="success" class="mb-3">
-                        Terkirim ke {{ $lastDelivery->maskedRecipient() }}
+                        Terkirim ke {{ $whatsAppRecipientLabel }}
                         pada {{ $lastDelivery->sent_at?->format('d/m/Y H:i') }}.
                     </x-ui.alert>
                 @elseif ($lastDelivery && $lastDelivery->provider_error_message)

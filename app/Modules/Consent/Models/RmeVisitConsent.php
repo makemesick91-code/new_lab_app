@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — a signed PERSETUJUAN TINDAKAN
@@ -52,6 +53,7 @@ class RmeVisitConsent extends Model
         'medical_action',
         'treatment_summary',
         'documentation_consent',
+        'publication_consent',
         'consenter_signature_path',
         'doctor_signature_path',
         'doctor_name_snapshot',
@@ -86,6 +88,7 @@ class RmeVisitConsent extends Model
             'voided_by' => 'integer',
             'content_snapshot' => 'array',
             'documentation_consent' => 'boolean',
+            'publication_consent' => 'boolean',
             'signed_at' => 'datetime',
             'voided_at' => 'datetime',
         ];
@@ -127,6 +130,16 @@ class RmeVisitConsent extends Model
         return $this->belongsTo(User::class, 'voided_by');
     }
 
+    /**
+     * DMS memo M1.1–M1.3 (rule 241 §1) — the treating doctor's countersignature,
+     * its own insert-only row (UNIQUE per consent). The legacy optional doctor
+     * drawing in `doctor_signature_path` is display history and never this.
+     */
+    public function doctorCountersignature(): HasOne
+    {
+        return $this->hasOne(RmeVisitConsentDoctorSignature::class, 'rme_visit_consent_id');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | State
@@ -147,6 +160,11 @@ class RmeVisitConsent extends Model
         return $this->voided_at !== null;
     }
 
+    public function isDoctorCountersigned(): bool
+    {
+        return $this->doctorCountersignature !== null;
+    }
+
     public function scopeValid(Builder $query): Builder
     {
         return $query->whereNull('voided_at');
@@ -156,10 +174,44 @@ class RmeVisitConsent extends Model
      * Clause 8 is recorded separately from the consent itself: a patient may
      * refuse publication and still be treated and still pay. Callers must not
      * infer this from the existence of the consent.
+     *
+     * Rule 241 §6 — on a version that splits clause 8 (v2026.2) this means BOTH
+     * answers are YA; on 2026.1 it is the single combined answer, as before.
      */
     public function allowsDocumentationPublication(): bool
     {
+        return $this->allowsClinicalDocumentation() && $this->allowsPublication();
+    }
+
+    /**
+     * Rule 241 §6 — the clause number of the separate publication answer on
+     * the version this consent was signed on (v2026.2: 9), or null when that
+     * version has none (2026.1 and older: one combined clause-8 answer). Read
+     * from the frozen snapshot, never from the live config.
+     */
+    public function publicationClause(): ?int
+    {
+        $clause = ($this->content_snapshot ?? [])['publication_clause'] ?? null;
+
+        return is_numeric($clause) ? (int) $clause : null;
+    }
+
+    /** Clinical documentation answered YA (2026.1: the combined clause 8 covers it). */
+    public function allowsClinicalDocumentation(): bool
+    {
         return $this->documentation_consent === true;
+    }
+
+    /**
+     * Publication / promotion answered YA: clause 9 on v2026.2, the combined
+     * clause 8 on 2026.1. Gates nothing today (rule 241 §6.5); refusing it never
+     * affects care.
+     */
+    public function allowsPublication(): bool
+    {
+        return $this->publicationClause() !== null
+            ? $this->publication_consent === true
+            : $this->documentation_consent === true;
     }
 
     protected static function newFactory()

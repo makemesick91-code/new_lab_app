@@ -82,6 +82,8 @@ function p4rkRouteContract(): array
             'settings.patients.edit', 'settings.patients.update', 'settings.patients.destroy',
             'settings.patients.activate', 'settings.patients.deactivate',
             'settings.patients.documents.show', 'settings.patients.documents.destroy',
+            // Rule 244 §4.3 (PR-3b) — the restricted paper-card reason page.
+            'settings.patients.paper-card-registrations.show',
             // R-11 (Program 3), unchanged: the oversight patient route.
             'oversight.rme.patients.show',
         ],

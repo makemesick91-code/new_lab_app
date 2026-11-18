@@ -34,6 +34,11 @@
 --}}
 @php
     $workspaceDocuments = $workspaceDocuments ?? collect();
+    // Rule 243 §1 — the source PDF link renders only for a reader who may
+    // download it; a Doctor reads the archive as page images. The byte route
+    // refuses a doctor on its own either way.
+    $mayOpenLegacySource = Route::has('rme.legacy-records.source')
+        && (auth()->user()?->can('downloadAny', \App\Modules\LegacyRme\Models\LegacyRmeRecord::class) ?? false);
     $legacyDocuments = $workspaceDocuments->filter(fn ($document) => $document->isLegacy())->values();
     $nativeDocuments = $workspaceDocuments->filter(fn ($document) => $document->isNative())->values();
 @endphp
@@ -95,7 +100,7 @@
                             pageUrlTemplate: @js($document->hasPages() && Route::has('rme.legacy-records.pages.show')
                                 ? route('rme.legacy-records.pages.show', [$document->id, '__PAGE__'])
                                 : null),
-                            sourceUrl: @js(Route::has('rme.legacy-records.source')
+                            sourceUrl: @js($mayOpenLegacySource
                                 ? route('rme.legacy-records.source', $document->id)
                                 : null),
                             detailUrl: @js($document->url),
@@ -205,12 +210,23 @@
                             <template x-if="mode === 'image'">
                                 <img
                                     x-bind:src="currentPageUrl()"
-                                    x-bind:style="'width:' + (zoom * 100) + '%'"
+                                    x-bind:style="{ width: (zoom * 100) + '%' }"
+                                    x-show="! pageFailed"
                                     x-on:error="fallBackToPdf()"
                                     alt="Halaman arsip RME lama"
                                     class="mx-auto block max-w-none bg-surface shadow-card"
                                     data-rme-legacy-page-image
                                 />
+                            </template>
+
+                            {{-- Rule 243 §1 — this page's image failed and the reader has no
+                                 source PDF (a Doctor): say so for THIS page only and stay in
+                                 the image mode, so the page navigation keeps reaching the
+                                 other pages (mirrors legacy-archive-page's `failed`). --}}
+                            <template x-if="mode === 'image' && pageFailed">
+                                <p class="p-4 text-center text-sm text-ink-soft" data-rme-legacy-page-no-preview>
+                                    Gambar halaman arsip ini belum tersedia.
+                                </p>
                             </template>
 
                             {{--
@@ -234,6 +250,14 @@
                                         </a>
                                     </p>
                                 </object>
+                            </template>
+
+                            {{-- Rule 243 §1 — no rendered page and no source PDF for this
+                                 reader (a Doctor): say so instead of an empty viewer. --}}
+                            <template x-if="mode === 'pdf' && ! doc.sourceUrl">
+                                <p class="p-4 text-center text-sm text-ink-soft" data-rme-legacy-no-preview>
+                                    Gambar halaman arsip ini belum tersedia.
+                                </p>
                             </template>
                         </div>
 
@@ -262,6 +286,7 @@
                         zoom: 1,
                         page: 1,
                         mode: 'image',
+                        pageFailed: false,
                         doc: {
                             id: null,
                             label: '',
@@ -281,6 +306,7 @@
                             // Rendered pages are preferred; an archive without
                             // them falls straight through to the inline PDF.
                             this.mode = (document.pageUrlTemplate && document.pageCount > 0) ? 'image' : 'pdf';
+                            this.pageFailed = false;
                             this.open = true;
                             this.$nextTick(() => this.$refs.closeButton?.focus());
                         },
@@ -299,11 +325,16 @@
                         },
 
                         // A missing rendered page must not leave a broken image
-                        // in a clinical viewer — degrade to the source PDF.
+                        // in a clinical viewer — degrade to the source PDF. A
+                        // reader with no source PDF (rule 243 §1, a Doctor) gets
+                        // a "no preview" note for this page only and keeps the
+                        // image mode, so the page navigation stays usable.
                         fallBackToPdf() {
                             if (this.doc.sourceUrl) {
                                 this.mode = 'pdf';
+                                return;
                             }
+                            this.pageFailed = true;
                         },
 
                         zoomIn() {
@@ -325,12 +356,14 @@
                         prevPage() {
                             if (this.page > 1) {
                                 this.page -= 1;
+                                this.pageFailed = false;
                             }
                         },
 
                         nextPage() {
                             if (this.page < this.doc.pageCount) {
                                 this.page += 1;
+                                this.pageFailed = false;
                             }
                         },
                     };

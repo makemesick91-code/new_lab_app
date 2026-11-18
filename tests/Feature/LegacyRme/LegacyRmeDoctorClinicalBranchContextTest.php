@@ -481,7 +481,12 @@ it('refuses a treating doctor in the right branch who lacks the read permission'
 |--------------------------------------------------------------------------
 */
 
-it('lets the authorized treating doctor print and refuses the non-treating one', function () {
+// FLIPPED by rule 243 §1 (owner revision of rule 93 §12, 2026-11-17, memo
+// M2.4): this case used to pin that the authorized treating doctor MAY print.
+// A Doctor now never prints a legacy archive; the treating doctor still READS
+// it (show), and is refused the print by the print-deny authority (audited),
+// while the non-treating one is still refused at `view` (no print audit).
+it('refuses print to the authorized treating doctor (rule 243) and to the non-treating one', function () {
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
     $patient = h1bPatient('LDK2');
     $record = h1bPublished($patient);
@@ -491,13 +496,22 @@ it('lets the authorized treating doctor print and refuses the non-treating one',
 
     $this->actingAs($treating)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->get(route('rme.legacy-records.print', $record->getKey()))
+        ->get(route('rme.legacy-records.show', $record->getKey()))
         ->assertOk();
+
+    $this->actingAs($treating)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.legacy-records.print', $record->getKey()))
+        ->assertForbidden();
+
+    expect(DB::table('sys_audit_logs')->where('action', 'DOCTOR_PRINT_LEGACY_RME_REJECTED')->count())->toBe(1);
 
     $this->actingAs($stranger)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.legacy-records.print', $record->getKey()))
         ->assertForbidden();
+
+    expect(DB::table('sys_audit_logs')->where('action', 'DOCTOR_PRINT_LEGACY_RME_REJECTED')->count())->toBe(1);
 });
 
 /*

@@ -4,7 +4,6 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
-use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
@@ -52,10 +51,20 @@ class MedicalRecordDiagnosisService
          * keeps one actor for both the decision and the record of it. Not a
          * widening: an unresolvable actor still fails closed, and the encounter,
          * scope and consent conditions are unchanged.
+         *
+         * Rule 240 §1.8 — a final sheet answers with its lock before a missing
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
         $master = ClinicalDiagnosis::query()->find((int) $data['clinical_diagnosis_id']);
         if ($master === null || $master->status !== ClinicalDiagnosis::STATUS_ACTIVE) {
@@ -73,10 +82,18 @@ class MedicalRecordDiagnosisService
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
             // inside the transaction: locks the encounter's visit row FIRST, so a
             // consent void or a finish committed meanwhile is seen.
-            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+            // Rule 240 §1 (memo M3.3) — a final sheet's diagnoses are locked;
+            // decided on the row locked after the visit, binding Super Admin, and
+            // before a missing PTM (§1.8).
+            $record = app(MedicalRecordService::class)->assertSheetAuthoringAllowed(
+                $medicalRecord,
+                $actor,
+                fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
+            );
 
-            /** @var MedicalRecord $record */
-            $record = MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id);
+            // Rule 243 §2.5 — re-decided on the LOCKED sheet (its own visit is
+            // read fresh, after the gate above locked the live encounter).
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($record, $actor);
 
             $duplicate = MedicalRecordDiagnosis::query()
                 ->where('medical_record_id', $record->id)
@@ -150,10 +167,20 @@ class MedicalRecordDiagnosisService
          * keeps one actor for both the decision and the record of it. Not a
          * widening: an unresolvable actor still fails closed, and the encounter,
          * scope and consent conditions are unchanged.
+         *
+         * Rule 240 §1.8 — a final sheet answers with its lock before a missing
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
@@ -163,10 +190,16 @@ class MedicalRecordDiagnosisService
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
             // inside the transaction: locks the encounter's visit row FIRST, so a
             // consent void or a finish committed meanwhile is seen.
-            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+            // Rule 240 §1 — a final sheet's diagnoses are locked (§1.8 order).
+            $record = app(MedicalRecordService::class)->assertSheetAuthoringAllowed(
+                $medicalRecord,
+                $actor,
+                fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
+            );
 
-            /** @var MedicalRecord $record */
-            $record = MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id);
+            // Rule 243 §2.5 — re-decided on the LOCKED sheet (its own visit is
+            // read fresh, after the gate above locked the live encounter).
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($record, $actor);
 
             /** @var MedicalRecordDiagnosis $target */
             $target = MedicalRecordDiagnosis::query()->lockForUpdate()->findOrFail($diagnosis->id);
@@ -220,10 +253,20 @@ class MedicalRecordDiagnosisService
          * keeps one actor for both the decision and the record of it. Not a
          * widening: an unresolvable actor still fails closed, and the encounter,
          * scope and consent conditions are unchanged.
+         *
+         * Rule 240 §1.8 — a final sheet answers with its lock before a missing
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+        // Rule 243 §2.5 — after the RME authoring gate and the rule 240 lock
+        // (§1.8 order kept): with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
@@ -233,7 +276,16 @@ class MedicalRecordDiagnosisService
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
             // inside the transaction: locks the encounter's visit row FIRST, so a
             // consent void or a finish committed meanwhile is seen.
-            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+            // Rule 240 §1 — a final sheet's diagnoses are locked; the sheet row is
+            // locked after the visit, as record() and makePrimary() do (§1.8 order).
+            app(MedicalRecordService::class)->assertSheetAuthoringAllowed(
+                $medicalRecord,
+                $actor,
+                fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
+            );
+
+            // Rule 243 §2.5 — re-decided inside the transaction.
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
             $code = $diagnosis->clinicalDiagnosis?->code;
             $diagnosis->delete();

@@ -24,7 +24,16 @@
     // inline. This partial is shared by the browser print view and the dompdf
     // PDF export, and dompdf cannot present a session cookie to the authorised
     // image route, so a linked image would export blank.
-    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect();
+    //
+    // Rule 240 §9.4 / §9.5 (memo M3.3 PR7) — every print passes the pages and the
+    // correction pointers with their labels as its reader may read them
+    // (RmeAmendmentService::sheetPagesFor() for the RME print,
+    // OversightClinicalRecordService::printData() for the oversight print). This
+    // partial decides nothing: given none, it shows the pages with no correction
+    // label and no pointer (the model names the amendment, never its details).
+    $rmPages = $rmPagesForReader ?? ($medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect());
+    // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
+    $correctionPointers = $correctionPointersForReader ?? [];
 @endphp
 
 {{-- Medical Record --}}
@@ -43,6 +52,13 @@
         @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL && $medicalRecord->finalized_at)
             <p class="meta-line">Difinalisasi pada {{ $medicalRecord->finalized_at->format('d/m/Y H:i') }}</p>
         @endif
+        {{-- Rule 240 §7 (memo M3.3 PR5) — a sheet corrected by applied amendments says so. --}}
+        @if (($amendmentCount ?? 0) > 0)
+            <p class="meta-line" data-amendment-count="{{ $amendmentCount }}">Diamandemen {{ $amendmentCount }}×</p>
+        @endif
+        @foreach ($correctionPointers as $correctionPointer)
+            <p class="meta-line" data-correction-page-pointer>{{ $correctionPointer }}</p>
+        @endforeach
 
         <div class="handwriting-preview">
             <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>
@@ -51,6 +67,10 @@
                     <p class="handwriting-saved-at">
                         Halaman {{ $rmPage['page_number'] }} &mdash; Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}
                     </p>
+                    {{-- Rule 240 §8 (memo M3.3 PR6) — a page appended by an approved amendment says so. --}}
+                    @if (($rmPage['amendment_label'] ?? null) !== null)
+                        <p class="meta-line" data-amendment-page="{{ $rmPage['amendment_id'] }}">{{ $rmPage['amendment_label'] }}</p>
+                    @endif
                     {{-- DMS-RME-REVISION-PROGRAM-6 / P6-PDF-01 — a page that was recorded
                          but whose stored image is missing, unreadable or damaged prints an
                          honest notice, never an empty <img>. Nothing is fabricated. --}}

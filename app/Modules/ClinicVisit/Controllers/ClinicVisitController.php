@@ -4,6 +4,7 @@ namespace App\Modules\ClinicVisit\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicalPhoto\Support\ClinicalPhotoGalleryPresenter;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\AssignRoomRequest;
@@ -21,9 +22,11 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
@@ -50,6 +53,10 @@ class ClinicVisitController extends Controller
         private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        // Rule 243 §3 (memo M3.1, PR C1) — the patient's identity as the viewer
+        // may see it (a Doctor: no phone, WhatsApp, email, address or NIK).
+        private readonly PatientIdentityPresenter $identities,
+        private readonly ClinicalPhotoGalleryPresenter $clinicalPhotos,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -107,7 +114,7 @@ class ClinicVisitController extends Controller
      * that already have an assigned treatment room and are still in an active
      * (non-terminal) state, scoped to the active RME-enabled branch set.
      */
-    public function roomWorklist(Request $request): View
+    public function roomWorklist(Request $request, RmeVisitConsentService $consents): View
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
@@ -129,9 +136,26 @@ class ClinicVisitController extends Controller
             $filters['branch_id'] = null;
         }
 
+        $visits = $this->visits->roomWorklist($request->user(), $filters);
+        $countersignOutlook = $consents->countersignOutlookFor($request->user(), $visits->getCollection());
+
         return view('rme.visits.room-worklist', [
             'roomScoped' => $roomScoped,
-            'visits' => $this->visits->roomWorklist($request->user(), $filters),
+            'visits' => $visits,
+            // DMS memo M1.1–M1.3 (rule 241 §1, §3) — "Tanda Tangani PTM": for the
+            // doctor's own in-progress visits, the live consent awaiting the
+            // countersignature and why it may not be signed now (null when it
+            // may), keyed by visit id; plus the PTM state of every in-progress
+            // row. Decided by the consent service, never in Blade.
+            'countersignableConsents' => array_map(
+                fn (array $row) => $row['consent'],
+                array_filter($countersignOutlook, fn (array $row): bool => $row['refusal'] === null),
+            ),
+            'countersignSelfCaptured' => array_filter(
+                array_map(fn (array $row): ?string => $row['refusal'], $countersignOutlook),
+                fn (?string $refusal): bool => $refusal === RmeVisitConsentService::MESSAGE_COUNTERSIGN_SELF,
+            ),
+            'ptmStates' => $consents->ptmStatesFor($visits->getCollection()),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)
@@ -147,7 +171,7 @@ class ClinicVisitController extends Controller
      * branch set, including patients with and without an assigned treatment room.
      * Reuses the Sprint 58.6 assign-room route for the per-row room selector.
      */
-    public function patientQueue(Request $request): View
+    public function patientQueue(Request $request, RmeVisitConsentService $consents): View
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
@@ -163,8 +187,13 @@ class ClinicVisitController extends Controller
             $filters['branch_id'] = null;
         }
 
+        $visits = $this->visits->registeredQueue($request->user(), $filters);
+
         return view('rme.patient-queue.index', [
-            'visits' => $this->visits->registeredQueue($request->user(), $filters),
+            'visits' => $visits,
+            // DMS memo M1.1–M1.3 PR2 (rule 241 §3) — the PTM state of every
+            // in-progress row (awaiting patient / awaiting doctor / complete).
+            'ptmStates' => $consents->ptmStatesFor($visits->getCollection()),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
@@ -263,7 +292,9 @@ class ClinicVisitController extends Controller
         $patient = Patient::query()->findOrFail($patientId);
         $access = $this->doctorScope->authorizePatientAccess($request->user(), $patient);
         if ($access instanceof \Illuminate\Auth\Access\Response) {
-            abort_if($access->denied(), 403, $access->message() ?? 'Forbidden');
+            // Rule 243 §2.4 — the scope's own status: 404 out of the encounter
+            // scope (flag ON), so the picker does not confirm the patient exists.
+            abort_if($access->denied(), $access->status() ?? 403, $access->message() ?? 'Forbidden');
         } elseif ($access === false) {
             abort(403);
         }
@@ -356,12 +387,31 @@ class ClinicVisitController extends Controller
             'rmePrescription',
         ]);
 
+        // Rule 243 §2.6 — the viewer is passed so the encounter scope (flag ON)
+        // filters the history and the legacy timeline built from it.
         $patientVisitHistory = $this->visits->patientVisitHistory(
             (int) $clinicVisit->patient_id,
+            viewer: request()->user(),
         );
+
+        // Rule 243 §2.11 (PR A3b) — the follow-up links name only visits the
+        // viewer may open (listsVisitFor(): everything with the encounter scope
+        // OFF and for the exempt roles).
+        $viewer = request()->user();
+        $followUpOf = $clinicVisit->followUpOf !== null && $this->doctorScope->listsVisitFor($viewer, $clinicVisit->followUpOf)
+            ? $clinicVisit->followUpOf
+            : null;
+        $followUpVisits = $clinicVisit->followUpVisits
+            ->filter(fn (ClinicVisit $followUp): bool => $this->doctorScope->listsVisitFor($viewer, $followUp))
+            ->values();
 
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
+            // Rule 243 §3 (memo M3.1, PR C1) — decided here, never in Blade: the
+            // contact rows render only for an audience that may see them.
+            'patientIdentity' => $this->identities->forViewer($clinicVisit->patient, $viewer),
+            'followUpOf' => $followUpOf,
+            'followUpVisits' => $followUpVisits,
             'patientVisitHistory' => $patientVisitHistory,
             // LEGACY-RME-PDF-1C — native RME history merged with the patient's
             // PUBLISHED legacy archive. The service resolves the legacy side
@@ -374,7 +424,7 @@ class ClinicVisitController extends Controller
                 $patientVisitHistory,
             ),
             'doctorAccessSummary' => $clinicVisit->patient
-                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient)
+                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient, request()->user())
                 : [],
             // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
             // room-assignment selector when the visit still has no room.
@@ -390,7 +440,39 @@ class ClinicVisitController extends Controller
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no
             // prior visit, so the page offers no "Buat Kontrol" from it.
             'canStartKontrolFromHere' => $clinicVisit->status !== ClinicVisit::STATUS_CANCELLED,
-        ]);
+            // DMS memo M4.4, PTM PR5 (rule 242 §10) — the "Foto Klinis" card,
+            // decided here: null (nothing rendered, no photo route) while
+            // `rme.clinical_photos` is OFF or for an account that may neither
+            // read nor upload this visit's photos. RmeClinicalPhotoService
+            // decides every upload, image read and void again.
+            'clinicalPhotoGallery' => $this->clinicalPhotos->forVisit($clinicVisit, request()->user()),
+        ] + $this->ptmPresentationFor($clinicVisit));
+    }
+
+    /**
+     * DMS memo M1.1–M1.3 PR2 (rule 241 §3; MEMO-F5) — the visit page's PTM
+     * facts, decided here rather than by service calls in Blade: the state, the
+     * live consent, whether "Selesai Pemeriksaan" may be offered (EXECUTED
+     * consent) and, for the treating doctor, the consent to countersign or the
+     * reason they cannot. Presentation only; the services decide every write.
+     *
+     * @return array<string, mixed>
+     */
+    private function ptmPresentationFor(ClinicVisit $clinicVisit): array
+    {
+        $consents = app(RmeVisitConsentService::class);
+        $consent = $consents->validConsentFor($clinicVisit);
+        $outlook = $consent !== null
+            ? ($consents->countersignOutlookFor(request()->user(), [$clinicVisit])[(int) $clinicVisit->getKey()] ?? null)
+            : null;
+
+        return [
+            'ptmState' => $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS ? $consents->ptmStateFor($clinicVisit) : null,
+            'visitConsent' => $consent,
+            'examinationConsentExecuted' => $consents->hasExecutedConsent($clinicVisit),
+            'countersignConsent' => $outlook !== null && $outlook['refusal'] === null ? $outlook['consent'] : null,
+            'countersignRefusal' => $outlook['refusal'] ?? null,
+        ];
     }
 
     private function recordAuthorableHere(ClinicVisit $clinicVisit): bool
@@ -476,7 +558,11 @@ class ClinicVisitController extends Controller
     {
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — the builder is shared with
         // the read-only oversight print so the two cannot drift apart.
-        return app(ClinicVisitPrintDataBuilder::class)->build($clinicVisit);
+        $data = app(ClinicVisitPrintDataBuilder::class)->build($clinicVisit);
+
+        // Rule 240 §9.5 (memo M3.3 PR7) — the printed pages and correction
+        // pointers with their labels as this viewer may read them.
+        return $data + app(RmeAmendmentService::class)->sheetPagesFor(request()->user(), $clinicVisit->medicalRecord, true);
     }
 
     /**

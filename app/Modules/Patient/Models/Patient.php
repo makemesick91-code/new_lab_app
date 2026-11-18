@@ -38,6 +38,26 @@ class Patient extends Model
         'occupation',
         'is_active',
         'import_batch_id',
+        // Memo M4.2 (rule 244 §5) — required at a new registration, optional on an edit.
+        'place_of_birth',
+        // Rule 244 §5.3 — the OPEN no-phone exception. Fillable for the
+        // repository's insert only: PatientService strips them from every
+        // caller's payload and sets them for an accepted exception alone.
+        'no_phone_reason_code',
+        'no_phone_reason_note',
+        'no_phone_recorded_at',
+    ];
+
+    /**
+     * Rule 244 §5.3 — the no-phone note never leaves through the array/JSON
+     * form of a patient (selectors, exports, snapshots). Owner decision
+     * 2026-11-17: only the restricted reasons page shows it (Supervisor RME and
+     * Owner); the edit page shows the reason code alone.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'no_phone_reason_note',
     ];
 
     protected function casts(): array
@@ -53,6 +73,7 @@ class Patient extends Model
             'merged_at' => 'datetime',
             'merged_by' => 'integer',
             'merge_case_id' => 'integer',
+            'no_phone_recorded_at' => 'datetime',
         ];
     }
 

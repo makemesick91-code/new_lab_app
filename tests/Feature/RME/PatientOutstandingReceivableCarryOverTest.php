@@ -14,6 +14,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -407,6 +408,11 @@ it('settles a carry-over payment even when the current visit has no signed conse
     $currentInvoice = porInvoice($current, 100000);
 
     // The current visit genuinely has no signed consent.
+    // Rule 241 §1 — the consent fixture is EXECUTED (it carries the doctor's
+    // countersignature row, FK restrict); remove that row first.
+    DB::table('trx_rme_visit_consent_doctor_signatures')
+        ->whereIn('rme_visit_consent_id', $current->consents()->pluck('id'))
+        ->delete();
     $current->consents()->delete();
     expect($current->refresh()->hasSignedConsentDocument())->toBeFalse();
 

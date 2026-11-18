@@ -104,12 +104,26 @@
                                         <x-ui.badge :status="$visit->status">
                                             {{ $statusLabels[$visit->status] ?? $visit->status }}
                                         </x-ui.badge>
+                                        {{-- Rule 241 §3 — the PTM state (controller-decided). --}}
+                                        @include('rme.visits.partials.ptm-state-badge', ['ptmState' => $ptmStates[$visit->id] ?? null])
                                     </td>
                                     <td class="px-3 py-3 text-ink-soft">{{ $visit->visit_date?->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 text-right">
-                                        {{-- Sprint 58.6.2 — open the visit detail page first so Doctor/Perawat
-                                             can reach both Rekam Medis and Odontogram from there. --}}
-                                        <x-ui.button variant="primary" size="sm" :href="route('rme.visits.show', $visit)">Buka Detail Pasien</x-ui.button>
+                                        <div class="flex flex-wrap justify-end gap-2">
+                                            {{-- Rule 241 §1, §3 — the treating doctor's PTM countersignature,
+                                                 offered only for a consent the controller says this account may
+                                                 sign; when the one obstacle is that this account captured the
+                                                 patient's signature, say what unblocks it (a supervised void). --}}
+                                            @if (isset($countersignableConsents[$visit->id]))
+                                                <x-ui.button variant="primary" size="sm" data-testid="worklist-countersign-ptm"
+                                                    :href="route('rme.consents.countersign.create', $countersignableConsents[$visit->id])">Tanda Tangani PTM</x-ui.button>
+                                            @elseif (isset($countersignSelfCaptured[$visit->id]))
+                                                <span class="max-w-xs text-left text-xs text-warning-700" data-testid="worklist-countersign-self-captured">{{ $countersignSelfCaptured[$visit->id] }}</span>
+                                            @endif
+                                            {{-- Sprint 58.6.2 — open the visit detail page first so Doctor/Perawat
+                                                 can reach both Rekam Medis and Odontogram from there. --}}
+                                            <x-ui.button variant="primary" size="sm" :href="route('rme.visits.show', $visit)">Buka Detail Pasien</x-ui.button>
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach

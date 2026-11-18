@@ -3,6 +3,7 @@
 namespace App\Modules\Consent\Interfaces;
 
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
 
@@ -23,6 +24,21 @@ interface RmeVisitConsentRepositoryInterface
     public function historyForVisit(int $clinicVisitId): Collection;
 
     public function create(array $attributes): RmeVisitConsent;
+
+    /**
+     * DMS memo M1.1–M1.3 (rule 241 §1) — the live consent of each given visit,
+     * keyed by clinic_visit_id, with its doctor countersignature eager-loaded.
+     *
+     * @param  list<int>  $clinicVisitIds
+     * @return Collection<int, RmeVisitConsent>
+     */
+    public function validForVisits(array $clinicVisitIds): Collection;
+
+    /** Rule 241 §1 — the consent's doctor countersignature, or null. */
+    public function doctorSignatureFor(int $consentId): ?RmeVisitConsentDoctorSignature;
+
+    /** Rule 241 §1 — insert the countersignature (UNIQUE per consent; insert-only). */
+    public function createDoctorSignature(array $attributes): RmeVisitConsentDoctorSignature;
 
     /**
      * The most recent consent number issued in a given YYYYMM period, used to

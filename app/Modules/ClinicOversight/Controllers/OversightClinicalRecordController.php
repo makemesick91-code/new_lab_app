@@ -12,7 +12,10 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -169,7 +172,7 @@ class OversightClinicalRecordController extends Controller
         ], $request->user());
 
         return view('oversight.rme.visit', [
-            ...$this->records->visitDetail($clinicVisit),
+            ...$this->records->visitDetail($clinicVisit, $request->user()),
             'canExport' => $request->user()->can('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL),
         ]);
     }
@@ -182,7 +185,7 @@ class OversightClinicalRecordController extends Controller
         $this->auditOutput(OversightAuditService::NATIVE_RECORD_PRINTED, $clinicVisit, 'print', $request);
 
         return view('rme.visits.print', [
-            ...$this->records->printData($clinicVisit),
+            ...$this->records->printData($clinicVisit, $request->user()),
             'printPdfUrl' => route('oversight.rme.visits.pdf', $clinicVisit->id),
             'printBackUrl' => route('oversight.rme.visits.show', $clinicVisit->id),
         ]);
@@ -198,7 +201,7 @@ class OversightClinicalRecordController extends Controller
         // Generic download name: the visit number, never the patient's name.
         $filename = 'rme-visit-'.($clinicVisit->visit_number ?? $clinicVisit->id).'.pdf';
 
-        return Pdf::loadView('rme.visits.print-pdf', $this->records->printData($clinicVisit))->download($filename);
+        return Pdf::loadView('rme.visits.print-pdf', $this->records->printData($clinicVisit, $request->user()))->download($filename);
     }
 
     public function odontogramPrint(Request $request, int $visit): View
@@ -247,6 +250,27 @@ class OversightClinicalRecordController extends Controller
         $record = $handwriting->medicalRecord;
         $this->authorizeRecordImage($request, $record);
 
+        // Rule 243 §3 (memo M3.1, PR C2) — page 1 carries the biodata band. A
+        // Doctor who also holds an oversight role gets the redacted copy here
+        // too (the clinical door's rule), audited as that variant; the stored
+        // object is never written.
+        if (app(PatientIdentityPresenter::class)->audienceFor($request->user()) === PatientIdentityPresenter::AUDIENCE_DOCTOR) {
+            $redacted = app(RmPageOneBiodataRedactor::class)->redactStored($handwriting->handwriting_path);
+            abort_if($redacted['status'] === RmPageOneBiodataRedactor::STATUS_UNAVAILABLE, 503);
+            $bytes = $redacted['bytes'];
+            abort_if($bytes === null, 404);
+
+            $this->auditStream($request, $record, 'handwriting_redacted', null);
+
+            return response()->stream(function () use ($bytes): void {
+                echo $bytes;
+            }, 200, [
+                'Content-Type' => 'image/png',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store, max-age=0',
+            ]);
+        }
+
         return $this->stream($handwriting->handwriting_path, $request, $record, 'handwriting', null);
     }
 
@@ -254,6 +278,27 @@ class OversightClinicalRecordController extends Controller
     {
         $record = $handwritingPage->medicalRecord;
         $this->authorizeRecordImage($request, $record);
+
+        // Rule 240 §8.10 / §9 (memo M3.3 PR7, security review M1) — a page appended
+        // by an approved amendment is served only when its bytes match the
+        // recorded SHA-256: 404 when missing or tampered, 503 when the storage
+        // read fails (a fault to retry, review L2). Audited only when served.
+        if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
+            $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
+            abort_if($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE, 503);
+            $bytes = $stored['bytes'];
+            abort_if($bytes === null, 404);
+
+            $this->auditStream($request, $record, 'page', (int) $handwritingPage->page_number);
+
+            return response()->stream(function () use ($bytes): void {
+                echo $bytes;
+            }, 200, [
+                'Content-Type' => 'image/png',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store, max-age=0',
+            ]);
+        }
 
         return $this->stream($handwritingPage->handwriting_path, $request, $record, 'page', (int) $handwritingPage->page_number);
     }

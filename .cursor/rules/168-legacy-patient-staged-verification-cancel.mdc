@@ -75,6 +75,17 @@ upload -> store privately + sha256 -> stage -> validate the WHOLE batch -> revie
     including soft-deleted and in-file) stays mandatory. A possible duplicate with
     no KTP surfaces as a warning for a human to judge — never an automatic merge
     and never a silent second patient.
+    **REVISED by rule 244 §2.6 (PR-2):** RM duplicate protection is spelling-aware
+    (`PatientRmNumberAllocator::isTaken()`/`takenAmong()`: alias codes, any padding,
+    any case, merge aliases; in-file by `collisionKey()`), and the commit locks every
+    branch-year Nomor RM counter it writes into before the first insert, so an
+    imported number never collides with an automatic one. Rows are still stored
+    verbatim.
+    **REVISED by rule 244 §4.4 (PR-3, plan default 4):** confirming (committing) a
+    batch needs `register_patient_paper_card_rm` (Supervisor RME; Super Admin via
+    '*') on the route, the request and in `commit()` (which also re-asserts
+    `manage patients`); staging, review, revalidation and cancel stay with
+    `manage patients`. A row past the rule 244 §2.6 claim cap refuses the batch.
 14. Branch authority is **server-resolved from the CSV `Cabang` column** against
     active + RME-enabled branches with MAIN excluded. There is no request-supplied
     branch field; adding one changes nothing. Do not invent a new branch authority

@@ -1,5 +1,15 @@
 <?php
 
+// FLIPPED IN PLACE by DMS memo M1.1–M1.3 PR2 (rule 241 §2, owner decision
+// 2026-11-17): BOTH PTM signatures — the patient's and the treating doctor's
+// countersignature — are required before odontogram WRITING, so pre-consent
+// charting ends. Every case that pinned "the chart is editable before consent"
+// now pins the refusal (its old name is kept in a comment); every case that
+// pinned the RME/finish gate, "Mulai Pemeriksaan", actor scope and read-only
+// history stands. `rmeSignedConsentFor()` / `rmeActiveConsentedEncounter()`
+// now build an EXECUTED consent. The gate itself is pinned in
+// RmeOdontogramTwoSignatureGateTest. The original header follows as history.
+//
 // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1
 //
 // The product rule this file pins, and the ONE place it is allowed to differ
@@ -34,6 +44,7 @@
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -109,72 +120,76 @@ function pceToothPayload(string $status = 'caries'): array
 
 /*
 |--------------------------------------------------------------------------
-| §21 — the ACTIVE odontogram is EDITABLE before consent  (the revision)
+| §21 — the ACTIVE odontogram is READ-ONLY before the executed consent
+|       (flipped by rule 241 §2; was "EDITABLE before consent")
 |--------------------------------------------------------------------------
 */
 
-it('lets the doctor SAVE the active odontogram while consent is unsigned', function () {
+// was 'lets the doctor SAVE the active odontogram while consent is unsigned'
+it('refuses to SAVE the active odontogram while consent is unsigned', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = pceOdontogram($visit);
 
-    app(OdontogramService::class)->updatePlaceholder($odontogram, pceToothPayload(), $this->doctorUser);
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder($odontogram, pceToothPayload(), $this->doctorUser))
+        ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
     expect(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeFalse();
 });
 
-it('lets the doctor CREATE the first chart while consent is unsigned', function () {
+// was 'lets the doctor CREATE the first chart while consent is unsigned'
+it('refuses to CREATE the first chart while consent is unsigned', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
+    expect(fn () => app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser))
+        ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
+
     expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
-
-    app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
-
-    $chart = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
-    expect($chart->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
 });
 
-it('lets the doctor FINALIZE the active chart while consent is unsigned', function () {
+// was 'lets the doctor FINALIZE the active chart while consent is unsigned'
+it('refuses to FINALIZE the active chart while consent is unsigned', function () {
     // Odontogram finalization is a chart-level lifecycle act, NOT "Selesai
-    // Pemeriksaan" — Sprint 59 already made a finalized chart revisable and the
-    // visit stays in_progress. It routes through the same single assertion, so
-    // splitting it out would create a second, divergent consent rule.
+    // Pemeriksaan"; it routes through the same single assertion.
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = pceOdontogram($visit);
 
-    app(OdontogramService::class)->finalize($odontogram, $this->doctorUser);
+    expect(fn () => app(OdontogramService::class)->finalize($odontogram, $this->doctorUser))
+        ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
+    expect($odontogram->fresh()->status)->not->toBe(Odontogram::STATUS_FINALIZED);
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
-it('accepts the real odontogram PATCH request while consent is unsigned', function () {
+// was 'accepts the real odontogram PATCH request while consent is unsigned'
+it('refuses the real odontogram PATCH request while consent is unsigned', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = pceOdontogram($visit);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.odontograms.update', $odontogram), pceToothPayload())
-        ->assertSessionHasNoErrors()
+        ->assertSessionHasErrors('consent')
         ->assertRedirect();
 
-    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
 });
 
-it('accepts the real odontogram store request while consent is unsigned', function () {
+// was 'accepts the real odontogram store request while consent is unsigned'
+it('refuses the real odontogram store request while consent is unsigned', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.visits.odontogram.store', $visit), pceToothPayload())
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasErrors('consent');
 
-    expect(Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail()
-        ->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
 });
 
-it('exposes the odontogram authoring capability as allowed before consent', function () {
+// was 'exposes the odontogram authoring capability as allowed before consent'
+it('exposes the odontogram authoring capability as refused before consent', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
-    expect(app(RmeVisitConsentService::class)->canAuthorOdontogramFor($visit, $this->doctorUser))->toBeTrue();
+    expect(app(RmeVisitConsentService::class)->canAuthorOdontogramFor($visit, $this->doctorUser))->toBeFalse();
 });
 
 /*
@@ -196,11 +211,13 @@ it('still denies active RME authoring while consent is unsigned', function () {
 
 it('still denies active RME authoring after the odontogram has been charted', function () {
     // The important one: charting must not become an implicit consent that
-    // unlocks the record beside it.
+    // unlocks the record beside it. Since rule 241 §2 the chart cannot be
+    // written before consent either, so the chart here is one written before the
+    // gate (a fixture row, e.g. a visit open at deploy).
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $record = pceRecord($visit);
 
-    app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
+    pceOdontogram($visit)->forceFill(pceToothPayload())->save();
 
     expect(fn () => app(MedicalRecordService::class)
         ->updateDraft($record, ['notes' => 'catatan klinis'], $this->doctorUser))
@@ -238,13 +255,11 @@ it('still denies finishing the examination while consent is unsigned', function 
 });
 
 it('still denies finishing the examination even when the odontogram is complete', function () {
-    // §5 verbatim: a finished chart is not a substitute for a signature.
+    // §5 verbatim: a finished chart is not a substitute for a signature. The
+    // finalized chart is a fixture row (charting itself waits for consent since
+    // rule 241 §2).
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
-    app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
-    app(OdontogramService::class)->finalize(
-        Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail(),
-        $this->doctorUser,
-    );
+    pceOdontogram($visit)->forceFill(pceToothPayload() + ['status' => Odontogram::STATUS_FINALIZED])->save();
 
     expect(fn () => app(ClinicVisitService::class)
         ->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING))
@@ -255,7 +270,7 @@ it('still denies finishing the examination even when the odontogram is complete'
 
 it('still denies a crafted Selesai Pemeriksaan request after charting', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
-    app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
+    pceOdontogram($visit)->forceFill(pceToothPayload())->save();
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING])
@@ -293,7 +308,10 @@ it('allows odontogram, RME and finish once consent is signed', function () {
 */
 
 it('denies odontogram authoring before the examination starts', function (string $status) {
+    // Review LOW-2 (rule 241 §2): the visit carries an EXECUTED consent, so the
+    // refusal can only come from the status condition this case pins.
     $visit = pceVisit($status);
+    rmeSignedConsentFor($visit);
     $odontogram = pceOdontogram($visit);
 
     expect(fn () => app(OdontogramService::class)
@@ -308,6 +326,7 @@ it('denies odontogram authoring before the examination starts', function (string
 
 it('denies creating a first chart before the examination starts', function () {
     $visit = pceVisit(ClinicVisit::STATUS_WAITING);
+    rmeSignedConsentFor($visit); // review LOW-2 — only the status can refuse
 
     expect(fn () => app(OdontogramService::class)
         ->saveForVisit($visit, pceToothPayload(), $this->doctorUser))
@@ -318,6 +337,7 @@ it('denies creating a first chart before the examination starts', function () {
 
 it('denies odontogram authoring on a visit past the examination', function (string $status) {
     $visit = pceVisit($status);
+    rmeSignedConsentFor($visit); // review LOW-2 — only the status can refuse
     $odontogram = pceOdontogram($visit);
 
     expect(fn () => app(OdontogramService::class)
@@ -385,8 +405,9 @@ it('denies the odontogram write ability to an actor without manage_clinic_visits
 });
 
 it('denies another doctor the active odontogram of a patient they do not handle', function () {
-    // IDOR: consent state must never weaken the clinical patient scope.
-    $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    // IDOR: consent state must never weaken the clinical patient scope. Review
+    // LOW-2: the encounter is EXECUTED, so only the actor scope can refuse.
+    $visit = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
     $odontogram = pceOdontogram($visit);
 
     $otherDoctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits']);
@@ -411,11 +432,15 @@ it('denies another doctor the active odontogram of a patient they do not handle'
 |--------------------------------------------------------------------------
 */
 
-it('keeps a previous visit chart unwritable while the live encounter is unconsented', function () {
+// Review LOW-2 (rule 241 §2): was 'keeps a previous visit chart unwritable
+// while the live encounter is unconsented'. An unconsented live encounter now
+// refuses every chart, so the live encounter is EXECUTED here: only the
+// chart-identity condition can refuse the historical chart.
+it('keeps a previous visit chart unwritable even while the live encounter is consented', function () {
     $historical = pceVisit(ClinicVisit::STATUS_COMPLETED);
     $historicalChart = pceOdontogram($historical);
 
-    pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     expect(fn () => app(OdontogramService::class)
         ->updatePlaceholder($historicalChart, pceToothPayload('missing'), $this->doctorUser))
@@ -431,7 +456,9 @@ it('never lets the request nominate which encounter authorises a chart', functio
     $historical = pceVisit(ClinicVisit::STATUS_COMPLETED);
     $historicalChart = pceOdontogram($historical);
 
-    $live = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    // Review LOW-2 — the live encounter is EXECUTED, so only the chart-identity
+    // condition can refuse.
+    $live = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.odontograms.update', $historicalChart), array_merge(
@@ -450,17 +477,19 @@ it('never lets the request nominate which encounter authorises a chart', functio
 */
 
 it('never creates or signs a consent as a side effect of charting', function () {
-    $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    // Rule 241 §2: charting needs the executed consent, so the chart is written
+    // on one — and writing it adds no consent and no countersignature.
+    $visit = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
 
     $consents = app(RmeVisitConsentService::class);
-    expect($consents->hasValidConsent($visit->fresh()))->toBeFalse();
-    expect($consents->historyFor($visit->fresh()))->toHaveCount(0);
+    expect($consents->historyFor($visit->fresh()))->toHaveCount(1);
+    expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(1);
 });
 
 it('never advances the visit status as a side effect of charting', function () {
-    $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    $visit = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
     app(OdontogramService::class)->finalize(
@@ -472,17 +501,18 @@ it('never advances the visit status as a side effect of charting', function () {
 });
 
 it('keeps pre-consent charting intact after the consent is signed', function () {
-    // Signs through RmeVisitConsentService, NOT the `rmeSignedConsentFor()`
-    // fixture. The fixture inserts the row directly and would skip the entire
-    // signing path, so a signing side effect that destroyed the chart would go
-    // unnoticed — mutation testing proved exactly that gap. Rule 109 §6 already
-    // requires it: a test that IS about consent must go through the service.
+    // Since rule 241 §2 a chart written before consent can only predate the gate
+    // (a visit open at deploy): a fixture row here. Signs through
+    // RmeVisitConsentService, NOT the `rmeSignedConsentFor()` fixture, so a
+    // signing side effect that destroyed the chart would be caught (mutation
+    // testing proved that gap once). The doctor's countersignature is a fixture
+    // row: its own side effects are pinned in RmeVisitConsentDoctorCountersignTest.
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
-    app(OdontogramService::class)->saveForVisit($visit, pceToothPayload(), $this->doctorUser);
+    pceOdontogram($visit)->forceFill(pceToothPayload())->save();
     $chartId = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail()->id;
 
-    app(RmeVisitConsentService::class)->sign($visit, $this->doctorUser, [
+    $consent = app(RmeVisitConsentService::class)->sign($visit, $this->doctorUser, [
         'template_code' => 'PERSETUJUAN_TINDAKAN_MEDIS',
         'consenter_relationship' => 'self',
         'medical_action' => 'Pencabutan gigi 36',
@@ -492,6 +522,7 @@ it('keeps pre-consent charting intact after the consent is signed', function () 
     ]);
 
     expect(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeTrue();
+    rmeDoctorCountersignatureFor($consent);
 
     $chart = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
     expect($chart->id)->toBe($chartId);
@@ -504,8 +535,9 @@ it('keeps pre-consent charting intact after the consent is signed', function () 
     expect($record->fresh()->notes)->toBe('catatan klinis');
 });
 
-it('updates one canonical chart across repeated pre-consent saves', function () {
-    $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+// was 'updates one canonical chart across repeated pre-consent saves'
+it('updates one canonical chart across repeated saves', function () {
+    $visit = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     app(OdontogramService::class)->saveForVisit($visit, pceToothPayload('caries'), $this->doctorUser);
     app(OdontogramService::class)->saveForVisit($visit, pceToothPayload('filling'), $this->doctorUser);
@@ -533,10 +565,11 @@ it('never lets another visit consent unlock the active RME', function () {
         ->updateDraft($record, ['notes' => 'catatan klinis'], $this->doctorUser))
         ->toThrow(ValidationException::class);
 
-    // ...while the odontogram of the LIVE encounter is nonetheless editable.
+    // ...and (rule 241 §2) neither does it unlock the LIVE encounter's chart.
     $chart = pceOdontogram($live);
-    app(OdontogramService::class)->updatePlaceholder($chart, pceToothPayload(), $this->doctorUser);
-    expect($chart->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder($chart, pceToothPayload(), $this->doctorUser))
+        ->toThrow(ValidationException::class);
+    expect($chart->fresh()->tooth_map_payload)->toBeNull();
 });
 
 /*
@@ -545,38 +578,38 @@ it('never lets another visit consent unlock the active RME', function () {
 |--------------------------------------------------------------------------
 */
 
-it('renders the odontogram page with save controls while consent is unsigned', function () {
+// was 'renders the odontogram page with save controls while consent is unsigned'
+it('renders the odontogram page without save controls while consent is unsigned', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Simpan Odontogram');
+        ->assertSee('data-ptm-state="awaiting_patient"', false)
+        ->assertDontSee('Simpan Odontogram');
 });
 
-it('no longer tells the doctor that consent blocks the odontogram', function () {
+// was 'no longer tells the doctor that consent blocks the odontogram'
+it('tells the doctor that the odontogram waits for the consent', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertDontSee('sebelum dokter')
-        ->assertDontSee('belum dapat diubah');
+        ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
+        ->assertSee('Odontogram, rekam medis dan tombol Selesai Pemeriksaan menunggu');
 });
 
-it('no longer tells the doctor on the visit page that the odontogram is locked', function () {
-    // The visit detail banner used to read "Rekam medis dan odontogram kunjungan
-    // ini belum dapat ditulis...". Naming the odontogram there would send the
-    // doctor to collect a signature before the examination that produces the
-    // chart's content — the exact circularity this revision removes.
+// was 'no longer tells the doctor on the visit page that the odontogram is locked'
+it('tells the doctor on the visit page that the record and the odontogram wait for the consent', function () {
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
         ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
-        ->assertDontSee('Rekam medis dan odontogram kunjungan ini belum dapat ditulis')
-        ->assertSee('Odontogram kunjungan ini sudah dapat dicatat');
+        ->assertSee('Rekam medis dan odontogram kunjungan ini belum dapat ditulis')
+        ->assertDontSee('Odontogram kunjungan ini sudah dapat dicatat');
 });
 
 it('still marks a historical chart read-only on the page', function () {

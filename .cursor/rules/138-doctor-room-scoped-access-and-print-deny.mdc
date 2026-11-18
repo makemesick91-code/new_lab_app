@@ -91,6 +91,12 @@ Existing RME/Odontogram read + edit lifecycle (consent gate, room gate,
 finalisation, historical immutability) is unchanged. Non-Doctor roles that can
 print today must keep printing.
 
+**EXTENDED (owner, 2026-11-17, memo M2.4) by rule 243 §1**
+(`243-rme-doctor-encounter-scope-downloads-fields.mdc`): the same
+`deniesClinicalPrint()` predicate now also refuses a Doctor the legacy RME
+print/export/source PDF, the legacy odontogram source PDF and the PTM print.
+Prescription printing still stays out of scope.
+
 ## 7. Audit real attempts only, from controllers
 
 Audit from the **controller**, never from a policy: policies are also evaluated
@@ -98,7 +104,9 @@ for `@can` UI gating, and auditing there would record a "rejection" every time a
 button is merely hidden.
 
 Events: `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
-`DOCTOR_PRINT_ODONTOGRAM_REJECTED` — written through the shared
+`DOCTOR_PRINT_ODONTOGRAM_REJECTED` (rule 243 §1 adds
+`DOCTOR_PRINT_LEGACY_RME_REJECTED`, `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED`
+and `DOCTOR_PRINT_CONSENT_REJECTED`, same pattern) — written through the shared
 `AuditLogService` (`sys_audit_logs`). Payload is identifiers and status only:
 never patient PII, never KTP/NIK.
 

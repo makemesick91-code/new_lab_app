@@ -10,6 +10,8 @@ use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
+use Illuminate\Auth\Access\Response;
 
 /**
  * LEGACY-RME-PDF-1A — authorization for published legacy RME records.
@@ -23,6 +25,7 @@ class LegacyRmeRecordPolicy
     public function __construct(
         private readonly LegacyRmeWorkspaceScope $scope,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     /**
@@ -52,11 +55,19 @@ class LegacyRmeRecordPolicy
         return $user->canAny(self::READ_PERMISSIONS);
     }
 
-    public function view(User $user, LegacyRmeRecord $record): bool
+    /**
+     * Rule 243 §2.10 (PR A2) — with the encounter scope ON a Doctor outside an
+     * own in-service encounter with the patient is refused as NOT FOUND (404),
+     * never a 403 that would confirm the archive exists; with it OFF the answer
+     * is today's plain bool.
+     */
+    public function view(User $user, LegacyRmeRecord $record): Response|bool
     {
-        return $this->viewAny($user)
-            && $this->inScope($user, $record)
-            && $this->withinClinicalScope($user, $record);
+        if (! $this->viewAny($user) || ! $this->inScope($user, $record)) {
+            return false;
+        }
+
+        return $this->withinClinicalScope($user, $record);
     }
 
     public function void(User $user, LegacyRmeRecord $record): bool
@@ -81,9 +92,43 @@ class LegacyRmeRecordPolicy
      * void was meant to retract. The row itself stays readable — retracted, not
      * erased — so the metadata and the void reason remain auditable.
      */
-    public function viewFile(User $user, LegacyRmeRecord $record): bool
+    public function viewFile(User $user, LegacyRmeRecord $record): Response|bool
     {
-        return $this->view($user, $record) && $record->isPublished();
+        $view = $this->view($user, $record);
+
+        // A2 review INFO-3 — decide on whether `view` allowed, so a future
+        // Response::allow() never passes a VOIDed record through.
+        $allowed = $view instanceof Response ? $view->allowed() : $view === true;
+
+        return $allowed ? $record->isPublished() : $view;
+    }
+
+    /**
+     * Rule 243 §1 (owner revision of rule 93 §12, 2026-11-17) — reproducing the
+     * archive outside the screen: the source PDF, the print view and the PDF
+     * export. A Doctor is refused through the one print-deny authority (rule
+     * 138), so `@can('download', …)` hides those controls from a doctor. The
+     * doctor keeps `view` and `viewFile`: the archive is read as inline page
+     * images. Every other reader keeps exactly the `view` boundary they had.
+     */
+    public function download(User $user, LegacyRmeRecord $record): Response|bool
+    {
+        $print = $this->printDeny->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
+        return $this->view($user, $record);
+    }
+
+    /**
+     * The record-less form of `download`, for a surface that renders a source
+     * link from a projection rather than a model (the RME workspace).
+     */
+    public function downloadAny(User $user): bool
+    {
+        return $this->viewAny($user) && ! $this->printDeny->deniesClinicalPrint($user);
     }
 
     /**
@@ -125,8 +170,13 @@ class LegacyRmeRecordPolicy
      * so the two can never drift into disagreeing about who is treating whom.
      * Non-doctor actors are unaffected: the intake and governance tiers keep
      * branch scope plus their own named permissions.
+     *
+     * Rule 243 §2.10 (PR A2) — the answer is DoctorPatientScopeService's
+     * archive rule, shared with the controller's re-assertion and the history
+     * list: the same relationship with the encounter scope OFF, an own
+     * in-service encounter (read mode `history`) with it ON, 404 outside.
      */
-    private function withinClinicalScope(User $user, LegacyRmeRecord $record): bool
+    private function withinClinicalScope(User $user, LegacyRmeRecord $record): Response|bool
     {
         if (! $this->doctorScope->shouldApplyDoctorScope($user)) {
             return true;
@@ -136,10 +186,6 @@ class LegacyRmeRecordPolicy
             ? $record->patient
             : Patient::query()->find($record->patient_id);
 
-        if (! $patient instanceof Patient) {
-            return false;
-        }
-
-        return $this->doctorScope->doctorCanAccessPatient($user, $patient);
+        return $this->doctorScope->authorizeLegacyArchiveRead($user, $patient instanceof Patient ? $patient : null);
     }
 }

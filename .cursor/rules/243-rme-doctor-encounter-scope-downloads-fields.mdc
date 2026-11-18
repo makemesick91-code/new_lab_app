@@ -1,0 +1,706 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way. §2.12 (integration onto M3.3 + PTM) filters the book's pages by rule 240's author stamp, keeps a book on an unreadable anchor's versions and amendments from the doctor and the PTM banner from describing another doctor's encounter. §2.13 (PR A4), flag ON only: an in_progress visit moves only into the room its own doctor is online in, keeping its doctor, and any other move is refused (rule 228 §4 extended, Super Admin bound); a doctor change on a queued visit or a cancel ends the former doctor's now-stale auto_visit assignment (unassigned_at + reason code, audited ids only); `rme:doctor-assignments-reconcile` (dry run counts and visit ids; `--apply --confirm-plan=<digest>` sets unassigned_at only) also reports stale open visits and roomless pre-exam anchors; the room gate picks the doctor's working visit on the server, the workflow tabs never show an unreadable anchor, and another doctor's roomless pre-exam visit answers 404. §3 (PRs C1, C2; not behind the flag) decides the doctor-visible patient fields in `PatientIdentityPresenter` (a Doctor: name, RM number, place/date of birth, age, occupation, planned treatment, gender; never phone, WhatsApp, email, address or NIK), masks the NIK and hides the addresses on the doctor's consent page, draws a new RM page 1 with the allowed fields only and streams an old page 1 to a doctor with the hidden biodata cells blanked.
+globs:
+  - "app/Modules/RME/Services/DoctorRoomScopeService.php"
+  - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
+  - "app/Modules/LegacyRme/Policies/LegacyRmeRecordPolicy.php"
+  - "app/Modules/LegacyOdontogram/Controllers/LegacyOdontogramRecordController.php"
+  - "app/Modules/LegacyOdontogram/Policies/LegacyOdontogramRecordPolicy.php"
+  - "app/Modules/Consent/Controllers/RmeVisitConsentController.php"
+  - "app/Modules/Consent/Policies/RmeVisitConsentPolicy.php"
+  - "resources/views/rme/legacy-records/**"
+  - "resources/views/settings/legacy-odontograms/record.blade.php"
+  - "resources/views/rme/consents/**"
+  - "resources/views/rme/visits/partials/rme-workspace-documents.blade.php"
+  - "resources/views/rme/visits/medical-record/partials/legacy-archive-page.blade.php"
+  - "app/Modules/ClinicOversight/Controllers/OversightLegacyArchiveController.php"
+  - "app/Modules/LegacyRme/Controllers/LegacyRmeImportController.php"
+  - "app/Modules/LegacyRme/Policies/LegacyRmeImportPolicy.php"
+  - "resources/views/oversight/legacy/**"
+  - "resources/views/settings/rme/legacy-imports/show.blade.php"
+  - "app/Modules/RME/Services/DoctorPatientScopeService.php"
+  - "app/Modules/RME/Services/DoctorEncounterWindow.php"
+  - "app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php"
+  - "app/Modules/Odontogram/Policies/OdontogramPolicy.php"
+  - "app/Modules/Prescription/Policies/RmePrescriptionPolicy.php"
+  - "app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php"
+  - "app/Modules/Consent/Services/RmeVisitConsentService.php"
+  - "app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php"
+  - "app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php"
+  - "app/Modules/MedicalRecord/Services/MedicalRecordSheetWriteScope.php"
+  - "app/Modules/MedicalRecord/Services/MedicalRecordService.php"
+  - "app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php"
+  - "app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php"
+  - "app/Modules/ClinicVisit/Services/ClinicVisitService.php"
+  - "app/Modules/LegacyRme/Services/LegacyRmePatientHistoryService.php"
+  - "app/Modules/LegacyOdontogram/Services/LegacyOdontogramPatientHistoryService.php"
+  - "app/Modules/MedicalRecord/Services/PatientRmWorkspaceResolver.php"
+  - "app/Modules/MedicalRecord/Services/RmeWorkspaceDocumentPresenter.php"
+  - "app/Modules/MedicalRecord/Controllers/MedicalRecordController.php"
+  - "resources/views/rme/visits/medical-record/show.blade.php"
+  - "resources/views/rme/visits/medical-record/empty.blade.php"
+  - "resources/views/rme/visits/partials/rm-sheet-nav.blade.php"
+  - "app/Modules/ClinicVisit/Middleware/EnsureVisitRoomAssigned.php"
+  - "app/Modules/MedicalRecord/Repositories/UnifiedMedicalRecordIndexRepository.php"
+  - "app/Modules/Prescription/Services/RmePrescriptionService.php"
+  - "app/Modules/ClinicVisit/Controllers/ClinicVisitController.php"
+  - "app/Modules/Odontogram/Controllers/OdontogramController.php"
+  - "app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingImageController.php"
+  - "app/Modules/RmeAmendment/Services/RmeAmendmentService.php"
+  - "app/Modules/RmeAmendment/Services/RmeRecordVersionService.php"
+  - "app/Modules/RmeAmendment/Requests/RmeAmendmentActionRequest.php"
+  - "resources/views/rme/visits/partials/ptm-authoring-banner.blade.php"
+  - "app/Modules/RME/Services/PatientDoctorAssignmentService.php"
+  - "app/Modules/RME/Services/DoctorAssignmentReconcileService.php"
+  - "app/Modules/RME/Models/PatientDoctorAssignment.php"
+  - "app/Console/Commands/RmeDoctorAssignmentsReconcileCommand.php"
+  - "app/Modules/Patient/Services/PatientIdentityPresenter.php"
+  - "app/Modules/Patient/Support/PatientIdentityView.php"
+  - "app/Modules/MedicalRecord/Services/RmPageOneBiodataRedactor.php"
+  - "app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php"
+  - "app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php"
+  - "app/Modules/Prescription/Controllers/RmePrescriptionController.php"
+  - "resources/views/rme/visits/show.blade.php"
+alwaysApply: false
+---
+
+# Doctor encounter scope, no doctor downloads, doctor-visible fields (rule 243)
+
+Source: the internal memo of 2026-10-17 (M2.1, M2.2, M2.4, M3.1) and the owner's decisions of 2026-11-17 ("accept all
+defaults"), recorded in `docs/sprints/dms-rme-comprehensive-closure-1.md` §2c. The design, impact analysis and PR split
+are in `docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`, section M2.1/M2.2 + M2.4 + M3.1.
+Delivered in PRs; each PR adds its section. §2 (encounter scope, A1–A4) and §3 (doctor-visible fields, C1–C2) are
+added by their own PRs.
+
+## 0. Owner decisions (CG-22)
+
+- M2.4 (2026-11-17): doctors must not download or print the legacy archive or the PTM (consent) print. The
+  prescription print stays available to doctors. Front Office and Admin Klinik keep a legitimate print path.
+- Plan default 4, accepted: the legacy odontogram source PDF is refused to doctors too; no watermark and no Android
+  `FLAG_SECURE` in this wave.
+- The encounter scope (§2) ships behind `rme.doctor_encounter_scope`, default OFF until a reviewed dry run, doctor UAT
+  and an owner decision. §1 is a separate owner decision and is **not** behind that flag: it is live on merge.
+
+## 1. No doctor downloads (PR "B — downloads")
+
+1. **Owner revision.** This section revises rule 93 §12 (`93-legacy-rme-void-clinical-read.mdc`): print and export
+   are no longer open to every reader of the archive — a Doctor is refused them. It extends the rule 138 §6 deny list
+   (`138-doctor-room-scoped-access-and-print-deny.mdc`) and narrows rule 104's private-storage paragraph
+   (`104-legacy-rme-doctor-workspace-embedded-pdf.mdc`): a doctor no longer receives the source PDF. Nothing else in
+   those rules changes.
+2. **One authority, one definition.** `App\Modules\RME\Services\DoctorRoomScopeService::deniesClinicalPrint()` decides
+   every door below; it delegates to `DoctorPatientScopeService::shouldApplyDoctorScope()`: the Doctor role, unless
+   the account also holds Owner, Super Admin or Supervisor RME. A Doctor who also holds Front Office, Admin Klinik,
+   Kasir or an oversight role (Finance Klinik, Data Analyst) is still refused on every door below, including the
+   staging and oversight doors that serve the same files. Never add a second "is this a doctor" predicate.
+3. **The doors.** For a Doctor, each answers **403** with the rule 138 message
+   (`DoctorRoomScopeService::CLINICAL_PRINT_DENIED_MESSAGE`) and writes one audit row through `AuditLogService`:
+
+   | Route | Audit event | Payload `action` |
+   |---|---|---|
+   | `rme.legacy-records.source`, `.print`, `.export` | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `source`, `print`, `export` |
+   | `settings.rme.legacy-imports.source` (staging, the same PDF) | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `staging_source` |
+   | `oversight.legacy.rme.source`, `.print`, `.pdf` | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `oversight_source`, `oversight_print`, `oversight_pdf` |
+   | `rme.legacy-odontograms.source` | `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED` | `source` |
+   | `oversight.legacy.odontogram.source`, `.print` | `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED` | `oversight_source`, `oversight_print` |
+   | `rme.consents.print` | `DOCTOR_PRINT_CONSENT_REJECTED` | `print` (plus `clinic_visit_id`) |
+
+   Rule 138 §6 stays as it was: `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print` are refused;
+   `rme.prescriptions.print` is **allowed** to the doctor. Payloads are identifiers only: never a name, an RM number
+   or a KTP/NIK.
+4. **The layers, in this order.** The route permission stays. The record resolves through the caller's branch scope
+   first, so an out-of-branch id is still **404** before any download rule. The reader's own `view` / `viewFile`
+   check runs next, unchanged, and then the "only published bytes" check (`assertStreamable()`, the staging
+   `assertBytesNotRetracted()`, the oversight resolver). A VOIDed archive therefore never reaches a download rule and
+   never writes a doctor-print audit row; what it answers is unchanged: **404** on `rme.legacy-records.print`/`.export`,
+   the staging source and the oversight doors, while on `rme.legacy-records.source` and `rme.legacy-odontograms.source`
+   `viewFile` already requires a published record, so a non-Super-Admin reader (a doctor included) gets **403** there
+   and Super Admin 404 (pre-existing). Then:
+   - **Clinical, staging and consent doors (three layers):** the controller audits a doctor's real attempt (never the
+     policy, which also gates `@can`), the policy refuses (`download` on `LegacyRmeRecordPolicy`,
+     `LegacyOdontogramRecordPolicy` and `LegacyRmeImportPolicy`, `print` on `RmeVisitConsentPolicy`), and the
+     controller asks `assertClinicalPrintAllowed()` once more, so a bypassed policy (the global `Gate::before`, a
+     regression) still cannot serve a doctor.
+   - **Oversight doors (no download/print policy; the per-record read policy and the `export` gate do not apply the print-deny):** after the route permission and the `clinic-oversight.export`
+     gate, `OversightLegacyArchiveController` audits and calls `assertClinicalPrintAllowed()` itself — the controller
+     and the service are the only doctor refusal there. A dedicated oversight ability is follow-up OD-MEMO-B-1.
+5. **Doctors still read.** `show` and the page-image routes keep serving a doctor who may read the archive (inline
+   PNG, `private, no-store`, `nosniff`); the consent page and its signature images stay readable. The workspace keeps
+   the page images and the zoom/expand viewer of rule 104; an archive with no rendered page says so instead of
+   falling back to the PDF. Honest limit: pixels on a screen can always be photographed.
+6. **The UI mirrors the server.** Source, print and export controls render only under `@can('download', $record)`
+   (the staging source under `@can('download', $import)`), the PTM print under `@can('print', $consent)`, the
+   workspace source link only when `LegacyRmeRecordPolicy::downloadAny` allows it (it renders from a projection, not a
+   model), and the oversight show screens' export controls only when the controller's `canExport` (export gate and
+   not a Doctor) is true. When a page image fails and the reader has no source PDF, the workspace viewer says so for
+   that page only (a per-page `pageFailed` flag, reset on open and on every page change) and stays in the image mode,
+   so its page navigation keeps working. A hidden control is never the boundary.
+7. **Everyone else is unchanged.** Front Office, Admin Klinik, Supervisor RME and Kasir (consent) keep their print
+   path within their existing boundary (another branch's archive is 404, another branch's consent 403). Super Admin
+   is exempt (and passes `Gate::before`). Owner holds no legacy or consent permission and stays refused at the route.
+8. **Out of this section, and the recorded residual.** A pure Doctor holds neither the intake nor the oversight
+   permission and is refused at the route on the staging and oversight doors; a dual-role Doctor is refused by item 3.
+   The legacy odontogram staging screen has page images only (no source door). The 404 for a doctor outside the
+   encounter scope (plan default 6) belongs to §2.
+   **Residual (LOW, pre-existing, follow-up OD-MEMO-B-1):** a Doctor who also holds Finance Klinik or Data Analyst can
+   still print the native RME and odontogram through `oversight.rme.visits.print`, `oversight.rme.visits.pdf` and
+   `oversight.rme.visits.odontogram.print` — rule 138 §6's surface, never covered on the oversight screens and not
+   changed here; and the oversight legacy-door refusal of item 4 is a single layer (controller + service). The
+   follow-up is a dedicated oversight ability that applies the print-deny on both.
+9. **Tests.** `tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php` (critical-gate token
+   `DoctorRoomScoped`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`).
+
+## 2. Encounter scope (flag, PR A1)
+
+1. **The switch.** `rme.doctor_encounter_scope` (config/feature_flags.php, risk `high`, default OFF, environment
+   override captured at config build) is read only through `FeatureFlagService`, by
+   `DoctorPatientScopeService::encounterScopeEnabled()` (CG-08; a dotted key breaks `config()` traversal). With it OFF
+   every method of `DoctorPatientScopeService` answers exactly as before (Sprint 66.2: an active assignment row or any
+   visit with the doctor grants the patient; refusals are 403; co-authoring an encounter in the same room, OD-5-1,
+   stays). Turning it ON is a separate owner decision after every A-PR (A1–A4) is merged, a reviewed dry run of
+   `rme:doctor-assignments-reconcile` (A4) and doctor UAT. The Android global enforcement is not touched.
+2. **The window.** `App\Modules\RME\Services\DoctorEncounterWindow`: a visit is in service while `registered`,
+   `waiting`, `in_progress` or `cashier_pending`, or `completed` with `completed_at` on TODAY's clinical date
+   (`ClinicalClock`, Asia/Makassar; at 00:30 WITA the UTC date is still yesterday's and is never used). A cancelled,
+   soft-deleted or undated completed visit is never in service. `isInService()` and its SQL twin
+   `constrainInService()` are mirror images; change both or neither.
+3. **One authority, read modes.** `DoctorPatientScopeService` stays the single authority; Owner, Super Admin and
+   Supervisor RME stay exempt (`shouldApplyDoctorScope()`). With the flag ON, for a Doctor,
+   `readModeFor($user, $patientId)` is `history` while the doctor has an own in-service encounter with the patient,
+   `own` when they only have own visits, `none` otherwise. It is memoised for the current ROUTED request only, keyed
+   by account and patient (rule 237 §12's pattern); jobs, commands and direct calls are never memoised. Assignment
+   rows (manual, shared, auto_visit) grant nothing (plan default 1).
+4. **Reads.** A visit is readable when it is the doctor's own (any date, never soft-deleted) or, in `history` mode,
+   a NON-pre-exam visit of the patient (cashier_pending, completed, cancelled); its odontogram, prescription and
+   consent follow it. A per-visit SHEET (`MedicalRecordPolicy::view`, and its handwriting images) follows its own
+   visit the same way, so a doctor reads their own old sheet in `own` mode and never the sheet of another doctor's
+   pre-exam visit. The patient's handwriting BOOK (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`) and the
+   patient as a whole (`doctorCanAccessPatient()`, patient-level policies, the patient-centric workspace in full) need
+   `history`; item 11 (PR A3a) opens the workspace in `own` mode too, limited to the doctor's own sheets. Out-of-scope reads answer **404** (`Response::denyAsNotFound`, plan default 6; revises rule 99 §2 /
+   AIR-LRM-25 for native records; the legacy archives follow in item 10, PR A2). An unlinked doctor account keeps its 403 "belum
+   terhubung". Two refusals still answer before the scope and keep their 403, so existence stays visible there: the
+   rule 138 room scope (an active visit of another room) and the prescription `documentLocked` check.
+5. **Writes.** Only on the doctor's OWN encounter while it is in service: `doctorMayWriteVisit()` /
+   `authorizeVisitWrite()` (403 "Kunjungan ini ditangani dokter lain…" for another doctor's readable visit, 403
+   "sudah selesai dilayani" for the doctor's own visit out of service, 404 when not even readable). Policies:
+   `ClinicVisitPolicy::update`, `transition`, `completeExamination` (and `startExamination`),
+   `recordPerformedTreatments`; `OdontogramPolicy::author`, `update`, `finalize`; `RmePrescriptionPolicy::create`,
+   `update` (asked only with the flag ON); `RmeVisitConsentPolicy::create`, `void`; `MedicalRecordPolicy::update` and
+   `finalize` — a SHEET's typed fields, diagnoses (record, remove, make primary, the override) and finalisation follow
+   the sheet's OWN visit, the book's typed fields included. The BOOK takes new handwriting pages through
+   `MedicalRecordPolicy::appendPage` (patient-level `history`; `MedicalRecordHandwritingController` asks it for every
+   book page) and the third layer then requires the live encounter to be the doctor's own. Third layer (re-asserted
+   in the services, past `Gate::before`): `RmeVisitConsentService::actorMayWorkOnEncounter()` (RME book, odontogram,
+   performed treatments) and `assertOperatorWithinScope()` (consent sign/void), and
+   `PrescriptionAuthoringAuthority::permits()`; and for a SHEET's typed content (PR A1b)
+   `MedicalRecordSheetWriteScope::assertWritable()` — the ANCHOR rule: every sheet, the book included, is typed-written
+   only by the doctor of its own visit while in service — called after the RME authoring gate by `MedicalRecordService`
+   (`updateDraft`, `finalize`, which take an explicit actor defaulting to the authenticated one; `finalized_by` records
+   it), `MedicalRecordDiagnosisService` (`record`, `makePrimary`, `remove` — inside the transaction on the LOCKED sheet
+   where it locks one), `DiagnosisRolloutService::grantOverride`, and the in-place page save of a per-visit sheet
+   (`MedicalRecordHandwritingController`, inside the save transaction, after the authoring gate; lock order kept), with
+   the same 403 messages (`AuthorizationException`). `startBook()` with typed content applies the same rule to the
+   locked canonical visit it would anchor to (`assertTypedWriteOn()`), so typed content is never written onto another
+   doctor's visit; a book started without typed content (the handwriting book) is allowed as before — chosen over
+   silently dropping the typed fields. Appending a book page is the one patient-level write (`appendPage`).
+   `MedicalRecordSheetWriteScope::followsItsVisit()` is the one definition of "not the book" for reads, shared with
+   `MedicalRecordPolicy` (the book id is memoised per routed request once found). The workspace controls mirror these
+   abilities, computed in `MedicalRecordController` (rule 135): the handwriting editor on `appendPage` for a book page
+   and on `update` for an in-place sheet page, "+ Tambah Halaman RM" — which always writes a NEW page to the book,
+   whatever page is shown — on `appendPage` of the book (`canAppendBookPage`, PR A1c; on a page of another doctor's
+   sheet the in-place editor is withheld while the book still takes new pages), "+ Tambah Lembar RM" on `create` for
+   its target visit, the diagnosis form on `update` of the sheet it writes. With the flag OFF all of these answer exactly as before (`appendPage` =
+   the old `update`; the sheet assertions are no-ops).
+6. **Lists: scoped now, and what waits for A3.** Scoped now and mirroring their per-record checks:
+   `applyVisitScopeForUser()` = own visits OR (non-pre-exam AND an own in-service encounter with that patient) — the
+   visit list, room worklist and patient queue; `applyPatientScopeForUser()` = patients with an own in-service
+   encounter — patient search, cross-branch lookup, the unified medical-record index and the legacy lookups. The
+   correlated subquery uses the window's SQL twin, never a re-derivation. The uncalled `applyMedicalRecordScopeForUser()` was
+   removed rather than left as an unmirrored list scope. Histories (PR A1b): `ClinicVisitService::patientVisitHistory()`
+   takes the viewer explicitly (rule 199's explicit-actor pattern; the visit page, the workspace and the prior-visit
+   picker pass it) and, with the flag ON, keeps only the visits `doctorCanAccessVisit()` admits — so the visit page's
+   "Riwayat Kunjungan Pasien", the workspace history and the legacy timeline built from them never list what the
+   visit page would refuse. `doctorsWithAccessSummary()` shows a doctor viewer nothing with the flag ON (it describes
+   the assignment scope that no longer grants anything and names other doctors). The prior-visit picker
+   (`rme.visits.patient-options`) answers the scope's own status: 404 out of scope with the flag ON.
+7. **Index.** `trx_clinic_visits (doctor_id, patient_id, status)` (`trx_clinic_visits_doctor_patient_status_index`,
+   additive) serves the per-patient probe and the per-row EXISTS.
+8. **Unchanged, and the preconditions for turning the flag ON.** BranchContext, `RmeWorkingBranchScope`, the rule 138
+   room scope, the doctor session lock and the Android enforcement are unchanged. Room assignment is unchanged for
+   Front Office and Admin Klinik; with the flag ON a Doctor places or moves a room (`assignRoom` authorises `update`)
+   only on their own in-service visit; the doctor change and its revocation are A4 (done, item 13). Not in A1: the
+   legacy archive scope and its 404 (A2 — done, item 10), the after-service workspace for `own` mode (A3 — done in
+   A3a, item 11), revocation and the reconcile command (A4 — done, item 13), doctor-visible fields (C1/C2). The flag
+   stays OFF until all of them are merged AND M3.3 is released. M3.3 is now in the base: re-saving an EXISTING book page that another encounter wrote (or a
+   sealed one) is refused by rule 240 §4.4 in `MedicalRecordHandwritingService::save()`, with the flag ON and OFF
+   (the test that pinned the gap now pins the refusal). The precondition recorded by the A3a review — the book's
+   handwriting PAGES were read patient-level, so a page doctor B writes on the book during B's live encounter was
+   listed to a doctor A in read mode `history` even when A may not read B's encounter — is closed by item 12: the
+   book's pages follow their author stamp (`authored_clinic_visit_id`, `listsVisitFor()` on the authoring visit).
+   Own mode still lists no book page (item 12, follow-up).
+   Recorded by the A3 re-review, each to be closed in A4 before the flag is turned ON (flag-ON only, reads only, no
+   write path) — **all three done, A4** (item 13; (a) as built: the doctor's own live encounter, then the source
+   visit when it is any visit of the doctor's own, then the latest own pre-exam visit): (a) at the anchor address `EnsureVisitRoomAssigned::gatedVisit()` gates the doctor's own roomless
+   visit only when the request's `source_visit_id` names it — choose the gated visit on the server (the doctor's own
+   live encounter, then an own in-service pre-exam visit of the patient) and use `source_visit_id` only to choose
+   among the doctor's own visits; until then the room gate there is a redirect only and the RME authoring gate is
+   what protects writes; (b) the workflow tabs (`visit-workflow-nav`) on the workspace show the UNREADABLE anchor's
+   room state — render them for the source visit or omit them when `anchorContentReadable` is false; (c) `visit.room`
+   runs before authorization, so another doctor's roomless pre-exam visit answers 302 where a placed one the doctor
+   may not read answers 404 — authorize (404) before the room redirect for a scoped doctor.
+   The items recorded open in A1 (service-level sheet re-assertion, history scoping, the access panel, the picker
+   status) are closed by PR A1b.
+   **The A3 list (recorded in A1c), each a precondition for turning the flag ON, and its status.** The per-record
+   checks behind each already refused (404); only the listing could still name another doctor's visit.
+   - The workspace sheet navigation and document rail (`PatientRmWorkspaceResolver::sheetsForPatient`, the native
+     side of `RmeWorkspaceDocumentPresenter`) — **done, A3a** (item 11).
+   - The book page sequence (`PatientRmWorkspaceResolver::orderedHandwritingBookForPatient`; the book is
+     patient-level, the pages of per-visit sheets the doctor may not read were listed) — **done, A3a** (item 11).
+   - The consent banner (`activeEncounter`, `MedicalRecordController::show`) — **done, A3a** (item 11).
+   - The after-service workspace for `own` mode — **done, A3a** (item 11).
+   - The book ANCHOR: `PatientRmWorkspaceResolver::resolveCanonicalWorkspaceVisit()` picks the earliest
+     non-cancelled visit, which can be another doctor's pre-exam visit (a stale waiting visit, or a same-day visit
+     with a lower id); with the flag ON `create` on it answered 404 and the workspace itself 404'd at that address.
+     Changing the anchor changes the book selector (rule 237 §16, R7-1) for every role, so it was decided with A3 —
+     **done, A3a** (item 11: the selector is unchanged; `startBook` is the `appendPage` rule; the anchor is never
+     named nor its content shown).
+   - The unified RM pages (`UnifiedMedicalRecordIndexRepository::nativeRecordsForPatient`, `latestNativeRecordsFor`)
+     — **done, A3b** (item 11).
+   - The prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`) — **done, A3b**
+     (item 11).
+   - The visit page's follow-up links (`rme/visits/show.blade.php`, "Kontrol dari" / "Kontrol lanjutan") and the
+     odontogram page's parent link (`rme/visits/odontogram/show.blade.php`, "Odontogram Kunjungan Sebelumnya") —
+     **done, A3b** (item 11).
+   The A3 list is closed, and A4 (item 13) closes revocation, the reconcile command and (a)(b)(c); the flag still
+   stays OFF until A4 is merged and M3.3 is released (the author-stamp filter is in place, item 12), the owner has
+   reviewed a dry run of `rme:doctor-assignments-reconcile` and doctor UAT is done.
+   The prev/next visit arrows are NOT an A3 item: CC1-ADJ-1 (rule 227 §1.8c, its own PR, merged before
+   this series) offers only a visit whose page the viewer may open, asked through that page's own ability, so the
+   working-branch read scope applies now and the encounter scope when the flag is ON; it also corrects the
+   prescription page's `'prev'` key.
+9. **Tests.** `tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php` (A1) and
+   `tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php` (A1b; A1c adds the workspace controls on a page
+   of another doctor's sheet, flag ON and OFF) (critical-gate token `DoctorPatientScope`,
+   declared in `critical_gate_mandatory_suites`); the existing doctor-scope suites run unchanged with the flag OFF.
+10. **Legacy archives (PR A2).** Revises rule 99 §1, §2, §11 (AIR-LRM-25/26) and rule 97 §5, §6 (AIR-LRM-27) for the
+    flag ON; each carries a REVISED IN PART marker. With the flag ON, for a scoped Doctor:
+    - **One answer.** `DoctorPatientScopeService::authorizeLegacyArchiveRead($user, $patient)` decides every read of a
+      published legacy RME and legacy odontogram archive. An archive is patient-level history, so it is readable only
+      in read mode `history` (`readModeFor()`, an own in-service encounter with the patient; never re-derived);
+      `own` mode (the doctor's own old or cancelled visits) and assignment rows of every type grant nothing (plan
+      default 1). Outside: **404** (`Response::denyAsNotFound`, plan default 6), so the archive's existence does not
+      leak; an unlinked doctor account keeps its 403. Flag OFF: exactly `doctorCanAccessPatient()` as a plain bool
+      (today's 403 through the policy).
+    - **The doors.** `LegacyRmeRecordPolicy` and `LegacyOdontogramRecordPolicy` `view`/`viewFile` ask it (they now
+      return `Response|bool`), so `rme.legacy-records.show|pages.show|source|print|export` and
+      `rme.legacy-odontograms.show|pages.show|source` answer 404 outside the scope, after the branch-scoped
+      `resolve()` (out-of-branch is still 404 first) and before the §1 download rule (no doctor-print audit row is
+      written for a refused read). Inside the scope §1 is unchanged: page images 200, source/print/export 403 audited.
+    - **Third layer.** Both controllers' `authorizeRead()` asks the policy and then
+      `assertLegacyArchiveReadable($user, $patientId)` of the same authority, so a bypassed policy (`Gate::before`, a
+      regression) still cannot serve a doctor; it is a no-op with the flag OFF (A1's pattern), so the flag-OFF read
+      path is untouched even then. Super Admin is exempt by design (`shouldApplyDoctorScope()`), so nothing here
+      must bind past `Gate::before`.
+    - **Lists mirror the record.** `LegacyRmePatientHistoryService::publishedRecordsFor()` and
+      `LegacyOdontogramPatientHistoryService::publishedRecordsFor()` ask the same method, so every list built on them
+      shows an archive exactly when the record opens: the visit page timeline (`timelineFor`), the workspace clinical
+      history, the inline legacy pages (`RmeWorkspacePageSequencer`), the legacy side of the document rail
+      (`RmeWorkspaceDocumentPresenter`), the unified patient page (`UnifiedMedicalRecordIndexService::patientWorkspace`)
+      and the native odontogram page's legacy list. The legacy lookups (`LegacyRmePatientLookupService`,
+      `LegacyOdontogramPatientRepository`) were scoped in A1 (`applyPatientScopeForUser()`) and mirror it.
+    - **Unchanged.** The archive branch gate (origin branch from the Nomor RM, `DoctorClinicalBranchResolver`,
+      AIR-LRM-07/AIR-DAC-04), Front Office, Admin Klinik and the other non-doctor readers, the exempt roles, VOID
+      handling and §1. **Not covered, recorded:** the staging import screens (`settings.rme.legacy-imports.*`,
+      `settings.rme.legacy-odontograms.*`), the oversight legacy screens (`oversight.legacy.*`) and the archive void
+      routes (their `void` policies apply no doctor scope; no seeded role holds the void permissions) never applied
+      the doctor patient scope; a Doctor reaches them only through a second role's or a directly granted permission
+      (intake, oversight, void), as with the native oversight screens in A1. Whether a dual-role Doctor is
+      encounter-scoped there is an owner question (follow-up OD-MEMO-A2-1, alongside OD-MEMO-B-1).
+    - **Existence (A2 review).** Every flag-ON scope refusal is `Response::denyAsNotFound()` WITHOUT a message
+      (`readModeFor`-based legacy read, `outOfScope()`, `MedicalRecordPolicy`), so a JSON 404 out of scope is
+      byte-identical to a 404 for an archive id that does not exist (both archive controllers' `resolve()` answer
+      `abort(404, 'Not Found')`, the text `denyAsNotFound()` renders); the flag-OFF 403 keeps its message. `viewFile`
+      decides on whether `view` allowed (`Response::allowed()`), never on `=== true`. Known limit, a precondition for
+      ON: a native visit/sheet missing from route-model binding still answers JSON "No query results for model …",
+      unlike the scope's "Not Found" (doctors use the Blade pages, whose 404 bodies are identical).
+    - **Precondition for ON (A4).** The window of item 2 counts a stale open visit (an old `registered`, `waiting`,
+      `in_progress` or `cashier_pending` visit) as in service, and A2 extends that reach to every legacy archive of
+      the patient; the A4 reconcile dry run must report such visits before the flag is turned ON — **done, A4**
+      (item 13: `STALE_OPEN_VISITS…` and their visit ids); closing them stays a visit-workflow act, never the
+      command's.
+    - **Tests.** `tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php` (token `LegacyRme`) and
+      `tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php` (token `LegacyOdontogram`), both
+      declared in `critical_gate_mandatory_suites`.
+11. **The after-service workspace and its lists (PRs A3a, A3b).** With the flag ON, for a scoped Doctor
+    (`DoctorPatientScopeService::encounterScopeAppliesTo()`; the exempt roles, other accounts and the flag OFF answer
+    every point below exactly as before):
+    - **The address.** Every visit's RM URL redirects to the patient's canonical anchor visit (rule 237 §16, R7-1;
+      unchanged for every role and with the flag OFF). That address is where the book is stored, not the encounter
+      being read, so `MedicalRecordController::show` asks `MedicalRecordPolicy::viewWorkspace` there (any other
+      visit's RM URL still asks that visit's `view`): it opens the workspace by read mode
+      (`DoctorPatientScopeService::authorizeWorkspaceRead()`): `history` → everything the per-record checks admit,
+      `own` → the after-service workspace, `none` → 404; an unlinked account keeps its 403. Flag OFF / exempt:
+      `viewWorkspace` is the anchor visit's own `view`. Deliberately, the rule 138 room scope is not asked of the
+      anchor at this address (in the clinic another doctor's waiting anchor sits in that doctor's room, so asking it
+      would keep the 404/403 this item removes); it keeps guarding the anchor's own pages (visit, odontogram,
+      prescription, print). The working-branch scope is kept (review LOW-1): `viewWorkspace` also requires
+      `RmeWorkingBranchScope::allows()` on the anchor's branch, as the anchor's own `view` did, so a context-bound
+      dual-role Doctor (also Perawat, Kasir or Admin Klinik) opens only an anchor in their working branch. Of an
+      anchor the doctor may not read the workspace shows only the book's handwriting pages (below).
+    - **Lists mirror the sheet read rule.** `PatientRmWorkspaceResolver::sheetsForPatient($patientId, $viewer)` and
+      `orderedHandwritingBookForPatient($patientId, $viewer)` keep only
+      `MedicalRecordSheetWriteScope::readableSheets()`, the list mirror of `MedicalRecordPolicy::view`'s doctor scope
+      (a per-visit sheet by its own visit, `doctorCanAccessVisit()`; the book patient-level, `history`; the same
+      `followsItsVisit()` definition), resolving the book once per patient per call — a bookless patient included
+      (review LOW-2) — with the read mode memoised, so no query per sheet. The sheet navigation, the native side of the
+      document rail (`RmeWorkspaceDocumentPresenter`, fed the same sheets) and the book page sequence therefore never
+      list a sheet, or a page of a sheet, the doctor may not open; a `?sheet=` or `source_visit_id` naming one is
+      ignored (the source visit through `listsVisitFor()`); the save redirect's focus page is computed in the saver's
+      own sequence (`MedicalRecordHandwritingController`). Every list shown to a person passes the viewer; server
+      facts (whether the patient has sheets, `createDraft()`'s check, `stampWorkspaceFields()`'s rank) never do.
+    - **Own mode (A3 item 7, decided).** A doctor with own visits and no own in-service encounter opens the workspace
+      read-only, limited to their own per-visit sheets and those sheets' pages, their own visits in the history
+      (item 6) and no legacy archive (item 10). The BOOK is not listed at all, the doctor's own book pages included:
+      a page row's `doctor_id` is its storage visit's doctor, not its writer, so the book has no reliable per-page
+      author until M3.3 PR2's author stamp (rule 240 §4) — revisit then. Nothing is writable (every write needs an
+      own in-service encounter, item 5). Without an own sheet the empty state names nobody and offers nothing.
+    - **Consent banner.** The workspace and its empty state pass the patient's current examination only when
+      `listsVisitFor()` admits it; otherwise the doctor reads "Belum ada pemeriksaan Anda yang berjalan", which is
+      true whether or not another doctor is examining, so the banner reveals nothing.
+    - **The book ANCHOR (decision).** The anchor stays the R7-1 canonical visit for everyone. With the flag ON a
+      doctor inside an own in-service encounter starts and appends to the book there even when the anchor is another
+      doctor's pre-exam visit: the book is patient-level and the anchor is its storage. Re-anchoring the doctor's
+      book on their own encounter was rejected as not containable: it changes `pickCanonicalVisitId()` /
+      `selfAnchoredBook()`, and a later sheet on the earlier visit would become self-anchored and take the book over
+      (the second-book defect R7-1 closed). Keeping the 404 was rejected: the doctor could write no RM for their own
+      consented encounter until someone cancels or examines another doctor's, possibly stale, visit. Mechanics:
+      `MedicalRecordPolicy::startBook` is the `appendPage` rule for a scoped Doctor with the flag ON (`history`, 404
+      otherwise) and exactly `create` on the anchor otherwise; `MedicalRecordController::store` (the first sheet),
+      `MedicalRecordService::startBook()` (re-asserted on the locked anchor) and the empty state's "Buat Halaman RM
+      Pertama" ask it. This reconciles item 8's former sentence "the doctor cannot start the book": the create door
+      answered 404 (`create` on the anchor) while the first handwriting save (`MedicalRecordHandwritingController`,
+      no book yet) asserted consent and then `appendPage` on the new draft, a patient-level rule; the two doors
+      disagreed, and neither was reachable from the UI only because the workspace itself 404'd at the anchor. Both
+      doors are now one rule. Unchanged: typed content on a book started there needs the anchor's own doctor
+      (`assertTypedWriteOn()`, 403), and the RME authoring gate requires the live encounter to be the doctor's own.
+    - **The anchor is never named, its content never shown (review HIGH-1).** A sheet whose own visit the viewer may
+      not read can only be the book on such an anchor. Everything bound to that visit is withheld, decided on the
+      server by `MedicalRecordPolicy::viewAnchorContent` (= `view`, plus, while the encounter scope applies,
+      `listsVisitFor()` on the sheet's own visit; exactly `view` otherwise), which `MedicalRecordController::show`
+      asks of the active sheet (`anchorContentReadable`): the visit (number and date in the header, doctor, initial
+      treatment and note, the follow-up alert, its performed treatments; "Kembali ke Kunjungan" goes to the source
+      visit) and everything typed onto the sheet (the "Data SOAP (Legacy)" card, the structured diagnoses and their
+      rollout state `diagnosisEnforcement`, the Final/Draft badge and the finalisation messages, "Riwayat
+      Pencatatan" with recorded/finalized by and when). Only the handwriting pages remain. The sheet tab and the rail
+      entry carry no number or date (`unnamedSheetIds`, `RmeWorkspaceDocumentPresenter::documentsFor()`). The empty
+      state names the anchor only to a viewer who may read it (`workspaceVisitNamed`). The workspace's "Kontrol dari"
+      link follows `listsVisitFor()`. The book's PAGES stay patient-level: see the precondition in item 8.
+    - **A roomless pre-exam anchor (review MEDIUM-1).** `visit.room` (`EnsureVisitRoomAssigned`) guards the
+      {clinicVisit} of the workspace routes (show, store, handwriting store), which is the storage anchor; a roomless
+      anchor of another doctor bounced the workspace to that visit's page and the first-page POST created nothing.
+      While the encounter scope applies and the URL visit is the canonical anchor the doctor may not read, the gate
+      asks instead the visit the doctor works from, chosen on the server since A4 (item 13 (a): the doctor's own
+      live encounter, else the source visit when it is the doctor's own, else the latest own pre-exam visit), else
+      nothing (writes still need the doctor's own consented in-progress encounter). A readable anchor (a new
+      patient's first visit is the doctor's own encounter) and every other route stay gated as before; with the
+      flag OFF the bounce is unchanged (pre-existing, not a regression). The A4 dry run reports these anchors
+      (`ROOMLESS_PRE_EXAM_ANCHORS…`).
+    - **Tests.** `tests/Feature/RME/DoctorPatientScopePostServiceWorkspaceTest.php` (token `DoctorPatientScope`,
+      declared in `critical_gate_mandatory_suites`): `history`, `own` and `none` modes, another doctor's pre-exam
+      visit, Supervisor RME, flag OFF parity per surface, the anchor start and append without naming it, both doors
+      one rule, the focus page, and the query budget (identity, read mode and book lookups constant in the sheet
+      count, with and without a book); after review: another doctor's in-progress anchor carrying SOAP, a diagnosis
+      and a finalizer in the same and another room (withheld with the flag ON, unchanged with it OFF), a roomless
+      registered anchor (flag ON and OFF), the room gate kept on the doctor's own roomless visit, and a
+      context-bound dual-role Doctor held to the working branch.
+    - **The list surfaces outside the workspace (PR A3b).** Each lists a record exactly when the per-record check
+      of its visit admits it, through one of two mirrors of `doctorCanAccessVisit()`: in SQL, the visit scope's
+      twin (`applyVisitScopeForUser()`, attached through `whereHas('clinicVisit')` or an `EXISTS` on the record's
+      visit, so a soft-deleted visit is excluded as the per-record check excludes it, and a row limit counts only
+      readable rows); per visit in PHP, `listsVisitFor()`. Each is attached only while the encounter scope applies
+      (`encounterScopeAppliesTo()`), so with the flag OFF and for the exempt roles every query and list is exactly
+      as before.
+      - The unified RM pages: `UnifiedMedicalRecordIndexService::scopeFor()` sets
+        `UnifiedMedicalRecordScope::$nativeVisitScope`, which `UnifiedMedicalRecordIndexRepository` applies to
+        `latestNativeRecordsFor()` (each index row's newest record is the newest the doctor may read; one query
+        for the page, never one per row), `nativeRecordsForPatient()` (the patient page) and the native leg
+        `nativeExists()` behind eligibility, the per-row count, the sort key, the status/date filters and the
+        search over visit numbers and doctor names, so none of them can count or match a sheet the pages would
+        not list. Both pages are reached only in read mode `history` (the patient scope of item 6), so a record is
+        listed when its visit is the doctor's own or past the pre-exam stage. The book is a record of its anchor
+        visit there: on an anchor the doctor may not read it is not listed (never over-listed; it stays reachable in
+        the workspace, where it is not named).
+      - The prescription history beside the prescription form: `RmePrescriptionService::showDataForVisit()` passes
+        the same SQL twin to `RmePrescriptionRepositoryInterface::historyForPatient()`, applied before its 20-row
+        limit, so in `own` mode only the prescriptions of the doctor's own visits are listed and never one of
+        another doctor's pre-exam visit. `patientHistory()` (no viewer) is unchanged.
+      - The visit page's "Kontrol dari" / "Kontrol lanjutan" links: `ClinicVisitController::show` passes
+        `followUpOf` / `followUpVisits` filtered by `listsVisitFor()`; the odontogram page's "Odontogram Kunjungan
+        Sebelumnya" card (`OdontogramController::show`) appears only when the parent visit passes it.
+      - **Tests.** `tests/Feature/RME/DoctorPatientScopeListSurfacesTest.php` (token `DoctorPatientScope`, declared
+        in `critical_gate_mandatory_suites`): `history` and `own` modes, another doctor's pre-exam visit,
+        Supervisor RME, flag OFF parity per surface, and the index's query count constant in the patient count.
+12. **On the surfaces of M3.3 (rule 240) and the PTM (rule 241) — integration of this series onto them.** With the
+    flag ON, for a scoped Doctor (`encounterScopeAppliesTo()`; the exempt roles, other accounts and the flag OFF
+    answer every point below exactly as before):
+    - **The book's pages follow their author stamp** (closes item 8's precondition). The book is read
+      patient-level, but every page written since rule 240 names the encounter that wrote it (§4.4,
+      `authored_clinic_visit_id`). `MedicalRecordSheetWriteScope::readableBookPages()` (a list; the stamps in two
+      queries through `MedicalRecordHandwritingRepositoryInterface::pageAuthors()`, the authoring visits in one) and
+      `bookPageReadable()` (one row) keep a stamped page of the BOOK only when every encounter that wrote it is a
+      visit the doctor may read (`listsVisitFor()`); an unstamped page (written before rule 240, its encounter never
+      recorded) stays patient-level like the book; a per-visit sheet's pages follow their sheet. Applied to the
+      workspace page sequence and the save redirect's focus (`orderedHandwritingBookForPatient($viewer)`), the page
+      image routes (`rme.handwritings.image`, `rme.handwriting-pages.image` through
+      `MedicalRecordPolicy::viewHandwritingPage` = `view` plus the page's author; 404 for a refused page, the
+      out-of-scope 403 of rule 240 §8.10(a) unchanged), a version page's locked pages
+      (`RmeAmendmentService::versionDetailFor()`) and the RME print/PDF of a visit whose sheet is the book
+      (`sheetPagesFor()`). A correction page appended by an approved amendment carries the amended encounter as
+      its author, so it shows exactly where its full label does (rule 240 §9.5).
+    - **A sheet's content is read with `viewAnchorContent`.** `RmeRecordVersionService::readAbility()` names it for
+      a sheet (`view` for a chart, which already follows its visit): the version history and version pages
+      (`versionsFor()`, `version()`, `versionHistoryFor()`) and every amendment surface (`maySeeSubject()`,
+      `mayView()` for the requester and the approver, `inApproverScope()`, `RmeAmendmentActionRequest::authorize()`).
+      So a book anchored to a visit the doctor may not read answers 404 for its versions and amendments — to the
+      doctor who requested the amendment too (a finalizer from the flag-OFF co-authoring era); a per-visit sheet
+      already followed its visit through `view`. The workspace withholds the "Amandemen" block (`amendmentPanel`)
+      with the rest of such an anchor's content. Revises rule 240 §5.7, §6.3, §6.7 and §7.7 for the flag ON. The
+      correction-page labels needed nothing: they already follow `ClinicVisitPolicy::view` (rule 240 §9.5).
+    - **The PTM banner** (rule 241 §3): `MedicalRecordController::ptmBannerFor()` describes only the encounter
+      `encounterNamedFor()` admits, so neither the PTM state nor a countersign link of another doctor's encounter
+      is given to the page; the "Belum ada pemeriksaan Anda yang berjalan" variant lives in
+      `rme/visits/partials/ptm-authoring-banner.blade.php`.
+    - **Order with rule 240 §1.8.** `MedicalRecordService::updateDraft()`, `MedicalRecordDiagnosisService` (record,
+      make primary, remove) and `DiagnosisRolloutService::grantOverride()` call `assertWritable()` after
+      `assertSheetAuthoringAllowed()` (the authoring gate, then the lock), so a final sheet still answers with its
+      lock before a missing PTM; `finalize()` asks gate → `assertWritable()` → the sheet lock. No-ops with the flag
+      OFF. The Doctor no longer holds `manage_rme_consents` (rule 241 §4), so `RmeVisitConsentPolicy::create` under
+      the scope binds only an account that still captures signatures (a dual role).
+    - **Flag-OFF parity at the call sites (integration review).** A scope-only ability whose policy falls back to
+      the base ability by calling it directly skips every Gate hook and event registered for the base ability
+      (A3a's `startBook` did: `RmeConcurrentFirstWriteBookConvergenceTest` R71-H/R71-H2 deny `create` through
+      `Gate::before`). So `startBook` (`MedicalRecordService::startBook()`, `MedicalRecordController::store`, the
+      empty state's offer), `appendPage` (the handwriting save), `viewHandwritingPage` (the page image routes) and
+      `viewAnchorContent` (`RmeRecordVersionService::readAbility()`) are asked only while the encounter scope applies
+      to the account (`DoctorPatientScopeService::abilityFor()`); otherwise each call site asks exactly the ability
+      and arguments it asked before (`create`, `update`, `view`). The workspace's presentation abilities
+      (`canEditHandwritingTarget`, `canAppendBookPage`, `anchorContentReadable`) are unchanged.
+    - **Follow-ups, not preconditions.** (a) Own mode still lists no book page: the page routes ask the book's
+      `view`, which needs `history`; listing the doctor's own book pages there needs the routes to admit an
+      own-authored page in own mode. (b) The cashier's clinical summary (`RmeInvoiceController`) and the oversight
+      displays are not doctor surfaces; a dual-role Doctor there is OD-MEMO-A2-1's question.
+    - **Preconditions for ON (integration review, flag ON only; the flag OFF is unaffected).** (a) A BOOK amendment's
+      own requester, finalizer and doctor of record are locked out once out of service: `viewAnchorContent` starts
+      from the book's patient-level `view` (needs `history`), so the next clinical day the amendment page, the version
+      list and cancel answer 404 and the amendment stays pending. Decide the book's anchor content on the anchor
+      visit (`listsVisitFor(anchor)` plus the existing view/branch/document scope) instead, with a test, before ON.
+      (b) The author-stamp filter covers only the BOOK: a per-visit sheet page written in place during another
+      doctor's live encounter (two own visits of one patient the same day) is listed and served to a doctor in
+      `history`; filter stamped pages of every sheet (unstamped stay patient-level) or require an in-place save to
+      target the live encounter's own sheet, before ON.
+    - **Tests.** `tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php` (token `DoctorPatientScope`,
+      declared in `critical_gate_mandatory_suites`): the book's pages by author (sequence, page route, the writer and
+      the exempt roles, version page, print), versions and amendments of a book on an unreadable anchor (requester
+      404, cancel refused, the doctor of record and Supervisor RME kept, no "Amandemen" block), the PTM banner;
+      flag OFF parity per surface.
+13. **Revocation, the reconcile command and the A3 preconditions (PR A4).** Everything here applies with the flag ON
+    only; with it OFF `assignRoom`, the cancel, the room gate and the workspace are exactly as before. Revises rule
+    228 §4 (OD-5-3) for the flag ON (REVISED IN PART marker there).
+    - **An examination in progress follows its doctor.** `ClinicVisitService::assignRoom()` decides on the LOCKED
+      row: `cashier_pending` moves the room only whatever the flag (rule 228 §4); `registered` and `waiting` take the
+      online doctor of the new room; and with the flag ON an `in_progress` visit keeps its doctor (owner default 2,
+      the plan's "room-only move extended to in_progress") and moves ONLY into a room whose online doctor is the
+      visit's own doctor — the doctor goes online there first, then the patient is moved. Any other destination
+      (another doctor's room, an empty room, a room with two doctors) is refused with
+      `ClinicVisitService::IN_PROGRESS_MOVE_REFUSED` ("Dokter pemeriksa harus pindah ruangan terlebih dahulu…");
+      the empty-room refusal waits for the locked row so it carries that message. Why (review MEDIUM-1): only the
+      visit's own doctor may write on it (item 5), and rule 138 binds an ACTIVE visit to the room its reader is
+      online in. A room-only move into doctor B's room left doctor A's consented encounter in room B: A refused by
+      rule 138 (403), B by the encounter scope (404), and A unable to follow ("sedang digunakan oleh dokter lain").
+      It lives in the service, so it binds every caller, Super Admin included (CG-06). Decided flag ON only: the
+      plan ships A behind its flag ("flag OFF = today's behaviour exactly") and nothing in it lifts this item; with
+      the flag OFF the in-progress visit takes the new room's doctor as before, and same-room co-authoring (OD-5-1)
+      lets that doctor continue the encounter.
+    - **Revocation.** One definition of a stale row, `PatientDoctorAssignmentService::staleAutoVisitRows()`: an
+      active `auto_visit` row such that no visit of its patient that is neither cancelled nor soft-deleted has its
+      doctor. When `assignRoom` changes a queued visit's doctor, and when `transitionStatus` cancels a visit that has
+      a doctor, `revokeStaleAutoVisit()` ends the former doctor's row for that patient if it is now stale: it sets
+      `unassigned_at` and `unassigned_reason` (`visit_doctor_changed` / `visit_cancelled`; additive column,
+      migration `2026_11_18_300001`; the existing `reason` is why a row was CREATED and is not reused), under the
+      row lock, inside the transaction that writes the visit (after the visit row lock, the order
+      `ensureAssignedFromVisit` already uses; on a doctor swap both doctors' active rows are locked first, in
+      doctor_id order, `lockActiveRowsInDoctorOrder()`, so two swaps in opposite directions cannot deadlock), so
+      the move or cancel and the revocation commit or fail together. It
+      audits `PATIENT_DOCTOR_ASSIGNMENT_REVOKED` on the row with ids and the reason code only (`clinic_visit_id`,
+      `patient_id`, `doctor_id`, `replacement_doctor_id`, `reason`) and the explicit actor. A row the former doctor
+      still holds through another live visit of the patient (an earlier completed visit, a second queued one) is
+      kept: it is still true. Manual, shared and reassigned rows are never ended (plan default 1). With the flag ON
+      rows grant nothing, so revocation keeps the table true for the access panel (`doctorsWithAccessSummary`, read
+      by non-doctor accounts) and for a rollback to OFF, where an active row grants the whole patient again. With
+      the flag OFF nothing is revoked: the row grants access under Sprint 66.2, so ending it would change live
+      access; the reconcile apply below is the owner-approved way to do that. Known limit: a placement of the same
+      doctor on another visit of the patient committing between the stale check and the row lock can leave that
+      doctor without an active row for a live visit; access is unchanged (a visit grants with the flag OFF, rows
+      grant nothing ON) and the next placement recreates it.
+    - **`rme:doctor-assignments-reconcile`** (`RmeDoctorAssignmentsReconcileCommand` →
+      `DoctorAssignmentReconcileService`). Runtime user only (refuses root; fails closed without posix), as
+      `patient:rm-sequence-seed`. No permission or seeder: this program's host maintenance commands
+      (`patient:rm-sequence-seed`, `rme:lab-candidates-backfill`) take shell access as the runtime user plus the
+      owner's approval of the reviewed dry run (CG-22); there is no actor account. **Dry run** (default, read
+      only) prints `CLINICAL_TODAY` (ClinicalClock, WITA) and counts: `ACTIVE_AUTO_VISIT`, `STALE_AUTO_VISIT` and its
+      causes by the row's source visit (`_SOURCE_DOCTOR_CHANGED`, `_SOURCE_CANCELLED`, `_SOURCE_MISSING` = none or
+      soft-deleted), `ACTIVE_OTHER_TYPES_UNTOUCHED`; `STALE_OPEN_VISITS` = an open status
+      (`DoctorEncounterWindow::OPEN_STATUSES`) on a clinical date before today, not soft-deleted, with a doctor —
+      each keeps that doctor's window open (item 10) — per status, plus `_WITHOUT_DOCTOR` (count only); and
+      `ROOMLESS_PRE_EXAM_ANCHORS` (the SQL twin of `resolveCanonicalWorkspaceVisit()`: earliest non-cancelled,
+      non-deleted RME visit by visit_date, id — still pre-exam and roomless; item 11) with `_BEFORE_TODAY`. It
+      lists the VISIT ids of those two reports (`STALE_OPEN_VISIT_IDS`, `ROOMLESS_PRE_EXAM_ANCHOR_IDS`, at most
+      200 each, `…_TRUNCATED=yes|no`) and `PLAN_DIGEST` (sha256 of the sorted stale row ids); never an assignment
+      id, a name, a NIK, a Nomor RM or a visit number. **`--apply --confirm-plan=<digest>`**: a missing digest, or
+      one the current plan no longer matches (`PLAN_DIGEST_MISMATCH=yes`), is refused and nothing is written;
+      otherwise one transaction locks the planned rows that are still stale and sets `unassigned_at` only, through
+      the base query builder (no other column, `updated_at` included, no reason code; never a delete), and writes
+      one `PATIENT_DOCTOR_ASSIGNMENTS_RECONCILED` audit row (digest, planned/ended/skipped, the ended assignment
+      ids). A rerun plans nothing. The two reports are never acted on: a stale visit is closed through the visit
+      workflow (CG-13). Production: dry run → owner review → apply, immediately before the flag is turned ON and
+      again after any rollback to OFF. Documented here, as this program's other maintenance commands are; there is
+      no runbook for them.
+    - **(a) The room gate picks the working visit on the server.** At the anchor address
+      (`EnsureVisitRoomAssigned::gatedVisit()`, anchor unreadable) the gate asks
+      `PatientRmWorkspaceResolver::doctorWorkingVisit()`, in this order: the patient's live encounter
+      (`ActiveEncounterResolver::currentFor()`) when it is the doctor's own; else the visit `source_visit_id` names
+      when it is any RME visit of the doctor's own with the patient (review LOW-1: a cashier_pending or past one
+      needs no room, so the workspace opens and an unrelated own stale queued visit does not take the gate over);
+      else the doctor's latest own pre-exam visit (visit_date, id). A `source_visit_id` naming another doctor's
+      visit chooses nothing, so it can never steer the gate away from the doctor's own visits. The CHOSEN visit is
+      the one gated; another roomless queued visit of the doctor's is gated only when it is the one chosen.
+    - **(b) The workflow tabs.** `MedicalRecordController::show` passes `workflowNavVisit` = the active sheet's
+      visit when `anchorContentReadable`, else the source visit (readable by construction), else null; the
+      workspace renders `visit-workflow-nav` only for it, so the tabs never show an unreadable anchor's room state
+      or link its pages.
+    - **(c) Authorise before the room redirect.** When the gated visit needs a room, `EnsureVisitRoomAssigned`
+      first answers the scope's own `Response::denyAsNotFound()` for a visit the scoped doctor may not read
+      (`listsVisitFor()`), so another doctor's roomless pre-exam visit answers 404 like a placed one, not 302. The
+      doctor's own roomless visit keeps the redirect; rule 138's 403 for an active visit of another room is
+      unchanged (a roomless visit is of no room).
+    - **Tests.** `tests/Feature/RME/DoctorPatientScopeReassignmentTest.php` (registered/waiting doctor change with
+      revocation; an in_progress move refused into another doctor's room or an empty room and allowed into the room
+      its own doctor moved to; cashier_pending unchanged; cancel, a row kept by another live visit,
+      manual rows and other patients untouched, Super Admin bound, audit ids only, a refused move ends nothing,
+      (a)(b)(c); flag OFF parity for every behaviour that exists with the flag OFF — R-09's ids-only audit and
+      (b)-02's omitted tabs exist only with it ON: with it OFF no revocation audit is written (R-02, R-05) and the
+      roomless anchor bounces before any tabs render ((a)-05)) and `tests/Feature/RME/DoctorPatientScopeReconcileCommandTest.php` (dry
+      run counts and ids, no patient data, the anchor report against the resolver, digest missing/mismatch/drift
+      refused, unassigned_at only, idempotent, the predicate shared with revocation, the WITA date boundary);
+      token `DoctorPatientScope`, both declared in `critical_gate_mandatory_suites`.
+
+## 3. Doctor-visible patient fields (PRs C1, C2)
+
+1. **Owner decision and its reading.** M3.1 (2026-11-17, "memo list + RM number"; plan default 5, gender only): a
+   Doctor sees the patient's name, RM number, place and date of birth, age, occupation, planned treatment (the
+   visit's "Tindakan Awal", rendered from the visit as before) and gender; the phone, WhatsApp number, address, email
+   and NIK are hidden from every doctor screen. This revises AIR-RMC-13 (rule 100 §6–7): the doctor's consent page
+   shows a masked NIK (CG-11 is a ceiling, not an obligation); the printed consent document is unchanged. **Not
+   behind `rme.doctor_encounter_scope`:** the plan puts only design A (the encounter scope) behind it and names no
+   flag for C, so §3 is live on merge, like §1.
+2. **One decision.** `App\Modules\Patient\Services\PatientIdentityPresenter`: `audienceFor()` answers `doctor`
+   exactly when `DoctorPatientScopeService::shouldApplyDoctorScope()` does (§1.2's one Doctor definition, never a
+   second predicate) or when there is no viewer (fail closed). `forViewer()` returns a
+   `App\Modules\Patient\Support\PatientIdentityView` (for a doctor: phone, WhatsApp, email and address null,
+   `showsContact()` false, workspace biodata rows without them; no audience carries a NIK); `forConsentViewer()` and
+   `forConsentDocument()` return the PTM identity block. Controllers call it and pass the result; Blade only renders
+   it (CG-04). It reads the loaded patient and the viewer's roles and issues no query per patient.
+3. **Dual roles (the safe default).** A Doctor who also holds Front Office, Admin Klinik or Kasir gets the doctor
+   view on every clinical screen, as §1 refuses them downloads. The patient master form (`settings.patients.edit`,
+   `manage patients`) is not a clinical screen and the presenter never touches it, so the non-doctor role keeps the
+   full record there (CG-11's permission-gated master form). Owner, Super Admin and Supervisor RME are exempt.
+4. **The screens (C1).** Changed: the visit page `rme.visits.show` renders "Ponsel" and "Nomor WA" only when
+   `showsContact()`; the RM workspace "Informasi Kunjungan" table (`rme.visits.medical-record.show`) renders the
+   presenter's rows, for a doctor Nama, TTL / Umur, Pekerjaan, Jenis Kelamin and No. RM; the consent page and the
+   countersignature page (`rme.consents.show`, `rme.consents.countersign.create`) render the identity numbers as
+   `****` plus the last four and no "Alamat" row, for the consenter and the patient. The consent partial uses
+   column-0 directives, so the print and every non-doctor page render byte for byte as before (the pre-v2026.2 and
+   pre-rule-241 fixture comparisons still hold). Already showing the allowed fields only, unchanged and now pinned
+   by tests: the odontogram page, the prescription page (its printed identity is the prescription's own snapshot,
+   AIR-RMC-47), the empty workspace, the unified RM index and patient page. "TTL / Umur" now carries the place of
+   birth (memo M4.2 column) when one is recorded, for every audience, and the presenter counts the age to the
+   clinical day (`ClinicalClock`, CG-12), never the server's UTC day (`Patient::age()`), so a page 1 drawn between
+   00:00 and 08:00 WITA on a birthday bakes the right age. The prescription page tells a Doctor that a sent
+   prescription went to "nomor WhatsApp pasien", page and flash, with no digit of the number (others keep the masked
+   number; decided in `RmePrescriptionController`).
+5. **Every other role is unchanged:** the full workspace table (marital status and religion have no column and stay
+   "-"), the phone and WhatsApp number on the visit page, the full consent page and print.
+6. **Recorded residual (follow-up OD-MEMO-C-1, not built).** Screens of another role still show the phone or
+   WhatsApp number to a Doctor who also holds that role: the oversight visit and patient pages, the room-patients
+   monitor and its export/print (`OversightMonitoringController`) for Finance Klinik or Data Analyst — the
+   dual-role oversight family of OD-MEMO-B-1 (§1.8); and the cashier screens for Kasir, Admin Klinik or Front Office:
+   the clinical summary (`rme/cashier/partials/clinical-summary.blade.php`), the payment form
+   (`rme/cashier/payment/create.blade.php`), the receivables list (`rme/cashier/receivables.blade.php`), the
+   follow-up form (`rme/cashier/follow-ups/create.blade.php`) and the receipt's invoice document
+   (`rme/cashier/receipt/partials/invoice-document.blade.php`). None is a doctor screen; the follow-up is to route
+   them through the presenter too.
+7. **Tests (C1).** `tests/Feature/RME/DoctorPatientScopeIdentityFieldsTest.php` (critical-gate token
+   `DoctorPatientScope`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`): every doctor screen
+   (flag OFF and ON on the visit page), non-doctor parity, the consent page masked and the print whole, the dual
+   role and the master form, every exempt role through the one predicate, no query per patient.
+8. **A new RM page 1 (C2).** The workspace canvas template (Hotfix 60.5, 900 × 1273, baked into the saved PNG and so
+   into every later print) draws `PatientIdentityPresenter::rmPageOneBiodata()`: Nama, TTL / Umur, Pekerjaan,
+   Jenis Kelamin and No. RM in their old cells; the cells that held marital status, address, religion,
+   phone/WhatsApp and email are blank (no label, no value). For every audience: a Front Office print of a new page 1
+   loses the address and phone (plan default 3). The geometry is unchanged, so the table below the band never moves.
+9. **An old page 1 to a Doctor (C2).** `rme.handwritings.image` (page 1: the workspace, the book, the version pages)
+   and `oversight.rme.handwritings.image` answer the §3.2 doctor audience with a copy made by
+   `App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor`. On a template-shaped image (900 × 1273, or that
+   page scaled, height within a pixel) that really carries the Hotfix 60.5 grid (97ffaaa8) — each of the six band
+   lines dark at five of six sample columns and the separators at x = 150 / 470 / 620 at four of the five row
+   middles, a pixel either side accepted so an anti-aliased grey stroke counts — it fills white, 2 px inside the grid
+   lines and scaled by width / 900, the ten cells a new page leaves blank: band rows of 28 px from y = 96, columns
+   0 | 150 | 470 | 620 | 900; left rows 4–5 (marital status, address) and right rows 2–4 (religion, phone/WhatsApp,
+   email), label and value. An old page then reads like a new one; a new page is unchanged. A page without the grid
+   is served unchanged: Sprint 60 (7502c84d) drew 900 × 1273 pages with no grid (writing from y = 80) until Hotfix
+   60.5, and an older page (900 × 500, or 900 × 1100 since hotfix b84f0db8) re-saved after it covers the grid with
+   its own image — their ink in that area is clinical writing; an image of another shape too. GD works in memory
+   after the handwriting payload bounds; the stored object is never written. Every other role (Front Office, Admin
+   Klinik, Supervisor RME, Super Admin, the oversight roles) gets the stored bytes. Responses stay `image/png`,
+   `nosniff`, `private, no-store`. A missing or undecodable image answers a doctor 404, GD unavailable or a storage
+   read fault 503 — never the unredacted bytes. The oversight door audits the read with `variant`
+   `handwriting_redacted`; the clinical door audits no image read and gains none.
+10. **A doctor never saves the redacted copy over page 1 (C2 review).** A doctor's editor only ever holds the
+    redacted copy, so saving it over an old page 1 would erase those fields for everyone.
+    `MedicalRecordHandwritingService::save()` therefore refuses (422, `MESSAGE_PAGE_ONE_HIDDEN_FIELDS`: "Halaman 1
+    memuat data pasien yang disembunyikan; tulis pada halaman baru.") a page-1 save by the doctor audience when the
+    stored page 1 has the grid and ink in any of the ten hidden cells — inside the transaction, under the record
+    lock, after the rule 240 §4 lock and before any object is written (binds every caller; no account counts as a
+    doctor; a storage fault or GD absent fails closed). `pageLockMessage(…, $viewer)` mirrors it (rule 135): that
+    page 1 renders read-only for the doctor with the reason, and the editor targets the next, new page. A page 1
+    drawn after §3.8 (blank hidden cells) stays editable; a non-doctor author is unaffected. The canvas itself never
+    saves over a stored page whose image did not load (still loading, or failed — a doctor's 404/503), whatever was
+    drawn (`rmSaveRefusal()` in the workspace view; `tests/js/rm-page-save-guard.test.mjs`). On page 1 the canvas
+    clips every stroke out of the ten blank cells (1 px inside their grid lines; `rmStrokeSegment()`,
+    `rmHiddenCellRects()`) and tints them `#f3f4f6` (no ink to the redactor, luminance >= 200), so writing never
+    lands where the doctor's view blanks it nor locks page 1; and a page load still in flight when another page is
+    opened ("+ Tambah Halaman RM") is ignored (`rmPageLoadSequence()`), so page 1 — with its full band, for a
+    non-doctor author — never paints onto page 2+.
+11. **Limits, recorded.** (a) Scanned legacy archive pages (published legacy RME and legacy odontogram page images
+    rendered from the source PDF) are scans of paper with no known biodata position: they cannot be redacted, and
+    doctors keep reading them (§1.5). (b) A page 1 kept inline in its row (a `data:` URI) is embedded in the
+    workspace by `MedicalRecordHandwriting::previewUrl()` without redaction; no such row can hold a template page
+    (`handwriting_path` is varchar(255) on PostgreSQL, and page 1 has been a stored object since Sprint 60, before
+    the Hotfix 60.5 grid), and the image route redacts an inline row anyway. (c) The print and PDF embed page 1
+    unredacted; a Doctor is refused them (rule 138 §6) except on the oversight print residual of §1.8
+    (OD-MEMO-B-1). (d) A page 1 whose hidden cells nevertheless hold ink (a save from before §3.10's clip, or a crafted
+    request) stays read-only for a doctor (fail closed; a new page stays offered). (e) Pixels on a screen can be photographed.
+12. **Release check (GD).** The PHP-FPM runtime on the host must load the GD extension: without it a doctor is
+    refused every page-1 image (503) and every page-1 overwrite. Verify it before a release that carries §3 (the PR
+    body and deploy notes carry this line); CI proves it in `DoctorPatientScopePageOneRedactionTest` (DPOR-16). No
+    composer requirement is added.
+13. **Tests (C2).** `tests/Feature/RME/DoctorPatientScopePageOneRedactionTest.php` (token `DoctorPatientScope`,
+    declared in `critical_gate_mandatory_suites`): pixel checks of every blanked and every kept cell, the headers,
+    Front Office and Supervisor RME bytes unchanged, the stored object's hash unchanged, the dual role, the inline
+    read path, a scaled and an off-template image, an unredactable page never served, a storage fault 503, the
+    oversight door and its audit variant, the new page-1 grid the treating doctor draws (no viewer parameter) with
+    its blank cells equal to the redacted ones, the whole workspace without a hidden value; a grid-less 900 × 1273
+    page served unchanged and an anti-aliased grid redacted, the doctor's page-1 overwrite refused with nothing
+    written while a new-template page saves, the refusal bound to the doctor audience in the service, its workspace
+    mirror, the canvas save-guard and page-1 canvas wiring (clip, tint, load sequence), GD loaded. `DoctorPatientScopeIdentityFieldsTest` adds the prescription
+    recipient and the clinical-day age; `tests/js/rm-page-save-guard.test.mjs` runs the canvas guard.

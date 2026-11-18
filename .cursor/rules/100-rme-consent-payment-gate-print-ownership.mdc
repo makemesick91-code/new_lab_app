@@ -106,6 +106,13 @@ Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progre
 
 ## 5. Documentation consent (clause 8) is separate and non-coercive
 
+> **AMENDED by `241-rme-ptm-double-signature.mdc` §6 (2026-11-17):** consent template v2026.2 (built inactive until
+> the owner approves its wording) splits clause 8 into clause 8 (clinical documentation, `documentation_consent`) and
+> clause 9 (publication, `publication_consent`), two explicit YA/TIDAK answers that never affect care or payment.
+> Consents signed on 2026.1 keep their single clause-8 answer. Presence is required by `RmeVisitConsentService` (every
+> missing answer in one refusal, each naming its clause); the request binds the answers `nullable|boolean` — still
+> never `required` and never defaulted.
+
 - Must be an **explicit YA/TIDAK**. No default, and a signature is not implied
   agreement to publication.
 - Validate as `present|boolean`, never `required` — `required` rejects `0`.
@@ -113,6 +120,11 @@ Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progre
   with clause 8 = TIDAK still opens payment.
 
 ## 6. Consent permissions
+
+> **AMENDED by `241-rme-ptm-double-signature.mdc` §4 (2026-11-17):** the Doctor role no longer holds
+> `manage_rme_consents`; the patient's signature is captured by Front Office, Kasir and Admin Klinik, with Supervisor
+> RME as fallback. The doctor countersigns with `countersign_rme_consents` (rule 241 §1). The void is
+> `void_rme_consents` (rule 237 §14.2), not this permission.
 
 - `manage_rme_consents` (sign/void), `view_rme_consents` (read/print).
 - Held by Doctor, Kasir, Admin Klinik, Supervisor RME.

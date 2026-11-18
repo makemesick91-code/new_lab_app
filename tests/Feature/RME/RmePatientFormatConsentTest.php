@@ -29,7 +29,7 @@ beforeEach(function () {
 
 function consentRegistrationPayload(array $overrides = []): array
 {
-    return array_merge([
+    return array_merge(newPatientCoreFields(), [
         'clinic_id' => test()->clinic->id,
         'doctor_id' => test()->doctor->id,
         'branch_id' => test()->branch->id,
@@ -312,7 +312,7 @@ it('persists new patient format fields when registering visit in new patient mod
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Format Kunjungan',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-14',
@@ -322,7 +322,7 @@ it('persists new patient format fields when registering visit in new patient mod
                 'email' => 'pasien.format@example.test',
                 'occupation' => 'Guru',
                 'address' => 'Jl. Contoh No. 20, Jakarta',
-            ],
+            ]),
         ])
         ->assertRedirect();
 
@@ -347,13 +347,13 @@ it('rejects duplicate ktp through rme visit new patient flow with exact message'
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-            'new_patient' => [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Duplikat KTP',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2026-06-14',
                 'manual_rm_number' => '0202',
                 'ktp_number' => '3201010101010202',
-            ],
+            ]),
         ])
         ->assertSessionHasErrors([
             'new_patient.ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.',

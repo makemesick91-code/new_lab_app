@@ -61,6 +61,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -99,6 +100,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\Process\Process;
 use Tests\Support\AccessControlSeedSnapshot;
@@ -306,6 +308,55 @@ function userWith(array $permissions): User
     $user->givePermissionTo($permissions);
 
     return $user;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan default 4) —
+ * committing a legacy patient CSV batch needs the paper-card permission; the
+ * service refuses an anonymous or unpermitted committer. This is the id of a
+ * fresh account holding `manage patients` and that permission (created when a
+ * suite did not seed access control).
+ */
+function legacyPatientCommitterId(): int
+{
+    $permissions = ['manage patients', 'register_patient_paper_card_rm'];
+
+    foreach ($permissions as $name) {
+        Permission::findOrCreate($name, 'web');
+    }
+
+    return (int) userWith($permissions)->id;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.2 (rule 244 §5, PR-4) — the core
+ * fields a NEW patient registration requires on both forms (Master Data →
+ * Tambah Pasien and Kunjungan → Pasien Baru): gender, place and date of birth,
+ * phone (or WhatsApp), address and occupation. Suites that register a patient
+ * merge these into their payload; a suite's own values win (`$overrides`, or
+ * keys the suite sets after the merge).
+ *
+ * Synthetic values only. Each call gets its own phone number and birth date,
+ * so two fixtures registered in one test are never a "strong duplicate" of
+ * each other (PatientRegistrationDuplicateCheck matches a similar name with
+ * the same phone or birth date).
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function newPatientCoreFields(array $overrides = []): array
+{
+    static $sequence = 0;
+    $sequence++;
+
+    return array_merge([
+        'gender' => 'Female',
+        'place_of_birth' => 'Makassar',
+        'date_of_birth' => Carbon::create(1950, 1, 1)->addDays($sequence % 20000)->toDateString(),
+        'phone' => '0819'.str_pad((string) $sequence, 8, '0', STR_PAD_LEFT),
+        'address' => 'Jl. Uji Coba No. '.$sequence,
+        'occupation' => 'Karyawan',
+    ], $overrides);
 }
 
 /**
@@ -1215,12 +1266,46 @@ function rmePaymentDisplayedView(RmeInvoice $invoice, array $data = []): array
  */
 function rmeSignedConsentFor(ClinicVisit $visit): RmeVisitConsent
 {
-    return RmeVisitConsent::factory()->create([
+    $consent = RmeVisitConsent::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,
         'doctor_id' => $visit->doctor_id,
         'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien',
+    ]);
+
+    // DMS memo M1.1–M1.3 PR2 (rule 241 §2) — a "signed consent" fixture means
+    // an EXECUTED one: the patient's signature AND the treating doctor's
+    // countersignature, which together open clinical writing. Tests about the
+    // two-signature gate build their state through the services instead
+    // (RmeVisitConsentTwoSignatureGateTest, RmeOdontogramTwoSignatureGateTest).
+    rmeDoctorCountersignatureFor($consent);
+
+    return $consent;
+}
+
+/**
+ * DMS memo M1.1–M1.3 PR2 (rule 241 §2) — FIXTURE: give a consent the treating
+ * doctor's countersignature row directly, for tests whose subject is not the
+ * countersignature (it writes no image object and no audit row). The doctor is
+ * the consent's own; its linked account signs, else a fresh account stands in.
+ * Tests about the countersignature itself use
+ * RmeVisitConsentService::countersign() (RmeVisitConsentDoctorCountersignTest).
+ */
+function rmeDoctorCountersignatureFor(RmeVisitConsent $consent): RmeVisitConsentDoctorSignature
+{
+    $doctor = $consent->doctor_id !== null ? Doctor::query()->find($consent->doctor_id) : null;
+    $doctor ??= Doctor::factory()->create();
+
+    return RmeVisitConsentDoctorSignature::query()->create([
+        'rme_visit_consent_id' => $consent->id,
+        'doctor_id' => $doctor->id,
+        // The doctor's own account; else any account already on the consent;
+        // only then a fresh one (concurrency suites clean users by watermark).
+        'signed_by' => $doctor->user_id ?? $consent->signed_by ?? User::factory()->create()->id,
+        'signature_path' => 'rme-consents/'.$consent->consent_number.'/doctor-countersign-fixture.png',
+        'signature_sha256' => str_repeat('0', 64),
+        'signed_at' => $consent->signed_at,
     ]);
 }
 

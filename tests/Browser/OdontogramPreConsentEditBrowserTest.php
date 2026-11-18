@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -52,6 +53,15 @@ class OdontogramPreConsentEditBrowserTest extends DuskTestCase
 
     public function test_the_doctor_charts_before_consent_and_the_record_and_finish_stay_locked(): void
     {
+        // SUPERSEDED by rule 241 §2 (DMS memo M1.1–M1.3 PR2, owner decision
+        // 2026-11-17): the active odontogram is no longer chartable before both
+        // PTM signatures, so this journey's premise (steps 1–3 and 7) is the
+        // retired behaviour. Kept, not deleted; the server-side rule is pinned
+        // in RmeOdontogramTwoSignatureGateTest and the flipped
+        // RmeConsentOdontogramPreConsentEditTest. Rewrite this journey for the
+        // two-signature flow before it is run again (no CI workflow runs Dusk).
+        $this->markTestSkipped('Superseded by rule 241 §2: pre-consent odontogram charting ended (both PTM signatures now gate writing).');
+
         [$user, $visit] = $this->makeLiveEncounter();
 
         $this->browse(function (Browser $browser) use ($user, $visit) {
@@ -259,6 +269,10 @@ class OdontogramPreConsentEditBrowserTest extends DuskTestCase
 
         $visitIds = ClinicVisit::whereIn('patient_id', $patients)->pluck('id');
 
+        // Rule 241 — countersignature rows first (FK restrict on the consent).
+        RmeVisitConsentDoctorSignature::query()
+            ->whereIn('rme_visit_consent_id', RmeVisitConsent::whereIn('clinic_visit_id', $visitIds)->pluck('id'))
+            ->delete();
         RmeVisitConsent::whereIn('clinic_visit_id', $visitIds)->forceDelete();
         Odontogram::whereIn('clinic_visit_id', $visitIds)->forceDelete();
         MedicalRecord::whereIn('clinic_visit_id', $visitIds)->forceDelete();

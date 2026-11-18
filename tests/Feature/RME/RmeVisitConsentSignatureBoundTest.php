@@ -211,19 +211,29 @@ it('S-01 builds a near-bound and an oversized consent canvas that every other bo
 |--------------------------------------------------------------------------
 */
 
-it('A-01 caps both consent signature fields at exactly the signature payload length', function () {
+// FLIPPED by DMS memo M1.1–M1.3 PR2 review (rule 241 §4): was 'A-01 caps both
+// consent signature fields at exactly the signature payload length'. The
+// capture form no longer takes a doctor drawing at all: `doctor_signature` is
+// PROHIBITED; the consenter signature keeps its exact bound.
+it('A-01 caps the consenter signature at exactly the payload length and prohibits a doctor signature', function () {
     $request = new StoreRmeVisitConsentRequest;
     $rules = $request->rules();
     $limit = PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH;
+    $field = 'consenter_signature';
 
-    foreach (['consenter_signature', 'doctor_signature'] as $field) {
-        expect($rules[$field])->toContain('max:'.$limit);
+    expect($rules[$field])->toContain('max:'.$limit);
 
-        $atLimit = Validator::make([$field => str_repeat('A', $limit)], [$field => $rules[$field]], $request->messages());
-        expect($atLimit->errors()->has($field))->toBeFalse();
+    $atLimit = Validator::make([$field => str_repeat('A', $limit)], [$field => $rules[$field]], $request->messages());
+    expect($atLimit->errors()->has($field))->toBeFalse();
 
-        $overLimit = Validator::make([$field => str_repeat('A', $limit + 1)], [$field => $rules[$field]], $request->messages());
-        expect($overLimit->errors()->get($field))->toBe(['Ukuran gambar tanda tangan melebihi batas yang diizinkan.']);
+    $overLimit = Validator::make([$field => str_repeat('A', $limit + 1)], [$field => $rules[$field]], $request->messages());
+    expect($overLimit->errors()->get($field))->toBe(['Ukuran gambar tanda tangan melebihi batas yang diizinkan.']);
+
+    expect($rules['doctor_signature'])->toContain('prohibited');
+
+    foreach ([csbNearBoundSignature(), str_repeat('A', $limit + 1)] as $value) {
+        $refused = Validator::make(['doctor_signature' => $value], ['doctor_signature' => $rules['doctor_signature']], $request->messages());
+        expect($refused->errors()->get('doctor_signature'))->toBe([RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE]);
     }
 });
 
@@ -259,7 +269,10 @@ it('A-02 refuses an oversized consenter signature at the request, before anythin
     csbAssertNothingWritten($visit, $visitBefore, $financeBefore);
 });
 
-it('A-03 refuses an oversized doctor signature at the request even beside a valid consenter signature', function () {
+// FLIPPED (rule 241 §4): was 'A-03 refuses an oversized doctor signature at
+// the request even beside a valid consenter signature' — now any doctor
+// signature is refused there, whatever its size.
+it('A-03 refuses a doctor signature at the request even beside a valid consenter signature', function () {
     csbExistingReceivable();
     $visit = csbVisit();
     $visitBefore = $visit->fresh()->getAttributes();
@@ -269,23 +282,25 @@ it('A-03 refuses an oversized doctor signature at the request even beside a vali
     $this->actingAs($this->operator)
         ->from(route('rme.visits.show', $visit))
         ->post(route('rme.visits.consent.store', $visit), csbPayload([
-            'doctor_signature' => csbOversizedSignature(),
+            'doctor_signature' => csbNearBoundSignature(),
         ]))
         ->assertRedirect(route('rme.visits.show', $visit))
-        ->assertSessionHasErrors(['doctor_signature' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.']);
+        ->assertSessionHasErrors(['doctor_signature' => RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE]);
 
     $decoder->shouldNotHaveReceived('decode');
     csbAssertNothingWritten($visit, $visitBefore, $financeBefore);
 });
 
-it('A-04 still signs over HTTP with consent-canvas-sized consenter and doctor signatures just under the bound', function () {
+// FLIPPED (rule 241 §4): was 'A-04 still signs over HTTP with consent-canvas-
+// sized consenter and doctor signatures just under the bound'. The consenter
+// signature near the bound still signs; no doctor drawing is stored.
+it('A-04 still signs over HTTP with a consent-canvas-sized consenter signature just under the bound, storing no doctor drawing', function () {
     $visit = csbVisit();
 
     $this->actingAs($this->operator)
         ->from(route('rme.visits.show', $visit))
         ->post(route('rme.visits.consent.store', $visit), csbPayload([
             'consenter_signature' => csbNearBoundSignature(),
-            'doctor_signature' => csbNearBoundSignature(),
         ]))
         ->assertSessionHasNoErrors()
         ->assertRedirect();
@@ -294,9 +309,9 @@ it('A-04 still signs over HTTP with consent-canvas-sized consenter and doctor si
 
     expect($consent->clinic_visit_id)->toBe($visit->id)
         ->and($consent->consenter_signature_path)->not->toBeNull()
-        ->and($consent->doctor_signature_path)->not->toBeNull()
+        ->and($consent->doctor_signature_path)->toBeNull()
         ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toHaveCount(1)
         // Signing never moves the visit (AIR-RMC-06).
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
@@ -324,14 +339,18 @@ it('B-01 refuses an oversized consenter signature in the service, writing nothin
     expect($consent->consent_number)->toEndWith('-000001');
 });
 
-it('B-02 refuses an oversized optional doctor signature in the service, writing nothing', function () {
+// FLIPPED (rule 241 §4): was 'B-02 refuses an oversized optional doctor
+// signature in the service' — the service now refuses any doctor signature.
+it('B-02 refuses any doctor signature in the service, writing nothing', function () {
     csbExistingReceivable();
     $visit = csbVisit();
     $visitBefore = $visit->fresh()->getAttributes();
     $financeBefore = csbFinanceSnapshot();
 
-    expect(csbSignErrors($visit, $this->operator, ['doctor_signature' => csbOversizedSignature()]))
-        ->toBe(['doctor_signature' => ['Ukuran gambar melebihi batas yang diizinkan.']]);
+    foreach ([csbOversizedSignature(), csbNearBoundSignature()] as $value) {
+        expect(csbSignErrors($visit, $this->operator, ['doctor_signature' => $value]))
+            ->toBe(['doctor_signature' => [RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE]]);
+    }
 
     csbAssertNothingWritten($visit, $visitBefore, $financeBefore);
 });
@@ -346,31 +365,35 @@ it('B-03 applies the signature bound before decoding, inclusive at exactly the l
     expect(strlen($atLimit))->toBe($limit)
         ->and(strlen($overLong))->toBe($limit + 1);
 
-    foreach (['consenter_signature', 'doctor_signature'] as $field) {
-        // Exactly the limit passes the size check and is refused only as an
-        // invalid image; one more character is refused for its size.
-        expect(csbSignErrors($visit, $this->operator, [$field => $atLimit]))
-            ->toBe([$field => ['Data gambar tidak valid.']])
-            ->and(csbSignErrors($visit, $this->operator, [$field => $overLong]))
-            ->toBe([$field => ['Ukuran gambar melebihi batas yang diizinkan.']]);
-    }
+    // Rule 241 §4 — only the consenter signature is still decoded; a doctor
+    // signature of any size is refused before any decoding.
+    $field = 'consenter_signature';
+    // Exactly the limit passes the size check and is refused only as an
+    // invalid image; one more character is refused for its size.
+    expect(csbSignErrors($visit, $this->operator, [$field => $atLimit]))
+        ->toBe([$field => ['Data gambar tidak valid.']])
+        ->and(csbSignErrors($visit, $this->operator, [$field => $overLong]))
+        ->toBe([$field => ['Ukuran gambar melebihi batas yang diizinkan.']])
+        ->and(csbSignErrors($visit, $this->operator, ['doctor_signature' => $atLimit]))
+        ->toBe(['doctor_signature' => [RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE]]);
 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
         ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
-it('B-04 still signs in the service with near-bound consenter and doctor signatures', function () {
+// FLIPPED (rule 241 §4): was 'B-04 still signs in the service with near-bound
+// consenter and doctor signatures'. The doctor countersigns separately (§1).
+it('B-04 still signs in the service with a near-bound consenter signature, storing no doctor drawing', function () {
     $visit = csbVisit();
 
     expect(csbSignErrors($visit, $this->operator, [
         'consenter_signature' => csbNearBoundSignature(),
-        'doctor_signature' => csbNearBoundSignature(),
     ]))->toBe([]);
 
     $consent = RmeVisitConsent::sole();
 
     expect(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
+        ->and($consent->doctor_signature_path)->toBeNull()
         ->and($consent->doctor_id)->toBe($visit->doctor_id);
 });
 
@@ -382,7 +405,7 @@ it('B-05 keeps refusing malformed, blank and missing signatures under the bound'
     expect(csbSignErrors($visit, $this->operator, ['consenter_signature' => $notAPng]))
         ->toBe(['consenter_signature' => ['Data gambar tidak valid.']])
         ->and(csbSignErrors($visit, $this->operator, ['doctor_signature' => $notAPng]))
-        ->toBe(['doctor_signature' => ['Data gambar tidak valid.']])
+        ->toBe(['doctor_signature' => [RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE]])
         ->and(csbSignErrors($visit, $this->operator, ['consenter_signature' => $blank]))
         ->toBe(['consenter_signature' => ['Area gambar kosong tidak dapat disimpan.']])
         ->and(csbSignErrors($visit, $this->operator, ['consenter_signature' => null]))

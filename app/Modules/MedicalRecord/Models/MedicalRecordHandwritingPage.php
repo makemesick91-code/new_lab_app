@@ -35,11 +35,16 @@ class MedicalRecordHandwritingPage extends Model
         'saved_at',
         'created_by',
         'updated_by',
+        // Rule 240 §4 — the encounter that last wrote the page (pages are stored on
+        // the book's visit, R7-1). `sealed_at` / `sealed_by_medical_record_id` are
+        // deliberately NOT fillable: only the repository's seal writes them.
+        'authored_clinic_visit_id',
     ];
 
     protected $casts = [
         'page_number' => 'integer',
         'saved_at' => 'datetime',
+        'sealed_at' => 'datetime',
     ];
 
     public function medicalRecord(): BelongsTo

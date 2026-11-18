@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -84,16 +85,40 @@ class OdontogramPolicy
             return $room;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        // Rule 243 §2 — charting is a write: the doctor's own in-service
+        // encounter only, when the encounter scope is ON (unchanged when OFF).
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $clinicVisit);
     }
 
+    /**
+     * Role, branch and patient scope first, so an account outside it is refused
+     * for that reason and learns nothing about the chart's state. Then rule 240
+     * §1 (memo M3.3, owner decision 2026-11-17): a FINALIZED chart — of the live
+     * encounter or of a previous visit — is denied HERE with the lock message
+     * (HTTP 403). A DRAFT chart of a previous visit passes here and is refused by
+     * OdontogramService with the history reason (rule 109 §4). A finalized chart
+     * is corrected only through a supervised amendment (later M3.3 PRs): a
+     * supervised correction, never a "reopening" in the sense of rule 109 §4.
+     * Super Admin passes through Gate::before, so the service re-decides the lock
+     * on the chart row it locks (CG-06).
+     */
     public function update(User $user, Odontogram $odontogram): Response|bool
     {
         if (! $this->canManage($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
             return false;
         }
 
-        return $this->authorizePatientForOdontogram($user, $odontogram);
+        $scope = $this->authorizePatientForOdontogram($user, $odontogram, write: true);
+
+        if ($scope === false || ($scope instanceof Response && $scope->denied())) {
+            return $scope;
+        }
+
+        if ($odontogram->isFinalized()) {
+            return Response::deny(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
+        }
+
+        return $scope;
     }
 
     public function finalize(User $user, Odontogram $odontogram): Response|bool
@@ -102,10 +127,10 @@ class OdontogramPolicy
             return false;
         }
 
-        return $this->authorizePatientForOdontogram($user, $odontogram);
+        return $this->authorizePatientForOdontogram($user, $odontogram, write: true);
     }
 
-    private function authorizePatientForOdontogram(User $user, Odontogram $odontogram): Response|bool
+    private function authorizePatientForOdontogram(User $user, Odontogram $odontogram, bool $write = false): Response|bool
     {
         $visit = $odontogram->clinicVisit;
 
@@ -116,7 +141,9 @@ class OdontogramPolicy
                 return $room;
             }
 
-            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+            $scope = app(DoctorPatientScopeService::class);
+
+            return $write ? $scope->authorizeVisitWrite($user, $visit) : $scope->authorizeVisitAccess($user, $visit);
         }
 
         $patient = $odontogram->medicalRecord?->patient;

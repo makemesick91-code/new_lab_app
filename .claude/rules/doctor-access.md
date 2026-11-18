@@ -198,6 +198,49 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   `rme.doctor-branch-locks.release-session`) carries `DatabaseRouteKey::PATTERN` per route, never `whereNumber`. It
   still rejects the literal `requests`, so the ordering trap stays closed. Route validation changes no device,
   branch-lock, cover or session rule. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
+- **AIR-DAC-42** A Doctor (rule 138's definition, so also one holding Front Office, Admin Klinik, Kasir or an
+  oversight role) is refused, 403 and audited, the legacy RME print/export/source PDF, the legacy odontogram source
+  PDF and the PTM print on every door (clinical, staging, oversight), through `DoctorRoomScopeService` only: policy
+  `download`/`print` plus a controller re-assertion on the clinical, staging and consent doors; controller + service
+  only on the oversight doors (no download/print policy there; follow-up OD-MEMO-B-1). Doctors still read archives as
+  inline page images and print prescriptions. Not behind the encounter-scope flag. Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
+- **AIR-DAC-43** `rme.doctor_encounter_scope` (default OFF; `FeatureFlagService` only): OFF = AIR-DAC-40 exactly. ON:
+  `DoctorEncounterWindow` (open status or completed today in WITA; cancelled never) and read modes NONE/OWN/HISTORY in
+  `DoctorPatientScopeService`: own visits and sheets at any date, other non-pre-exam visits and sheets, the book,
+  the patient and the published legacy archives (A2: `authorizeLegacyArchiveRead()` for policies, controllers and
+  lists) only inside an own in-service encounter; assignments grant nothing; out of scope 404; writes (every
+  sheet's typed content by its anchor visit, re-asserted in the services) only on the own in-service encounter
+  (403 "ditangani dokter lain"); book pages via `appendPage`, and each workspace control follows the record it writes;
+  visit/patient lists and histories mirror records; A3a: the workspace opens at its anchor by read mode
+  (`viewWorkspace`; `own` = own sheets only, never the book), its sheets, rail and book pages follow the sheet read
+  rule (`readableSheets()`), the consent banner and an unreadable book anchor are never named nor its content shown
+  (`viewAnchorContent`), and `startBook` is the `appendPage` rule (R7-1 selector unchanged); A3b: unified RM pages
+  and prescription history carry the visit scope's SQL twin, follow-up/odontogram parent links `listsVisitFor()`
+  (arrows: CC1-ADJ-1); §2.12: the book's pages follow M3.3's author stamp (sequence, page routes via
+  `viewHandwritingPage`, version pages, print), a sheet's versions and amendments ask `viewAnchorContent`
+  (`RmeRecordVersionService::readAbility()`; the requester too), the PTM banner describes only a readable
+  encounter. ON needs A4 and M3.3 released first. Source:
+  `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
+- **AIR-DAC-44** A4, flag ON only (OFF = today): `assignRoom` moves an `in_progress` visit only into the room its own
+  doctor is online in, keeping the doctor (else refused; Super Admin bound in the service); a doctor change on a queued visit or a cancel ends the former
+  doctor's `auto_visit` row when no live visit of the patient still has that doctor
+  (`PatientDoctorAssignmentService::staleAutoVisitRows()`, one definition): `unassigned_at` + `unassigned_reason`, in
+  the visit's transaction, audited ids only; manual/shared rows never. `rme:doctor-assignments-reconcile`: dry run
+  counts + visit ids (stale open visits, roomless pre-exam anchors), `--apply --confirm-plan=<digest>` sets
+  `unassigned_at` only, idempotent, runtime user, owner-approved. The room gate picks the doctor's working visit on
+  the server, the workflow tabs never show an unreadable anchor, another doctor's roomless pre-exam visit is 404.
+  Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.13.
+- **AIR-DAC-45** Doctor-visible patient fields (memo M3.1): a Doctor (rule 138's definition through
+  `shouldApplyDoctorScope()`, so also one holding Front Office, Admin Klinik or Kasir) sees name, RM number, place and
+  date of birth, age, occupation, planned treatment and gender, never the phone, WhatsApp, email, address or NIK, on
+  every clinical screen. One decision, `PatientIdentityPresenter` (controllers pass its view; Blade only renders); the
+  doctor's consent page masks the NIK and hides the addresses, the print is unchanged; a new RM page 1 is drawn with
+  the allowed fields only, and an old page 1 that really carries the biodata grid reaches a Doctor (clinical and
+  oversight doors) with those cells blanked in a copy (`RmPageOneBiodataRedactor`; never the stored bytes, 404/503
+  when it cannot redact; a page without the grid unchanged); a Doctor never saves over a page 1 that still shows
+  them (422 in `MedicalRecordHandwritingService::save()`, mirrored read-only); the master form stays whole for the
+  non-doctor role. Not behind the encounter-scope flag; GD required on the host. Source:
+  `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §3.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -244,6 +287,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Visit list scope excludes soft-deleted visits; D1 lease in-flight race recorded |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1); M2.1/M2.2 encounter scope behind its flag (§2); M3.1 doctor-visible fields (§3) |
 
 ## History
 

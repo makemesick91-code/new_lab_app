@@ -21,6 +21,11 @@
  *
  * Production blast radius when this was found was zero: no patient had yet
  * been created inside the risk window. These tests exist so it stays zero.
+ *
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the forms no
+ * longer offer a registration date or a manual number at all: the server stamps
+ * the clinical day and issues the number. What the forms still show is the
+ * automatic pattern with the RM year, and that year must be the clinical one.
  */
 
 use App\Modules\Branch\Models\Branch;
@@ -53,56 +58,61 @@ function d3PinEarlyMorningWita(): array
     return ['utc' => $utcDate, 'clinical' => $clinicalDate];
 }
 
-it('defaults the master-data registration date to the clinical day, not UTC', function () {
-    ['utc' => $utc, 'clinical' => $clinical] = d3PinEarlyMorningWita();
+/** 17:00 UTC on 31 December is 01:00 on 1 January in Asia/Makassar. */
+function d3PinNewYearWita(): void
+{
+    pinTestClock('2026-12-31 17:00:00');
+
+    expect(now()->format('Y'))->toBe('2026')
+        ->and(clinicalToday()->format('Y'))->toBe('2027', 'fixture is vacuous: the two years agree');
+}
+
+it('shows the master-data automatic RM year as the clinical year, not UTC, with no date input', function () {
+    d3PinNewYearWita();
 
     $actor = userWith(['manage patients']);
 
     $this->actingAs($actor)
         ->get(route('settings.patients.create'))
         ->assertOk()
-        ->assertSee('value="'.$clinical.'"', false)
-        ->assertDontSee('value="'.$utc.'"', false);
+        ->assertSee('DG-{KODE}-2027-####', false)
+        ->assertDontSee('DG-{KODE}-2026-####', false)
+        ->assertDontSee('name="registered_at"', false);
 
     freeTestClock();
 });
 
-it('defaults the RME new-patient registration date to the clinical day, not UTC', function () {
-    ['utc' => $utc, 'clinical' => $clinical] = d3PinEarlyMorningWita();
+it('shows the RME new-patient automatic RM year as the clinical year, not UTC, with no date input', function () {
+    d3PinNewYearWita();
 
     $actor = userWith(['view_clinic_visits', 'manage_clinic_visits']);
 
-    $response = $this->actingAs($actor)
+    $html = $this->actingAs($actor)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->get(route('rme.visits.create'));
+        ->get(route('rme.visits.create'))
+        ->assertOk()
+        ->getContent();
 
-    $response->assertOk();
-
-    // Scope the assertion to the registration-date input: other fields on this
-    // page legitimately render today's date too, so a bare assertSee would
-    // pass for the wrong reason.
-    $html = $response->getContent();
-    expect($html)->toContain('name="new_patient[registered_at]"');
-
-    preg_match('/name="new_patient\[registered_at\]"[^>]*value="([^"]*)"/', $html, $m);
-
-    expect($m[1] ?? null)->toBe($clinical, "registered_at defaulted to {$utc} (UTC) instead of the clinical day");
+    expect($html)->toContain('DG-{KODE}-2027-####')
+        ->and($html)->not->toContain('DG-{KODE}-2026-####')
+        ->and($html)->not->toContain('name="new_patient[registered_at]"');
 
     freeTestClock();
 });
 
-it('still honours an operator-submitted date over the default', function () {
+it('cannot be backdated: old input no longer brings a registration date back', function () {
     d3PinEarlyMorningWita();
 
     $actor = userWith(['manage patients']);
 
-    // old() input must win, otherwise a validation bounce would silently reset
-    // a deliberately backdated registration to today.
+    // Rule 244 §2.1 — the registration date (and with it the RM year) is the
+    // server's clinical day; a bounced form cannot carry an operator date.
     $this->actingAs($actor)
         ->withSession(['_old_input' => ['registered_at' => '2023-06-13']])
         ->get(route('settings.patients.create'))
         ->assertOk()
-        ->assertSee('value="2023-06-13"', false);
+        ->assertDontSee('value="2023-06-13"', false)
+        ->assertDontSee('name="registered_at"', false);
 
     freeTestClock();
 });

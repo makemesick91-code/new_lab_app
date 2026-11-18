@@ -30,10 +30,15 @@ use Illuminate\Database\Eloquent\Builder;
 final class UnifiedMedicalRecordScope
 {
     /**
+     * `$nativeVisitScope` — rule 243 §2.11 (PR A3b): the doctor's encounter
+     * visit scope over `trx_clinic_visits`, set only while the encounter scope
+     * applies; a native record is in scope when its visit passes it.
+     *
      * @param  list<int>  $nativeBranchIds
      * @param  list<int>  $legacyRmeBranchIds
      * @param  list<int>  $legacyOdontogramBranchIds
      * @param  (Closure(Builder): Builder)|null  $patientScope
+     * @param  (Closure(Builder): Builder)|null  $nativeVisitScope
      */
     public function __construct(
         public readonly array $nativeBranchIds,
@@ -44,6 +49,7 @@ final class UnifiedMedicalRecordScope
         public readonly array $legacyOdontogramBranchIds,
         public readonly bool $legacyOdontogramIncludesUnscoped,
         public readonly ?Closure $patientScope = null,
+        public readonly ?Closure $nativeVisitScope = null,
     ) {}
 
     /** Whether the actor may see ANY legacy source at all. */

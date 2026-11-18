@@ -12,7 +12,9 @@
      $prevPage, $nextNavPage, $navBase.
      Optional: $canEditHandwriting (+ $nextRmPageNumber,
      $canonicalHandwritingFormAction) for "+ Tambah Halaman RM", which ALWAYS
-     creates a native page and never touches archive evidence. --}}
+     creates a native page and never touches archive evidence. It gates ONLY
+     that button: show.blade passes the book's `appendPage` ability (rule 243
+     §2.5, PR A1c), not the in-place editor's. --}}
 @php
     $navBase = $navBase ?? 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
     $canEditHandwriting = $canEditHandwriting ?? false;

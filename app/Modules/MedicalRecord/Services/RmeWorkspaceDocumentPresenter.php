@@ -76,11 +76,16 @@ class RmeWorkspaceDocumentPresenter
         // authorization; it only avoids resolving the patient's archive twice
         // in one request. Null keeps the original self-resolving behaviour.
         ?Collection $legacyRecords = null,
+        // Rule 243 §2.11 (PR A3) — sheets the caller may list but whose OWN
+        // visit it may not name (only ever the book, when its anchor is another
+        // doctor's pre-exam visit): listed without that visit's number or date.
+        array $unnamedSheetIds = [],
     ): Collection {
         $documents = collect();
 
         foreach ($nativeSheets as $index => $sheet) {
-            $documents->push($this->nativeDocument($sheet, $index, $activeSheetId, $anchorVisitId));
+            $named = ! in_array((int) $sheet->getKey(), $unnamedSheetIds, true);
+            $documents->push($this->nativeDocument($sheet, $index, $activeSheetId, $anchorVisitId, $named));
         }
 
         foreach ($legacyRecords ?? $this->legacyRecordsFor($user, $patientId) as $record) {
@@ -117,8 +122,9 @@ class RmeWorkspaceDocumentPresenter
         int $index,
         ?int $activeSheetId,
         ?int $anchorVisitId,
+        bool $named = true,
     ): RmeWorkspaceDocument {
-        $visit = $sheet->clinicVisit;
+        $visit = $named ? $sheet->clinicVisit : null;
 
         // The canonical clinical date of a native sheet is its visit's
         // visit_date — the same field the legacy date rule compares against.

@@ -39,6 +39,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -444,20 +445,21 @@ it('does not offer the control to a DIFFERENT doctor, consent or no consent', fu
 |--------------------------------------------------------------------------
 */
 
-it('keeps the ACTIVE odontogram editable while consent is unsigned', function () {
-    // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1. Blocking the record
-    // must not drag the chart with it: charting is observation.
+it('keeps the ACTIVE odontogram read-only while consent is unsigned', function () {
+    // FLIPPED by DMS memo M1.1–M1.3 PR2 (rule 241 §2, owner decision 2026-11-17):
+    // was 'keeps the ACTIVE odontogram editable while consent is unsigned'
+    // (REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1). The chart now waits for
+    // the EXECUTED consent — patient and treating doctor — like the record; the
+    // page stays reachable (next case).
     $visit = pcfpVisit();
 
-    app(OdontogramService::class)->saveForVisit(
+    expect(fn () => app(OdontogramService::class)->saveForVisit(
         $visit,
         ['tooth_map_payload' => ['teeth' => ['11' => ['conditions' => ['caries']]]]],
         $this->doctorUser,
-    );
+    ))->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
 
-    $chart = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
-
-    expect($chart->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries'])
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeFalse()
         ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->fresh()))->toBeFalse();
 });
 
@@ -554,6 +556,22 @@ it('never turns a fault in the capability path into an actionable control', func
         public function signatureReferences(): LazyCollection
         {
             return LazyCollection::empty();
+        }
+
+        // Rule 241 §1 — the doctor countersignature reads and write; not on this path.
+        public function validForVisits(array $clinicVisitIds): Collection
+        {
+            return collect();
+        }
+
+        public function doctorSignatureFor(int $consentId): ?RmeVisitConsentDoctorSignature
+        {
+            return null;
+        }
+
+        public function createDoctorSignature(array $attributes): RmeVisitConsentDoctorSignature
+        {
+            throw new RuntimeException('not used');
         }
     });
 

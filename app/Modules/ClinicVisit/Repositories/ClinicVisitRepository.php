@@ -299,11 +299,25 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->find($id);
     }
 
+    /** Review LOW (DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1) — candidates judged per arrow direction. */
+    public const ADJACENT_WALK_LIMIT = 100;
+
     public function adjacentVisitsForPatient(
         array $branchIds,
         ClinicVisit $visit,
-        bool $requireMedicalRecord = false
+        bool $requireMedicalRecord = false,
+        ?\Closure $accept = null,
     ): array {
+        // DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1 — with $accept, walk outward in
+        // small ordered chunks and stop at the nearest visit it accepts; a
+        // refused visit is skipped, never returned.
+        // Review LOW — the walk is bounded: at most ADJACENT_WALK_LIMIT candidates
+        // per direction are judged (each costs a policy check); past that the
+        // arrow is simply not offered, never a refused visit.
+        $nearest = fn ($query) => $accept === null
+            ? $query->first()
+            : $query->lazy(20)->take(self::ADJACENT_WALK_LIMIT)->first($accept);
+
         $base = fn () => ClinicVisit::query()
             ->whereIn('branch_id', $branchIds)
             ->where('patient_id', $visit->patient_id)
@@ -322,8 +336,7 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
                     });
             })
             ->orderByDesc('visit_date')
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
 
         $next = $base()
             ->where(function ($query) use ($visit) {
@@ -334,10 +347,9 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
                     });
             })
             ->orderBy('visit_date')
-            ->orderBy('id')
-            ->first();
+            ->orderBy('id');
 
-        return ['previous' => $previous, 'next' => $next];
+        return ['previous' => $nearest($previous), 'next' => $nearest($next)];
     }
 
     /**

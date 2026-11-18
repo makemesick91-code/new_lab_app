@@ -148,6 +148,25 @@ class PermissionSeeder extends Seeder
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — the supervised consent void.
         // Its own permission, never the signing one (Supervisor RME only).
         'void_rme_consents',
+        // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+        // countersignature on the PTM (Doctor only; identity decided in the service).
+        'countersign_rme_consents',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the supervised
+        // amendment of a final sheet or finalized odontogram. Request: Doctor (the
+        // service further binds the doctor of record or the finalizer). Approve:
+        // Supervisor RME, never on their own request, nor as the doctor of record or
+        // the finalizer of the record (creator ≠ approver).
+        'request_rme_amendments',
+        'approve_rme_amendments',
+        // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos behind the
+        // risky flag rme.clinical_photos (OFF). Upload: Doctor and Perawat (the
+        // service allowlist binds every other role, Super Admin included). Read:
+        // Doctor, Perawat, Supervisor RME; never Front Office, Kasir or Admin Klinik.
+        'upload_rme_clinical_photos',
+        'view_rme_clinical_photos',
+        // PTM PR4b (rule 242 §9) — the supervised void of a clinical photo (Supervisor
+        // RME; never the uploader, decided in the service).
+        'void_rme_clinical_photos',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist
@@ -396,6 +415,28 @@ class PermissionSeeder extends Seeder
         'view_patient_duplicate_resolution',
         'request_patient_merge',
         'approve_patient_merge',
+
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan defaults
+        // 1 and 4, owner 2026-11-17) — the ONLY way to store a typed Nomor RM:
+        // registering a patient under an old paper-card number (with a written
+        // reason, claimed under the branch-year counter lock, audited without
+        // the number) and committing a legacy patient CSV batch. Granted to
+        // Supervisor RME only; Super Admin holds it through '*'. Everyone else
+        // gets the automatic number.
+        'register_patient_paper_card_rm',
+        // Rule 244 §4.3 (PR-3b; owner decision 2026-11-17, "PAPER-CARD REASON:
+        // store text, restricted") — READ the stored paper-card reason code and
+        // note, branch-scoped, on a private no-store page. Supervisor RME and
+        // Owner only; Super Admin through '*'. Entering the reason stays with
+        // register_patient_paper_card_rm. No write: the rows are immutable.
+        'view_patient_rm_paper_card_reasons',
+        // Memo M4.2 (rule 244 §5.3; plan default 2, owner 2026-11-17 "a controlled
+        // exception for patients without a phone") — register a NEW patient with
+        // neither a phone nor a WhatsApp number, with a reason code (a note for
+        // LAINNYA), audited with ids and the code only and closed once a number
+        // is recorded. Front Office (granted through Admin Klinik, its half, so
+        // the union stays exact); Super Admin through '*'.
+        'register_patient_without_phone',
 
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
         // read-only cross-branch OVERSIGHT surface used by the Finance Klinik

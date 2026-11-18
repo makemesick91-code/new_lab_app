@@ -11,12 +11,13 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
 
 class MedicalRecordHandwritingController extends Controller
 {
@@ -80,12 +81,14 @@ class MedicalRecordHandwritingController extends Controller
                 $clinicVisit = $canonicalVisit;
             }
 
-            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents);
+            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents, bookPage: $isNewCanonicalPage);
         }
 
-        // Sprint 59 — handwriting RM is revisable after finalization. The
-        // previous immutability lock is removed so doctors can correct or
-        // append handwriting on any visit, including older finalized ones.
+        // Rule 240 §4 (memo M3.3, supersedes the Sprint 59 "handwriting RM is
+        // revisable after finalization") — a page sealed when a sheet was
+        // finalized is never overwritten; MedicalRecordHandwritingService::save()
+        // refuses it under the record lock. Appending a new page in the live,
+        // consented encounter stays allowed, onto the one book (R7-1).
 
         // Sprint 60 — 1 canvas = 1 RM page. `page_number` selects which RM page
         // is being saved. Page 1 is the legacy `trx_medical_record_handwritings`
@@ -101,10 +104,11 @@ class MedicalRecordHandwritingController extends Controller
 
         // The PNG is decoded, validated and blank-guarded identically for every
         // page (Sprint 59.1 guard applies per page), before any storage/DB write.
-        $decoded = $this->decodeHandwriting($request->input('handwriting_data'));
+        // Rule 240 §8 — the one canvas decoder, shared with the amendment page.
+        $decoded = $this->payloadGuard->decodeCanvas($request->input('handwriting_data'));
 
         $saved = $handwritingService->save(
-            function () use ($needsCanonicalDraft, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
+            function () use ($needsCanonicalDraft, $isNewCanonicalPage, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
                 if (! $needsCanonicalDraft) {
                     // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) —
                     // re-decided inside the save transaction, locking the encounter's
@@ -112,9 +116,19 @@ class MedicalRecordHandwritingController extends Controller
                     // consent void or a finish committed meanwhile is seen. The
                     // canonical-draft path below asserts the same inside
                     // getOrCreateCanonicalMedicalRecord().
-                    $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+                    $encounter = $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
-                    return [$medicalRecord, $clinicVisit];
+                    // Rule 243 §2.5 (PR A1b) — an in-place page of a per-visit
+                    // sheet is that sheet's content: with the encounter scope ON
+                    // only the doctor of its own visit, in service, past any policy
+                    // (an unlocked read of the sheet's visit; lock order kept). A
+                    // book page stays patient-level (appendPage).
+                    if (! $isNewCanonicalPage) {
+                        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, Auth::user());
+                    }
+
+                    // Rule 240 §4 — the authorized encounter is the page's author.
+                    return [$medicalRecord, $clinicVisit, $encounter];
                 }
 
                 $draft = $medicalRecordService->getOrCreateCanonicalMedicalRecord(
@@ -128,9 +142,9 @@ class MedicalRecordHandwritingController extends Controller
                 $storageVisit = $draft->clinicVisit ?? $canonicalVisit;
 
                 // A refusal here rolls the draft back with the rest of the save.
-                $this->assertWritableTarget($draft, $storageVisit, $consents);
+                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents, bookPage: true);
 
-                return [$draft, $storageVisit];
+                return [$draft, $storageVisit, $encounter];
             },
             $pageNumber,
             $decoded,
@@ -142,7 +156,10 @@ class MedicalRecordHandwritingController extends Controller
         $clinicVisit = $saved['storage_visit'];
         $focusPage = $saved['page_number'];
 
-        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id);
+        // Rule 243 §2.11 (PR A3) — the focus index is the saver's OWN page
+        // sequence (the pages of the sheets they may read), the same sequence the
+        // workspace renders for them after the redirect.
+        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id, Auth::user());
         $virtualFocus = $handwritingBook->first(
             fn (array $page) => $page['medical_record_id'] === $medicalRecord->id
                 && (int) $page['storage_page_number'] === $focusPage
@@ -169,11 +186,20 @@ class MedicalRecordHandwritingController extends Controller
      * allowed to update it, and the patient must have an authorized, consented
      * examination in progress.
      */
-    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): void
+    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents, bool $bookPage = false): ClinicVisit
     {
         abort_if($medicalRecord->clinic_visit_id !== $storageVisit->id, 404);
 
-        $this->authorize('update', $medicalRecord);
+        // Rule 243 §2 — a page of the patient's BOOK is patient-level
+        // (`appendPage`: inside an own in-service encounter when the encounter
+        // scope is ON); an in-place page of a per-visit sheet follows that
+        // sheet's own visit (`update`). With the flag OFF both are `update`.
+        // Flag-OFF parity: `appendPage` only while the encounter scope applies
+        // to the user, otherwise exactly the `update` asked before.
+        $this->authorize(
+            $bookPage ? app(DoctorPatientScopeService::class)->abilityFor(Auth::user(), 'appendPage', 'update') : 'update',
+            $medicalRecord,
+        );
 
         /*
          * FIX-02 — handwriting is RME content, so it is gated exactly like the
@@ -195,168 +221,6 @@ class MedicalRecordHandwritingController extends Controller
          * terminal visit. The only sound question is whether this patient has an
          * authorized, consented examination happening now.
          */
-        $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
-    }
-
-    /**
-     * Decode, validate and blank-guard the submitted canvas PNG. Returns the raw
-     * PNG bytes or throws a ValidationException (Sprint 59 / 59.1 semantics).
-     */
-    private function decodeHandwriting(?string $raw): string
-    {
-        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §5) — the payload, then the
-        // size the PNG declares and what its data inflates to, are bounded
-        // before the blank check below allocates anything from them.
-        $this->payloadGuard->assertPayloadLength($raw);
-
-        // Strip the data URI prefix if present (data:image/png;base64,...)
-        $base64 = preg_replace('/^data:image\/\w+;base64,/', '', (string) $raw);
-
-        $decoded = base64_decode($base64, strict: true);
-
-        // Must decode successfully and have valid PNG magic bytes
-        if ($decoded === false || strlen($decoded) < 8 || substr($decoded, 0, 4) !== "\x89PNG") {
-            throw ValidationException::withMessages([
-                'handwriting_data' => 'Data tulisan tangan tidak valid atau kosong.',
-            ]);
-        }
-
-        $this->payloadGuard->assertBoundedPng($decoded);
-
-        // Sprint 59.1 — never overwrite saved handwriting with an accidental
-        // blank canvas. A fully transparent / uniform PNG is rejected before
-        // any storage or DB write, so previously saved strokes are preserved.
-        if ($this->isBlankHandwriting($decoded)) {
-            throw ValidationException::withMessages([
-                'handwriting_data' => 'Tulisan tangan kosong tidak dapat disimpan dan tidak akan menghapus tulisan tangan yang sudah ada.',
-            ]);
-        }
-
-        return $decoded;
-    }
-
-    /**
-     * Detect a blank handwriting submission (a fully transparent canvas or a
-     * single uniform colour) so an accidental empty save never overwrites
-     * previously stored handwriting. Pure-PHP PNG inspection — GD/Imagick are
-     * not required, only zlib (always present). Only the 8-bit RGBA output of
-     * canvas.toDataURL() is inspected; anything else is treated as non-blank to
-     * avoid false rejections of legitimate content.
-     */
-    private function isBlankHandwriting(string $png): bool
-    {
-        if (strlen($png) < 8 || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") {
-            return false;
-        }
-
-        $offset = 8;
-        $width = $height = $bitDepth = $colorType = null;
-        $idat = '';
-
-        while ($offset + 12 <= strlen($png)) {
-            $length = unpack('N', substr($png, $offset, 4))[1];
-            $type = substr($png, $offset + 4, 4);
-            $data = substr($png, $offset + 8, $length);
-
-            if ($type === 'IHDR') {
-                $width = unpack('N', substr($data, 0, 4))[1];
-                $height = unpack('N', substr($data, 4, 4))[1];
-                $bitDepth = ord($data[8]);
-                $colorType = ord($data[9]);
-            } elseif ($type === 'IDAT') {
-                $idat .= $data;
-            } elseif ($type === 'IEND') {
-                break;
-            }
-
-            $offset += 12 + $length;
-        }
-
-        if ($colorType !== 6 || $bitDepth !== 8 || $width === null || $width <= 0 || $height <= 0) {
-            return false;
-        }
-
-        // Bounded by the declared size, which HandwritingPayloadGuard capped.
-        $raw = @zlib_decode($idat, $height * (1 + $width * 8));
-        if ($raw === false || $raw === '') {
-            return false;
-        }
-
-        $bytesPerPixel = 4;
-        $stride = $width * $bytesPerPixel;
-        $previous = array_fill(0, $stride, 0);
-        $position = 0;
-        $allTransparent = true;
-        $uniform = true;
-        $firstPixel = null;
-
-        for ($y = 0; $y < $height; $y++) {
-            if ($position >= strlen($raw)) {
-                return false;
-            }
-
-            $filter = ord($raw[$position++]);
-            $line = array_values(unpack('C*', substr($raw, $position, $stride)));
-
-            if (count($line) < $stride) {
-                return false;
-            }
-
-            $position += $stride;
-
-            // Reverse the PNG scanline filter so we read true pixel values.
-            for ($x = 0; $x < $stride; $x++) {
-                $a = $x >= $bytesPerPixel ? $line[$x - $bytesPerPixel] : 0;
-                $b = $previous[$x];
-                $c = $x >= $bytesPerPixel ? $previous[$x - $bytesPerPixel] : 0;
-
-                switch ($filter) {
-                    case 0:
-                        break;
-                    case 1:
-                        $line[$x] = ($line[$x] + $a) & 0xFF;
-                        break;
-                    case 2:
-                        $line[$x] = ($line[$x] + $b) & 0xFF;
-                        break;
-                    case 3:
-                        $line[$x] = ($line[$x] + intdiv($a + $b, 2)) & 0xFF;
-                        break;
-                    case 4:
-                        $p = $a + $b - $c;
-                        $pa = abs($p - $a);
-                        $pb = abs($p - $b);
-                        $pc = abs($p - $c);
-                        $predictor = ($pa <= $pb && $pa <= $pc) ? $a : (($pb <= $pc) ? $b : $c);
-                        $line[$x] = ($line[$x] + $predictor) & 0xFF;
-                        break;
-                    default:
-                        return false;
-                }
-            }
-
-            for ($x = 0; $x < $stride; $x += $bytesPerPixel) {
-                $pixel = [$line[$x], $line[$x + 1], $line[$x + 2], $line[$x + 3]];
-
-                if ($pixel[3] !== 0) {
-                    $allTransparent = false;
-                }
-
-                if ($firstPixel === null) {
-                    $firstPixel = $pixel;
-                } elseif ($pixel !== $firstPixel) {
-                    $uniform = false;
-                }
-
-                // Any non-transparent, non-uniform pixel means real content.
-                if (! $allTransparent && ! $uniform) {
-                    return false;
-                }
-            }
-
-            $previous = $line;
-        }
-
-        return $allTransparent || $uniform;
+        return $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
     }
 }

@@ -290,6 +290,9 @@ it('accepts a consent whose documentation answer is TIDAK and still opens RME au
     $visit = consentVisit();
 
     $consent = signConsentFor($visit, ['documentation_consent' => false]);
+    // Rule 241 §2 — authoring opens on the EXECUTED consent; the countersignature
+    // is a fixture here because this case is about clause 8, not the doctor step.
+    rmeDoctorCountersignatureFor($consent);
 
     expect($consent->documentation_consent)->toBeFalse();
     expect($consent->allowsDocumentationPublication())->toBeFalse();

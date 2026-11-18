@@ -1,5 +1,12 @@
 <x-settings-shell title="Rekam Medis">
     @php
+        // Rule 243 §2.11 (PR A3, review HIGH-1) — decided on the server
+        // (MedicalRecordPolicy::viewAnchorContent): false only when the active
+        // sheet is the book and its own (anchor) visit is one this viewer may not
+        // read. Then that visit is never named and nothing typed onto the sheet
+        // (SOAP, diagnoses, status, recorded/finalized metadata) is shown; only
+        // the handwriting pages remain.
+        $anchorContentReadable = $anchorContentReadable ?? true;
         $isFinal = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL;
 
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — hoisted from the middle of
@@ -9,40 +16,56 @@
         $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
         $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
         $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
-        // Sprint 59 — handwriting and notes remain editable after finalization.
+        // Rule 240 §1 (memo M3.3) — a FINAL sheet's own content (notes, structured
+        // diagnoses, the emergency override) is locked: `editSheet` denies it, and
+        // `! $isFinal` mirrors the service for Super Admin, whom Gate::before lets
+        // past the policy. The handwriting book keeps asking `update` (page seal
+        // is a later part of rule 240).
+        $canEditSheet = ! $isFinal && (auth()->user()?->can('editSheet', $medicalRecord) ?? false);
         // DMS-RME-REVISION-PROGRAM-5 (CW5-04, AIR-RMC-25) — editable means the
         // CAPABILITY, not the `update` permission alone: before the encounter is
         // consented the editor, the "+ Tambah Halaman RM" control and the
         // diagnosis forms opened onto a write the service refuses.
         $canAuthorRmeNow = (bool) ($canAuthorRme ?? false);
-        $canEditHandwriting = $canUpdate && $canAuthorRmeNow;
+        // Rule 243 §2.5 — the editor is gated on the ability of the record it
+        // writes (the book: appendPage; an in-place sheet page: update), computed
+        // in the controller.
+        $canEditHandwriting = ($canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
+        // PR A1c — "+ Tambah Halaman RM" writes a new page to the BOOK
+        // (appendPage), so it has its own ability, also computed in the controller.
+        $canAppendHandwritingPage = ($canAppendBookPage ?? $canEditHandwritingTarget ?? $canUpdate) && $canAuthorRmeNow;
         $savedHandwriting = $medicalRecord->latestHandwriting();
         $hasHandwriting = $hasRequiredHandwriting ?? false;
-        $hasLegacySoap = filled($medicalRecord->subjective)
+        $hasLegacySoap = $anchorContentReadable && (filled($medicalRecord->subjective)
             || filled($medicalRecord->objective)
             || filled($medicalRecord->assessment)
-            || filled($medicalRecord->plan);
+            || filled($medicalRecord->plan));
     @endphp
 
     <div class="space-y-6">
         <x-ui.page-header
             title="Rekam Medis"
-            :subtitle="$clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')"
+            :subtitle="$anchorContentReadable
+                ? $clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')
+                : 'Buku RM pasien'"
         >
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
-                <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
-                    {{ $isFinal ? 'Final' : 'Draft' }}
-                </x-ui.badge>
+                @if ($anchorContentReadable)
+                    <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
+                        {{ $isFinal ? 'Final' : 'Draft' }}
+                    </x-ui.badge>
+                @endif
 
                 {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — "Finalisasi" moved
                      here from the very bottom of the page. MOVED, NOT DUPLICATED:
                      there is no second Finalisasi control further down. The action,
                      its route, its policy gate ($canFinalize) and the mandatory
                      handwriting precondition ($hasHandwriting) are all unchanged. --}}
-                @if ($isDraft && $canFinalize)
+                @if ($anchorContentReadable && $isDraft && $canFinalize)
                     @if ($hasHandwriting && $canAuthorRme)
-                        <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
+                        <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}"
+                              onsubmit="return confirm('Finalkan rekam medis ini? Setelah final, rekam medis terkunci dan hanya dapat dikoreksi melalui amandemen yang disetujui.')">
                             @csrf
                             <x-ui.button type="submit" variant="success">
                                 Finalisasi
@@ -101,7 +124,8 @@
                     $finishOffered = $examVisitInFocus
                         && $clinicVisit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS
                         && (auth()->user()?->can('transition', $clinicVisit) ?? false)
-                        && app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($clinicVisit);
+                        // Rule 241 §2 — the EXECUTED consent, decided in the controller.
+                        && ($clinicVisitConsentExecuted ?? false);
                 @endphp
                 @if ($finishOffered)
                     @can('completeExamination', $clinicVisit)
@@ -119,9 +143,15 @@
                 {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
                      top of the page, matching the Odontogram page placement/style so
                      the doctor reaches the handwriting area faster. --}}
-                <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
-                    &larr; Kembali ke Kunjungan
-                </x-ui.button>
+                @if ($anchorContentReadable)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                        &larr; Kembali ke Kunjungan
+                    </x-ui.button>
+                @elseif ($sourceVisit)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $sourceVisit)">
+                        &larr; Kembali ke Kunjungan
+                    </x-ui.button>
+                @endif
             </x-slot:actions>
         </x-ui.page-header>
 
@@ -135,72 +165,50 @@
 
              Presentation only; the service asserts the same authority. --}}
         @unless ($canAuthorRme)
-            @if ($activeEncounter === null)
-                <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
-                        pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
-                        arsip RME lama dan odontogram pasien tetap dapat dibaca.
-                    </p>
-                </x-ui.alert>
-            @elseif (app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($activeEncounter))
-                {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the encounter IS consented,
-                     so the reason is this account, not the signature. Never tell
-                     the front office to fetch a consent that already exists. --}}
-                <x-ui.alert variant="info" title="Hanya dapat dibaca">
-                    <p class="max-w-2xl text-sm">
-                        Rekam medis pemeriksaan yang sedang berjalan
-                        (Kunjungan #{{ $activeEncounter->visit_number }}) ditulis oleh tenaga
-                        klinis yang memeriksa pasien. Akun ini dapat membaca rekam medis,
-                        arsip RME lama dan odontogram pasien.
-                    </p>
-                </x-ui.alert>
-            @else
-                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <p class="max-w-2xl text-sm">
-                            Penulisan rekam medis untuk pemeriksaan yang sedang berjalan
-                            (Kunjungan #{{ $activeEncounter->visit_number }}) terkunci sampai Surat
-                            Persetujuan Tindakan Medis ditandatangani. Riwayat rekam medis, arsip
-                            RME lama dan odontogram pasien tetap dapat dibaca.
-                        </p>
-                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $activeEncounter])
-                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $activeEncounter)">
-                                Pilih Form Consent
-                            </x-ui.button>
-                        @endcan
-                    </div>
-                </x-ui.alert>
-            @endif
+            @include('rme.visits.partials.ptm-authoring-banner', ['ptmBannerSubject' => 'penulisan rekam medis'])
         @endunless
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE
              messages travel with the relocated button so the doctor learns why it is
              unavailable without scrolling to the bottom of the record. --}}
-        @if ($isDraft && $canFinalize && ! $hasHandwriting)
+        @if (! $anchorContentReadable)
+            {{-- Rule 243 §2.11 — the anchor's status is not this viewer's to read. --}}
+        @elseif ($isDraft && $canFinalize && ! $hasHandwriting)
             <x-ui.alert variant="warning">
                 RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
             </x-ui.alert>
         @elseif (! $isDraft)
+            {{-- Rule 240 §1 — the wording equals MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED
+                 (pinned by MedicalRecordFinalizationLockTest). --}}
             <x-ui.alert variant="success" title="Rekam Medis ini telah difinalkan.">
-                Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
+                Rekam medis ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
             </x-ui.alert>
         @endif
 
-        @if ($clinicVisit->isFollowUpVisit())
+        {{-- Rule 240 §6 (memo M3.3 PR4) — amendment status and the request offer. --}}
+        @include('rme.amendments.partials.record-panel')
+
+        {{-- Rule 243 §2.11 — the parent visit is named only when the viewer may
+             open it (`$activeFollowUpOf`, decided in the controller). --}}
+        @if ($anchorContentReadable && $clinicVisit->isFollowUpVisit())
             <x-ui.alert variant="info">
                 <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
-                @if ($clinicVisit->followUpOf)
+                @if ($activeFollowUpOf ?? null)
                     &mdash; <span class="font-medium">Kontrol dari:</span>
-                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono underline">{{ $clinicVisit->followUpOf->visit_number }}</a>
+                    <a href="{{ route('rme.visits.show', $activeFollowUpOf) }}" class="font-mono underline">{{ $activeFollowUpOf->visit_number }}</a>
                 @endif
             </x-ui.alert>
         @endif
 
-        @include('rme.visits.partials.visit-workflow-nav', [
-            'clinicVisit' => $clinicVisit,
-            'active' => 'medical-record',
-        ])
+        {{-- Rule 243 §2.13 — the tabs' visit is decided in the controller: the
+             active sheet's visit, or on an unreadable anchor the source visit
+             (no tabs without one), so they never show that anchor's room state. --}}
+        @if ($workflowNavVisit ?? null)
+            @include('rme.visits.partials.visit-workflow-nav', [
+                'clinicVisit' => $workflowNavVisit,
+                'active' => 'medical-record',
+            ])
+        @endif
 
         {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
         @if (! empty($notice))
@@ -224,74 +232,53 @@
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
                  two-column table (label : value). KTP number is intentionally
-                 never shown here, preserving RME privacy rules. Marital status
-                 and religion have no column in the pilot schema, so they use the
-                 safe "-" fallback (no migration added). --}}
-            @php
-                $patient = $clinicVisit->patient;
-                $bioDash = '-';
-                $genderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-
-                // TTL / Umur — birth date (and age) only; the schema has no
-                // place-of-birth column, so the place segment is omitted.
-                if ($patient?->date_of_birth) {
-                    $ttlUmur = $patient->date_of_birth->format('d-m-Y');
-                    $patientAge = $patient->age();
-                    if ($patientAge !== null) {
-                        $ttlUmur .= ' / '.$patientAge.' tahun';
-                    }
-                } else {
-                    $ttlUmur = $bioDash;
-                }
-
-                $bioLeft = [
-                    ['Nama', $patient?->name ?: $bioDash],
-                    ['TTL / Umur', $ttlUmur],
-                    ['Pekerjaan', $patient?->occupation ?: $bioDash],
-                    ['Status Pernikahan', $patient?->marital_status ?: $bioDash],
-                    ['Alamat', $patient?->address ?: $bioDash],
-                ];
-                $bioRight = [
-                    ['Jenis Kelamin', $patient?->gender ? ($genderLabels[$patient->gender] ?? $patient->gender) : $bioDash],
-                    ['Agama', $patient?->religion ?: $bioDash],
-                    ['No. Tlp / Wa', $patient?->whatsapp_number ?: ($patient?->phone ?: $bioDash)],
-                    ['Email', $patient?->email ?: $bioDash],
-                    ['No. RM', $patient?->medical_record_number ?: $bioDash],
-                ];
-            @endphp
-
+                 never shown here, preserving RME privacy rules.
+                 Rule 243 §3 (memo M3.1, PR C1) — the rows come from
+                 PatientIdentityPresenter (MedicalRecordController): a Doctor gets
+                 name, place/date of birth and age, occupation, gender and RM
+                 number only; every other role the full table as before (marital
+                 status and religion have no column, so "-"). A row's right pair
+                 may be empty. --}}
             <div class="overflow-x-auto">
                 <table class="w-full border-collapse text-sm">
                     <tbody>
-                        @foreach (range(0, 4) as $i)
+                        @foreach ($patientIdentity->biodataRows as [$bioLeftLabel, $bioLeftValue, $bioRightLabel, $bioRightValue])
                             <tr class="align-top">
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeft[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeft[$i][1] }}</td>
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRight[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRight[$i][1] }}</td>
+                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeftLabel }}</th>
+                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeftValue }}</td>
+                                @if ($bioRightLabel !== null)
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRightLabel }}</th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRightValue }}</td>
+                                @else
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5"></th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5"></td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
 
-            {{-- Visit-level context retained below the patient biodata table. --}}
-            <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->initialTreatment?->name ?? '—' }}</dd>
-                </div>
-                @if ($clinicVisit->initial_service_note)
+            {{-- Visit-level context retained below the patient biodata table.
+                 Rule 243 §2.11 — omitted for an anchor visit the viewer may not read. --}}
+            @if ($anchorContentReadable)
+                <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
                     </div>
-                @endif
-            </dl>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->initialTreatment?->name ?? '—' }}</dd>
+                    </div>
+                    @if ($clinicVisit->initial_service_note)
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
+                            <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            @endif
         </x-ui.card>
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the gating variables that
@@ -350,6 +337,11 @@
             $activeSrc = $activeRmPage['preview_url'] ?? '';
             $activeHasContent = $activeRmPage['has_content'] ?? false;
             $activeSavedAt = $activeRmPage['saved_at'] ?? null;
+            // Rule 240 §4 (memo M3.3) — a page the live encounter may not overwrite
+            // is read-only; the controller asks MedicalRecordHandwritingService, the
+            // authority that refuses the overwrite. Adding a NEW page stays open.
+            $activePageLocked = ($activePageLockMessage ?? null) !== null;
+            $canEditActivePage = $canEditHandwriting && ! $activePageLocked;
         @endphp
 
         <x-ui.card
@@ -371,12 +363,9 @@
                 $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', array_merge([$workspaceVisit], $rmPageBase, ['rm_page' => $page]));
                 $prevSwipeUrl = $prevPage ? $rmPageUrl($prevPage) : '';
                 $nextSwipeUrl = $nextNavPage ? $rmPageUrl($nextNavPage) : '';
-                $canonicalHandwritingVisit = $handwritingRecord?->clinicVisit ?? $workspaceVisit;
-                $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
-                    $canonicalHandwritingVisit,
-                    $handwritingRecord ?? $handwritingFormRecord,
-                ]);
-                $storagePageNumber = $activeRmPage['storage_page_number'] ?? $activePageNumber;
+                // Rule 240 §4 — $canonicalHandwritingFormAction, $storagePageNumber
+                // and the editor's target ($editorFormAction, $editorPageNumber,
+                // $editorRevision) come from MedicalRecordController::show().
             @endphp
 
             <div
@@ -386,7 +375,7 @@
                 @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
                 @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
             >
-            @include('rme.visits.medical-record.partials.rm-page-navigator')
+            @include('rme.visits.medical-record.partials.rm-page-navigator', ['canEditHandwriting' => $canAppendHandwritingPage])
 
             <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
             {{-- Only the ACTIVE page is rendered. LEGACY-RME-DOCTOR-WORKSPACE-1A:
@@ -400,13 +389,17 @@
             @else
             <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y" data-active-page-type="native">
                 <figure
-                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
+                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditActivePage ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
-                    data-revision="{{ $activeRmPage['revision'] ?? '' }}"
-                    data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
+                    @if ($activePageLocked)
+                        data-sealed="1"
+                    @else
+                        data-revision="{{ $activeRmPage['revision'] ?? '' }}"
+                        data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
+                    @endif
                     data-existing-src="{{ $activeSrc }}"
-                    @if ($canEditHandwriting) role="button" tabindex="0" @endif
+                    @if ($canEditActivePage) data-rm-editable role="button" tabindex="0" @endif
                 >
                     <figcaption class="mb-2 flex items-center justify-between text-xs">
                         <span class="font-semibold text-gray-700">Halaman {{ $activePageNumber }}</span>
@@ -414,6 +407,23 @@
                             <span class="text-gray-500">Tersimpan pada {{ $activeSavedAt?->format('d/m/Y H:i') }}</span>
                         @endif
                     </figcaption>
+
+                    {{-- Rule 240 §8 (M3.3 PR6) — a page appended by an approved amendment:
+                         which amendment, approved when (WITA) and by whom. --}}
+                    @if (($activeRmPage['amendment_label'] ?? null) !== null)
+                        <p class="mb-2 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $activeRmPage['amendment_id'] }}">
+                            {{-- Review INFO — the book's own page number beside the workspace one. --}}
+                            Halaman buku RM {{ $storagePageNumber }} · {{ $activeRmPage['amendment_label'] }}
+                        </p>
+                    @endif
+
+                    @if ($activePageLocked)
+                        {{-- Rule 240 §4 — the service's own reason (sealed, or written by
+                             another encounter), pinned by MedicalRecordFinalizationPageSealTest. --}}
+                        <p class="mb-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
+                            {{ $activePageLockMessage }}
+                        </p>
+                    @endif
 
                     @if ($activeHasContent && $activeSrc)
                         <img src="{{ $activeSrc }}"
@@ -428,7 +438,7 @@
                         </div>
                     @endif
 
-                    @if ($canEditHandwriting)
+                    @if ($canEditActivePage)
                         <span class="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition group-hover:opacity-100">
                             Klik untuk menulis
                         </span>
@@ -437,7 +447,9 @@
             </div>
             @endif
             </div>{{-- /#rm-handwriting-swipe --}}
-            @if ($canEditHandwriting)
+            {{-- PR A1c — the overlay serves both writes: the in-place page (only a
+                 preview marked data-rm-editable opens it) and a new book page. --}}
+            @if ($canEditHandwriting || $canAppendHandwritingPage)
                 @error('handwriting_data')
                     <p class="mt-2 text-xs text-danger-600">{{ $message }}</p>
                 @enderror
@@ -460,17 +472,17 @@
                             Tulisan tangan tersimpan halaman ini dimuat ke kanvas. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
                         </p>
 
-                        <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}" id="handwriting-form">
+                        <form method="POST" action="{{ $editorFormAction }}" id="handwriting-form">
                             @csrf
                             @if ($sourceVisit)
                                 <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
                             @endif
                             <input type="hidden" name="handwriting_data" id="handwriting-data-input">
-                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $storagePageNumber }}">
+                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $editorPageNumber }}">
                             {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of the page
                                  this device loaded; a save over a page another device changed
                                  meanwhile is refused instead of replacing that drawing. --}}
-                            <input type="hidden" name="page_revision" id="handwriting-revision-input" value="{{ $activeRmPage['revision'] ?? '' }}">
+                            <input type="hidden" name="page_revision" id="handwriting-revision-input" value="{{ $editorRevision }}">
 
                             {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
                                  ≈ 1:1.414). One canvas = one RM page; overflow
@@ -510,37 +522,12 @@
                     $rmBranchToken = trim(preg_replace('/\s+/', ' ', $rmBranchToken));
                     $rmBranchLabel = strtoupper($rmBranchToken !== '' ? $rmBranchToken : ($rmBranchRaw !== '' ? $rmBranchRaw : 'TELKOMAS'));
 
-                    // Page-1 biodata grid — same fields/order as the spec (no KTP).
-                    // Recomputed here (independent of the component slot scope) so
-                    // it is reliably available to the canvas script.
-                    $rmPatient = $clinicVisit->patient;
-                    $rmDash = '-';
-                    $rmGenderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-                    if ($rmPatient?->date_of_birth) {
-                        $rmTtlUmur = $rmPatient->date_of_birth->format('d-m-Y');
-                        $rmAge = $rmPatient->age();
-                        if ($rmAge !== null) {
-                            $rmTtlUmur .= ' / '.$rmAge.' tahun';
-                        }
-                    } else {
-                        $rmTtlUmur = $rmDash;
-                    }
-                    $rmBio = [
-                        'left' => [
-                            ['Nama', $rmPatient?->name ?: $rmDash],
-                            ['TTL / Umur', $rmTtlUmur],
-                            ['Pekerjaan', $rmPatient?->occupation ?: $rmDash],
-                            ['Status Pernikahan', $rmPatient?->marital_status ?: $rmDash],
-                            ['Alamat', $rmPatient?->address ?: $rmDash],
-                        ],
-                        'right' => [
-                            ['Jenis Kelamin', $rmPatient?->gender ? ($rmGenderLabels[$rmPatient->gender] ?? $rmPatient->gender) : $rmDash],
-                            ['Agama', $rmPatient?->religion ?: $rmDash],
-                            ['No. Tlp / Wa', $rmPatient?->whatsapp_number ?: ($rmPatient?->phone ?: $rmDash)],
-                            ['Email', $rmPatient?->email ?: $rmDash],
-                            ['No. RM', $rmPatient?->medical_record_number ?: $rmDash],
-                        ],
-                    ];
+                    // Page-1 biodata grid (no KTP). Rule 243 §3 (memo M3.1, PR C2)
+                    // — the allowed fields only, for every audience, decided by
+                    // PatientIdentityPresenter::rmPageOneBiodata() in the
+                    // controller: no address, phone/WhatsApp or email is ever
+                    // baked into a new page's PNG. Blank cells stay blank.
+                    $rmBio = $rmPageOneBiodata;
                 @endphp
                 <script>
                 (function () {
@@ -567,6 +554,9 @@
                     let userDrew = false;
                     let baselineImg = null;
                     let baselineLoaded = false;
+                    // Rule 243 §3 (review MEDIUM-3) — the stored page's image
+                    // failed to load (a doctor may get 404/503 for a page 1).
+                    let baselineFailed = false;
 
                     // Hotfix 60.5 — official Daengtisia Rekam Medik template baked
                     // onto the canvas. Every page renders the three-line RM header;
@@ -582,6 +572,69 @@
                         rightW: 150,                       // "Ket" column
                         bioCols: [0, 150, 470, 620, 900], // label|value|label|value
                     };
+
+                    // rm-page-canvas:start
+                    // Rule 243 §3 (review LOW-A, INFO-2). Plain JS between the
+                    // markers: tests/js/rm-page-save-guard.test.mjs reads it.
+                    const RM_HIDDEN_CELL_TINT = '#f3f4f6';
+
+                    // The page-1 grid cells left blank by the presenter (no
+                    // label): the cells RmPageOneBiodataRedactor blanks.
+                    function rmHiddenCellRects(bio, template) {
+                        const rects = [];
+                        const cols = template.bioCols;
+                        for (let i = 0; i < template.bioRows; i++) {
+                            const top = template.headerH + i * template.bioRowH;
+                            [['left', 0], ['right', 2]].forEach(function (side) {
+                                const cell = bio[side[0]][i] || ['', ''];
+                                if (cell[0] === '') {
+                                    [side[1], side[1] + 1].forEach(function (c) {
+                                        rects.push({ x: cols[c], y: top, w: cols[c + 1] - cols[c], h: template.bioRowH });
+                                    });
+                                }
+                            });
+                        }
+                        return rects;
+                    }
+
+                    // One pen segment; `hidden` cells (1 px inside their grid
+                    // lines) are clipped out, so no ink lands where the
+                    // redactor looks (2 px inside).
+                    function rmStrokeSegment(ctx, from, to, hidden, width, height) {
+                        ctx.save();
+                        if (hidden.length > 0) {
+                            ctx.beginPath();
+                            ctx.rect(0, 0, width, height);
+                            hidden.forEach(function (r) {
+                                ctx.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+                            });
+                            ctx.clip('evenodd');
+                        }
+                        ctx.beginPath();
+                        ctx.moveTo(from.x, from.y);
+                        ctx.lineTo(to.x, to.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Each loadPage() call begins a load; a callback of an
+                    // earlier load (another page) is ignored.
+                    function rmPageLoadSequence() {
+                        let current = 0;
+                        return function begin() {
+                            const mine = ++current;
+                            return function latest(callback) {
+                                return function () {
+                                    if (mine === current) {
+                                        callback.apply(this, arguments);
+                                    }
+                                };
+                            };
+                        };
+                    }
+                    // rm-page-canvas:end
+
+                    const beginPageLoad = rmPageLoadSequence();
 
                     function rmTruncate(text, maxW) {
                         text = String(text);
@@ -627,6 +680,14 @@
                         });
                         ctx.stroke();
 
+                        // Rule 243 §3 (review LOW-A) — the blank cells read as
+                        // not-for-writing: a light tint (no ink to the redactor,
+                        // luminance >= 200); strokes there are clipped away.
+                        ctx.fillStyle = RM_HIDDEN_CELL_TINT;
+                        rmHiddenCellRects(RM_BIO, TEMPLATE).forEach(function (r) {
+                            ctx.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+                        });
+
                         ctx.fillStyle = '#111827';
                         ctx.textBaseline = 'middle';
                         for (let i = 0; i < rows; i++) {
@@ -634,12 +695,19 @@
                             const L = RM_BIO.left[i] || ['', ''];
                             const R = RM_BIO.right[i] || ['', ''];
                             ctx.textAlign = 'left';
-                            ctx.font = '600 12px sans-serif';
-                            ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
-                            ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
-                            ctx.font = '12px sans-serif';
-                            ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
-                            ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            // Rule 243 §3 — a blank cell (no label) draws nothing.
+                            if (L[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
+                            }
+                            if (R[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            }
                         }
                         return bottom;
                     }
@@ -715,21 +783,28 @@
                     // shared canvas. Resets the per-page draw state so the blank
                     // guard and reset stay scoped to the selected page only.
                     function loadPage(src) {
+                        // Review INFO-2 — a load still in flight for another
+                        // page never paints onto this one.
+                        const latest = beginPageLoad();
                         existingSrc = src || '';
                         userDrew = false;
                         baselineImg = null;
                         baselineLoaded = false;
+                        baselineFailed = false;
                         renderBase();
 
                         if (existingSrc) {
                             const img = new Image();
                             img.crossOrigin = 'anonymous';
-                            img.onload = function () {
+                            img.onload = latest(function () {
                                 baselineImg = img;
                                 baselineLoaded = true;
                                 renderBase();
-                            };
-                            img.onerror = function () { baselineLoaded = false; };
+                            });
+                            img.onerror = latest(function () {
+                                baselineLoaded = false;
+                                baselineFailed = true;
+                            });
                             img.src = existingSrc;
                         }
                     }
@@ -777,7 +852,11 @@
                     loadPage(existingSrc);
 
                     // Read-only previews open the overlay for their own page.
-                    document.querySelectorAll('#rm-page-previews .rm-page-preview').forEach(function (fig) {
+                    document.querySelectorAll('#rm-page-previews .rm-page-preview[data-rm-editable]').forEach(function (fig) {
+                        // Rule 240 §4 — a sealed page never opens the editor.
+                        if (fig.dataset.sealed === '1') {
+                            return;
+                        }
                         function open() {
                             const storagePage = parseInt(fig.dataset.storagePage, 10) || parseInt(fig.dataset.pageNumber, 10) || 1;
                             if (fig.dataset.formAction) {
@@ -832,14 +911,18 @@
                         };
                     }
 
+                    let lastPoint = null;
+
                     function start(e) {
                         e.preventDefault();
                         drawing = true;
-                        const p = getPos(e);
-                        ctx.beginPath();
-                        ctx.moveTo(p.x, p.y);
+                        lastPoint = getPos(e);
                     }
 
+                    // Rule 243 §3 (review LOW-A) — on page 1 a stroke never
+                    // reaches the blank biodata cells (the doctor's view blanks
+                    // them, and ink there would lock page 1): each segment is
+                    // stroked under a clip that excludes them.
                     function draw(e) {
                         if (!drawing) return;
                         e.preventDefault();
@@ -848,8 +931,15 @@
                         ctx.lineWidth = 2;
                         ctx.lineCap = 'round';
                         ctx.strokeStyle = '#111827';
-                        ctx.lineTo(p.x, p.y);
-                        ctx.stroke();
+                        rmStrokeSegment(
+                            ctx,
+                            lastPoint || p,
+                            p,
+                            currentPage <= 1 ? rmHiddenCellRects(RM_BIO, TEMPLATE) : [],
+                            canvas.width,
+                            canvas.height,
+                        );
+                        lastPoint = p;
                     }
 
                     function stop() { drawing = false; }
@@ -870,19 +960,37 @@
                         renderBase();
                     });
 
-                    form.addEventListener('submit', function (e) {
-                        // Guard: never overwrite an existing page with a blank
-                        // canvas while its baseline is still loading.
-                        if (existingSrc && !baselineLoaded && !userDrew) {
-                            e.preventDefault();
-                            window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
-                            return;
+                    // rm-save-guard:start
+                    // Why a save is refused, or null. Rule 243 §3 (review
+                    // MEDIUM-3): a stored page whose image is not loaded (still
+                    // loading, or failed — a doctor may get 404/503 for a page
+                    // 1) is never saved, whatever was drawn: the canvas would
+                    // replace it with the template plus the new strokes. A new
+                    // page with no strokes would persist the empty template.
+                    // Plain JS between the markers: tests/js reads it.
+                    function rmSaveRefusal(state) {
+                        if (state.existingSrc && !state.baselineLoaded) {
+                            return state.baselineFailed
+                                ? 'Gambar halaman tersimpan gagal dimuat, sehingga halaman ini tidak dapat disimpan tanpa menghapus tulisan lama. Muat ulang halaman, atau tulis pada halaman baru.'
+                                : 'Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.';
                         }
-                        // Guard: a brand-new page with no strokes would only
-                        // persist the empty template — block it.
-                        if (!existingSrc && !userDrew) {
+                        if (!state.existingSrc && !state.userDrew) {
+                            return 'Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.';
+                        }
+                        return null;
+                    }
+                    // rm-save-guard:end
+
+                    form.addEventListener('submit', function (e) {
+                        const refusal = rmSaveRefusal({
+                            existingSrc: existingSrc,
+                            baselineLoaded: baselineLoaded,
+                            baselineFailed: baselineFailed,
+                            userDrew: userDrew,
+                        });
+                        if (refusal !== null) {
                             e.preventDefault();
-                            window.alert('Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.');
+                            window.alert(refusal);
                             return;
                         }
                         input.value = canvas.toDataURL('image/png');
@@ -969,10 +1077,13 @@
             @include('rme.visits.medical-record.partials.rm-page-swipe-script')
         </x-ui.card>
 
-        {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
-        @include('rme.visits.medical-record.partials.structured-diagnoses', [
-            'canUpdate' => ($canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false)) && $canAuthorRmeNow,
-        ])
+        {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only).
+             Rule 243 §2.11 — the diagnoses belong to the sheet's own visit. --}}
+        @if ($anchorContentReadable)
+            @include('rme.visits.medical-record.partials.structured-diagnoses', [
+                'canUpdate' => $canEditSheet && $canAuthorRmeNow,
+            ])
+        @endif
 
         {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — "Tindakan
              Dilakukan", after the diagnosis. Absent while the capability is OFF. --}}
@@ -983,8 +1094,11 @@
         {{-- FIX-PRE-68-45 Scope A — relocated "Buku RM Pasien" sheet navigation
              (Sprint 64.0). Moved below the handwriting canvas so the doctor sees
              the handwritten RME first; sheet switching still works as before. --}}
+        {{-- Rule 243 §2.5 — "+ Tambah Lembar RM" follows `create` on the visit it
+             creates on (computed in the controller), not `update` of the active
+             sheet, which for a returning patient is the book. --}}
         @include('rme.visits.partials.rm-sheet-nav', [
-            'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
+            'canEdit' => $canAddSheet ?? (auth()->user()?->can('update', $medicalRecord) ?? false),
         ])
 
         {{-- LEGACY-RME-PDF-HISTORY-1 — the patient's full RME history (native +
@@ -994,33 +1108,36 @@
             'clinicalHistory' => $clinicalHistory ?? collect(),
         ])
 
-        {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card. --}}
-        <x-ui.card title="Riwayat Pencatatan">
-            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
+        {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card.
+             Rule 243 §2.11 — the sheet's record metadata follows its own visit. --}}
+        @if ($anchorContentReadable)
+            <x-ui.card title="Riwayat Pencatatan">
+                <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
                     </div>
-                @endif
-            </dl>
-        </x-ui.card>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                    @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            </x-ui.card>
+        @endif
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-02 — "Dokumen RME Pasien"
              relocated here, to the FOOT of the page. The information hierarchy is

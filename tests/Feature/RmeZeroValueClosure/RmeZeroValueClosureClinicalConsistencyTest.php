@@ -494,9 +494,16 @@ function rccNoticeBlock(string $html): string
 {
     $start = strpos($html, 'data-zero-value-consistency-notice');
     expect($start)->not->toBeFalse();
-    $end = strpos($html, 'data-zero-value-closure-form', (int) $start);
+    // End at the closure form's own `<form` tag, not at its marker attribute:
+    // the tag's action URL carries the visit and invoice ids, and an id that
+    // happens to contain a tooth number (e.g. 16) made the "no tooth number"
+    // assertions below fail at random.
+    $marker = strpos($html, 'data-zero-value-closure-form', (int) $start);
+    $end = $marker === false ? false : strrpos(substr($html, 0, $marker), '<form');
+    $block = substr($html, (int) $start, ($end === false || $end < $start ? strlen($html) : $end) - (int) $start);
+    expect($block)->not->toContain('<form');
 
-    return substr($html, (int) $start, ($end === false ? strlen($html) : $end) - (int) $start);
+    return $block;
 }
 
 it('review F1: the notice tells the cashier to ESCALATE, never to re-bill a Rp0 invoice (D28 — there is no in-app path)', function () {

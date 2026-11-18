@@ -2,11 +2,7 @@
 
 namespace App\Modules\Patient\Requests;
 
-use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
-use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
-use App\Support\Clinical\ClinicalClock;
-use Carbon\Carbon;
-use Illuminate\Contracts\Validation\Validator;
+use App\Modules\Patient\Support\PatientCoreFields;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,29 +18,43 @@ class UpdatePatientRequest extends FormRequest
      */
     public function rules(): array
     {
-        $patientId = $this->route('patient')?->id;
+        $patient = $this->route('patient');
+        $patientId = $patient?->id;
+
+        // Memo M4.2 (rule 244 §5.4; owner 2026-11-17 "Existing patients are never
+        // blocked") — an edit keeps every field optional, and a stored value is
+        // never re-judged: a legacy date of birth or NIK saves unchanged. Only a
+        // value the operator CHANGES is held to the new-patient format (date of
+        // birth 1900..the clinical day, NIK 16 digits).
+        $dateOfBirthChanged = $this->filled('date_of_birth')
+            && (string) $this->input('date_of_birth') !== (string) $patient?->date_of_birth?->format('Y-m-d');
+        $ktpChanged = $this->filled('ktp_number')
+            && (string) $this->input('ktp_number') !== (string) $patient?->ktp_number;
+
+        // Rule 244 §5.3 (RM PR-4b) — every text an edit writes is text PostgreSQL
+        // can store (valid UTF-8, no NUL): a crafted value is a 422, never a
+        // failed update (500, an ERROR line). A stored value always passes:
+        // the database never held anything else. (A changed NIK is already held
+        // to 16 digits; the place of birth has its own single-line pattern.)
+        $text = 'regex:'.PatientCoreFields::TEXT_PATTERN;
 
         return [
             'clinic_id' => ['required', 'integer', 'exists:mst_clinics,id'],
             'doctor_id' => ['required', 'integer', 'exists:mst_doctors,id'],
-            'branch_id' => [
-                'nullable',
-                'required_with:manual_rm_number',
-                'integer',
-                Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
-            ],
-            'registered_at' => ['nullable', 'date'],
-            'manual_rm_number' => ['nullable', 'required_with:branch_id', 'string', 'max:50', 'regex:/^[0-9]+$/'],
-            'medical_record_number' => ['nullable', 'string', 'max:50', Rule::unique('mst_patients', 'medical_record_number')->ignore($patientId)],
-            'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')->ignore($patientId)],
-            'name' => ['required', 'string', 'max:150'],
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2.3, owner
+            // default 5) — the Nomor RM, the branch it was issued under and the
+            // registration date are frozen on edit: not accepted here, dropped by
+            // PatientService::update(), shown read-only on the form.
+            'ktp_number' => ['nullable', 'string', 'max:16', ...($ktpChanged ? PatientCoreFields::NIK_RULES : []), Rule::unique('mst_patients', 'ktp_number')->ignore($patientId)],
+            'name' => ['required', 'string', 'max:150', $text],
             'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
-            'date_of_birth' => ['nullable', 'date'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'whatsapp_number' => ['nullable', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'max:150'],
-            'address' => ['nullable', 'string', 'max:1000'],
-            'occupation' => ['nullable', 'string', 'max:150'],
+            'place_of_birth' => PatientCoreFields::placeOfBirthRules(required: false),
+            'date_of_birth' => ['nullable', 'date', ...($dateOfBirthChanged ? PatientCoreFields::birthDateBounds() : [])],
+            'phone' => ['nullable', 'string', 'max:50', $text],
+            'whatsapp_number' => ['nullable', 'string', 'max:50', $text],
+            'email' => ['nullable', 'string', $text, 'email', 'max:150'],
+            'address' => ['nullable', 'string', 'max:1000', $text],
+            'occupation' => ['nullable', 'string', 'max:150', $text],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
@@ -60,49 +70,11 @@ class UpdatePatientRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
-            'branch_id.required_with' => 'Cabang RME wajib dipilih saat mengisi Nomor RM manual.',
-            'manual_rm_number.required_with' => 'Nomor RM manual wajib diisi saat memilih Cabang RME.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            'name.regex' => 'Nama berisi karakter yang tidak valid.',
+            'email.regex' => 'E-mail berisi karakter yang tidak valid.',
+            ...PatientCoreFields::messages(),
         ];
-    }
-
-    public function withValidator(Validator $validator): void
-    {
-        $validator->after(function (Validator $validator) {
-            if ($validator->errors()->isNotEmpty()) {
-                return;
-            }
-
-            $patient = $this->route('patient');
-            $explicit = trim((string) $this->input('medical_record_number', ''));
-            $branchId = $this->input('branch_id');
-            $manual = trim((string) $this->input('manual_rm_number', ''));
-
-            if ($explicit !== '' || ! $branchId || $manual === '') {
-                return;
-            }
-
-            $branch = app(BranchRepositoryInterface::class)->findById((int) $branchId);
-
-            if (! $branch) {
-                return;
-            }
-
-            $rmNumbers = app(PatientMedicalRecordNumberService::class);
-            $registeredAt = $this->input('registered_at')
-                ? Carbon::parse($this->input('registered_at'))
-                : ($patient?->registered_at
-                    ? Carbon::parse($patient->registered_at)
-                    // FIX-03 — clinical calendar day, never the UTC one.
-                    : app(ClinicalClock::class)->today());
-
-            $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
-
-            if ($rmNumbers->exists($composed, $patient?->id)) {
-                $validator->errors()->add('manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
-            }
-        });
     }
 
     private function normalizeKtpNumber(mixed $value): ?string

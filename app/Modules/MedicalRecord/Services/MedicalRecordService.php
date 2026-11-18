@@ -7,11 +7,17 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Services\RmeVisitConsentService;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Support\Clinical\ClinicalClock;
+use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +28,9 @@ class MedicalRecordService
 {
     /** OD-5-6 — the refusal for a new sheet named on any visit but the authorized encounter. */
     public const MESSAGE_SHEET_ONLY_ON_ENCOUNTER = 'Lembar RM baru hanya dapat dibuat pada kunjungan yang sedang diperiksa dengan persetujuan tindakan yang sah.';
+
+    /** Rule 240 §1 (memo M3.3) — the refusal for any write on a final sheet. */
+    public const MESSAGE_FINAL_SHEET_LOCKED = 'Rekam medis ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.';
 
     public function __construct(
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
@@ -38,6 +47,13 @@ class MedicalRecordService
         private readonly ClinicalClock $clock,
         // R7-1 — the canonical visit row lock only; never a status transition.
         private readonly ClinicVisitRepositoryInterface $visits,
+        // Rule 240 §4 — finalize seals the handwriting book's pages.
+        private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
+        // Rule 240 §5 — finalize writes version 1 of the sheet.
+        private readonly RmeRecordVersionService $versions,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1 (rule 243 §2.5) — the sheet
+        // write rule of the encounter scope, re-asserted here (third layer).
+        private readonly MedicalRecordSheetWriteScope $sheetScope,
     ) {}
 
     /**
@@ -204,9 +220,11 @@ class MedicalRecordService
         ]);
     }
 
-    public function finalize(MedicalRecord $medicalRecord): MedicalRecord
+    public function finalize(MedicalRecord $medicalRecord, ?User $actor = null): MedicalRecord
     {
-        return DB::transaction(function () use ($medicalRecord) {
+        $actor ??= Auth::user();
+
+        return DB::transaction(function () use ($medicalRecord, $actor) {
             if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
@@ -218,10 +236,26 @@ class MedicalRecordService
             }
 
             // FIX-02 / CORRECTIVE-02 — finalization is a current-RME write, so it
-            // needs the same authorized, consented, in-progress encounter.
-            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+            // needs the same authorized, consented, in-progress encounter. Inside
+            // this transaction it locks the encounter's visit row first.
+            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
 
-            if (! $this->hasRequiredHandwriting($medicalRecord)) {
+            // Rule 243 §2.5 — with the encounter scope ON, only the doctor of the
+            // sheet's own visit, while in service (flag OFF: no-op).
+            $this->sheetScope->assertWritable($medicalRecord, $actor);
+
+            // Rule 240 §1 (memo M3.3) — re-decided on the sheet row, locked after
+            // the visit (rule 223 §1 item 6): a finalize that committed after the caller
+            // loaded its copy is returned as it is, never rewritten.
+            $locked = $this->lockSheet($medicalRecord);
+
+            if ($locked->status === MedicalRecord::STATUS_FINAL) {
+                $medicalRecord->refresh();
+
+                return $locked;
+            }
+
+            if (! $this->hasRequiredHandwriting($locked)) {
                 throw ValidationException::withMessages([
                     'handwriting' => 'RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.',
                 ]);
@@ -231,17 +265,39 @@ class MedicalRecordService
             // Blocks ONLY on an explicitly configured pilot_enforced branch
             // without an active primary diagnosis or a reasoned override;
             // informational/warning branches are never blocked here.
-            $this->diagnosisRollout->assertFinalizationAllowed($medicalRecord);
+            $this->diagnosisRollout->assertFinalizationAllowed($locked);
 
-            $finalized = $this->medicalRecords->update($medicalRecord, [
+            /*
+             * Rule 240 §4 (memo M3.3, owner decision 2026-11-17) — finalizing seals
+             * the patient's handwriting pages as they stand, under the visit and
+             * sheet locks taken above (rule 223 §1 item 6): from now on a sealed page is
+             * never overwritten (MedicalRecordHandwritingService::save()); a
+             * correction is a supervised amendment. EVERY not-yet-sealed page of
+             * the book is sealed, the live encounter's own included (a returning
+             * patient's book lives on the canonical visit, so sparing "the live
+             * encounter's pages" left a final book unsealed — review HIGH-1). The
+             * live encounter keeps APPENDING new pages; it overwrites only its
+             * own, unsealed pages (MedicalRecordHandwritingService::save()).
+             */
+            $this->handwritings->sealBookPages((int) $locked->patient_id, (int) $locked->getKey());
+
+            $finalized = $this->medicalRecords->update($locked, [
                 'status' => MedicalRecord::STATUS_FINAL,
                 'finalized_at' => now(),
-                'finalized_by' => Auth::id(),
+                'finalized_by' => $actor?->getKey() ?? Auth::id(),
             ]);
+            $medicalRecord->refresh();
 
             // Sprint 64.0 — lazily backfill workspace audit columns (no-op once
             // stamped).
             $this->workspace->stampWorkspaceFields($finalized);
+
+            // Rule 240 §5 (memo M3.3 PR3) — version 1 of the final sheet: its fields,
+            // diagnoses and the pages just sealed, hash-chained and immutable,
+            // written under the visit and sheet locks so it commits with the
+            // finalize or not at all. The already-final paths above return before
+            // this line, so a re-finalize writes nothing.
+            $this->versions->recordFinal($finalized, Auth::id());
 
             /*
              * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — finalizing a
@@ -252,9 +308,9 @@ class MedicalRecordService
              * completed the doctor's EXAMINATION and handed the patient to the
              * cashier. Those are two different facts. A doctor who finalizes one
              * RM sheet may still have an odontogram to record, a second sheet to
-             * write, or a treatment decision to revise — and since Sprint 59 a
-             * finalized record is explicitly editable again, so "final" was never
-             * a reliable proxy for "the examination is over".
+             * write, or a treatment decision to make — and "final" closes one
+             * sheet, not the examination (since rule 240 a final sheet is locked
+             * and corrected only by a supervised amendment).
              *
              * Document finalization is now purely a clinical-document state.
              * The workflow transition in_progress -> cashier_pending happens ONLY
@@ -271,33 +327,44 @@ class MedicalRecordService
     }
 
     /**
-     * Sprint 59 — doctors may revise a medical record at any time, including
-     * records that were previously finalized and visits from older dates. The
-     * finalization lock that previously blocked edits is removed; the `status`,
-     * `finalized_at`, and `finalized_by` columns are preserved as-is for
-     * backward compatibility.
+     * Rule 240 §1 (memo M3.3, owner decision 2026-11-17) — only a DRAFT sheet is
+     * edited. A final sheet is locked and corrected only through a supervised
+     * amendment; this supersedes the Sprint 59 "revisable after finalization"
+     * behaviour. The lock reads `status` alone, so a sheet finalized before this
+     * rule is locked too (no backfill). Decided here, on the locked row, so it
+     * binds Super Admin, whom Gate::before lets past MedicalRecordPolicy::editSheet.
      *
      * Only keys actually present in the submitted payload are written, so a
      * partial save (e.g. only `notes`) never blanks out previously stored
      * fields the doctor did not touch.
      */
-    public function updateDraft(MedicalRecord $medicalRecord, array $data): MedicalRecord
+    public function updateDraft(MedicalRecord $medicalRecord, array $data, ?User $actor = null): MedicalRecord
     {
-        return DB::transaction(function () use ($medicalRecord, $data) {
+        $actor ??= Auth::user();
+
+        return DB::transaction(function () use ($medicalRecord, $data, $actor) {
             if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
                 ]);
             }
 
-            // FIX-02 / CORRECTIVE-02 — editing is a current-RME write.
-            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+            // FIX-02 / CORRECTIVE-02 — editing is a current-RME write. Inside this
+            // transaction it locks the encounter's visit row first; rule 240 §1 —
+            // then the sheet row (rule 223 §1 item 6), a final sheet answering with its
+            // lock before a missing PTM (§1.8).
+            $locked = $this->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+            // Rule 243 §2.5 — the sheet's own visit (encounter scope ON only),
+            // after the authoring gate and the rule 240 lock (§1.8 order kept).
+            $this->sheetScope->assertWritable($locked, $actor);
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
             ]));
 
-            $updated = $this->medicalRecords->update($medicalRecord, $safe);
+            $updated = $this->medicalRecords->update($locked, $safe);
+            $medicalRecord->refresh();
 
             // Sprint 64.0 — lazily backfill workspace audit columns for legacy
             // sheets created before this sprint (no-op once stamped).
@@ -368,7 +435,8 @@ class MedicalRecordService
      *
      * The authoring gate runs first, as on the handwriting path, so both paths
      * take the visit rows in the same order. The service itself re-asserts the
-     * `create` policy for $actor on the LOCKED target (CG-06), which may differ
+     * `startBook` policy (`create` unless the encounter scope applies, rule 243
+     * §2.11) for $actor on the LOCKED target (CG-06), which may differ
      * from the visit the caller saw before the lock; no caller can skip it. An
      * existing book is adopted (returned with false); otherwise the sheet is
      * created on the locked canonical visit (true).
@@ -386,7 +454,14 @@ class MedicalRecordService
 
             $target = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
 
-            Gate::forUser($actor)->authorize('create', [MedicalRecord::class, $target]);
+            // Rule 243 §2.11 (PR A3) — `startBook` (the patient-level `appendPage`
+            // rule the handwriting door asks too) only while the encounter scope
+            // applies to the actor; otherwise exactly the `create` it asked
+            // before, through the Gate, so every `create` hook still applies.
+            Gate::forUser($actor)->authorize(
+                app(DoctorPatientScopeService::class)->abilityFor($actor, 'startBook', 'create'),
+                [MedicalRecord::class, $target],
+            );
 
             $book = $this->workspace->bookOn($patientId, $target, $this->recordOnVisit(...));
 
@@ -394,10 +469,34 @@ class MedicalRecordService
                 return [$book, false];
             }
 
+            // Rule 243 §2.5 (PR A1b) — typed content on the new book belongs to
+            // its anchor (the locked canonical visit), so with the encounter scope
+            // ON it needs that visit's writer, exactly like updateDraft(). A book
+            // started WITHOUT typed content is the patient-level handwriting book
+            // and is allowed as before. When a book already exists (or a
+            // concurrent first save created it) the early return above opens it
+            // and this request's typed fields are not written; no form sends
+            // typed fields here (only the CSRF token and source_visit_id).
+            if ($this->hasTypedContent($data)) {
+                $this->sheetScope->assertTypedWriteOn($target, $actor);
+            }
+
             $sheet = $this->createDraftOn($target, (int) $actor->getKey(), $data, adoptExisting: true, actor: $actor);
 
             return [$sheet, $sheet->wasRecentlyCreated];
         });
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function hasTypedContent(array $data): bool
+    {
+        foreach (['subjective', 'objective', 'assessment', 'plan', 'notes'] as $field) {
+            if (filled($data[$field] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** R7-1 — step 2 of the book selector, read through this service's repository. */
@@ -430,6 +529,93 @@ class MedicalRecordService
         }
 
         return null;
+    }
+
+    /**
+     * Rule 240 §1 — the one refusal every write on a final sheet throws: the sheet
+     * service, the structured-diagnosis writes and the emergency override. Pass
+     * the row the caller LOCKED inside its transaction, never a copy it loaded
+     * before, so a finalize that committed meanwhile is seen.
+     *
+     * @throws ValidationException
+     */
+    public static function assertSheetUnlocked(MedicalRecord $lockedSheet): void
+    {
+        if ($lockedSheet->status === MedicalRecord::STATUS_FINAL) {
+            throw ValidationException::withMessages([
+                'medical_record' => self::MESSAGE_FINAL_SHEET_LOCKED,
+            ]);
+        }
+    }
+
+    /**
+     * Rule 240 §1.8 — the refusal order of a write on an EXISTING sheet (notes,
+     * structured diagnoses, the override): the RME authoring authority (rule 241
+     * §2) and the final lock together, shared by the three sheet services.
+     *
+     * The authority decides the encounter and the actor first and the EXECUTED
+     * consent last. A FINAL sheet answers with its lock BEFORE that consent:
+     * signing the PTM can never unlock it, so a missing signature is never the
+     * reason given for it. When the authority's ONLY refusal is the PTM
+     * (RmeVisitConsentService::isPtmRefusal(), gate PTM_GATE_RME), the
+     * encounter's visit row is locked and then the sheet row through $lockSheet
+     * (rule 223 §1 item 6), and a final sheet is refused with the lock;
+     * otherwise the refusal stands and nothing is written.
+     *
+     * Inside the write transaction it returns the sheet row locked after the
+     * visit row and found draft. Outside one (a service's pre-check before
+     * validation) it locks nothing and reads the sheet fresh; the transaction
+     * decides again.
+     *
+     * @param  (Closure(): MedicalRecord)|null  $lockSheet  the caller's own sheet-row lock (default FOR NO KEY UPDATE)
+     *
+     * @throws ValidationException
+     */
+    public function assertSheetAuthoringAllowed(MedicalRecord $sheet, ?User $actor = null, ?Closure $lockSheet = null): MedicalRecord
+    {
+        $inWrite = DB::transactionLevel() > 0;
+        $current = function () use ($sheet, $lockSheet, $inWrite): MedicalRecord {
+            if (! $inWrite) {
+                return $sheet->fresh()
+                    ?? throw (new ModelNotFoundException)->setModel(MedicalRecord::class, [$sheet->getKey()]);
+            }
+
+            return $lockSheet !== null ? $lockSheet() : $this->lockSheet($sheet);
+        };
+
+        try {
+            $this->consents->assertRmeAuthoringAllowedForPatient($sheet->patient_id, $actor);
+        } catch (ValidationException $refusal) {
+            // Typed by gate (review LOW-3): the list the authority raises from.
+            if (RmeVisitConsentService::isPtmRefusal($refusal, RmeVisitConsentService::PTM_GATE_RME)) {
+                $encounter = $inWrite ? app(ActiveEncounterResolver::class)->currentFor($sheet->patient_id) : null;
+
+                if ($encounter !== null) {
+                    $this->visits->lockForStatusDecision((int) $encounter->getKey());
+                }
+
+                self::assertSheetUnlocked($current());
+            }
+
+            throw $refusal;
+        }
+
+        $row = $current();
+        self::assertSheetUnlocked($row);
+
+        return $row;
+    }
+
+    /**
+     * The sheet row under FOR NO KEY UPDATE — the record lock the handwriting save
+     * takes too (MedicalRecordRepositoryInterface::lockForHandwriting), so an edit,
+     * a finalize and a page save of one record serialise. Callers take it AFTER
+     * the encounter's visit row (rule 223 §1 item 6).
+     */
+    private function lockSheet(MedicalRecord $medicalRecord): MedicalRecord
+    {
+        return $this->medicalRecords->lockForHandwriting((int) $medicalRecord->getKey())
+            ?? throw (new ModelNotFoundException)->setModel(MedicalRecord::class, [$medicalRecord->getKey()]);
     }
 
     public function requiresHandwritingBeforeFinal(): bool

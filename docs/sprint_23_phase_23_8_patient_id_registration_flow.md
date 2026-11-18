@@ -1,5 +1,10 @@
 # Sprint 23 Phase 23.8 — Patient ID Format Finalization + New Patient Registration Flow
 
+> **REVISED by rule 244 (2026-11-17, memo M4.1 "Auto, read-only").** New registrations no longer take a typed
+> `NOMOR_RM_MANUAL` or registration date: the sequence is issued automatically per branch and clinic year
+> (`PatientRmNumberAllocator`) and both forms show it read-only. The format is unchanged and no existing number is
+> rewritten. See `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.
+
 ## 1. Summary
 
 - **Status:** PASS (local only — no VPS work, no deploy, additive migration only).

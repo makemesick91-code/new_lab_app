@@ -50,6 +50,18 @@ owns the advisory-lock pattern §4 reuses.
     dates, page timestamps) to a front-desk account whose canonical record is in its own branch — the bytes are
     refused; and D1 narrows the context-bound non-clinical roles only, so a non-context-bound role created at runtime
     keeps the previous RME-wide read (never wider than before).
+8c. **DMS-RME-ADJACENT-VISITS-BRANCH-SCOPE-1 (2026-11-17, security fix, no owner decision):** the prev/next visit
+    arrows on the prescription and odontogram pages are a clinical-document read too. Before this fix they were
+    resolved over every RME branch for every viewer: a front-desk or cashier account working at branch A, on a branch-A
+    visit, saw the patient's branch-B visit number and date in the arrow title (live, every flag OFF), and a doctor an
+    ACTIVE visit of another room. `ClinicVisitService::adjacentVisits()` now takes the explicit viewer (REQUIRED, judged
+    as its persisted row) and the target page's own ability (`viewForVisit` on `RmePrescription`, `create` on
+    `Odontogram`); it re-asserts that ability on the anchor (refused: no arrows), reads candidates only in
+    `clinicalDocumentBranchIdsFor()` within the RME set, and offers in each direction the NEAREST visit the viewer may
+    open, so the doctor patient and room scopes apply exactly as on the page. A refused visit is skipped and never
+    named; skipping (not hiding) keeps a patient who alternates branches navigable. The prescription page read the key
+    `prev` instead of `previous` and never rendered its previous arrow; fixed in the same change. Pinned by
+    `RmeClinicalDocumentReadScopeAdjacentVisitsTest`. Supersedes rule 199 §15 for `adjacentVisits()` only.
 
 ## 2. The printed prescription names come from the clinical records (D6, P8R-S3)
 

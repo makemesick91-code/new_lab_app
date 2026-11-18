@@ -50,7 +50,8 @@ class DiagnosisRolloutController extends Controller
     public function override(GrantDiagnosisOverrideRequest $request, ClinicVisit $clinicVisit, MedicalRecord $medicalRecord): RedirectResponse
     {
         abort_if((int) $medicalRecord->clinic_visit_id !== (int) $clinicVisit->id, 404);
-        $this->authorize('update', $medicalRecord);
+        // Rule 240 §1 — an override on a final sheet is refused (the service re-decides it).
+        $this->authorize('editSheet', $medicalRecord);
 
         $this->rollout->grantOverride($medicalRecord, (string) $request->validated('reason'), $request->user());
 

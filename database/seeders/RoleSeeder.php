@@ -134,6 +134,11 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_branch_dashboard',
             'manage patients',
+            // Memo M4.2 (rule 244 §5.3, plan default 2: Front Office) — the
+            // no-phone exception at a new registration. Granted to the registration
+            // half of Front Office so the Front Office = Admin Klinik + Kasir union
+            // stays exact (FrontOfficeRoleTest).
+            'register_patient_without_phone',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',
@@ -305,10 +310,23 @@ class RoleSeeder extends Seeder
             'send_prescription_whatsapp',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
-            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
-            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — read the signed
+            // PERSETUJUAN TINDAKAN MEDIS. DMS memo M1.1–M1.3 PR2 (rule 241 §4;
+            // owner default 1, 2026-11-17): the Doctor no longer CAPTURES the
+            // patient's signature (`manage_rme_consents` removed) — the front
+            // office, Kasir and Admin Klinik do, Supervisor RME as fallback; the
+            // doctor countersigns instead.
             'view_rme_consents',
-            'manage_rme_consents',
+            // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — countersign the PTM of the
+            // doctor's own visit (identity, not role, is decided in the service).
+            'countersign_rme_consents',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — request a
+            // supervised amendment of a final record; only as its doctor of record
+            // or finalizer (RmeAmendmentService). Never the approve permission.
+            'request_rme_amendments',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos (flag OFF).
+            'upload_rme_clinical_photos',
+            'view_rme_clinical_photos',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
             // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency
@@ -391,6 +409,10 @@ class RoleSeeder extends Seeder
             // Read only by construction: no upload, no review, no publish, no
             // void, no wave management, and no approval authority.
             'view_legacy_rme_migration_operations',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b;
+            // owner decision 2026-11-17) — READ the stored paper-card reasons
+            // (code and note), read only: the Owner never enters a paper card.
+            'view_patient_rm_paper_card_reasons',
         ],
         'Kasir' => [
             'view dashboard',
@@ -441,6 +463,8 @@ class RoleSeeder extends Seeder
             'manage_rme_consents',
             // --- from Admin Klinik -----------------------------------------
             'manage patients',
+            // Memo M4.2 (rule 244 §5.3, plan default 2) — the no-phone exception.
+            'register_patient_without_phone',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',
@@ -507,6 +531,9 @@ class RoleSeeder extends Seeder
             'view_clinic_visits',
             'manage_clinic_visits',
             'complete_rme_examination',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — clinical photos (flag OFF).
+            'upload_rme_clinical_photos',
+            'view_rme_clinical_photos',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
             // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
@@ -557,6 +584,13 @@ class RoleSeeder extends Seeder
             'approve_rme_refund',
             // Patient registration/edit + KTP scan documents (RME entry point)
             'manage patients',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan
+            // defaults 1 and 4) — old paper-card Nomor RM and the legacy patient
+            // CSV commit. Supervisor RME only (not Admin Klinik, so the Front
+            // Office = Admin Klinik + Kasir union is untouched).
+            'register_patient_paper_card_rm',
+            // Rule 244 §4.3 (PR-3b) — read the stored paper-card reason and note.
+            'view_patient_rm_paper_card_reasons',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',
@@ -576,6 +610,15 @@ class RoleSeeder extends Seeder
             'manage_rme_consents',
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — supervised consent void.
             'void_rme_consents',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the checker of a
+            // supervised amendment; never the maker (no request_rme_amendments), never
+            // on a record it is the doctor of or finalized (RmeAmendmentService).
+            'approve_rme_amendments',
+            // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos and
+            // VOID them (supervised, never one this account uploaded; PR4b, §9);
+            // upload is Doctor and Perawat (flag OFF).
+            'view_rme_clinical_photos',
+            'void_rme_clinical_photos',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',

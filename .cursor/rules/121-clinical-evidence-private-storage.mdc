@@ -35,6 +35,9 @@ the gap silently.
    cookie, so a linked image exports blank. `orderedHandwritingPages(true)`.
 5. **A storage disk is a data authority, not a cache.** No silent fallback to
    another disk when a write or read fails.
+   > TEMPORARY EXCEPTION to §1 and §5 (owner decision 2026-11-17): consent signatures keep an explicit, read-only, config-switched
+   > fallback to their pre-change disk until their copy is applied and verified — rule 237 §14.5a. Writes never fall
+   > back; a damaged object on the clinical disk is never replaced by the old copy.
 6. **Migrations preserve object keys verbatim** so no database column is
    rewritten. Copy and purge are separate phases; nothing is deleted before a
    byte-identical SHA-256 copy is proven.

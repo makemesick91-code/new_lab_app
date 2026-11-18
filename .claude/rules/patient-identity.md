@@ -67,9 +67,9 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 
 - **AIR-PAT-11** Compose and parse the Nomor RM `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}` only through
   `PatientMedicalRecordNumberService`. The RM year and the registration date come from `ClinicalClock`
-  (`composeForRegistration()`, `PatientService::resolveRegisteredAt()`, and the `StorePatientRequest`,
-  `UpdatePatientRequest`, `StoreClinicVisitRequest` pre-checks); a supplied date is used verbatim. Never renumber an
-  existing patient. Source: `110-post-rme-odontogram-stabilization.mdc` §4.
+  (`composeForRegistration()` and, for a new patient, `PatientService::create()`; the request pre-checks went with the
+  typed number, AIR-PAT-34); a supplied legacy date is used verbatim. Never renumber an existing patient. Source:
+  `110-post-rme-odontogram-stabilization.mdc` §4.
 - **AIR-PAT-12** `branchCodeFrom()` reports the canonical code (`DG-TKM1-…` → `TLK1`), `literalBranchCodeFrom()` the
   printed one; `canonicalizeBranchCode()` changes only the branch segment and returns null for a non-canonical number.
   An old-card number is found by widening the search with `equivalentNumbers()`, never by a second patient row or a
@@ -112,8 +112,9 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 
 ### KTP camera OCR
 
-- **AIR-PAT-21** OCR output is a suggestion: nothing is written without the operator ticking it and
-  `ktp_ocr_verified` accepted; missing or invalid values are null; the NIK only cross-checks (never derive DOB or
+- **AIR-PAT-21** OCR output is a suggestion: nothing is written without the operator ticking it (or clicking
+  "Gunakan" for the place of birth, `244-…` §5.9) and `ktp_ocr_verified` accepted; each newly applied value
+  withdraws an earlier tick; missing or invalid values are null; the NIK only cross-checks (never derive DOB or
   gender from it) and is exactly 16 digits, never padded; disagreement between the whole-card and field-box reads is a
   `conflict` the operator resolves, never by confidence; a retry never overwrites an operator value. Only existing
   `mst_patients` columns are applied. Source: `177-ktp-camera-ocr-suggestions.mdc` §1–5, `179-ktp-field-based-roi-ocr.mdc` §7–9, §12.
@@ -199,7 +200,8 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 | `.cursor/rules/168-legacy-patient-staged-verification-cancel.mdc` | Legacy patient CSV staging and commit |
 | `.cursor/rules/169-legacy-patient-rollback-identity-reservation.mdc` | Rolled-back batches still reserve NIK and RM |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Patient master and patient document route keys constrained (404, never 500) |
-| `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17) |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor-visible patient fields (memo M3.1, §3) |
+| `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17); required core fields of a new patient and the no-phone exception (memo M4.2, §5) |
 
 ## History
 
@@ -230,3 +232,52 @@ file.
   `DatabaseRouteKey::PATTERN` per route (the resource via `Route::resource(...)->where([...])`), never `whereNumber`:
   `[0-9]+` let overflow reach PostgreSQL (500) and a leading-zero alias stream or DELETE a real KTP document.
   `patient` is generic: never global. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
+
+### Automatic Nomor RM (rule 244)
+
+- **AIR-PAT-34** A new patient's Nomor RM comes only from `PatientRmNumberAllocator::allocate()` inside
+  `PatientService::create()` (branch required and inside the actor's working-branch scope, MAIN refused, year and
+  `registered_at` from `ClinicalClock`); no request field supplies it, and an edit never changes the number, the branch
+  or the registration date. "Taken" is always `PatientRmNumberAllocator::isTaken()` (alias codes, numeric value in any
+  zero padding, any case, soft-deleted patients, merge aliases); a number from outside the system (legacy CSV, PR-3
+  paper card) is stored verbatim only after `claimExisting()` locked its branch-year counter, and the claim raises the
+  counter (continue after the highest). A Nomor RM unique violation is retried up to 3 times (4 attempts) under the
+  held lock, then 422. Source: `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.
+- **AIR-PAT-35** A Nomor RM a person enters (old paper card at Master Data registration, legacy CSV commit) needs
+  `register_patient_paper_card_rm` plus `manage patients` (Supervisor RME; Super Admin via `'*'`): fields rendered
+  only under `@can`, a posted value refused (403), both re-asserted in `PatientService::createWithPaperCardNumber()`
+  and `LegacyPatientImportService::commit()`. The pilot backup importer (`rme:import-pilot-backup`) is a CLI command
+  with no actor or permission, gated by the claim alone. Every claim passes the claim cap (owner 2026-11-17): the
+  current-year counter rises by at most +1000 — per claim for a paper card, in total per legacy CSV batch or pilot run
+  (from the counter locked at its start) — and never above 9999; a later year is refused; a current-year non-digit
+  sequence or a value of zero or nine digits and up is refused; a refusal is escalated to Supervisor RME and moves
+  nothing. The reason and the number checks live in the service, so they bind Super Admin. Source: `244-…` §2.6, §4.
+- **AIR-PAT-36** The paper-card reason is a configured code (`patient.paper_card_reasons`) plus an optional note
+  (10–500, required for `LAINNYA`; valid UTF-8, no control characters), stored only in
+  `trx_patient_rm_paper_card_registrations` in the claim's transaction: immutable for the life of the patient record
+  (model throws on update/delete, PostgreSQL trigger refuses UPDATE/DELETE/TRUNCATE, no repository write path; a
+  failed insert rethrows without values; a future correction is a NEW row with its own audit). Read only with `view_patient_rm_paper_card_reasons`
+  (Supervisor RME, Owner; Super Admin via `Gate::before`) on two `private, no-store` routes outside `manage patients`,
+  re-asserted in `PatientService` with the working-branch scope (out of scope 404; soft-deleted patients and rows
+  merged into the patient shown, read only; each read audited with ids). The audit payload holds ids and
+  `reason_code` only; the note never reaches a log, an export or the session flash. Source: `244-…` §4.3, §4.7.
+- **AIR-PAT-37** A NEW patient (Master Data → Tambah Pasien and Kunjungan → Pasien Baru, one builder
+  `PatientCoreFields::rules()`) needs gender, place of birth, date of birth (1900..clinical day), phone OR WhatsApp,
+  address and occupation; NIK and the KTP scan stay optional (16 digits when typed). No number at all only under
+  `register_patient_without_phone` (Front Office + Admin Klinik) with a reason code (note for `LAINNYA`): 403 from both
+  requests, re-asserted in `PatientService`, audited with ids and `reason_code` only, closed (audited once) when an
+  edit records a number. An edit keeps every field optional and re-judges only a changed date of birth or NIK; legacy
+  rows are never forced. A historical paper-card registration (`register_patient_paper_card_rm` + `manage patients`
+  + the full card set, validated and claimed) is exempt from the core fields, never an ordinary one. The no-phone note
+  is read only by Supervisor RME and Owner on the restricted reasons page (audited, ids only); others see the code;
+  never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes; the readers list open exceptions on
+  the restricted index. A failed patient insert or update logs only the SQLSTATE (never the row), and invalid UTF-8 or
+  NUL is a 422 on both registration forms and the edit form. The KTP OCR place of birth is only a suggestion beside
+  that field ("Saran dari KTP … Gunakan"): offered when it passes the server rule, written as text, applied only by
+  the operator's click (then `ktp_ocr_verified` is required again), never auto-filled, no new request; "Terapkan ke
+  Formulir" never applies it. Source: `244-…` §5.3, §5.5, §5.9.
+- **AIR-PAT-38** A clinical screen shows a patient's identity only as `PatientIdentityPresenter` decides it
+  (`forViewer()`, the consent page's `forConsentViewer()`): a Doctor (rule 138's definition, dual roles included) gets
+  name, RM number, place/date of birth, age, occupation and gender, never the phone, WhatsApp, email, address or NIK;
+  every other role is unchanged. The master form (`manage patients`) stays the full record for the non-doctor role.
+  Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §3.

@@ -1,0 +1,249 @@
+---
+description: Internal memo M1.1–M1.3 (rule 241) — the PERSETUJUAN TINDAKAN MEDIS carries two signatures, the patient's (front office) and the treating doctor's (from the doctor's own treatment room). §1 (PR1) — the doctor's countersignature is its own insert-only record (UNIQUE per consent; the consent row is never updated), signed only by the account linked to the active doctor who is both the locked visit's and the consent's doctor (identity binds Super Admin), never by the account that captured the patient signature, only on the live consent of an in_progress visit, visit row locked first; bounded canvas validated before any write, object on ClinicalEvidenceStorage, a failure removes only this call's object; audit RME_CONSENT_DOCTOR_SIGNED with ids only. §2–§5 (PR2) — both signatures gate every clinical WRITE (RME, handwriting, diagnoses and override, performed treatments, the odontogram — visit locked first, then the chart — and Selesai Pemeriksaan); reads, payment and prescriptions stay outside; a void reopens the gate; the UI names the PTM state; the Doctor role no longer captures the patient signature. §6 (PR3) — consent template v2026.2 (clause 8 clinical documentation, clause 9 publication, two explicit YA/TIDAK answers; additive nullable publication_consent) built INACTIVE: selected for a new consent only with the risky flag rme.consent_template_v2026_2 on AND approved wording without the draft marker, otherwise 2026.1 exactly as before (refusal logged, no PII); historical consents byte for byte; clause 9 gates nothing; no role gains access; activation is an owner decision blocked on the final wording.
+globs: app/Modules/Consent/**, app/Modules/Odontogram/**, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, resources/views/rme/consents/**, resources/views/rme/visits/**, resources/views/rme/patient-queue/index.blade.php, database/migrations/2026_11_17_200001_create_trx_rme_visit_consent_doctor_signatures_table.php, database/migrations/2026_11_17_210001_add_publication_consent_to_trx_rme_visit_consents_table.php, config/rme_consent.php, tests/Feature/RME/RmeVisitConsentDoctorCountersignTest.php, tests/Feature/RME/RmeVisitConsentTemplateVersionSplitTest.php
+alwaysApply: false
+---
+
+# PTM double signature (rule 241)
+
+Source: the internal memo of 2026-10-17 (M1.1–M1.3) and the owner's decisions of 2026-11-17, recorded in
+`docs/sprints/dms-rme-comprehensive-closure-1.md`. Delivered in PRs; each PR adds its section. Builds on rule 237 §14 (one valid consent per visit,
+supervised void, signatures on the clinical evidence disk).
+
+## 0. Owner decisions (CG-22)
+
+- The PTM carries TWO signatures: the patient (or the person consenting) signs through the front office; the treating
+  doctor signs through the doctor's own screens. Both will be required before RME and odontogram writing (PR2, not
+  yet). "Mulai Pemeriksaan" stays before consent. The audit trail and the supervised void (rule 237 §14.2) are kept.
+  Historical consents are never changed.
+- Plan defaults accepted on 2026-11-17, including permission `countersign_rme_consents` for Doctor and the insert-only
+  countersignature record.
+
+## 1. The doctor's countersignature — capture and storage (PR1; no gate change)
+
+1. **Its own record.** `trx_rme_visit_consent_doctor_signatures` (additive migration): `rme_visit_consent_id`
+   (UNIQUE), `doctor_id`, `signed_by` (the account), `signature_path` (private object key, `$hidden`),
+   `signature_sha256` (of the stored bytes), `signed_at` (clinic time, `ClinicalClock`, as the consent's own
+   `signed_at`), `created_at`; every foreign key `restrictOnDelete`; `down()` refuses while rows exist. The model
+   `RmeVisitConsentDoctorSignature` throws on update and on delete. The consent row is never updated (AIR-RMC-12);
+   `RmeVisitConsent::doctorCountersignature()` / `isDoctorCountersigned()` read the record.
+2. **The legacy drawing is not the step.** The optional doctor drawing on the capture form
+   (`trx_rme_visit_consents.doctor_signature_path`) is display history: it is not bound to an account, it never counts
+   as the countersignature, and no consent is countersigned retroactively.
+3. **The one writer.** `RmeVisitConsentService::countersign(RmeVisitConsent, User, array)`:
+   - checks `countersign_rme_consents` FIRST (CG-06; the route and the policy ask before it), so an account without
+     it never has its payload parsed; then decodes `doctor_signature` with `PrescriptionCanvasDecoder` and
+     `MAX_SIGNATURE_PAYLOAD_LENGTH` (the rule 228 §10 / rule 237 §5 bounds the patient's signature has): missing,
+     blank, oversized, over-declared or non-PNG is refused before anything is written;
+   - inside one transaction: locks the visit row FIRST (`lockForStatusDecision`, FOR NO KEY UPDATE, rule 223 §6 — the
+     lock and order of `sign()`, `void()` and `transitionStatus()`), re-reads the consent, drops the request's memoised
+     doctor identity (`DoctorIdentityResolver::forget()`) so a deactivation or unlink committed meanwhile is seen, then
+     decides. Every AUTHORIZATION guard runs before any STATE guard, each with its own message (403,
+     `AuthorizationException`): permission (`MESSAGE_COUNTERSIGN_PERMISSION`); the consent's visit exists
+     (`MESSAGE_COUNTERSIGN_ENCOUNTER`); branch and patient scope (`MESSAGE_OUT_OF_SCOPE`); the encounter authority every
+     clinical writer uses (`actorMayWorkOnEncounter`: never the front-office tier, a clinical role,
+     `manage_clinic_visits`, working branch, doctor room, doctor-patient scope; `MESSAGE_COUNTERSIGN_ENCOUNTER`);
+     identity — a linked doctor (`DoctorIdentityResolver`, `mst_doctors.user_id`; `MESSAGE_COUNTERSIGN_NOT_LINKED`),
+     active (`MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE`), equal to the locked visit's `doctor_id`
+     (`MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR`) and to the consent's `doctor_id` (`MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR`).
+     Then the state guards (`ValidationException` on `consent`): visit `in_progress` (`MESSAGE_COUNTERSIGN_WINDOW`); the
+     consent is the visit's live consent (`MESSAGE_COUNTERSIGN_VOIDED`); maker ≠ checker — not the account that captured
+     the patient signature (`signed_by`; `MESSAGE_COUNTERSIGN_SELF`); not yet countersigned
+     (`MESSAGE_COUNTERSIGN_DUPLICATE`). Identity, not role, so a Super Admin, Owner or Supervisor RME that is not that
+     doctor is refused although `Gate::before` passes them through every policy. A doctor re-placed on the visit after
+     the patient signed cannot countersign until a void and a new patient signature;
+   - writes the object to `ClinicalEvidenceStorage` under `rme-consents/{consent_number}/doctor-countersign-<16 hex>.png`
+     (fresh random key, rule 224 §3), then inserts the row inside a savepoint: a UNIQUE violation (the only unique key
+     besides the id) becomes `MESSAGE_COUNTERSIGN_DUPLICATE`;
+   - audits one `RME_CONSENT_DOCTOR_SIGNED` row on `trx_rme_visit_consents` with `clinic_visit_id`, `doctor_id` and
+     `doctor_signature_id` only — no name, path or hash;
+   - removes only the object this call wrote when the body fails before it finished (rule 224 §1a); never a committed
+     object.
+4. **HTTP.** `rme.consents.countersign.create` (GET, `cache.headers:private;no_store;max_age=0` — it renders the
+   document) and `rme.consents.countersign` (POST), both `permission:countersign_rme_consents`. `{consent}` is
+   constrained by the global `DatabaseRouteKey` pattern; no per-route `where` (AIR-RMC-37).
+   `RmeVisitConsentPolicy::countersign` (permission, working branch, not voided, visit `in_progress`, doctor-patient
+   scope, then the service's unlocked `assertCountersignable()`: an `AuthorizationException` denies; a state refusal,
+   reachable only after every authorization guard passed, allows so the operator learns why);
+   `CountersignRmeVisitConsentRequest` authorizes before it validates (R8A-2) and accepts only `doctor_signature`
+   (already in `dontFlash`, rule 237 §3; never flashed back). An out-of-branch or other-doctor request answers 403,
+   consistent with the consent `view` (rule 237 §14.6); an unknown or non-canonical id answers 404. A state refusal
+   on the GET form redirects to the consent page with an error toast; on the POST it is a field error on `consent`.
+5. **Entry points.** Ruang Perawatan (`rme.treatment-room-worklist.index`) shows "Tanda Tangani PTM" on a row only when
+   `RmeVisitConsentService::countersignableConsentsFor()` (called by the controller, never Blade) returns that visit's
+   consent; the consent page shows the same button when `canCountersign()` is true. Both are presentation; the route,
+   policy and service decide.
+6. **Rendering.** The controller passes the countersignature record, its image (inline data URI, rule 121) and
+   `countersignaturePending()` (live consent, visit `in_progress`, none recorded — whoever views). The document's
+   doctor box adds, after the legacy optional drawing (which always renders exactly as before, also beside a
+   countersignature), the countersignature labelled "Tanda tangan dokter (PTM)" with the doctor's name and
+   "dd/mm/YYYY HH:mm WITA" — or "Gambar tanda tangan dokter tidak tersedia." when its object is unreadable — and, only
+   while pending, "Belum ditandatangani dokter". A historical consent (no countersignature, nothing pending: finished
+   or cancelled visit, voided consent) renders byte for byte as before rule 241 (the additions use column-0
+   directives and no Blade comments, so they emit nothing; pinned against a copy of the old partial in
+   `tests/Fixtures/rme-consent-document-pre-rule-241.blade.php.txt`). Never an empty image (rule 224 §7). The consent
+   page's trail shows the PTM doctor row only when a countersignature exists or is pending.
+7. **Unchanged in PR1 (history; superseded by §2–§4 in PR2).** Every authoring gate (`assertRmeAuthoringAllowedForPatient()`, the pre-consent odontogram
+   authority of rule 134, performed treatments, "Selesai Pemeriksaan") still needs only the patient's valid consent;
+   payment never consults consent (AIR-RMC-11); the supervised void works exactly as before and keeps a voided
+   consent's countersignature row; the capture form, its optional doctor drawing and the Doctor role's
+   `manage_rme_consents` are untouched (PR2).
+8. **Deploy.** `php artisan migrate --force` (additive) after the runner's backup, then `PermissionSeeder`, then
+   `RoleSeeder`, then `permission:cache-reset` (CG-15).
+9. **Tests.** `tests/Feature/RME/RmeVisitConsentDoctorCountersignTest.php` (token `RmeVisitConsent`, declared in
+   `critical_gate_mandatory_suites`). A multi-process PostgreSQL race suite is not part of PR1: the visit lock order and
+   the UNIQUE backstop are proven in-process.
+
+## 2. Both signatures gate clinical WRITING (PR2)
+
+1. **One predicate.** `RmeVisitConsentService::hasExecutedConsent(ClinicVisit)`: the visit's live consent
+   (`validConsentFor()`) carries its doctor countersignature (§1). `ptmStateFor()` names the three states
+   `PTM_AWAITING_PATIENT` (no live consent), `PTM_AWAITING_DOCTOR` (live consent, no countersignature) and
+   `PTM_EXECUTED`; `ptmStatesFor()` answers a page of visits in one query. Persisted evidence only (AIR-RMC-10);
+   `hasValidConsent()` keeps meaning "the patient signed" and gates nothing on its own any more.
+2. **The single authorities, extended — no per-caller checks.**
+   - `assertRmeAuthoringAllowedForPatient()` (and `canAuthorRmeForPatient()` / `resolveAuthorizedEncounter()`):
+     condition 4 is the EXECUTED consent; inside a write transaction it is re-decided on the visit row locked FIRST.
+     Covers sheet create/update/finalize, handwriting pages (also edit-in-place), structured diagnoses, the diagnosis
+     override (`MESSAGE_RME_AWAITING_PATIENT` / `MESSAGE_RME_AWAITING_DOCTOR`).
+   - `assertPerformedTreatmentAuthoringAllowed()` and `RmePerformedTreatmentService`'s locked re-check, both through
+     `assertExecutedConsentForPerformedTreatment()`: executed (`RmePerformedTreatmentRefusal::CONSENT_REQUIRED` while
+     the patient has not signed, `DOCTOR_SIGNATURE_REQUIRED` while the doctor has not).
+   - `assertOdontogramAuthoringAllowed()`: condition 4 added (supersedes rule 134 for WRITING); inside a write
+     transaction it locks the visit row FIRST, re-checks `in_progress` and the executed consent on it, and only then
+     does `OdontogramService` lock (`findByClinicVisitForUpdate`) or write the chart
+     (`MESSAGE_ODONTOGRAM_AWAITING_PATIENT` / `_DOCTOR`).
+   - "Selesai Pemeriksaan": `ClinicVisitService::transitionStatus()` calls `assertExecutedConsentForFinish()` before the
+     lock and on the locked row (`MESSAGE_FINISH_AWAITING_PATIENT` / `_DOCTOR`, key `status`).
+3. **Unchanged.** "Mulai Pemeriksaan" stays BEFORE consent; signing stays `in_progress` only (§2a of rule 109); READING
+   — the workspace, the odontogram page, history, legacy archives — is never gated; prescriptions stay outside the gate
+   (rule 109 §2c, rule 226); payment never consults consent (AIR-RMC-11); the supervised void (rule 237 §14.2) is
+   unchanged and REOPENS the gate: after a void both signatures are needed again on the new consent. Super Admin is
+   bound: the gate is the consent, not a permission.
+   **Supervised amendment (owner decision 2026-11-17, "AMENDMENT — APPROVE: No PTM gate, record it").** Outside the
+   gate: a rule 240 amendment corrects a record that already exists, so its request and approve-and-apply never
+   consult the PTM; append-only versions, the immutable original, the doctor requester, a separate Supervisor RME
+   approver, the written reason and the audit trail stay. Its detail page shows the amended visit's recorded PTM
+   (executed / patient signature only / none / voided) read-only, for information (rule 240 §6.11). No consent is
+   ever created or faked for it; a NEW medical act takes the examination workflow and this gate.
+
+## 3. The UI names the PTM state (PR2; rule 135 mirror; MEMO-F5)
+
+1. Every fact is decided in a controller, never by a service call in Blade: `ClinicVisitController::show()`
+   (`ptmState`, `visitConsent`, `examinationConsentExecuted`, `countersignConsent`, `countersignRefusal`),
+   `patientQueue()` and `roomWorklist()` (`ptmStates`; Ruang Perawatan also `countersignableConsents` and
+   `countersignSelfCaptured`), `MedicalRecordController` (`activeEncounterPtmState`,
+   `activeEncounterCountersignConsent`, `activeEncounterCountersignRefusal`, `clinicVisitConsentExecuted`),
+   `OdontogramController::show()` (`odontogramPtmBlock` from `odontogramPtmBlockFor()`, the countersign link and
+   refusal, `odontogramLockedNotice` / `odontogramReadOnlyNotice`; since rule 240 §1.7 "is this the live encounter's
+   chart?" is a controller local feeding those two, not a view variable), `RmeVisitConsentController::show()`
+   (`countersignRefusal`).
+2. Detail Kunjungan shows awaiting patient (front office: "Pilih Form Consent"), "Menunggu tanda tangan dokter" (the
+   treating doctor: "Tanda Tangani PTM") or complete; "Selesai Pemeriksaan" is offered only when executed. Antrian
+   Pasien and Ruang Perawatan show a PTM badge on every in-progress row (`rme.visits.partials.ptm-state-badge`). The RME
+   workspace (populated and empty) and the odontogram page show the honest state instead of a submittable form
+   (`rme.visits.partials.ptm-authoring-banner`); reading stays open.
+3. When the only obstacle is that the doctor's own account captured the patient signature
+   (`MESSAGE_COUNTERSIGN_SELF`, which names the remedy: a supervised void and a new capture by the front office), Ruang
+   Perawatan, Detail Kunjungan, the RME workspace, the odontogram page and the consent page say so
+   (`RmeVisitConsentService::countersignRefusal()` / `countersignOutlookFor()`).
+4. Copy that was false is corrected: the capture form and the consent page no longer say payment waits for consent.
+5. **Amended by rule 240 §1.7–§1.8 (M3.3 PR1).** On a FINALIZED chart the odontogram page shows no PTM state and no
+   countersign link or refusal (items 2–3): `OdontogramController::show()` sets `odontogramPtmBlock` to null, and the
+   live encounter's finalized chart shows the lock banner instead, because signing the PTM never makes it writable.
+   A draft chart keeps items 2–3 unchanged.
+
+## 4. Who captures the patient signature (PR2; owner default 1)
+
+1. `RoleSeeder`: the Doctor role loses `manage_rme_consents` (it keeps `view_rme_consents` and
+   `countersign_rme_consents`); Front Office, Kasir and Admin Klinik capture, Supervisor RME is the fallback. RoleSeeder
+   syncs role permissions, so the deploy removes it from the role (a direct grant on an account is untouched).
+2. The front-office capture form offers no doctor canvas any more, and a doctor drawing on a NEW capture is refused:
+   `StoreRmeVisitConsentRequest` marks `doctor_signature` `prohibited` and `sign()` refuses any non-empty value before
+   anything is decoded or written (`MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE`); `doctor_signature_path` is written as
+   null. A historical consent that carries the legacy optional drawing keeps rendering it (§1.6); it never counts as
+   the countersignature (§1.2).
+3. Deploy: `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` (CG-15).
+
+## 5. Compatibility (PR2)
+
+No data changes and no migration (the `doctor_signature_path` column stays for historical consents). A visit
+`in_progress` at deploy with only a patient consent reads as AWAITING DOCTOR:
+what is written stays and stays readable; further writes and finishing wait for the treating doctor's countersignature
+(the legacy optional drawing is not account-bound, so it is not grandfathered). Historical consents are never
+countersigned afterwards (§1.6 renders them as before). Production is a testing database (CLAUDE.md), so no operational
+encounter is disrupted.
+
+Tests: `tests/Feature/RME/RmeVisitConsentTwoSignatureGateTest.php` (token `RmeVisitConsent`) and
+`tests/Feature/RME/RmeOdontogramTwoSignatureGateTest.php` (token `Odontogram`), both declared in
+`critical_gate_mandatory_suites`. The shared fixture `rmeSignedConsentFor()` now means an EXECUTED consent (it adds the
+countersignature row through `rmeDoctorCountersignatureFor()`); gate tests build their state only through the services.
+
+## 6. Consent template v2026.2 (PR3, inactive until approved wording)
+
+Owner decisions of 2026-11-17 (binding, CG-22): "M4.4 Build + split consent clause 8. No automatic FO/Kasir access. New
+consent version tested; historical consents unchanged." — "PTM: technical defaults accepted, but the final clause 8/9
+wording is pending. Do NOT activate v2026.2 in production until clinic/management approves the wording." — "Jangan
+mengubah consent historis." A requirement that needs a clinical decision or the final PTM wording is an ACTIVATION
+BLOCKER, never treated as done.
+
+1. **Definition.** `config/rme_consent.php` `candidate_templates.PERSETUJUAN_TINDAKAN_MEDIS`, version `2026.2`,
+   derived from 2026.1 in the file itself (clauses 1–7, title, statement, intro, declaration, signature labels and
+   location are copied, never retyped): clause 8 = clinical documentation (YA/TIDAK), clause 9 = publication /
+   promotion (YA/TIDAK); `documentation_clause` 8, `publication_clause` 9; `wording_status` `draft`. Clauses 8 and 9
+   are a DRAFT adapted from the 2026.1 clause 8, NOT the clinic's wording (rule 100 §4), and carry the visible
+   `draft_marker` "[DRAF — menunggu persetujuan redaksi]", so the draft is unmistakable wherever it is previewed (it
+   can never render in production: §6.2). The candidate is not in `templates`, so it is never a selectable form and
+   no request can name it.
+2. **Activation gate (fail closed).** `RmeVisitConsentService::templateForNewConsent()` — used by `sign()` and by
+   `availableTemplates()` (the capture page) — selects the candidate only when BOTH hold: (a) the risky flag
+   `rme.consent_template_v2026_2` (`high`, default OFF, `FEATURE_RME_CONSENT_TEMPLATE_V2026_2`, read only through
+   `FeatureFlagService`, captured at config build — rule 92) is on; (b) the candidate is activatable: `wording_status`
+   exactly `approved`, no draft marker (the configured one or `[DRAF`) in any text, and a sound definition (same code,
+   a version other than the current one, clauses 8 and 9 present and distinct). Otherwise new consents use the current
+   template exactly as before. While the flag is on and the candidate is refused, EVERY call logs one warning (each
+   capture-page render and each signing attempt) with `template_code`, `candidate_version` and `reason`
+   (`wording_not_approved`, `draft_marker_present`, `definition_invalid`) only — no patient, visit, consenter or text.
+   The version is the server's choice, never the request's.
+3. **Capture.** `RmeVisitConsentController::create()` decides the ONE form the page renders (the form the old input
+   chose when it is still offered, else the default) in its selected version, and the page posts that form's version
+   as `template_version`. `sign()` refuses, before anything is written, a shown version that is not the version in
+   force and a clause-9 answer filed on a version without clause 9 (`template_code`, `MESSAGE_TEMPLATE_VERSION_CHANGED`),
+   so a page rendered before the version changed cannot be signed on the other one. The service requires every answer
+   the selected version asks — on v2026.2 `documentation_consent` (clause 8) and `publication_consent` (clause 9), each
+   an explicit YA/TIDAK — and reports every missing, blank or non-boolean answer in ONE refusal, each message naming
+   its own clause. `StoreRmeVisitConsentRequest` only binds both to `nullable|boolean` (version-neutral messages; never
+   `required`, never defaulted) and `template_version` to `nullable|string|max:20`. On 2026.1 the single clause-8
+   answer keeps its key and its message. After a refusal a YA/TIDAK is refilled only when the old input answered the
+   version the page now shows (`refillConsentAnswers`, decided by the controller): an answer given on another version is
+   never carried over, in either direction (rule 100 §5: no default) — a v2026.2 clause-8 YA never comes back as the
+   2026.1 combined documentation-and-publication YA.
+4. **Storage.** Additive nullable `trx_rme_visit_consents.publication_consent`
+   (`2026_11_17_210001_add_publication_consent_to_trx_rme_visit_consents_table.php`; no backfill, no existing row
+   updated; `down()` refuses while any consent holds an answer). `sign()` writes it only on a version with clause 9 and
+   NULL otherwise; the snapshot gains `publication_clause` only then, so a 2026.1 snapshot keeps its exact ten-key
+   shape. `RmeVisitConsent::publicationClause()` reads the snapshot; `allowsClinicalDocumentation()`,
+   `allowsPublication()` (clause 9 on v2026.2, the combined clause 8 on 2026.1) and `allowsDocumentationPublication()`
+   (both) are version-aware.
+5. **Clause 9 never affects care.** No gate and no workflow reads `publication_consent`: refusing publication — or
+   clinical documentation — never blocks treatment, a clinical write, "Selesai Pemeriksaan" or payment. A source scan
+   (TVS-09) pins, under `app/` and `resources/views/`, every file naming `publication_consent` (the consent model,
+   request and service, the capture form, the consent page and the document partial) or a clause-9 predicate:
+   `publicationClause(` (the model and the consent page), `allowsPublication(` and `allowsDocumentationPublication(`
+   (the model only). The future photos / publication features (PR4/PR5) are the only intended new readers and extend
+   that pin deliberately.
+6. **No automatic FO/Kasir access.** PR3 grants no role access to photos or clinical documentation and changes no
+   permission or role. For PR4: the photo read scope follows the plan (never Front Office, Kasir or Admin Klinik, even
+   with a runtime grant), and upload needs the executed consent with `allowsClinicalDocumentation()`.
+7. **Rendering.** The document renders the snapshot: v2026.2 shows "Jawaban: YA/TIDAK" after clause 8 and after
+   clause 9; 2026.1 and older render byte for byte as before (a column-0 directive that emits nothing; pinned against
+   `tests/Fixtures/rme-consent-document-pre-v2026-2.blade.php.txt` awaiting the doctor, countersigned, as history and
+   for an older snapshot shape). The consent page shows two answer rows for v2026.2, the combined row otherwise.
+8. **Activation is an owner decision, blocked on the final wording.** In order: (a) the owner sends the clause 8 and
+   clause 9 text and approves it word for word; (b) a reviewed change replaces clauses 8 and 9 (removing the marker)
+   and sets `wording_status => 'approved'`; (c) a separate owner decision turns the flag on in production (environment
+   override, config cache rebuilt as the runtime user), a WATCH posture. Until all three, every new consent is 2026.1.
+   Rollback: the flag off; nothing is reverted, and 2026.2 consents keep their version, snapshot and both answers.
+9. **Deploy.** `php artisan migrate --force` (additive) after the runner's backup; no seeder.
+10. **Tests.** `tests/Feature/RME/RmeVisitConsentTemplateVersionSplitTest.php` (token `RmeVisitConsent`, declared in
+    `critical_gate_mandatory_suites`).

@@ -93,7 +93,11 @@ it('grants exactly the union of the two legacy roles, no more and no less', func
         // `request_rme_invoice_correction` to Kasir (6 -> 7); both reach Front
         // Office through this union (25 -> 27) — exactly the owner's "Front Office
         // request+approve" decision. Maker != checker stays per ACCOUNT.
-        ->and($union)->toHaveCount(27);
+        //
+        // Memo M4.2 (rule 244 §5.3, plan default 2: Front Office) added
+        // `register_patient_without_phone` to Admin Klinik and Front Office;
+        // Admin Klinik 25 -> 26, Kasir unchanged, union 27 -> 28.
+        ->and($union)->toHaveCount(28);
 
     // And the seeded role really carries them, not just the array.
     expect(Role::findByName(FrontOfficeRole::NAME)->permissions->pluck('name')->sort()->values()->all())
@@ -113,7 +117,8 @@ it('reuses the existing role row rather than creating a second one', function ()
         ->and(Role::where('name', FrontOfficeRole::NAME)->first()->id)->toBe($before->id)
         // Rule 195: 25 -> 27 (request + approve invoice correction).
         // Rule 215 (RF-1): 27 -> 28 — `request_rme_refund`, Front Office only.
-        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(28);
+        // Rule 244 §5.3 (memo M4.2): 28 -> 29 — `register_patient_without_phone`.
+        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(29);
 });
 
 // ─── The daily branch lock. The load-bearing property. ─────────────────────

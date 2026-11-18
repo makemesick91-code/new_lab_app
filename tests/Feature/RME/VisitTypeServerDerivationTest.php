@@ -266,12 +266,12 @@ it('registers a new patient as Baru without any visit type input', function () {
         'branch_id' => $this->rmeBranch->id,
         'doctor_id' => $this->doctor->id,
         'initial_treatment_id' => $this->treatment->id,
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Pasien Baru Derivasi',
             'branch_id' => $this->rmeBranch->id,
             'registered_at' => now()->toDateString(),
             'manual_rm_number' => '0700',
-        ],
+        ]),
     ])->assertRedirect()->assertSessionHasNoErrors();
 
     $patient = Patient::firstWhere('name', 'Pasien Baru Derivasi');
@@ -290,11 +290,11 @@ it('refuses a prior visit submitted with a new-patient registration instead of d
         'follow_up_of_visit_id' => $prior->id,
         'doctor_id' => $this->doctor->id,
         'initial_treatment_id' => $this->treatment->id,
-        'new_patient' => [
+        'new_patient' => array_merge(newPatientCoreFields(), [
             'name' => 'Pasien Baru Dengan Kontrol',
             'branch_id' => $this->rmeBranch->id,
             'manual_rm_number' => '0701',
-        ],
+        ]),
     ])->assertSessionHasErrors('visit_type');
 
     expect(Patient::count())->toBe($patientsBefore);

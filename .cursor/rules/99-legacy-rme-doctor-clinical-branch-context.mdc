@@ -14,10 +14,20 @@ alwaysApply: false
 1. A doctor reads a published legacy archive only when **BOTH** gates pass:
    a canonical treating relationship (`DoctorPatientScopeService`) **AND** a
    valid clinical **branch** context. Neither gate alone ever authorizes.
+   **REVISED IN PART (owner, 2026-11-17, memo M2.1/M2.2) by rule 243 §2.10**
+   (`243-rme-doctor-encounter-scope-downloads-fields.mdc`): with
+   `rme.doctor_encounter_scope` ON the relationship gate is the encounter
+   scope — an own in-service encounter with the patient (read mode `history`,
+   `DoctorPatientScopeService::authorizeLegacyArchiveRead()`); assignment rows
+   and the doctor's own old visits grant nothing. The branch gate is unchanged
+   and both are still required. Flag OFF: this item as written.
 
 2. **Same branch is never authorization.** A doctor who practises in the branch
    that owns the archive but has no treating relationship with the patient is
    refused (403 — in scope, not authorized).
+   **REVISED IN PART (owner, 2026-11-17, plan default 6) by rule 243 §2.10**:
+   with the flag ON that refusal is **404**, so the archive's existence does
+   not leak. Flag OFF: 403 as written.
 
 3. **A treating relationship never bypasses branch isolation.** A doctor who
    treats the patient but does not practise in the archive's origin branch is
@@ -65,6 +75,10 @@ alwaysApply: false
     reach. Native access is the clinical relationship across the RME branch
     set; legacy additionally requires the origin branch to be one they practise
     in. Any future change that inverts this is a regression.
+    **REVISED IN PART by rule 243 §2.10**: with the flag ON the native reach
+    is the encounter scope (own visits at any date, the patient's history
+    only in `history` mode) and the legacy archive needs `history` plus the
+    origin branch — still never wider than native.
 
 12. Legacy clinical read stays **read-only**: it never creates a ClinicVisit,
     MedicalRecord, invoice, payment, consent, odontogram, LabOrder,

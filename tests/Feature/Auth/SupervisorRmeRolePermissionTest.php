@@ -20,6 +20,11 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'view_patient_duplicate_resolution',
     'request_patient_merge',
     'approve_patient_merge',
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan defaults 1
+    // and 4) — old paper-card Nomor RM and the legacy patient CSV commit.
+    'register_patient_paper_card_rm',
+    // Rule 244 §4.3 (PR-3b) — read the stored paper-card reason and note.
+    'view_patient_rm_paper_card_reasons',
     'view_clinic_visits',
     'manage_clinic_visits',
     'complete_rme_examination',
@@ -115,6 +120,15 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage_rme_consents',
     // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — the supervised consent void.
     'void_rme_consents',
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240 §6) — the checker of a
+    // supervised amendment of a final record. Deliberately NOT request_rme_amendments:
+    // this tier never files an amendment, and the service refuses it as the
+    // requester, the doctor of record or the finalizer of the record it decides.
+    'approve_rme_amendments',
+    // DMS memo M4.4 / M1.x, PTM PR4 (rule 242) — READ clinical photos (flag OFF)
+    // and the supervised void (PR4b, §9); upload stays Doctor and Perawat.
+    'view_rme_clinical_photos',
+    'void_rme_clinical_photos',
     // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
     // assignment/transfer and temporary branch cover, plus the manual session
     // release that ends a login session and nothing else.
