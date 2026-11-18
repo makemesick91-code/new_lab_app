@@ -10,9 +10,12 @@ Full Suite deferred under the global temporary policy (CG-18): **not run, not pa
 ## 0. Status
 
 ```text
-PROGRAM_STATUS            = DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE (owner, 2026-11-16, §2b)
+PROGRAM_STATUS            = RELEASES 1–4 DEPLOYED / PRODUCTION VERIFIED (read-only) — GO PENDING THE OWNER'S DECISION (§9.7)
 RELEASE 1                 = DEPLOYED + VERIFIED: cab3a4c1 (PR1 #646 + PR2 #647), deploy 20261116-141906 (§9.3)
-CLOSURE WAVE              = IN PROGRESS: PR #648, #649, #650, #651, #652, PR6, PR7b (§5.3, §9.4)
+RELEASE 2                 = DEPLOYED + VERIFIED: 0f3c3bb3 (closure wave), deploy 20261117-081816 (§9.6)
+RELEASE 3                 = DEPLOYED + VERIFIED: 4f59c347 (memo wave 1), deploy 20261118-064305 (§9.8)
+RELEASE 4                 = DEPLOYED + VERIFIED: 988c1a9a (memo wave 2), deploy 20261118-114249 (§9.10)
+FLAGS                     = rme.doctor_encounter_scope OFF; rme.clinical_photos OFF; consent template v2026.2 inactive
 GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go): withheld by the owner until every confirmed
                             in-scope pending item is resolved and verified in production
 FULL_SUITE_STATUS         = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY (execution count 0)
@@ -485,7 +488,8 @@ decision (§9.7).
 ### 9.7 Program status after release 2 — OPEN (no GO tag)
 
 Release 2 is **DEPLOYED and PRODUCTION VERIFIED (read-only)**. Release 3 (memo wave 1) is **DEPLOYED and PRODUCTION
-VERIFIED (read-only)** at `4f59c347` (§9.8); memo wave 2 (release 4) is **PENDING**. The program
+VERIFIED (read-only)** at `4f59c347` (§9.8); release 4 (memo wave 2) is **DEPLOYED and PRODUCTION VERIFIED
+(read-only)** at `988c1a9a` (§9.10). Every engineering item of the memo is released. The program
 DMS-RME-COMPREHENSIVE-CLOSURE-1 stays **OPEN**; the final GO tag `dms-rme-comprehensive-closure-1-go` is **not
 allowed** until every mandatory item below is done, released and production verified (owner directive, §2a).
 
@@ -774,4 +778,7 @@ photos flag stays OFF, so the permissions grant nothing visible until a separate
   `PostgresRuntimeGovernanceTest` "leaves an enclosing postgres transaction usable", reproduced identically on the
   untouched release tree `2928ad28` (local PostgreSQL environment; green in CI on `988c1a9a`), so not caused by this
   change (CG-21).
-- **Dataviz:** a program summary page (counts only, no patient data), private artifact; link in the closure report.
+- **Dataviz:** a program summary page (four releases, critical-gate count on every merge SHA 10,478 → 11,732, migrations
+  and permissions per release, error-line baseline, what ships OFF), measured data only, no patient data, host address,
+  account name or key material; single-series color validated with the dataviz validator (light and dark: all checks
+  pass). Private artifact, shared by the owner if wanted.
