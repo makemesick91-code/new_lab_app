@@ -477,8 +477,10 @@ Owner steps after release 2, run from the owner's own terminal on 2026-11-18 (ou
 | §10.5 `--apply` (owner approval 2026-11-18, structured answer "Approve --apply" after the dry run above; run by the owner as the runtime user) | `REFERENCES=22`, `TO_COPY=22`, **`COPIED=22`**, `MISSING=0`, `CONFLICT=0`, `UNREADABLE=0`, `WRITE_FAILED=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=APPLIED`; nothing deleted (the command never deletes from the old disk) |
 | §10.5 re-check, dry run | `ALREADY_COPIED=22`, `TO_COPY=0`, every failure count 0, `CONSENT_SIGNATURE_MIGRATION=DRY_RUN` |
 
-Still pending: the owner's visual check of one pre-release consent's signatures (rule 237 §14.5a). The old disk and
-the read fallback stay; removing either is a separate owner decision.
+| Visual check (rule 237 §14.5a) | owner, 2026-11-18: **YES** — a consent signed before release 2 renders its signatures on `https://daengtisia.online` |
+
+Release 2 has no pending owner step. The old disk and the read fallback stay; removing either is a separate owner
+decision (§9.7).
 
 ### 9.7 Program status after release 2 — OPEN (no GO tag)
 
@@ -490,7 +492,7 @@ allowed** until every mandatory item below is done, released and production veri
 | Pending item | Owner | Acceptance criteria | Evidence required |
 |---|---|---|---|
 | Release 3 follow-ups (§9.8) — **DONE** 2026-11-18 | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line, all 11 release-3 migrations DONE and `DEPLOY OK`; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed (6 new permissions) | pasted command outputs, recorded in §9.8 |
-| Release 2 follow-ups (§9.6) — log, permissions and dry run **DONE** 2026-11-18 (`TO_COPY=22`, `CONFLICT=0`, `VERIFY_FAILED=0`); visual check pending | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
+| Release 2 follow-ups (§9.6) — **DONE** 2026-11-18 (log, permissions, dry run `TO_COPY=22` / `CONFLICT=0` / `VERIFY_FAILED=0`, owner visual check YES) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
 | Consent signature copy `--apply` — **DONE** 2026-11-18 (`COPIED=22`, re-check `ALREADY_COPIED=22`) | Owner (separate approval after the dry run) | `CONSENT_SIGNATURE_MIGRATION=APPLIED`, `CONFLICT=0`, `VERIFY_FAILED=0`, nothing deleted | command output; re-run dry run shows `ALREADY_COPIED` = total |
 | Removing the read fallback (rule 237 §14.5a) | Owner (separate approval after the copy is verified) | all needed copies verified; fallback removed by a reviewed PR | PR + CI + release evidence |
 | Memo M3.3 (rule 240) PR1–PR7 — **merged** as one series PR #667 (`8929e570`→`7482f4bd`, owner re-approved after two test-only CI fixes; critical gate 11,362 passed on the exact head; post-merge CI green) — **released in release 3** (§9.8) | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
