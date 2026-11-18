@@ -69,6 +69,14 @@ function rcprFlag(bool $on): void
     config()->set('feature_flags.flags', $flags);
 }
 
+function rcprEncounterScope(bool $on): void
+{
+    $flags = config('feature_flags.flags', []);
+    $flags[DoctorPatientScopeService::ENCOUNTER_SCOPE_FLAG]['default'] = $on;
+    $flags[DoctorPatientScopeService::ENCOUNTER_SCOPE_FLAG]['env_value'] = null;
+    config()->set('feature_flags.flags', $flags);
+}
+
 function rcprJpeg(int $width = 200, int $height = 150): string
 {
     $image = imagecreatetruecolor($width, $height);
@@ -238,12 +246,59 @@ it('CPR-04 the doctor-patient scope: an unrelated doctor answers 404 until they 
 it('CPR-04b the read delegates to DoctorPatientScopeService::doctorCanAccessVisit (where the rule 243 §2 encounter scope applies)', function () {
     $photo = rcprPhoto();
 
-    $scope = Mockery::mock(DoctorPatientScopeService::class)->makePartial();
+    // A real instance underneath (constructor resolved from the container), so
+    // every other scope question — encounterScopeEnabled(), the window — still works.
+    $arguments = array_map(
+        fn (ReflectionParameter $parameter) => app($parameter->getType()->getName()),
+        (new ReflectionClass(DoctorPatientScopeService::class))->getConstructor()->getParameters(),
+    );
+    $scope = Mockery::mock(DoctorPatientScopeService::class, $arguments)->makePartial();
     $scope->shouldReceive('doctorCanAccessVisit')->andReturn(false);
     app()->instance(DoctorPatientScopeService::class, $scope);
 
     rcprGet($this->doctor, $photo)->assertNotFound();
     expect(app(RmeClinicalPhotoService::class)->mayView($this->doctor, $photo))->toBeFalse();
+});
+
+it('CPR-04c with the doctor encounter scope ON (rule 243 §2) photo reads follow it: an earlier treatment no longer opens the history, an own in-service encounter does', function () {
+    $photo = rcprPhoto();
+    // Rule 243 §2 opens another doctor's visit only once it is past the examination.
+    $photo->visit->forceFill(['status' => ClinicVisit::STATUS_COMPLETED, 'completed_at' => now()->subHours(3)])->save();
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    $otherRecord = Doctor::factory()->withAllowedBranches([$this->branch])->create();
+    $other = rmeMakeDoctorOnline($otherRecord, $this->branch, $otherRoom)->fresh();
+
+    // The other doctor treated this patient two days ago.
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $photo->patient_id,
+        'doctor_id' => $otherRecord->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+        'completed_at' => now()->subDays(2),
+    ]);
+
+    // Flag OFF: the earlier treatment is the patient scope of rule 138 — it reads.
+    rcprGet($other, $photo)->assertOk();
+
+    rcprEncounterScope(true);
+    expect(app(DoctorPatientScopeService::class)->encounterScopeEnabled())->toBeTrue();
+
+    // Flag ON: not the visit's doctor and no own encounter in service — 404.
+    rcprGet($other, $photo)->assertNotFound();
+    expect(app(RmeClinicalPhotoService::class)->visibleForVisit($photo->visit->fresh(), $other))->toHaveCount(0);
+
+    // The visit's own doctor keeps reading it.
+    rcprGet($this->doctor, $photo)->assertOk();
+
+    // An own in-service encounter with the patient opens the history again.
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $photo->patient_id,
+        'doctor_id' => $otherRecord->id,
+        'clinic_room_id' => $otherRoom->id,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+    rcprGet($other, $photo)->assertOk();
 });
 
 it('CPR-05 branch scope binds every reader, Super Admin included: a branch outside the RME set reads nothing', function () {

@@ -43,6 +43,7 @@ use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\PatientMerge\Interfaces\PatientMergeOwnershipRepositoryInterface;
 use App\Modules\PatientMerge\Support\PatientOwnedRecordRegistry;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -574,6 +575,35 @@ it('CPU-07 branch, room and patient scope: another branch, another room or an un
     // The scope is the guard: the same Perawat working at the visit's branch uploads.
     rmeMakePerawatActive($farPerawat, $this->branch);
     rcpuPost($farPerawat->fresh(), $visit, rcpuJpeg())->assertCreated();
+});
+
+it('CPU-07b with the doctor encounter scope ON (rule 243 §2) only the visit\'s own doctor in service uploads; another doctor in an own encounter with the patient cannot', function () {
+    $visit = rcpuEncounter();
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    $otherRecord = Doctor::factory()->withAllowedBranches([$this->branch])->create();
+    $other = rmeMakeDoctorOnline($otherRecord, $this->branch, $otherRoom)->fresh();
+
+    // The other doctor's own in-service encounter with the same patient (rule 243 §2 still keeps
+    // another doctor's LIVE encounter closed to reading and writing).
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $otherRecord->id,
+        'clinic_room_id' => $otherRoom->id,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+    rcpuFlag(DoctorPatientScopeService::ENCOUNTER_SCOPE_FLAG, true);
+
+    $service = app(RmeClinicalPhotoService::class);
+    expect($service->mayViewVisit($other, $visit->fresh()))->toBeFalse()
+        ->and($service->uploadAccountRefusal($other, $visit->fresh()))->toBe(RmeClinicalPhotoService::MESSAGE_UPLOAD_SCOPE)
+        ->and(rcpuRefusal(fn () => rcpuServiceUpload($visit, $other)))
+        ->toBe([AuthorizationException::class, RmeClinicalPhotoService::MESSAGE_UPLOAD_SCOPE]);
+    rcpuPost($other, $visit, rcpuJpeg())->assertForbidden();
+
+    // The visit's own doctor, in service, still uploads with the scope ON.
+    rcpuPost($this->doctor, $visit, rcpuJpeg())->assertCreated();
+    expect(RmeClinicalPhoto::query()->pluck('uploaded_by')->all())->toBe([$this->doctor->id]);
 });
 
 /*

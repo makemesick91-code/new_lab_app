@@ -41,7 +41,6 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
-use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -437,7 +436,12 @@ it('CPG-09 the read scope still applies: Front Office with a grant, an unrelated
     // the photos do not (non-vacuous: the same doctor sees them without the mock).
     rcpgPage($this->doctor, $visit)->assertOk()->assertSee(rcpgImageUrl($photo), false);
 
-    $scope = Mockery::mock(DoctorPatientScopeService::class, [app(DoctorUserResolver::class)])->makePartial();
+    // The constructor resolved from the container, so it follows the service's dependencies.
+    $arguments = array_map(
+        fn (ReflectionParameter $parameter) => app($parameter->getType()->getName()),
+        (new ReflectionClass(DoctorPatientScopeService::class))->getConstructor()->getParameters(),
+    );
+    $scope = Mockery::mock(DoctorPatientScopeService::class, $arguments)->makePartial();
     $scope->shouldReceive('authorizeVisitAccess')->andReturn(true);
     $scope->shouldReceive('doctorCanAccessVisit')->andReturn(false);
     app()->instance(DoctorPatientScopeService::class, $scope);
