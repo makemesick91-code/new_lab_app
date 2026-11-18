@@ -466,7 +466,16 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 | Release id | spent |
 | GO | **none** — release 2 is intermediate; the final GO tag waits for the memo wave and every mandatory item |
 
-Pending owner steps after release 2: §10.3b (log read: backup + migrations), §10.4 (PermissionSeeder → RoleSeeder → permission:cache-reset), §10.5 (consent-signature copy **dry run only**, counts reported; `--apply` needs a separate approval; the fallback stays), and a visual check of one pre-release consent's signatures (rule 237 §14.5a).
+Owner steps after release 2, run from the owner's own terminal on 2026-11-18 (outputs pasted to the session):
+
+| Step | Result |
+|---|---|
+| §10.3b deploy log read (root) | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261117-081818.sql sha256=550f966d2ebe39fde8719836627c6815a228386771c421cdbae03d4633d09c0e`; both `2026_11_17_100001_*` migrations DONE; `backup-verify.json` written and present; `DEPLOY OK: 20261117-081818` |
+| §10.4 permissions (runtime user) | run together with release 3's (§9.8): `PermissionSeeder` and `RoleSeeder` seeded, `permission:cache-reset` silent (the seeders had already cleared the cache; the command prints only on a flush or a failure) |
+| §10.5 consent signature copy, **dry run** | `REFERENCES=22`, `INLINE=0`, `ALREADY_COPIED=0`, `TO_COPY=22`, `COPIED=0`, `MISSING=0`, `CONFLICT=0`, `UNREADABLE=0`, `WRITE_FAILED=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=DRY_RUN` |
+
+Still pending: the owner's approval of `--apply` for the 22 references (separate decision, after this dry run), and a
+visual check of one pre-release consent's signatures (rule 237 §14.5a). The fallback stays.
 
 ### 9.7 Program status after release 2 — OPEN (no GO tag)
 
@@ -477,8 +486,8 @@ allowed** until every mandatory item below is done, released and production veri
 
 | Pending item | Owner | Acceptance criteria | Evidence required |
 |---|---|---|---|
-| Release 3 follow-ups (§9.8) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line, all 11 release-3 migrations DONE and `DEPLOY OK`; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed (6 new permissions) | pasted command outputs, recorded in §9.8 |
-| Release 2 follow-ups (§9.6) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
+| Release 3 follow-ups (§9.8) — **DONE** 2026-11-18 | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line, all 11 release-3 migrations DONE and `DEPLOY OK`; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed (6 new permissions) | pasted command outputs, recorded in §9.8 |
+| Release 2 follow-ups (§9.6) — log, permissions and dry run **DONE** 2026-11-18 (`TO_COPY=22`, `CONFLICT=0`, `VERIFY_FAILED=0`); visual check pending | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
 | Consent signature copy `--apply` | Owner (separate approval after the dry run) | `CONSENT_SIGNATURE_MIGRATION=APPLIED`, `CONFLICT=0`, `VERIFY_FAILED=0`, nothing deleted | command output; re-run dry run shows `ALREADY_COPIED` = total |
 | Removing the read fallback (rule 237 §14.5a) | Owner (separate approval after the copy is verified) | all needed copies verified; fallback removed by a reviewed PR | PR + CI + release evidence |
 | Memo M3.3 (rule 240) PR1–PR7 — **merged** as one series PR #667 (`8929e570`→`7482f4bd`, owner re-approved after two test-only CI fixes; critical gate 11,362 passed on the exact head; post-merge CI green) — **released in release 3** (§9.8) | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
@@ -512,8 +521,23 @@ allowed** until every mandatory item below is done, released and production veri
 | Release id | spent |
 | GO | **none** — release 3 is intermediate; the final GO tag waits for release 4 and every mandatory item (§9.7) |
 
-Pending owner steps after release 3: §10.9 (log read: backup + 11 migrations; permissions). Wave 2 (#669, #670,
-#671) may now merge, each with the owner's approval on its exact green head; it ships as release 4.
+Owner steps after release 3, run from the owner's own terminal on 2026-11-18 (outputs pasted to the session):
+
+| Step | Result |
+|---|---|
+| §10.9 deploy log read (root) | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261118-064307.sql sha256=7c88dd5107a90980e16597f3f77e536a1026872fe7918ed8da07b61771f981f9`; all 11 release-3 migrations DONE (6.09–105.46 ms each); `backup-verify.json` written and present; `DEPLOY OK: 20261118-064307` |
+| §10.9 permissions (runtime user) | `PermissionSeeder` and `RoleSeeder` seeded; `permission:cache-reset` silent (cache already cleared by the seeders). The six release-3 permissions are now granted per `RoleSeeder` |
+
+Release 3 has no pending owner step. Wave 2 merges one series PR at a time on its exact green head (§9.9) and ships
+as release 4.
+
+### 9.9 Wave 2 merges (release 4 candidate)
+
+| PR | Head tested | CI on that head | Merge |
+|---|---|---|---|
+| #670 clinical photos series (PR4a…PR5, flag `rme.clinical_photos` OFF) | `cf9d39d3` against base `4f59c347` | run 44241489900: critical gate **11,640 passed**, 59,884 assertions; all required gates success | owner "Approve cf9d39d3" → squash `e855b5a0`; post-merge push run 44256260309 success, critical gate 11,640 passed |
+| #669 RM PR-5 (KTP OCR place-of-birth suggestion) | first `f0002d49`, but that CI ran against the older base `7482f4bd` (before #668); owner chose "update, retest, merge": base merged in (PR changed lines byte-identical before and after, 13 files +1022/−20), new head `8cdab409` | run 44256320437: critical gate **11,649 passed**, 60,029 assertions; all required gates success | squash `9aee8245` (pinned to `8cdab409`); post-merge push run 44268084628 pending |
+| #671 doctor scope wave 2 (A4 + C1 + C2, flag OFF) | `6be3b7a7` green alone (run 44252031211, 11,641 passed); then the base `9aee8245` merged in with three conflict resolutions (both presenters kept in `ClinicVisitController`; both rule-file edits kept, `rme-clinical.md` 29,954 / 30,000 chars, AIR numbering contiguous); merged tree byte-identical to a local trial that passed 714/714 focused PostgreSQL tests and 51/51 JS tests; new head `eb6fcdb0` | run 44268163641 pending | needs the owner's approval of the new head (not tree-identical to the tested `6be3b7a7`) |
 
 ## 10. Owner actions prepared by this program
 
