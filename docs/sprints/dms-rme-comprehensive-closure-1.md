@@ -542,13 +542,30 @@ as release 4.
 |---|---|---|---|
 | #670 clinical photos series (PR4a…PR5, flag `rme.clinical_photos` OFF) | `cf9d39d3` against base `4f59c347` | run 44241489900: critical gate **11,640 passed**, 59,884 assertions; all required gates success | owner "Approve cf9d39d3" → squash `e855b5a0`; post-merge push run 44256260309 success, critical gate 11,640 passed |
 | #669 RM PR-5 (KTP OCR place-of-birth suggestion) | first `f0002d49`, but that CI ran against the older base `7482f4bd` (before #668); owner chose "update, retest, merge": base merged in (PR changed lines byte-identical before and after, 13 files +1022/−20), new head `8cdab409` | run 44256320437: critical gate **11,649 passed**, 60,029 assertions; all required gates success | squash `9aee8245` (pinned to `8cdab409`); post-merge push run 44268084628 success, critical gate 11,649 passed |
-| #671 doctor scope wave 2 (A4 + C1 + C2, flag OFF) | `6be3b7a7` green alone (run 44252031211, 11,641 passed); then the base `9aee8245` merged in with three conflict resolutions (both presenters kept in `ClinicVisitController`; both rule-file edits kept, `rme-clinical.md` 29,954 / 30,000 chars, AIR numbering contiguous); merged tree byte-identical to a local trial that passed 714/714 focused PostgreSQL tests and 51/51 JS tests; new head `eb6fcdb0` | run 44268163641: critical gate **11,732 passed**, 60,707 assertions; all required gates success | owner "Approve eb6fcdb0" (new head, re-approved because it is not tree-identical to `6be3b7a7`) → squash **`988c1a9a`** after the #669 post-merge run had finished (the workflow cancels an in-progress base run on a new push); merge tree `2928ad28` byte-identical to the tested head; post-merge push run 44283078156 pending |
+| #671 doctor scope wave 2 (A4 + C1 + C2, flag OFF) | `6be3b7a7` green alone (run 44252031211, 11,641 passed); then the base `9aee8245` merged in with three conflict resolutions (both presenters kept in `ClinicVisitController`; both rule-file edits kept, `rme-clinical.md` 29,954 / 30,000 chars, AIR numbering contiguous); merged tree byte-identical to a local trial that passed 714/714 focused PostgreSQL tests and 51/51 JS tests; new head `eb6fcdb0` | run 44268163641: critical gate **11,732 passed**, 60,707 assertions; all required gates success | owner "Approve eb6fcdb0" (new head, re-approved because it is not tree-identical to `6be3b7a7`) → squash **`988c1a9a`** after the #669 post-merge run had finished (the workflow cancels an in-progress base run on a new push); merge tree `2928ad28` byte-identical to the tested head; post-merge push run 44283078156 success, critical gate 11,732 passed; **released in release 4** (§9.10) |
 
 Wave 2 is complete: **`988c1a9a1b7de328408c1e2a2ae68644fae4feb1`** is the release 4 candidate (2 additive migrations
 `2026_11_18_100001_create_trx_rme_clinical_photos_table`, `2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table`;
 3 new permissions `upload_rme_clinical_photos`, `view_rme_clinical_photos`, `void_rme_clinical_photos`; flags
 `rme.clinical_photos` and `rme.doctor_encounter_scope` ship default OFF). Photo routes answer 403 to an account
 without the permission and 404 to a holder while the flag is OFF (owner decision 2026-11-18, repo pattern).
+
+### 9.10 Release 4 — `dms-rme-comprehensive-closure-1-r4` at `988c1a9a` (memo wave 2; last release of the program)
+
+| Item | Evidence |
+|---|---|
+| Candidate | `988c1a9a1b7de328408c1e2a2ae68644fae4feb1` (tree `2928ad28`), the squash merge of #671 and the base tip; wave 2 = #670, #669, #671 (§9.9) |
+| Post-merge CI | push run 44283078156 on `988c1a9a`: **NSF-R011 Critical Test Gate 11,732 passed, 60,707 assertions, 0 failed, PostgreSQL** ("Run critical regression tests" ran; `gate_profile=permissions_security`); NSF-R012 Quality Gate and CICD-CTRL Gate Classifier success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+| Owner approval | structured answer 2026-11-18 "Approve 988c1a9a" for the full SHA (no earlier approval reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `0b0e1bfff3f3ffb82d0ba9a780c2951f`, bundle SHA-256 `0be6ceb51a990edb068265094c4c8cd3af16286815f43c72b0714b0923ce5b3f` (re-computed locally before submission), record SHA-256 `9586d889dfbfc9c38ba182f77ccc5463948465c8ce35f34a0bc0c02137a40644`, signature SHA-256 `bbe969564a857794bc5854eed5ef0f2ccf2babea3b61c879ec4d0037539169e2`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-20T11:41:24Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` (from the release checkout) → `PRODUCTION_TARGET=VERIFIED`; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature good against the host anchor, SHA = base tip, release and approval unspent, required CI push run 44283078156 success) |
+| Deploy | base tip re-confirmed `988c1a9a` immediately before `start`; `start` through the deploy operator (runner on the VPS, never local) at 19:42 WITA: deploy id **`20261118-114249`**, started 11:42:49Z, finished 11:44:33Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261118-114249` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | 2 additive: `2026_11_18_100001_create_trx_rme_clinical_photos_table`, `2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table`; inside the runner's `migrate --force` after its pre-deploy dump (log lines: owner read, §10.10) |
+| Production verification (read-only) | `posture`: `HEAD=988c1a9a`, `TRACKED_MODIFIED=0`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), php8.3-fpm / nginx / postgresql active, queue worker and timers unchanged, locks IDLE; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200; `/rme/visits`, `/settings/patients`, `/rme/amendments` and the new `/rme/clinical-photos/{id}/image` → 302 to login (unauthenticated), an unknown path 404 |
+| Flags | no production flag changed: `rme.clinical_photos` and `rme.doctor_encounter_scope` ship at their default OFF; consent template v2026.2 stays inactive |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| GO | **not yet** — the final GO tag waits for the owner's release 4 steps (§10.10) and the closure gates (canonical rules, Graphify, Obsidian, Dataviz; §11) |
 
 ## 10. Owner actions prepared by this program
 
@@ -711,6 +728,21 @@ the seeders run, those actions answer 403 for everyone but Super Admin. As the r
 ```bash
 ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -u daengtisiams php artisan db:seed --class=PermissionSeeder --force && sudo -u daengtisiams php artisan db:seed --class=RoleSeeder --force && sudo -u daengtisiams php artisan permission:cache-reset'
 ```
+
+
+### 10.10 Release 4 — deploy log and permissions (root and runtime user, owner's admin password)
+
+From PowerShell (through WSL, where the production SSH configuration lives):
+
+```powershell
+wsl.exe ssh -t daengtisiams-biznet-prod 'sudo grep -a -e Pre-deploy.backup -e backup-verify -e 2026_11_18_ -e DEPLOY.OK /var/lib/daengtisiams-deploy/runner/deploy-20261118-114249.log'
+wsl.exe ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -u daengtisiams php artisan db:seed --class=PermissionSeeder --force && sudo -u daengtisiams php artisan db:seed --class=RoleSeeder --force && sudo -u daengtisiams php artisan permission:cache-reset'
+```
+
+Expected: the pre-deploy backup line, both release-4 migrations DONE and `DEPLOY OK`; then the three photo
+permissions (`upload_rme_clinical_photos`, `view_rme_clinical_photos`, `void_rme_clinical_photos`) seeded. The
+photos flag stays OFF, so the permissions grant nothing visible until a separate owner decision turns it ON
+(preconditions: rule 242 §8/§10.6).
 
 ## 11. Graphify, Dataviz, Obsidian
 
