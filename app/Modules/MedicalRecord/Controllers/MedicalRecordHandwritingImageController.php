@@ -3,9 +3,11 @@
 namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +30,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * approved amendment) is served only when its bytes match the recorded SHA-256;
  * a missing or tampered object answers 404, like an absent one; a storage read
  * fault answers 503.
+ *
+ * Rule 243 §2.8 — a page is asked as itself (MedicalRecordPolicy::
+ * viewHandwritingPage, `view` plus, under the doctor encounter scope, the book
+ * page's authoring encounter), so the image route serves exactly the pages the
+ * workspace lists.
  */
 class MedicalRecordHandwritingImageController extends Controller
 {
@@ -39,7 +46,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('view', $record);
+        $this->authorizePage($record, self::authorOf($handwriting));
 
         return $this->stream($handwriting->handwriting_path);
     }
@@ -50,7 +57,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('view', $record);
+        $this->authorizePage($record, self::authorOf($handwritingPage));
 
         if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
             $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
@@ -70,6 +77,30 @@ class MedicalRecordHandwritingImageController extends Controller
         }
 
         return $this->stream($handwritingPage->handwriting_path);
+    }
+
+    /**
+     * `viewHandwritingPage` only while the doctor encounter scope applies to the
+     * user; otherwise exactly the `view` of the record asked before (flag-OFF
+     * parity: the same ability and arguments for every Gate hook).
+     */
+    private function authorizePage(MedicalRecord $record, ?int $authoredVisitId): void
+    {
+        if (app(DoctorPatientScopeService::class)->encounterScopeAppliesTo(auth()->user())) {
+            $this->authorize('viewHandwritingPage', [$record, $authoredVisitId]);
+
+            return;
+        }
+
+        $this->authorize('view', $record);
+    }
+
+    /** Rule 240 §4.4 — the encounter that wrote the row, null before rule 240. */
+    private static function authorOf(MedicalRecordHandwriting|MedicalRecordHandwritingPage $row): ?int
+    {
+        $visitId = $row->getAttribute('authored_clinic_visit_id');
+
+        return $visitId !== null ? (int) $visitId : null;
     }
 
     private function stream(?string $path): StreamedResponse

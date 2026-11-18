@@ -133,8 +133,11 @@ final class PrescriptionAuthoringAuthority
             return false;
         }
 
+        // Rule 243 §2 — the write form of the doctor-patient scope: with the
+        // encounter scope ON a Doctor writes only on their own in-service
+        // encounter; with it OFF this is exactly doctorCanAccessVisit().
         return $this->permitsActorAtBranch($actor, $visit->branch_id)
-            && $this->doctorScope->doctorCanAccessVisit($actor, $visit)
+            && $this->doctorScope->doctorMayWriteVisit($actor, $visit)
             && ! $this->roomScope->deniesActiveVisitOutsideRoom($actor, $visit);
     }
 

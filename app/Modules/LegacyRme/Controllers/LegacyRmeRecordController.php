@@ -15,6 +15,7 @@ use App\Modules\LegacyRme\Services\LegacyRmeVoidService;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -65,6 +66,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * keep serving the archive to them as inline page images. The refusal is the
  * rule 138 print-deny authority, asked by the policy (`download`) and asked
  * again here after the policy.
+ *
+ * RULE 243 §2.10 — THE DOCTOR ENCOUNTER SCOPE (PR A2, behind
+ * `rme.doctor_encounter_scope`). With the flag ON a Doctor reads an archive
+ * only inside an own in-service encounter with the patient; outside it every
+ * read door answers 404 (the policy's `view`/`viewFile`), before any download
+ * rule. `authorizeRead()` asks the policy and then the scope's one authority
+ * again, so a bypassed policy still cannot serve a doctor. Flag OFF: as before.
  */
 class LegacyRmeRecordController extends Controller
 {
@@ -87,12 +95,13 @@ class LegacyRmeRecordController extends Controller
         private readonly LegacyRmeAuditService $audit,
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly DoctorRoomScopeService $printDeny,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     public function show(Request $request, int $record): View
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('view', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'view');
 
         $this->audit->logRecordEvent(LegacyRmeAuditEvent::RECORD_VIEWED, $legacyRecord, [], $request->user());
 
@@ -109,7 +118,7 @@ class LegacyRmeRecordController extends Controller
     public function source(Request $request, int $record): StreamedResponse
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('viewFile', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'viewFile');
         $this->assertStreamable($legacyRecord);
         $this->authorizeDownload($request, $legacyRecord, 'source');
 
@@ -132,7 +141,7 @@ class LegacyRmeRecordController extends Controller
     public function page(Request $request, int $record, int $page): StreamedResponse
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('viewFile', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'viewFile');
         $this->assertStreamable($legacyRecord);
 
         $pageRecord = $this->records->findPage($legacyRecord, $page);
@@ -203,7 +212,7 @@ class LegacyRmeRecordController extends Controller
     public function print(Request $request, int $record): View
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('view', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'view');
         $this->assertStreamable($legacyRecord);
         $this->authorizeDownload($request, $legacyRecord, 'print');
 
@@ -236,7 +245,7 @@ class LegacyRmeRecordController extends Controller
     public function export(Request $request, int $record): Response
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('view', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'view');
         $this->assertStreamable($legacyRecord);
         $this->authorizeDownload($request, $legacyRecord, 'export');
 
@@ -315,9 +324,29 @@ class LegacyRmeRecordController extends Controller
             $this->scope->includesUnscopedRowsFor($user),
         );
 
-        abort_if($record === null, 404);
+        // Rule 243 §2.10 (A2 review LOW-1) — the same body as the encounter
+        // scope's 404 (`Response::denyAsNotFound()` renders "Not Found"), so a
+        // doctor cannot tell a missing archive from an out-of-scope one.
+        abort_if($record === null, 404, 'Not Found');
 
         return $record;
+    }
+
+    /**
+     * Rule 243 §2.10 — the read layers: the policy ability (`view`/`viewFile`;
+     * 404 for a Doctor outside the encounter scope), then the encounter scope
+     * asked once more of its one authority (a no-op with the flag OFF), so a
+     * bypassed policy (Gate::before, a regression) still cannot serve a doctor.
+     */
+    private function authorizeRead(Request $request, LegacyRmeRecord $record, string $ability): void
+    {
+        $this->authorize($ability, $record);
+
+        $user = $request->user();
+
+        if ($user !== null) {
+            $this->doctorScope->assertLegacyArchiveReadable($user, (int) $record->patient_id);
+        }
     }
 
     /**

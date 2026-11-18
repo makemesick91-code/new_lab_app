@@ -315,21 +315,23 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Jenis Kunjungan</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->visitTypeLabel() }}</dd>
                 </div>
-                @if ($visit->followUpOf)
+                {{-- Rule 243 §2.11 (PR A3b) — `$followUpOf` / `$followUpVisits` hold
+                     only the visits this viewer may open (decided in the controller). --}}
+                @if ($followUpOf)
                     <div class="sm:col-span-2">
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kontrol dari</dt>
                         <dd class="mt-1 text-sm">
-                            <a href="{{ route('rme.visits.show', $visit->followUpOf) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $visit->followUpOf->visit_number }}</a>
-                            <span class="text-gray-500"> — {{ $visit->followUpOf->visit_date?->format('d/m/Y') }}</span>
+                            <a href="{{ route('rme.visits.show', $followUpOf) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $followUpOf->visit_number }}</a>
+                            <span class="text-gray-500"> — {{ $followUpOf->visit_date?->format('d/m/Y') }}</span>
                         </dd>
                     </div>
                 @endif
-                @if ($visit->followUpVisits->isNotEmpty())
+                @if ($followUpVisits->isNotEmpty())
                     <div class="sm:col-span-2">
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kontrol lanjutan</dt>
                         <dd class="mt-1 text-sm text-gray-900">
                             <ul class="list-disc pl-5 space-y-1">
-                                @foreach ($visit->followUpVisits as $followUpVisit)
+                                @foreach ($followUpVisits as $followUpVisit)
                                     <li>
                                         <a href="{{ route('rme.visits.show', $followUpVisit) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $followUpVisit->visit_number }}</a>
                                         <span class="text-gray-500"> — {{ $followUpVisit->visitTypeLabel() }} ({{ $followUpVisit->visit_date?->format('d/m/Y') }})</span>

@@ -138,16 +138,18 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
   VOIDing. (Supersedes rules 93 §16 and 97-patient-centric §12.) Source: `98-legacy-rme-published-read-write-separation.mdc`.
 - **AIR-LRM-25** A read requires PUBLISHED status, `LegacyRmeRecordPolicy::READ_PERMISSIONS`
   (`view_legacy_rme_imports` operator, `view_legacy_rme_archive` clinical reader) and server-resolved
-  `LegacyRmeWorkspaceScope`: 404 outside branch scope, 403 in scope but not authorized. `view_legacy_rme_archive`
-  never joins `GOVERNANCE_PERMISSIONS`. Source: `98-legacy-rme-published-read-write-separation.mdc`, `93-legacy-rme-void-clinical-read.mdc`.
+  `LegacyRmeWorkspaceScope`: 404 outside branch scope, 403 in scope but not authorized (a Doctor outside the
+  encounter scope with its flag ON: 404, AIR-LRM-41). `view_legacy_rme_archive` never joins `GOVERNANCE_PERMISSIONS`. Source: `98-legacy-rme-published-read-write-separation.mdc`, `93-legacy-rme-void-clinical-read.mdc`.
 - **AIR-LRM-26** A doctor reads only with BOTH a `DoctorPatientScopeService` treating relationship AND an origin
   branch in `DoctorClinicalBranchResolver` (`mst_doctor_branches` ∩ active RME-enabled branches). Same branch alone
   never authorizes; empty scope denies all; never `users.branch_id`, `BranchContext::forUser()` or an online
   context. A legacy-only patient with no visit is correctly invisible to doctors — never manufacture a visit or
-  assignment. Source: `99-legacy-rme-doctor-clinical-branch-context.mdc`, `94-legacy-rme-controlled-rollout.mdc`.
+  assignment. With `rme.doctor_encounter_scope` ON the relationship is an own in-service encounter (AIR-LRM-41).
+  Source: `99-legacy-rme-doctor-clinical-branch-context.mdc`, `94-legacy-rme-controlled-rollout.mdc`.
 - **AIR-LRM-27** Patient history comes from ONE merge in `LegacyRmePatientHistoryService` (PUBLISHED only, ordered by
   clinical date, tie-break date → kind → source id, range rendered only when latest > earliest, visibly
-  `ARSIP RME LAMA`); the patient comes from the authorized visit, never a request `patient_id`. Source:
+  `ARSIP RME LAMA`); the patient comes from the authorized visit, never a request `patient_id`. With the encounter
+  scope ON access derives from encounters, not assignment rows (AIR-LRM-41). Source:
   `97-legacy-rme-patient-centric-clinical-history.mdc`.
 - **AIR-LRM-28** In `RME Tulisan Tangan Lengkap`, each rendered legacy page is a read-only virtual page in the one
   navigator/swipe sequence: explicit `RmeWorkspacePage` type, no canvas or form on it, `+ Tambah Halaman RM` always
@@ -221,6 +223,13 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
   the two clinical `source` routes (`viewFile`). Doctors keep `show` and the page images and see no download control.
   Other readers unchanged. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
+- **AIR-LRM-41** With `rme.doctor_encounter_scope` ON (default OFF) a Doctor reads a published legacy RME or legacy
+  odontogram archive only in read mode `history` (an own in-service encounter, `readModeFor()`); own old visits and
+  assignment rows grant nothing; outside it every door (viewer, page images, source/print/export) is 404, before the
+  download rule. One answer, `DoctorPatientScopeService::authorizeLegacyArchiveRead()`, serves both policies, both
+  controllers' re-assertion (`assertLegacyArchiveReadable()`, a no-op OFF) and both `publishedRecordsFor()`, so lists
+  mirror records. Flag OFF = AIR-LRM-25/26 exactly; branch gate, non-doctor readers and the staging and oversight
+  screens unchanged. Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.10.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -265,7 +274,7 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 | `.cursor/rules/171-legacy-batch-review-publish.mdc` | Batch review/publish over the canonical lifecycle |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Archive `{record}`, import `{import}` key and `{page}` number route constraints (404, never 500) |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | VOIDed archive bytes refused on the staging screens (RME and odontogram) |
-| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | No doctor print/export/source PDF (revises rule 93 §12) |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | No doctor print/export/source PDF (revises rule 93 §12); doctor archive reads under the encounter scope (§2.10, revises rules 99 and 97) |
 
 ## History
 

@@ -15,6 +15,7 @@ use App\Modules\LegacyOdontogram\Services\LegacyOdontogramStorageService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramVoidService;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramAuditEvent;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -57,6 +58,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * RULE 243 §1 — NO DOCTOR DOWNLOADS (owner revision 2026-11-17, plan default
  * 4). `source` hands over the original PDF, so a Doctor is refused there (403,
  * audited) and reads the archive through `show` and `page` as inline images.
+ *
+ * RULE 243 §2.10 — THE DOCTOR ENCOUNTER SCOPE (PR A2, behind
+ * `rme.doctor_encounter_scope`). With the flag ON a Doctor reads an archive
+ * only inside an own in-service encounter with the patient; outside it `show`,
+ * `page` and `source` answer 404 (the policy), before any download rule, and
+ * `authorizeRead()` asks the scope's one authority again past the policy.
  */
 class LegacyOdontogramRecordController extends Controller
 {
@@ -69,12 +76,13 @@ class LegacyOdontogramRecordController extends Controller
         private readonly LegacyOdontogramAuditService $audit,
         private readonly LegacyOdontogramFeatureGuard $feature,
         private readonly DoctorRoomScopeService $printDeny,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     public function show(Request $request, int $record): View
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('view', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'view');
 
         $this->audit->logRecordEvent(
             LegacyOdontogramAuditEvent::RECORD_VIEWED,
@@ -97,7 +105,7 @@ class LegacyOdontogramRecordController extends Controller
     public function source(Request $request, int $record): StreamedResponse
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('viewFile', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'viewFile');
         $this->assertStreamable($legacyRecord);
         $this->authorizeDownload($request, $legacyRecord, 'source');
 
@@ -126,7 +134,7 @@ class LegacyOdontogramRecordController extends Controller
     public function page(Request $request, int $record, int $page): StreamedResponse
     {
         $legacyRecord = $this->resolve($request, $record);
-        $this->authorize('viewFile', $legacyRecord);
+        $this->authorizeRead($request, $legacyRecord, 'viewFile');
         $this->assertStreamable($legacyRecord);
 
         $pageRecord = $this->records->findPage($legacyRecord, $page);
@@ -190,9 +198,29 @@ class LegacyOdontogramRecordController extends Controller
             $this->scope->includesUnscopedRowsFor($user),
         );
 
-        abort_if($record === null, 404);
+        // Rule 243 §2.10 (A2 review LOW-1) — the same body as the encounter
+        // scope's 404 (`Response::denyAsNotFound()` renders "Not Found"), so a
+        // doctor cannot tell a missing archive from an out-of-scope one.
+        abort_if($record === null, 404, 'Not Found');
 
         return $record;
+    }
+
+    /**
+     * Rule 243 §2.10 — the read layers: the policy ability (`view`/`viewFile`;
+     * 404 for a Doctor outside the encounter scope), then the encounter scope
+     * asked once more of its one authority (a no-op with the flag OFF), so a
+     * bypassed policy (Gate::before, a regression) still cannot serve a doctor.
+     */
+    private function authorizeRead(Request $request, LegacyOdontogramRecord $record, string $ability): void
+    {
+        $this->authorize($ability, $record);
+
+        $user = $request->user();
+
+        if ($user !== null) {
+            $this->doctorScope->assertLegacyArchiveReadable($user, (int) $record->patient_id);
+        }
     }
 
     /**

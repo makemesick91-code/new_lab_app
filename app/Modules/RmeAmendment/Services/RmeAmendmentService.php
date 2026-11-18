@@ -20,11 +20,13 @@ use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Support\FdiToothNumbers;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
@@ -658,10 +660,15 @@ final class RmeAmendmentService
         return null;
     }
 
-    /** May this account read the record at all (MedicalRecordPolicy / OdontogramPolicy `view`)? */
+    /**
+     * May this account read the record at all (MedicalRecordPolicy / OdontogramPolicy
+     * `view`)? Rule 243 §2.11 — its CONTENT (RmeRecordVersionService::readAbility()):
+     * under the doctor encounter scope a book anchored to a visit the doctor may
+     * not read is "not found" here; exactly `view` otherwise.
+     */
     public function maySeeSubject(User $user, MedicalRecord|Odontogram $subject): bool
     {
-        return $subject->exists && Gate::forUser($user)->allows('view', $subject);
+        return $subject->exists && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**
@@ -709,7 +716,9 @@ final class RmeAmendmentService
         $isRequester = (int) $amendment->requested_by === (int) $user->getKey();
         $isApprover = $user->can(self::PERMISSION_APPROVE) && $this->branchScope->allows($user, (int) $amendment->branch_id);
 
-        return ($isRequester || $isApprover) && Gate::forUser($user)->allows('view', $subject);
+        // Rule 243 §2.11 — a doctor requester sees only the amendments of a
+        // record whose visit they may read (exactly `view` with the flag OFF).
+        return ($isRequester || $isApprover) && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**
@@ -985,7 +994,7 @@ final class RmeAmendmentService
     {
         $this->assertVisibleSubject($subject, $user);
 
-        Gate::forUser($user)->authorize('view', $subject);
+        Gate::forUser($user)->authorize(RmeRecordVersionService::readAbility($subject, $user), $subject);
         [$type, $id] = $this->subjectKey($subject);
 
         // The list needs no snapshot: number, kind, author and time only, the
@@ -1032,11 +1041,15 @@ final class RmeAmendmentService
             return $detail + ['chart_diff' => $this->chartDiff($before, $snapshot)];
         }
 
+        // Rule 243 §2.8 — under the doctor encounter scope, only the pages this
+        // reader may open (the page routes' own rule); every page otherwise.
+        $snapshotPages = $this->pagesReadableBy($user, $snapshot['pages'] ?? []);
+
         // Rule 240 §8 / §9.5 — the appended correction pages' labels, as this
         // reader may read them: one query for every amendment the snapshot names.
         $pageLabels = $this->correctionPageLabelsFor($user, array_values(array_unique(array_map(
             fn (array $page): int => (int) $page['rme_amendment_id'],
-            array_filter($snapshot['pages'] ?? [], fn (array $page): bool => isset($page['rme_amendment_id'])),
+            array_filter($snapshotPages, fn (array $page): bool => isset($page['rme_amendment_id'])),
         ))));
 
         return $detail + [
@@ -1060,8 +1073,39 @@ final class RmeAmendmentService
                 'sha256' => isset($page['sha256']) ? substr((string) $page['sha256'], 0, 12) : null,
                 // Rule 240 §8 — an appended correction page says which amendment wrote it.
                 'label' => isset($page['rme_amendment_id']) ? ($pageLabels[(int) $page['rme_amendment_id']] ?? null) : null,
-            ], $snapshot['pages'] ?? []),
+            ], $snapshotPages),
         ];
+    }
+
+    /**
+     * Rule 243 §2.8 (doctor encounter scope) — of a version's locked pages (every
+     * page of the patient's book, §5.5), the ones $user may open: while the
+     * encounter scope applies to the reader, a page is kept only when its own
+     * route would serve it (MedicalRecordPolicy::viewHandwritingPage: the page's
+     * sheet readable, and a book page's authoring encounter readable), so the
+     * version page never lists a page another doctor wrote during an encounter
+     * the reader may not read. Every page, unchanged, otherwise. One lookup per
+     * distinct sheet.
+     *
+     * @param  list<array<string, mixed>>  $pages
+     * @return list<array<string, mixed>>
+     */
+    private function pagesReadableBy(User $user, array $pages): array
+    {
+        if (! app(DoctorPatientScopeService::class)->encounterScopeAppliesTo($user)) {
+            return $pages;
+        }
+
+        $sheets = [];
+
+        return array_values(array_filter($pages, function (array $page) use ($user, &$sheets): bool {
+            $sheetId = (int) ($page['medical_record_id'] ?? 0);
+            $sheets[$sheetId] ??= $this->amendments->findSubject(RmeRecordVersion::SUBJECT_MEDICAL_RECORD, $sheetId) ?? false;
+            $author = isset($page['authored_clinic_visit_id']) ? (int) $page['authored_clinic_visit_id'] : null;
+
+            return $sheets[$sheetId] instanceof MedicalRecord
+                && Gate::forUser($user)->allows('viewHandwritingPage', [$sheets[$sheetId], $author]);
+        }));
     }
 
     // ─── Correction page labels per viewer (rule 240 §9.5) ──────────────────
@@ -1146,6 +1190,10 @@ final class RmeAmendmentService
      * Rule 240 §9.5 — a sheet's RM pages as the RME print ($embedBinary) or the
      * cashier's clinical summary shows them, with its correction pointers, both
      * as this viewer may read their labels. The views print these as given.
+     * Rule 243 §2.8 — under the doctor encounter scope, a page of the BOOK that
+     * another doctor wrote during an encounter the viewer may not read is not
+     * printed (MedicalRecordSheetWriteScope::readableBookPages(); unchanged with
+     * the flag OFF).
      *
      * @return array{rmPagesForReader: Collection<int|string, array<string, mixed>>, correctionPointersForReader: list<string>}
      */
@@ -1155,9 +1203,12 @@ final class RmeAmendmentService
             return ['rmPagesForReader' => collect(), 'correctionPointersForReader' => []];
         }
 
+        $pages = $sheet->orderedHandwritingPages($embedBinary)->filter(fn (array $page): bool => (bool) $page['has_content']);
+        $sheetScope = app(MedicalRecordSheetWriteScope::class);
+        $pages = $sheetScope->readableBookPages($viewer, $sheet, $pages, $sheetScope->scopedBookId($viewer, (int) $sheet->patient_id));
+
         return [
-            'rmPagesForReader' => $this->correctionPagesFor($viewer, $sheet->orderedHandwritingPages($embedBinary)
-                ->filter(fn (array $page): bool => (bool) $page['has_content'])),
+            'rmPagesForReader' => $this->correctionPagesFor($viewer, $pages),
             'correctionPointersForReader' => $this->correctionPointersFor($viewer, $sheet),
         ];
     }
@@ -1524,7 +1575,7 @@ final class RmeAmendmentService
     private function inApproverScope(User $user, RmeAmendment $amendment, MedicalRecord|Odontogram $subject): bool
     {
         return $this->branchScope->allows($user, (int) $amendment->branch_id)
-            && Gate::forUser($user)->allows('view', $subject);
+            && Gate::forUser($user)->allows(RmeRecordVersionService::readAbility($subject, $user), $subject);
     }
 
     /**

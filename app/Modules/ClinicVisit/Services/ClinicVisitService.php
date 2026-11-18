@@ -460,14 +460,31 @@ class ClinicVisitService
 
     /**
      * Patient visit history scoped to active RME-enabled branches.
+     *
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.6, PR A1b) —
+     * the explicit-actor pattern (rule 199): a caller that shows the history to
+     * a person passes that person as `$viewer`. With `rme.doctor_encounter_scope`
+     * ON a doctor viewer then sees only the visits the per-record check admits
+     * (DoctorPatientScopeService::doctorCanAccessVisit(), memoised per request),
+     * so the history, and the legacy timeline built from it, can never list what
+     * the visit page would refuse. With the flag OFF, or without a viewer, the
+     * history is unchanged.
      */
-    public function patientVisitHistory(int $patientId, ?int $excludeVisitId = null): Collection
+    public function patientVisitHistory(int $patientId, ?int $excludeVisitId = null, ?User $viewer = null): Collection
     {
-        return $this->visits->listForPatient(
+        $history = $this->visits->listForPatient(
             $this->branches->rmeEnabledIds(),
             $patientId,
             $excludeVisitId,
         );
+
+        if ($viewer === null || ! $this->doctorScope->encounterScopeEnabled()) {
+            return $history;
+        }
+
+        return $history
+            ->filter(fn (ClinicVisit $visit) => $this->doctorScope->doctorCanAccessVisit($viewer, $visit))
+            ->values();
     }
 
     /**
@@ -558,7 +575,9 @@ class ClinicVisitService
 
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — the picker offers only
         // what the registration guard accepts: never a cancelled visit.
-        return $this->patientVisitHistory($patientId, $excludeVisitId)
+        // Rule 243 §2.6 — a doctor registrar sees only what the encounter scope
+        // admits (flag ON); every other registrar, and the flag OFF, unchanged.
+        return $this->patientVisitHistory($patientId, $excludeVisitId, $registrar)
             ->reject(fn (ClinicVisit $visit) => $visit->status === ClinicVisit::STATUS_CANCELLED)
             ->map(fn (ClinicVisit $visit) => [
                 'id' => $visit->id,

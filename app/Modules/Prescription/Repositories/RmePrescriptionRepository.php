@@ -4,6 +4,7 @@ namespace App\Modules\Prescription\Repositories;
 
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
+use Closure;
 use Illuminate\Support\Collection;
 
 class RmePrescriptionRepository implements RmePrescriptionRepositoryInterface
@@ -23,13 +24,14 @@ class RmePrescriptionRepository implements RmePrescriptionRepositoryInterface
             ->first();
     }
 
-    public function historyForPatient(int $patientId, array $branchIds, ?int $excludeVisitId = null): Collection
+    public function historyForPatient(int $patientId, array $branchIds, ?int $excludeVisitId = null, ?Closure $visitScope = null): Collection
     {
         return RmePrescription::query()
             ->with(['clinicVisit', 'doctor'])
             ->where('patient_id', $patientId)
             ->whereIn('branch_id', $branchIds)
             ->when($excludeVisitId !== null, fn ($q) => $q->where('clinic_visit_id', '!=', $excludeVisitId))
+            ->when($visitScope !== null, fn ($q) => $q->whereHas('clinicVisit', $visitScope))
             ->orderByDesc('prescription_date')
             ->orderByDesc('id')
             ->limit(20)

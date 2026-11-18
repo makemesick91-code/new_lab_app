@@ -13,6 +13,7 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Support\Clinical\ClinicalClock;
@@ -29,6 +30,7 @@ class OdontogramController extends Controller
     public function __construct(
         private readonly OdontogramService $service,
         private readonly DoctorRoomScopeService $doctorRoomScope,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     public function show(
@@ -58,7 +60,13 @@ class OdontogramController extends Controller
 
         $clinicVisit->loadMissing(['followUpOf.odontogram', 'patient', 'doctor']);
 
-        $parentOdontogram = $clinicVisit->followUpOf?->odontogram;
+        // Rule 243 §2.11 (PR A3b) — the parent card ("Odontogram Kunjungan
+        // Sebelumnya") names the parent visit, so it appears only when the
+        // viewer may open that visit (always with the encounter scope OFF).
+        $parentOdontogram = $clinicVisit->followUpOf !== null
+            && $this->doctorScope->listsVisitFor($request->user(), $clinicVisit->followUpOf)
+                ? $clinicVisit->followUpOf->odontogram
+                : null;
 
         // Prev/next arrow navigation across the patient's visits. Scoped to the
         // visit, not to the odontogram, so it is unaffected by whether this

@@ -11,7 +11,9 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -79,7 +81,7 @@ class MedicalRecordHandwritingController extends Controller
                 $clinicVisit = $canonicalVisit;
             }
 
-            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents);
+            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents, bookPage: $isNewCanonicalPage);
         }
 
         // Rule 240 §4 (memo M3.3, supersedes the Sprint 59 "handwriting RM is
@@ -106,7 +108,7 @@ class MedicalRecordHandwritingController extends Controller
         $decoded = $this->payloadGuard->decodeCanvas($request->input('handwriting_data'));
 
         $saved = $handwritingService->save(
-            function () use ($needsCanonicalDraft, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
+            function () use ($needsCanonicalDraft, $isNewCanonicalPage, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
                 if (! $needsCanonicalDraft) {
                     // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) —
                     // re-decided inside the save transaction, locking the encounter's
@@ -115,6 +117,15 @@ class MedicalRecordHandwritingController extends Controller
                     // canonical-draft path below asserts the same inside
                     // getOrCreateCanonicalMedicalRecord().
                     $encounter = $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+
+                    // Rule 243 §2.5 (PR A1b) — an in-place page of a per-visit
+                    // sheet is that sheet's content: with the encounter scope ON
+                    // only the doctor of its own visit, in service, past any policy
+                    // (an unlocked read of the sheet's visit; lock order kept). A
+                    // book page stays patient-level (appendPage).
+                    if (! $isNewCanonicalPage) {
+                        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, Auth::user());
+                    }
 
                     // Rule 240 §4 — the authorized encounter is the page's author.
                     return [$medicalRecord, $clinicVisit, $encounter];
@@ -131,7 +142,7 @@ class MedicalRecordHandwritingController extends Controller
                 $storageVisit = $draft->clinicVisit ?? $canonicalVisit;
 
                 // A refusal here rolls the draft back with the rest of the save.
-                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents);
+                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents, bookPage: true);
 
                 return [$draft, $storageVisit, $encounter];
             },
@@ -145,7 +156,10 @@ class MedicalRecordHandwritingController extends Controller
         $clinicVisit = $saved['storage_visit'];
         $focusPage = $saved['page_number'];
 
-        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id);
+        // Rule 243 §2.11 (PR A3) — the focus index is the saver's OWN page
+        // sequence (the pages of the sheets they may read), the same sequence the
+        // workspace renders for them after the redirect.
+        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id, Auth::user());
         $virtualFocus = $handwritingBook->first(
             fn (array $page) => $page['medical_record_id'] === $medicalRecord->id
                 && (int) $page['storage_page_number'] === $focusPage
@@ -172,11 +186,20 @@ class MedicalRecordHandwritingController extends Controller
      * allowed to update it, and the patient must have an authorized, consented
      * examination in progress.
      */
-    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): ClinicVisit
+    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents, bool $bookPage = false): ClinicVisit
     {
         abort_if($medicalRecord->clinic_visit_id !== $storageVisit->id, 404);
 
-        $this->authorize('update', $medicalRecord);
+        // Rule 243 §2 — a page of the patient's BOOK is patient-level
+        // (`appendPage`: inside an own in-service encounter when the encounter
+        // scope is ON); an in-place page of a per-visit sheet follows that
+        // sheet's own visit (`update`). With the flag OFF both are `update`.
+        // Flag-OFF parity: `appendPage` only while the encounter scope applies
+        // to the user, otherwise exactly the `update` asked before.
+        $this->authorize(
+            $bookPage ? app(DoctorPatientScopeService::class)->abilityFor(Auth::user(), 'appendPage', 'update') : 'update',
+            $medicalRecord,
+        );
 
         /*
          * FIX-02 — handwriting is RME content, so it is gated exactly like the

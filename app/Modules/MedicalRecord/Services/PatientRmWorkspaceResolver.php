@@ -2,6 +2,7 @@
 
 namespace App\Modules\MedicalRecord\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -154,15 +155,28 @@ class PatientRmWorkspaceResolver
      * Each entry extends orderedHandwritingPages() with:
      * virtual_page_number, medical_record_id, clinic_visit_id, storage_page_number.
      *
+     * Rule 243 §2.11 (PR A3) — with $viewer, only the pages of the sheets that
+     * viewer may read ({@see sheetsForPatient()}), numbered in that viewer's own
+     * sequence, so a page of a sheet the doctor may not open is never listed and
+     * the page indices the workspace and the save redirect use agree. Rule 243
+     * §2.8 — and of the BOOK only the pages whose authoring encounter the viewer
+     * may read (MedicalRecordSheetWriteScope::readableBookPages(), on rule 240's
+     * author stamp; unchanged with the encounter scope OFF).
+     *
      * @return Collection<int, array<string, mixed>>
      */
-    public function orderedHandwritingBookForPatient(int $patientId): Collection
+    public function orderedHandwritingBookForPatient(int $patientId, ?User $viewer = null): Collection
     {
         $virtualPages = collect();
         $virtualIndex = 1;
+        $sheetScope = $viewer !== null ? app(MedicalRecordSheetWriteScope::class) : null;
+        $sheets = $this->sheetsForPatient($patientId, $viewer);
+        $bookId = $sheetScope?->scopedBookId($viewer, $patientId);
 
-        foreach ($this->sheetsForPatient($patientId) as $sheet) {
-            foreach ($sheet->orderedHandwritingPages() as $page) {
+        foreach ($sheets as $sheet) {
+            $pages = $sheet->orderedHandwritingPages();
+
+            foreach ($sheetScope?->readableBookPages($viewer, $sheet, $pages, $bookId) ?? $pages as $page) {
                 $virtualPages->push(array_merge($page, [
                     'virtual_page_number' => $virtualIndex,
                     'medical_record_id' => $sheet->id,
@@ -181,11 +195,17 @@ class PatientRmWorkspaceResolver
      * ordered chronologically by their source visit (visit_date, id). This is the
      * swipe order shown in the workspace.
      *
+     * Rule 243 §2.11 (PR A3) — with $viewer, only the sheets that viewer may
+     * read (MedicalRecordSheetWriteScope::readableSheets(), the list mirror of
+     * MedicalRecordPolicy::view; unchanged with the encounter scope OFF). Every
+     * list shown to a person passes the viewer; server-side facts (whether the
+     * patient has sheets at all, a sheet's rank) never do.
+     *
      * @return Collection<int, MedicalRecord>
      */
-    public function sheetsForPatient(int $patientId): Collection
+    public function sheetsForPatient(int $patientId, ?User $viewer = null): Collection
     {
-        return MedicalRecord::query()
+        $sheets = MedicalRecord::query()
             ->select('trx_medical_records.*')
             ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_medical_records.clinic_visit_id')
             ->whereIn('trx_medical_records.branch_id', $this->rmeBranchIds())
@@ -194,6 +214,10 @@ class PatientRmWorkspaceResolver
             ->orderBy('trx_clinic_visits.visit_date')
             ->orderBy('trx_clinic_visits.id')
             ->get();
+
+        // Resolved here, not injected: MedicalRecordSheetWriteScope depends on
+        // this resolver for the book.
+        return $viewer === null ? $sheets : app(MedicalRecordSheetWriteScope::class)->readableSheets($viewer, $sheets);
     }
 
     /**

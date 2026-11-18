@@ -875,7 +875,10 @@ class RmeVisitConsentService
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->doctorCanAccessVisit($actor, $encounter);
+        // Rule 243 §2 (owner M2.1) — with the encounter scope ON a Doctor works
+        // only on their OWN in-service encounter, never another doctor's (the
+        // OD-5-1 co-authoring ends); with it OFF this is exactly the read scope.
+        return app(DoctorPatientScopeService::class)->doctorMayWriteVisit($actor, $encounter);
     }
 
     /*
@@ -1756,7 +1759,8 @@ class RmeVisitConsentService
      */
     private function assertOperatorWithinScope(User $operator, ClinicVisit $visit): void
     {
-        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($operator, $visit);
+        // Rule 243 §2 — signing and voiding are writes on the encounter.
+        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitWrite($operator, $visit);
 
         if (! app(RmeWorkingBranchScope::class)->allows($operator, $visit->branch_id)
             || $patientScope === false
