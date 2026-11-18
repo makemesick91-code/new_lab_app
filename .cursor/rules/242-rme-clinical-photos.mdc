@@ -21,6 +21,16 @@ section. The gallery UI is a separate PR.
   decision (environment override, config cache rebuilt as the runtime user), a WATCH posture.
 - Rule 241 §6.6: no role gains automatic access to photos; upload needs the executed consent with
   `allowsClinicalDocumentation()`.
+- Owner decisions of 2026-11-18 (structured question), binding:
+  - **Size: "Raise to 50 MP".** Edges up to 10000 px and at most 50 megapixels, header-checked before decoding;
+    still re-encoded to a 2560 px long edge at quality 85; the 15 MB file cap is unchanged (§4.1).
+  - **Backup before ON (HARD precondition).** A backup of the private clinical-evidence disk AND a tested restore of
+    it exist before `rme.clinical_photos` is turned on. Today only the database is backed up (memo M6.2), so a photo
+    stored now would not survive a disk loss (§8).
+  - **Owner reads only by explicit grant.** The Owner role is on the read role list but is NOT seeded
+    `view_rme_clinical_photos`; reading needs an explicit, recorded permission grant (§5.2).
+  - **403 while OFF is accepted.** An account without a photo route's permission is refused 403 by the route
+    middleware even while the flag is OFF; every holder of it gets 404 (the repository's flagged-route pattern, §1).
 
 ## 1. The flag (CG-08, rule 92)
 
@@ -29,7 +39,8 @@ config build, read only through `FeatureFlagService` (`RmeClinicalPhotoService::
 `StoreRmeClinicalPhotoRequest::authorize()` and `RmeClinicalPhotoController::image()` answer 404 before the policy (so
 Super Admin too), `RmeClinicalPhotoPolicy::upload` denies as not found, `upload()` and `imageFor()` throw
 `NotFoundHttpException`, `visibleForVisit()` returns nothing and `uploadRefusal()` names it. An account without the
-route's permission is refused 403 by the route middleware first, as on every flagged route. The upload route carries
+route's permission is refused 403 by the route middleware first, as on every flagged route (accepted by the owner on
+2026-11-18, §0). The upload route carries
 no `visit.room` (review L-2): that gate only redirects a pre-exam visit, an upload needs the `in_progress` encounter
 anyway, and it would answer 302 ahead of the flag's 404. Rollback: the flag off; nothing is deleted.
 
@@ -81,7 +92,7 @@ transaction.
 1. **Normalizer** (`app/Modules/ClinicalPhoto/Support/ClinicalPhotoNormalizer.php`), before any write: the upload
    read with `UploadedFile::getContent()` (a read failure throws; it is never folded into "no photo", review H-1, and
    no `@file_get_contents` enters application code); at most 15 MB; the type sniffed from the bytes (JPEG or PNG
-   magic; GIF, SVG, HTML, PHP, anything else refused) and the header must agree; edges 64–8000 px and at most 25 MP
+   magic; GIF, SVG, HTML, PHP, anything else refused) and the header must agree; edges 64–10000 px and at most 50 MP
    read from the HEADER before decoding (decompression-bomb guard); a JPEG's markers walked without decoding
    (`jpegStructureRefusal()`), every offset checked against the length before use, so a crafted or cut-off segment
    length is a refusal, never a `ValueError` (re-review R2-1) — at most `MAX_JPEG_SCANS` (64) scans, else
@@ -94,7 +105,12 @@ transaction.
    a JPEG from a `tmpfile()` the normalizer owns and closes, with `gd.jpeg_ignore_warning` off for that call only,
    because only GD's file decoder reports libjpeg's warnings, and libgd reports only the FIRST one: any recoverable
    libjpeg error refuses (a "premature end", a truncated scan GD fills with grey, is `MESSAGE_INCOMPLETE`, review
-   L-1; anything else, such as an inconsistent progression that would mask one, is `MESSAGE_RESAVE`, R2-3). The
+   L-1; anything else, such as an inconsistent progression that would mask one, is `MESSAGE_RESAVE`, R2-3; the
+   reviewed trade-off: this closes the masking hole at the price of refusing a slightly malformed but viewable camera
+   file, so the `MESSAGE_RESAVE` rate is watched after the flag is turned on). **Memory** (owner's 50 MP bound): GD
+   holds about 4 bytes per pixel in system libgd, outside PHP's `memory_limit`, so a 50 MP upload needs about
+   200–380 MB resident in its worker (measured here: 251 MB peak resident and 0.8 s for a 50.0 MP JPEG; five
+   PHP-FPM workers can hold that at once). The
    temporary file sits in the PHP-FPM pool's temporary directory (systemd `PrivateTmp` where the unit sets it); a
    worker killed mid-decode can leave it behind until that directory is cleaned, holding no more than the upload
    PHP itself already keeps there. A truncated PNG fails to decode; drawn onto a fresh opaque canvas,
@@ -120,7 +136,8 @@ transaction.
    JPEG with `Content-Type: image/jpeg`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`,
    `Content-Disposition: inline; filename="foto-klinis-<id>.jpg"`; the object key never leaves the server.
 2. **Scope.** `RmeClinicalPhotoService::mayViewVisit()`: the flag; `view_rme_clinical_photos` (seeded to Doctor,
-   Perawat, Supervisor RME; not Owner); a `READ_ROLES` role (`RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES`:
+   Perawat, Supervisor RME; not Owner, who reads only by an explicit grant, owner decision 2026-11-18); a
+   `READ_ROLES` role (`RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES`:
    the clinical roles and Owner, so Front Office, Kasir and Admin Klinik never read, even with a runtime grant);
    `RmeWorkingBranchScope::allowsClinicalDocument()` (rule 227 §1); `DoctorPatientScopeService::doctorCanAccessVisit()`,
    which is also where the doctor encounter scope of rule 243 §2 applies while its flag is ON. The policy denies as
@@ -147,7 +164,8 @@ message to show; read-only), `canUpload()` and `visibleForVisit()`, and renders 
 
 `php artisan migrate --force` (additive) after the runner's backup, then `PermissionSeeder`, then `RoleSeeder`, then
 `permission:cache-reset` (CG-15). The flag stays OFF. Photos are not in the database-only daily backup (memo M6.2): a
-backup of the clinical evidence disk is a precondition of turning the flag on. nginx and PHP-FPM already admit 15 MB.
+backup of the private clinical-evidence disk plus a TESTED restore of it is a HARD precondition of turning the flag on
+(owner, 2026-11-18). nginx and PHP-FPM already admit 15 MB; size the PHP-FPM host for the §4.1 memory per upload.
 
 Tests: `tests/Feature/RME/RmeClinicalEvidencePhotoUploadTest.php` and
 `tests/Feature/RME/RmeClinicalEvidencePhotoReadScopeTest.php` (token `ClinicalEvidence`, both declared in

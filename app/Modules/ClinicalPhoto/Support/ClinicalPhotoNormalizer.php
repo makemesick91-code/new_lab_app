@@ -40,10 +40,17 @@ class ClinicalPhotoNormalizer
 
     public const MIN_EDGE = 64;
 
-    public const MAX_EDGE = 8000;
+    /**
+     * Owner decision 2026-11-18 ("Raise to 50 MP"): edges up to 10000 px and at
+     * most 50 megapixels, read from the header before anything is decoded; the
+     * file stays capped at 15 MB and the output at a 2560 px long edge. A 50 MP
+     * decode holds about 200 MB of pixels in GD (system libgd, outside PHP's
+     * memory_limit): measured 251 MB peak resident and 0.8 s per upload here;
+     * the range is about 200–380 MB per worker at the top of the bound.
+     */
+    public const MAX_EDGE = 10000;
 
-    /** About 25 MP (a 6000 × 4000 camera frame): decoded, about 100 MB in GD. */
-    public const MAX_PIXELS = 25_000_000;
+    public const MAX_PIXELS = 50_000_000;
 
     public const OUTPUT_LONG_EDGE = 2560;
 
@@ -72,7 +79,7 @@ class ClinicalPhotoNormalizer
 
     public const MESSAGE_TYPE = 'Foto klinis harus berupa gambar JPEG atau PNG.';
 
-    public const MESSAGE_DIMENSIONS = 'Dimensi foto klinis tidak wajar: setiap sisi 64–8000 piksel dan paling banyak 25 megapiksel.';
+    public const MESSAGE_DIMENSIONS = 'Dimensi foto klinis tidak wajar: setiap sisi 64–10000 piksel dan paling banyak 50 megapiksel.';
 
     public const MESSAGE_UNREADABLE = 'Foto klinis rusak atau tidak dapat diproses.';
 

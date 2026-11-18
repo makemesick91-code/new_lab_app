@@ -598,6 +598,49 @@ it('CPU-08 refuses anything but a decodable JPEG or PNG, sniffed from the bytes,
     'PNG magic then garbage' => ["\x89PNG\r\n\x1a\n".str_repeat('B', 4000), 'foto.png'],
 ]);
 
+/** SOI + a baseline SOF0 header only: getimagesize() reads its size; nothing can be decoded. */
+function rcpuJpegHeader(int $width, int $height): string
+{
+    return "\xFF\xD8\xFF\xC0".pack('n', 17).chr(8).pack('nn', $height, $width).chr(3)."\x01\x22\x00\x02\x11\x01\x03\x11\x01";
+}
+
+it('CPU-08k the owner\'s 50 MP bound (2026-11-18): edges to 10000 px and 50 MP pass the header check, one pixel more does not', function () {
+    $visit = rcpuEncounter();
+
+    expect(ClinicalPhotoNormalizer::MAX_EDGE)->toBe(10000)
+        ->and(ClinicalPhotoNormalizer::MAX_PIXELS)->toBe(50_000_000)
+        ->and(ClinicalPhotoNormalizer::MAX_UPLOAD_BYTES)->toBe(15 * 1024 * 1024)
+        ->and(ClinicalPhotoNormalizer::OUTPUT_LONG_EDGE)->toBe(2560);
+
+    // Inside the bound: the size check passes and the header-only file is refused
+    // afterwards as incomplete — never decoded, so no 200 MB fixture is needed.
+    $inside = [
+        '45.7 MP camera frame (8268 x 5528)' => [8268, 5528],
+        'exactly 50 MP, edge 10000' => [10000, 5000],
+        'an edge of 9000, over the old 8000 bound' => [9000, 4000],
+    ];
+
+    foreach ($inside as $label => [$width, $height]) {
+        expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, rcpuJpegHeader($width, $height))))
+            ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_INCOMPLETE], $label);
+    }
+
+    $outside = [
+        '50.1 MP (10000 x 5010)' => [10000, 5010],
+        'one pixel over 50 MP' => [10000, 5001],
+        'an edge of 10001' => [10001, 64],
+        'a height of 10001' => [64, 10001],
+    ];
+
+    foreach ($outside as $label => [$width, $height]) {
+        expect(rcpuRefusal(fn () => rcpuServiceUpload($visit, null, rcpuJpegHeader($width, $height))))
+            ->toBe([ValidationException::class, ClinicalPhotoNormalizer::MESSAGE_DIMENSIONS], $label);
+    }
+
+    expect(ClinicalPhotoNormalizer::MESSAGE_DIMENSIONS)->toContain('10000')->toContain('50 megapiksel')
+        ->and(RmeClinicalPhoto::query()->count())->toBe(0);
+});
+
 it('CPU-08b refuses an oversized upload, a decompression bomb header and a too-small image before decoding', function () {
     $visit = rcpuEncounter();
 
