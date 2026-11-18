@@ -9,6 +9,7 @@ use App\Modules\Consent\Requests\CountersignRmeVisitConsentRequest;
 use App\Modules\Consent\Requests\StoreRmeVisitConsentRequest;
 use App\Modules\Consent\Requests\VoidRmeVisitConsentRequest;
 use App\Modules\Consent\Services\RmeVisitConsentService;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +32,9 @@ class RmeVisitConsentController extends Controller
     public function __construct(
         private readonly RmeVisitConsentService $consents,
         private readonly DoctorRoomScopeService $printDeny,
+        // Rule 243 §3 (memo M3.1, PR C1) — what the consent PAGE shows of the
+        // identity block: masked NIK and no address for a Doctor.
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     public function create(ClinicVisit $clinicVisit): View|RedirectResponse
@@ -107,7 +111,7 @@ class RmeVisitConsentController extends Controller
     {
         $this->authorize('view', $consent);
 
-        return view('rme.consents.show', $this->documentData($consent) + [
+        return view('rme.consents.show', $this->documentData($consent, $this->identities->forConsentViewer($consent, request()->user())) + [
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — decided here, never in
             // Blade; the policy, the route permission and the service decide again.
             // The state checks are explicit: Gate::before answers `void` for
@@ -149,7 +153,7 @@ class RmeVisitConsentController extends Controller
                 ->with('error', collect($refused->errors())->flatten()->first());
         }
 
-        return view('rme.consents.countersign', $this->documentData($consent));
+        return view('rme.consents.countersign', $this->documentData($consent, $this->identities->forConsentViewer($consent, request()->user())));
     }
 
     public function countersign(CountersignRmeVisitConsentRequest $request, RmeVisitConsent $consent): RedirectResponse
@@ -203,7 +207,9 @@ class RmeVisitConsentController extends Controller
             $this->printDeny->assertClinicalPrintAllowed($user);
         }
 
-        return view('rme.consents.print', $this->documentData($consent));
+        // The printed document is unchanged (AIR-RMC-13): the full identity
+        // numbers and both addresses. A Doctor never reaches it (above).
+        return view('rme.consents.print', $this->documentData($consent, $this->identities->forConsentDocument($consent)));
     }
 
     /**
@@ -243,15 +249,23 @@ class RmeVisitConsentController extends Controller
     }
 
     /**
+     * `$consentIdentity` is the identity block as this surface renders it
+     * (PatientIdentityPresenter, rule 243 §3).
+     *
+     * @param  array{addresses_visible: bool, consenter_address: ?string, consenter_identity_number: ?string, patient_address: ?string, patient_identity_number: ?string}  $consentIdentity
      * @return array<string, mixed>
      */
-    private function documentData(RmeVisitConsent $consent): array
+    private function documentData(RmeVisitConsent $consent, array $consentIdentity): array
     {
         $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy', 'doctorCountersignature.doctor']);
         $countersignature = $consent->doctorCountersignature;
 
         return [
             'consent' => $consent,
+            // Rule 243 §3 (memo M3.1) — the identity numbers and addresses the
+            // partial renders: the document's own for print and every non-doctor
+            // page, masked numbers and no address rows on a Doctor's page.
+            'consentIdentity' => $consentIdentity,
             'branch' => $consent->clinicVisit?->branch,
             'relationships' => (array) config('rme_consent.relationships', []),
             'genderLabels' => (array) config('rme_consent.gender_labels', []),

@@ -88,8 +88,8 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-13** Gate consent routes on `manage_rme_consents` / `view_rme_consents` (capture: Front Office, Kasir,
   Admin Klinik, Supervisor RME fallback; the Doctor reads and countersigns, rule 241 §4), never on
   `manage_clinic_visits` (Kasir lacks it). Keep identity numbers and signature paths `$hidden`; only the consent
-  document renders a full identity number; signatures stay on a private disk streamed through the consent policy.
-  Source: rule 100 §6–7.
+  document renders a full identity number (masked, without addresses, on a Doctor's consent page: rule 243 §3);
+  signatures stay on a private disk streamed through the consent policy. Source: rule 100 §6–7.
 
 ### Odontogram
 
@@ -325,13 +325,13 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 | `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row decisions; mirrored controls; front office never authors |
 | `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object one unit; canvas binding |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint racing first writes; visit number lock |
-| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Rx writes follow the authoring authority; Blade PHP pairing |
+| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Rx writes follow authoring authority; Blade PHP pairing |
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Read scope; printed Rx identity; authoring allowlist; numbers |
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
 | `.cursor/rules/240-rme-finalized-record-lock-and-amendment.mdc` | Final sheet and finalized odontogram locked; supervised amendment |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
-| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM double signature: countersignature (§1); both signatures gate writing, UI states, capture roles (§2–§5); consent template v2026.2, inactive until approved wording (§6) |
+| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM countersignature (§1); both signatures gate writing (§2–§5); template v2026.2 off until approved (§6) |
 
 ## History
 

@@ -199,6 +199,7 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 | `.cursor/rules/168-legacy-patient-staged-verification-cancel.mdc` | Legacy patient CSV staging and commit |
 | `.cursor/rules/169-legacy-patient-rollback-identity-reservation.mdc` | Rolled-back batches still reserve NIK and RM |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Patient master and patient document route keys constrained (404, never 500) |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor-visible patient fields (memo M3.1, §3) |
 | `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17); required core fields of a new patient and the no-phone exception (memo M4.2, §5) |
 
 ## History
@@ -271,3 +272,8 @@ file.
   never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes; the readers list open exceptions on
   the restricted index. A failed patient insert or update logs only the SQLSTATE (never the row), and invalid UTF-8 or
   NUL is a 422 on both registration forms and the edit form. Source: `244-…` §5.3, §5.5.
+- **AIR-PAT-38** A clinical screen shows a patient's identity only as `PatientIdentityPresenter` decides it
+  (`forViewer()`, the consent page's `forConsentViewer()`): a Doctor (rule 138's definition, dual roles included) gets
+  name, RM number, place/date of birth, age, occupation and gender, never the phone, WhatsApp, email, address or NIK;
+  every other role is unchanged. The master form (`manage patients`) stays the full record for the non-doctor role.
+  Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §3.

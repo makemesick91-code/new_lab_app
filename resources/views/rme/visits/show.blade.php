@@ -263,15 +263,19 @@
                         <dd class="mt-0.5 font-mono text-xs text-gray-500">{{ $visit->patient->medical_record_number }}</dd>
                     @endif
                 </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Ponsel</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->phone ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Nomor WA</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
-                    <dd class="mt-0.5 text-xs text-gray-500">Konfirmasi kehadiran &amp; tindak lanjut piutang. Tidak ada kiriman WhatsApp otomatis.</dd>
-                </div>
+                {{-- Rule 243 §3 (memo M3.1) — never on a doctor's screen; the
+                     controller's PatientIdentityPresenter decides the audience. --}}
+                @if ($patientIdentity->showsContact())
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Ponsel</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $patientIdentity->phone ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Nomor WA</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $patientIdentity->whatsappNumber ?? '—' }}</dd>
+                        <dd class="mt-0.5 text-xs text-gray-500">Konfirmasi kehadiran &amp; tindak lanjut piutang. Tidak ada kiriman WhatsApp otomatis.</dd>
+                    </div>
+                @endif
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Persetujuan Tindakan Medis</dt>
                     <dd class="mt-1 text-sm">

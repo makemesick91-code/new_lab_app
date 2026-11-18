@@ -230,6 +230,13 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   `unassigned_at` only, idempotent, runtime user, owner-approved. The room gate picks the doctor's working visit on
   the server, the workflow tabs never show an unreadable anchor, another doctor's roomless pre-exam visit is 404.
   Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.13.
+- **AIR-DAC-45** Doctor-visible patient fields (memo M3.1): a Doctor (rule 138's definition through
+  `shouldApplyDoctorScope()`, so also one holding Front Office, Admin Klinik or Kasir) sees name, RM number, place and
+  date of birth, age, occupation, planned treatment and gender, never the phone, WhatsApp, email, address or NIK, on
+  every clinical screen. One decision, `PatientIdentityPresenter` (controllers pass its view; Blade only renders); the
+  doctor's consent page masks the NIK and hides the addresses, the print is unchanged; the master form stays whole
+  for the non-doctor role. Not behind the encounter-scope flag. Source:
+  `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §3.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -276,7 +283,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Visit list scope excludes soft-deleted visits; D1 lease in-flight race recorded |
-| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1); M2.1/M2.2 encounter scope behind its flag (§2) |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1); M2.1/M2.2 encounter scope behind its flag (§2); M3.1 doctor-visible fields (§3) |
 
 ## History
 

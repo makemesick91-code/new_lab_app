@@ -232,51 +232,27 @@
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
                  two-column table (label : value). KTP number is intentionally
-                 never shown here, preserving RME privacy rules. Marital status
-                 and religion have no column in the pilot schema, so they use the
-                 safe "-" fallback (no migration added). --}}
-            @php
-                $patient = $clinicVisit->patient;
-                $bioDash = '-';
-                $genderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-
-                // TTL / Umur — birth date (and age) only; the schema has no
-                // place-of-birth column, so the place segment is omitted.
-                if ($patient?->date_of_birth) {
-                    $ttlUmur = $patient->date_of_birth->format('d-m-Y');
-                    $patientAge = $patient->age();
-                    if ($patientAge !== null) {
-                        $ttlUmur .= ' / '.$patientAge.' tahun';
-                    }
-                } else {
-                    $ttlUmur = $bioDash;
-                }
-
-                $bioLeft = [
-                    ['Nama', $patient?->name ?: $bioDash],
-                    ['TTL / Umur', $ttlUmur],
-                    ['Pekerjaan', $patient?->occupation ?: $bioDash],
-                    ['Status Pernikahan', $patient?->marital_status ?: $bioDash],
-                    ['Alamat', $patient?->address ?: $bioDash],
-                ];
-                $bioRight = [
-                    ['Jenis Kelamin', $patient?->gender ? ($genderLabels[$patient->gender] ?? $patient->gender) : $bioDash],
-                    ['Agama', $patient?->religion ?: $bioDash],
-                    ['No. Tlp / Wa', $patient?->whatsapp_number ?: ($patient?->phone ?: $bioDash)],
-                    ['Email', $patient?->email ?: $bioDash],
-                    ['No. RM', $patient?->medical_record_number ?: $bioDash],
-                ];
-            @endphp
-
+                 never shown here, preserving RME privacy rules.
+                 Rule 243 §3 (memo M3.1, PR C1) — the rows come from
+                 PatientIdentityPresenter (MedicalRecordController): a Doctor gets
+                 name, place/date of birth and age, occupation, gender and RM
+                 number only; every other role the full table as before (marital
+                 status and religion have no column, so "-"). A row's right pair
+                 may be empty. --}}
             <div class="overflow-x-auto">
                 <table class="w-full border-collapse text-sm">
                     <tbody>
-                        @foreach (range(0, 4) as $i)
+                        @foreach ($patientIdentity->biodataRows as [$bioLeftLabel, $bioLeftValue, $bioRightLabel, $bioRightValue])
                             <tr class="align-top">
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeft[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeft[$i][1] }}</td>
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRight[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRight[$i][1] }}</td>
+                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeftLabel }}</th>
+                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeftValue }}</td>
+                                @if ($bioRightLabel !== null)
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRightLabel }}</th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRightValue }}</td>
+                                @else
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5"></th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5"></td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>

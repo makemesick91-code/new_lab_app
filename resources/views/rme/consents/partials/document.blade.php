@@ -13,6 +13,13 @@
     "No KTP/SIM", it is reachable only through the consent policy (permission +
     branch scope + patient scope), and the value is never logged, never listed
     and never serialised (the model marks it $hidden).
+
+    Rule 243 §3 (memo M3.1, PR C1) — the identity numbers and addresses come
+    from $consentIdentity (PatientIdentityPresenter, decided by the controller):
+    the document's own values on the print and every non-doctor page; on a
+    Doctor's page (view, countersignature) the numbers masked and the two
+    "Alamat" rows not rendered. Column-0 directives, so a non-doctor render is
+    byte for byte what it was.
 --}}
 @php
     $snapshot = $consent->content_snapshot ?? [];
@@ -73,15 +80,17 @@
             <td class="consent-sep">:</td>
             <td class="consent-value">{{ $ageGender($consent->consenter_age, $consent->consenter_gender) }}</td>
         </tr>
+@if ($consentIdentity['addresses_visible'])
         <tr>
             <td class="consent-label">Alamat</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->consenter_address ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['consenter_address'] ?: '—' }}</td>
         </tr>
+@endif
         <tr>
             <td class="consent-label">No KTP/SIM</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->consenter_identity_number ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['consenter_identity_number'] ?: '—' }}</td>
         </tr>
     </table>
 
@@ -106,15 +115,17 @@
             <td class="consent-sep">:</td>
             <td class="consent-value">{{ $ageGender($consent->patient_age_snapshot, $consent->patient_gender_snapshot) }}</td>
         </tr>
+@if ($consentIdentity['addresses_visible'])
         <tr>
             <td class="consent-label">Alamat</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->patient_address_snapshot ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['patient_address'] ?: '—' }}</td>
         </tr>
+@endif
         <tr>
             <td class="consent-label">No KTP/SIM</td>
             <td class="consent-sep">:</td>
-            <td class="consent-value">{{ $consent->patient_identity_number_snapshot ?: '—' }}</td>
+            <td class="consent-value">{{ $consentIdentity['patient_identity_number'] ?: '—' }}</td>
         </tr>
         <tr>
             <td class="consent-label">Jenis Perawatan</td>

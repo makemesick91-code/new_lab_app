@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way. §2.12 (integration onto M3.3 + PTM) filters the book's pages by rule 240's author stamp, keeps a book on an unreadable anchor's versions and amendments from the doctor and the PTM banner from describing another doctor's encounter. §2.13 (PR A4), flag ON only: an in_progress visit moves only into the room its own doctor is online in, keeping its doctor, and any other move is refused (rule 228 §4 extended, Super Admin bound); a doctor change on a queued visit or a cancel ends the former doctor's now-stale auto_visit assignment (unassigned_at + reason code, audited ids only); `rme:doctor-assignments-reconcile` (dry run counts and visit ids; `--apply --confirm-plan=<digest>` sets unassigned_at only) also reports stale open visits and roomless pre-exam anchors; the room gate picks the doctor's working visit on the server, the workflow tabs never show an unreadable anchor, and another doctor's roomless pre-exam visit answers 404.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way. §2.12 (integration onto M3.3 + PTM) filters the book's pages by rule 240's author stamp, keeps a book on an unreadable anchor's versions and amendments from the doctor and the PTM banner from describing another doctor's encounter. §2.13 (PR A4), flag ON only: an in_progress visit moves only into the room its own doctor is online in, keeping its doctor, and any other move is refused (rule 228 §4 extended, Super Admin bound); a doctor change on a queued visit or a cancel ends the former doctor's now-stale auto_visit assignment (unassigned_at + reason code, audited ids only); `rme:doctor-assignments-reconcile` (dry run counts and visit ids; `--apply --confirm-plan=<digest>` sets unassigned_at only) also reports stale open visits and roomless pre-exam anchors; the room gate picks the doctor's working visit on the server, the workflow tabs never show an unreadable anchor, and another doctor's roomless pre-exam visit answers 404. §3 (PRs C1, C2; not behind the flag) decides the doctor-visible patient fields in `PatientIdentityPresenter` (a Doctor: name, RM number, place/date of birth, age, occupation, planned treatment, gender; never phone, WhatsApp, email, address or NIK), masks the NIK and hides the addresses on the doctor's consent page, draws a new RM page 1 with the allowed fields only and streams an old page 1 to a doctor with the hidden biodata cells blanked.
 globs:
   - "app/Modules/RME/Services/DoctorRoomScopeService.php"
   - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
@@ -54,6 +54,9 @@ globs:
   - "app/Modules/RME/Services/DoctorAssignmentReconcileService.php"
   - "app/Modules/RME/Models/PatientDoctorAssignment.php"
   - "app/Console/Commands/RmeDoctorAssignmentsReconcileCommand.php"
+  - "app/Modules/Patient/Services/PatientIdentityPresenter.php"
+  - "app/Modules/Patient/Support/PatientIdentityView.php"
+  - "resources/views/rme/visits/show.blade.php"
 alwaysApply: false
 ---
 
@@ -586,3 +589,43 @@ added by their own PRs.
       run counts and ids, no patient data, the anchor report against the resolver, digest missing/mismatch/drift
       refused, unassigned_at only, idempotent, the predicate shared with revocation, the WITA date boundary);
       token `DoctorPatientScope`, both declared in `critical_gate_mandatory_suites`.
+
+## 3. Doctor-visible patient fields (PRs C1, C2)
+
+1. **Owner decision and its reading.** M3.1 (2026-11-17, "memo list + RM number"; plan default 5, gender only): a
+   Doctor sees the patient's name, RM number, place and date of birth, age, occupation, planned treatment (the
+   visit's "Tindakan Awal", rendered from the visit as before) and gender; the phone, WhatsApp number, address, email
+   and NIK are hidden from every doctor screen. This revises AIR-RMC-13 (rule 100 §6–7): the doctor's consent page
+   shows a masked NIK (CG-11 is a ceiling, not an obligation); the printed consent document is unchanged. **Not
+   behind `rme.doctor_encounter_scope`:** the plan puts only design A (the encounter scope) behind it and names no
+   flag for C, so §3 is live on merge, like §1.
+2. **One decision.** `App\Modules\Patient\Services\PatientIdentityPresenter`: `audienceFor()` answers `doctor`
+   exactly when `DoctorPatientScopeService::shouldApplyDoctorScope()` does (§1.2's one Doctor definition, never a
+   second predicate) or when there is no viewer (fail closed). `forViewer()` returns a
+   `App\Modules\Patient\Support\PatientIdentityView` (for a doctor: phone, WhatsApp, email and address null,
+   `showsContact()` false, workspace biodata rows without them; no audience carries a NIK); `forConsentViewer()` and
+   `forConsentDocument()` return the PTM identity block. Controllers call it and pass the result; Blade only renders
+   it (CG-04). It reads the loaded patient and the viewer's roles and issues no query per patient.
+3. **Dual roles (the safe default).** A Doctor who also holds Front Office, Admin Klinik or Kasir gets the doctor
+   view on every clinical screen, as §1 refuses them downloads. The patient master form (`settings.patients.edit`,
+   `manage patients`) is not a clinical screen and the presenter never touches it, so the non-doctor role keeps the
+   full record there (CG-11's permission-gated master form). Owner, Super Admin and Supervisor RME are exempt.
+4. **The screens (C1).** Changed: the visit page `rme.visits.show` renders "Ponsel" and "Nomor WA" only when
+   `showsContact()`; the RM workspace "Informasi Kunjungan" table (`rme.visits.medical-record.show`) renders the
+   presenter's rows, for a doctor Nama, TTL / Umur, Pekerjaan, Jenis Kelamin and No. RM; the consent page and the
+   countersignature page (`rme.consents.show`, `rme.consents.countersign.create`) render the identity numbers as
+   `****` plus the last four and no "Alamat" row, for the consenter and the patient. The consent partial uses
+   column-0 directives, so the print and every non-doctor page render byte for byte as before (the pre-v2026.2 and
+   pre-rule-241 fixture comparisons still hold). Already showing the allowed fields only, unchanged and now pinned
+   by tests: the odontogram page, the prescription page (its printed identity is the prescription's own snapshot,
+   AIR-RMC-47), the empty workspace, the unified RM index and patient page. "TTL / Umur" now carries the place of
+   birth (memo M4.2 column) when one is recorded, for every audience.
+5. **Every other role is unchanged:** the full workspace table (marital status and religion have no column and stay
+   "-"), the phone and WhatsApp number on the visit page, the full consent page and print.
+6. **Recorded residual (follow-up OD-MEMO-C-1).** The oversight visit and patient pages and the room-patients monitor
+   show the phone to their oversight roles; a Doctor who also holds Finance Klinik or Data Analyst still sees it
+   there — the same dual-role oversight family as OD-MEMO-B-1 (§1.8), not a doctor screen.
+7. **Tests (C1).** `tests/Feature/RME/DoctorPatientScopeIdentityFieldsTest.php` (critical-gate token
+   `DoctorPatientScope`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`): every doctor screen
+   (flag OFF and ON on the visit page), non-doctor parity, the consent page masked and the print whole, the dual
+   role and the master form, every exempt role through the one predicate, no query per patient.

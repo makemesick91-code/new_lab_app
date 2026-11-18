@@ -21,6 +21,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
@@ -51,6 +52,9 @@ class ClinicVisitController extends Controller
         private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        // Rule 243 §3 (memo M3.1, PR C1) — the patient's identity as the viewer
+        // may see it (a Doctor: no phone, WhatsApp, email, address or NIK).
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -401,6 +405,9 @@ class ClinicVisitController extends Controller
 
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
+            // Rule 243 §3 (memo M3.1, PR C1) — decided here, never in Blade: the
+            // contact rows render only for an audience that may see them.
+            'patientIdentity' => $this->identities->forViewer($clinicVisit->patient, $viewer),
             'followUpOf' => $followUpOf,
             'followUpVisits' => $followUpVisits,
             'patientVisitHistory' => $patientVisitHistory,

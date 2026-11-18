@@ -25,6 +25,7 @@ use App\Modules\MedicalRecord\Services\UnifiedMedicalRecordIndexService;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
@@ -60,6 +61,8 @@ class MedicalRecordController extends Controller
         // Rule 243 §2.11 (PR A3) — with the encounter scope ON, every list in the
         // workspace names only what the viewer may read.
         private readonly DoctorPatientScopeService $doctorScope,
+        // Rule 243 §3 (memo M3.1) — the patient's identity as the viewer may see it.
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     /**
@@ -519,6 +522,10 @@ class MedicalRecordController extends Controller
             'addSheetVisit' => $addSheetVisit,
             'notice' => $notice,
             'patient' => $activeVisit->patient,
+            // Rule 243 §3 (memo M3.1, PR C1) — the "Informasi Kunjungan" biodata
+            // rows: for a Doctor the memo list only (no address, phone/WhatsApp,
+            // email; never a NIK for anyone). Decided here, never in Blade.
+            'patientIdentity' => $this->identities->forViewer($activeVisit->patient, $viewer),
             'activeRmPage' => $activeRmPage,
             'activePageNumber' => $activePageNumber,
             'totalRmPages' => $totalRmPages,

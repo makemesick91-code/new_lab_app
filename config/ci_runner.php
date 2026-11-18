@@ -953,6 +953,13 @@ return [
         // anchors reported), digest-confirmed apply setting unassigned_at only,
         // idempotent, sharing its stale predicate with revocation. Same token.
         'tests/Feature/RME/DoctorPatientScopeReconcileCommandTest.php',
+        // PR C1 (rule 243 §3, memo M3.1) — doctor-visible patient fields: a
+        // Doctor sees the memo list only on every clinical screen (no phone,
+        // WhatsApp, email, address or NIK), the consent page masks the NIK and
+        // hides the addresses, every other role and the printed consent are
+        // unchanged, dual roles get the doctor view; not behind the flag. Same
+        // `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeIdentityFieldsTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and
