@@ -25,6 +25,7 @@ use App\Modules\MedicalRecord\Services\UnifiedMedicalRecordIndexService;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
@@ -60,6 +61,8 @@ class MedicalRecordController extends Controller
         // Rule 243 §2.11 (PR A3) — with the encounter scope ON, every list in the
         // workspace names only what the viewer may read.
         private readonly DoctorPatientScopeService $doctorScope,
+        // Rule 243 §3 (memo M3.1) — the patient's identity as the viewer may see it.
+        private readonly PatientIdentityPresenter $identities,
     ) {}
 
     /**
@@ -440,6 +443,9 @@ class MedicalRecordController extends Controller
             $handwritingFormRecord,
             $storagePageNumber,
             $currentEncounter !== null ? (int) $currentEncounter->getKey() : null,
+            // Rule 243 §3 (review MEDIUM-1) — a Doctor's page 1 that still shows
+            // hidden biodata fields is read-only for them; a new page stays offered.
+            $viewer,
         );
         $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
             $handwritingRecord?->clinicVisit ?? $workspaceVisit,
@@ -494,6 +500,12 @@ class MedicalRecordController extends Controller
         // state, status, recorded/finalized metadata). When it is not, only the
         // handwriting pages remain. Always true with the encounter scope OFF.
         $anchorContentReadable = $viewer?->can('viewAnchorContent', $activeSheet) ?? false;
+        // Rule 243 §2.13 (PR A4, closes §2.8 item 8 (b)) — the workflow tabs show
+        // their visit's room state and link its pages, so on an anchor the viewer
+        // may not read they follow the visit the viewer came from (readable by
+        // construction above), or are omitted. Always the active sheet's visit
+        // with the encounter scope OFF.
+        $workflowNavVisit = $anchorContentReadable ? $activeVisit : $sourceVisit;
         $activeFollowUpOf = $activeVisit->followUpOf !== null
             && $this->doctorScope->listsVisitFor($viewer, $activeVisit->followUpOf)
                 ? $activeVisit->followUpOf
@@ -501,6 +513,7 @@ class MedicalRecordController extends Controller
 
         return view('rme.visits.medical-record.show', [
             'anchorContentReadable' => $anchorContentReadable,
+            'workflowNavVisit' => $workflowNavVisit,
             'activeFollowUpOf' => $activeFollowUpOf,
             'unnamedSheetIds' => $unnamedSheetIds,
             'clinicVisit' => $activeVisit,
@@ -512,6 +525,13 @@ class MedicalRecordController extends Controller
             'addSheetVisit' => $addSheetVisit,
             'notice' => $notice,
             'patient' => $activeVisit->patient,
+            // Rule 243 §3 (memo M3.1, PR C1) — the "Informasi Kunjungan" biodata
+            // rows: for a Doctor the memo list only (no address, phone/WhatsApp,
+            // email; never a NIK for anyone). Decided here, never in Blade.
+            'patientIdentity' => $this->identities->forViewer($activeVisit->patient, $viewer),
+            // Rule 243 §3 (PR C2) — the biodata grid a NEW page 1 bakes into its
+            // PNG: the allowed fields only, whoever draws it.
+            'rmPageOneBiodata' => $this->identities->rmPageOneBiodata($activeVisit->patient),
             'activeRmPage' => $activeRmPage,
             'activePageNumber' => $activePageNumber,
             'totalRmPages' => $totalRmPages,

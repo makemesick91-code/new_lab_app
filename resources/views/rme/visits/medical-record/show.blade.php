@@ -200,10 +200,15 @@
             </x-ui.alert>
         @endif
 
-        @include('rme.visits.partials.visit-workflow-nav', [
-            'clinicVisit' => $clinicVisit,
-            'active' => 'medical-record',
-        ])
+        {{-- Rule 243 §2.13 — the tabs' visit is decided in the controller: the
+             active sheet's visit, or on an unreadable anchor the source visit
+             (no tabs without one), so they never show that anchor's room state. --}}
+        @if ($workflowNavVisit ?? null)
+            @include('rme.visits.partials.visit-workflow-nav', [
+                'clinicVisit' => $workflowNavVisit,
+                'active' => 'medical-record',
+            ])
+        @endif
 
         {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
         @if (! empty($notice))
@@ -227,51 +232,27 @@
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
                  two-column table (label : value). KTP number is intentionally
-                 never shown here, preserving RME privacy rules. Marital status
-                 and religion have no column in the pilot schema, so they use the
-                 safe "-" fallback (no migration added). --}}
-            @php
-                $patient = $clinicVisit->patient;
-                $bioDash = '-';
-                $genderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-
-                // TTL / Umur — birth date (and age) only; the schema has no
-                // place-of-birth column, so the place segment is omitted.
-                if ($patient?->date_of_birth) {
-                    $ttlUmur = $patient->date_of_birth->format('d-m-Y');
-                    $patientAge = $patient->age();
-                    if ($patientAge !== null) {
-                        $ttlUmur .= ' / '.$patientAge.' tahun';
-                    }
-                } else {
-                    $ttlUmur = $bioDash;
-                }
-
-                $bioLeft = [
-                    ['Nama', $patient?->name ?: $bioDash],
-                    ['TTL / Umur', $ttlUmur],
-                    ['Pekerjaan', $patient?->occupation ?: $bioDash],
-                    ['Status Pernikahan', $patient?->marital_status ?: $bioDash],
-                    ['Alamat', $patient?->address ?: $bioDash],
-                ];
-                $bioRight = [
-                    ['Jenis Kelamin', $patient?->gender ? ($genderLabels[$patient->gender] ?? $patient->gender) : $bioDash],
-                    ['Agama', $patient?->religion ?: $bioDash],
-                    ['No. Tlp / Wa', $patient?->whatsapp_number ?: ($patient?->phone ?: $bioDash)],
-                    ['Email', $patient?->email ?: $bioDash],
-                    ['No. RM', $patient?->medical_record_number ?: $bioDash],
-                ];
-            @endphp
-
+                 never shown here, preserving RME privacy rules.
+                 Rule 243 §3 (memo M3.1, PR C1) — the rows come from
+                 PatientIdentityPresenter (MedicalRecordController): a Doctor gets
+                 name, place/date of birth and age, occupation, gender and RM
+                 number only; every other role the full table as before (marital
+                 status and religion have no column, so "-"). A row's right pair
+                 may be empty. --}}
             <div class="overflow-x-auto">
                 <table class="w-full border-collapse text-sm">
                     <tbody>
-                        @foreach (range(0, 4) as $i)
+                        @foreach ($patientIdentity->biodataRows as [$bioLeftLabel, $bioLeftValue, $bioRightLabel, $bioRightValue])
                             <tr class="align-top">
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeft[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeft[$i][1] }}</td>
-                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRight[$i][0] }}</th>
-                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRight[$i][1] }}</td>
+                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeftLabel }}</th>
+                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeftValue }}</td>
+                                @if ($bioRightLabel !== null)
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRightLabel }}</th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRightValue }}</td>
+                                @else
+                                    <th class="border border-gray-200 bg-gray-50 px-3 py-1.5"></th>
+                                    <td class="w-1/3 border border-gray-200 px-3 py-1.5"></td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>
@@ -541,37 +522,12 @@
                     $rmBranchToken = trim(preg_replace('/\s+/', ' ', $rmBranchToken));
                     $rmBranchLabel = strtoupper($rmBranchToken !== '' ? $rmBranchToken : ($rmBranchRaw !== '' ? $rmBranchRaw : 'TELKOMAS'));
 
-                    // Page-1 biodata grid — same fields/order as the spec (no KTP).
-                    // Recomputed here (independent of the component slot scope) so
-                    // it is reliably available to the canvas script.
-                    $rmPatient = $clinicVisit->patient;
-                    $rmDash = '-';
-                    $rmGenderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
-                    if ($rmPatient?->date_of_birth) {
-                        $rmTtlUmur = $rmPatient->date_of_birth->format('d-m-Y');
-                        $rmAge = $rmPatient->age();
-                        if ($rmAge !== null) {
-                            $rmTtlUmur .= ' / '.$rmAge.' tahun';
-                        }
-                    } else {
-                        $rmTtlUmur = $rmDash;
-                    }
-                    $rmBio = [
-                        'left' => [
-                            ['Nama', $rmPatient?->name ?: $rmDash],
-                            ['TTL / Umur', $rmTtlUmur],
-                            ['Pekerjaan', $rmPatient?->occupation ?: $rmDash],
-                            ['Status Pernikahan', $rmPatient?->marital_status ?: $rmDash],
-                            ['Alamat', $rmPatient?->address ?: $rmDash],
-                        ],
-                        'right' => [
-                            ['Jenis Kelamin', $rmPatient?->gender ? ($rmGenderLabels[$rmPatient->gender] ?? $rmPatient->gender) : $rmDash],
-                            ['Agama', $rmPatient?->religion ?: $rmDash],
-                            ['No. Tlp / Wa', $rmPatient?->whatsapp_number ?: ($rmPatient?->phone ?: $rmDash)],
-                            ['Email', $rmPatient?->email ?: $rmDash],
-                            ['No. RM', $rmPatient?->medical_record_number ?: $rmDash],
-                        ],
-                    ];
+                    // Page-1 biodata grid (no KTP). Rule 243 §3 (memo M3.1, PR C2)
+                    // — the allowed fields only, for every audience, decided by
+                    // PatientIdentityPresenter::rmPageOneBiodata() in the
+                    // controller: no address, phone/WhatsApp or email is ever
+                    // baked into a new page's PNG. Blank cells stay blank.
+                    $rmBio = $rmPageOneBiodata;
                 @endphp
                 <script>
                 (function () {
@@ -598,6 +554,9 @@
                     let userDrew = false;
                     let baselineImg = null;
                     let baselineLoaded = false;
+                    // Rule 243 §3 (review MEDIUM-3) — the stored page's image
+                    // failed to load (a doctor may get 404/503 for a page 1).
+                    let baselineFailed = false;
 
                     // Hotfix 60.5 — official Daengtisia Rekam Medik template baked
                     // onto the canvas. Every page renders the three-line RM header;
@@ -613,6 +572,69 @@
                         rightW: 150,                       // "Ket" column
                         bioCols: [0, 150, 470, 620, 900], // label|value|label|value
                     };
+
+                    // rm-page-canvas:start
+                    // Rule 243 §3 (review LOW-A, INFO-2). Plain JS between the
+                    // markers: tests/js/rm-page-save-guard.test.mjs reads it.
+                    const RM_HIDDEN_CELL_TINT = '#f3f4f6';
+
+                    // The page-1 grid cells left blank by the presenter (no
+                    // label): the cells RmPageOneBiodataRedactor blanks.
+                    function rmHiddenCellRects(bio, template) {
+                        const rects = [];
+                        const cols = template.bioCols;
+                        for (let i = 0; i < template.bioRows; i++) {
+                            const top = template.headerH + i * template.bioRowH;
+                            [['left', 0], ['right', 2]].forEach(function (side) {
+                                const cell = bio[side[0]][i] || ['', ''];
+                                if (cell[0] === '') {
+                                    [side[1], side[1] + 1].forEach(function (c) {
+                                        rects.push({ x: cols[c], y: top, w: cols[c + 1] - cols[c], h: template.bioRowH });
+                                    });
+                                }
+                            });
+                        }
+                        return rects;
+                    }
+
+                    // One pen segment; `hidden` cells (1 px inside their grid
+                    // lines) are clipped out, so no ink lands where the
+                    // redactor looks (2 px inside).
+                    function rmStrokeSegment(ctx, from, to, hidden, width, height) {
+                        ctx.save();
+                        if (hidden.length > 0) {
+                            ctx.beginPath();
+                            ctx.rect(0, 0, width, height);
+                            hidden.forEach(function (r) {
+                                ctx.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+                            });
+                            ctx.clip('evenodd');
+                        }
+                        ctx.beginPath();
+                        ctx.moveTo(from.x, from.y);
+                        ctx.lineTo(to.x, to.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Each loadPage() call begins a load; a callback of an
+                    // earlier load (another page) is ignored.
+                    function rmPageLoadSequence() {
+                        let current = 0;
+                        return function begin() {
+                            const mine = ++current;
+                            return function latest(callback) {
+                                return function () {
+                                    if (mine === current) {
+                                        callback.apply(this, arguments);
+                                    }
+                                };
+                            };
+                        };
+                    }
+                    // rm-page-canvas:end
+
+                    const beginPageLoad = rmPageLoadSequence();
 
                     function rmTruncate(text, maxW) {
                         text = String(text);
@@ -658,6 +680,14 @@
                         });
                         ctx.stroke();
 
+                        // Rule 243 §3 (review LOW-A) — the blank cells read as
+                        // not-for-writing: a light tint (no ink to the redactor,
+                        // luminance >= 200); strokes there are clipped away.
+                        ctx.fillStyle = RM_HIDDEN_CELL_TINT;
+                        rmHiddenCellRects(RM_BIO, TEMPLATE).forEach(function (r) {
+                            ctx.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+                        });
+
                         ctx.fillStyle = '#111827';
                         ctx.textBaseline = 'middle';
                         for (let i = 0; i < rows; i++) {
@@ -665,12 +695,19 @@
                             const L = RM_BIO.left[i] || ['', ''];
                             const R = RM_BIO.right[i] || ['', ''];
                             ctx.textAlign = 'left';
-                            ctx.font = '600 12px sans-serif';
-                            ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
-                            ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
-                            ctx.font = '12px sans-serif';
-                            ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
-                            ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            // Rule 243 §3 — a blank cell (no label) draws nothing.
+                            if (L[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
+                            }
+                            if (R[0] !== '') {
+                                ctx.font = '600 12px sans-serif';
+                                ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
+                                ctx.font = '12px sans-serif';
+                                ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                            }
                         }
                         return bottom;
                     }
@@ -746,21 +783,28 @@
                     // shared canvas. Resets the per-page draw state so the blank
                     // guard and reset stay scoped to the selected page only.
                     function loadPage(src) {
+                        // Review INFO-2 — a load still in flight for another
+                        // page never paints onto this one.
+                        const latest = beginPageLoad();
                         existingSrc = src || '';
                         userDrew = false;
                         baselineImg = null;
                         baselineLoaded = false;
+                        baselineFailed = false;
                         renderBase();
 
                         if (existingSrc) {
                             const img = new Image();
                             img.crossOrigin = 'anonymous';
-                            img.onload = function () {
+                            img.onload = latest(function () {
                                 baselineImg = img;
                                 baselineLoaded = true;
                                 renderBase();
-                            };
-                            img.onerror = function () { baselineLoaded = false; };
+                            });
+                            img.onerror = latest(function () {
+                                baselineLoaded = false;
+                                baselineFailed = true;
+                            });
                             img.src = existingSrc;
                         }
                     }
@@ -867,14 +911,18 @@
                         };
                     }
 
+                    let lastPoint = null;
+
                     function start(e) {
                         e.preventDefault();
                         drawing = true;
-                        const p = getPos(e);
-                        ctx.beginPath();
-                        ctx.moveTo(p.x, p.y);
+                        lastPoint = getPos(e);
                     }
 
+                    // Rule 243 §3 (review LOW-A) — on page 1 a stroke never
+                    // reaches the blank biodata cells (the doctor's view blanks
+                    // them, and ink there would lock page 1): each segment is
+                    // stroked under a clip that excludes them.
                     function draw(e) {
                         if (!drawing) return;
                         e.preventDefault();
@@ -883,8 +931,15 @@
                         ctx.lineWidth = 2;
                         ctx.lineCap = 'round';
                         ctx.strokeStyle = '#111827';
-                        ctx.lineTo(p.x, p.y);
-                        ctx.stroke();
+                        rmStrokeSegment(
+                            ctx,
+                            lastPoint || p,
+                            p,
+                            currentPage <= 1 ? rmHiddenCellRects(RM_BIO, TEMPLATE) : [],
+                            canvas.width,
+                            canvas.height,
+                        );
+                        lastPoint = p;
                     }
 
                     function stop() { drawing = false; }
@@ -905,19 +960,37 @@
                         renderBase();
                     });
 
-                    form.addEventListener('submit', function (e) {
-                        // Guard: never overwrite an existing page with a blank
-                        // canvas while its baseline is still loading.
-                        if (existingSrc && !baselineLoaded && !userDrew) {
-                            e.preventDefault();
-                            window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
-                            return;
+                    // rm-save-guard:start
+                    // Why a save is refused, or null. Rule 243 §3 (review
+                    // MEDIUM-3): a stored page whose image is not loaded (still
+                    // loading, or failed — a doctor may get 404/503 for a page
+                    // 1) is never saved, whatever was drawn: the canvas would
+                    // replace it with the template plus the new strokes. A new
+                    // page with no strokes would persist the empty template.
+                    // Plain JS between the markers: tests/js reads it.
+                    function rmSaveRefusal(state) {
+                        if (state.existingSrc && !state.baselineLoaded) {
+                            return state.baselineFailed
+                                ? 'Gambar halaman tersimpan gagal dimuat, sehingga halaman ini tidak dapat disimpan tanpa menghapus tulisan lama. Muat ulang halaman, atau tulis pada halaman baru.'
+                                : 'Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.';
                         }
-                        // Guard: a brand-new page with no strokes would only
-                        // persist the empty template — block it.
-                        if (!existingSrc && !userDrew) {
+                        if (!state.existingSrc && !state.userDrew) {
+                            return 'Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.';
+                        }
+                        return null;
+                    }
+                    // rm-save-guard:end
+
+                    form.addEventListener('submit', function (e) {
+                        const refusal = rmSaveRefusal({
+                            existingSrc: existingSrc,
+                            baselineLoaded: baselineLoaded,
+                            baselineFailed: baselineFailed,
+                            userDrew: userDrew,
+                        });
+                        if (refusal !== null) {
                             e.preventDefault();
-                            window.alert('Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.');
+                            window.alert(refusal);
                             return;
                         }
                         input.value = canvas.toDataURL('image/png');

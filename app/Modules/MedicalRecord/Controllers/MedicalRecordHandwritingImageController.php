@@ -7,6 +7,8 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\MedicalRecord\Services\RmPageOneBiodataRedactor;
+use App\Modules\Patient\Services\PatientIdentityPresenter;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -35,6 +37,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * viewHandwritingPage, `view` plus, under the doctor encounter scope, the book
  * page's authoring encounter), so the image route serves exactly the pages the
  * workspace lists.
+ *
+ * Rule 243 §3 (memo M3.1, PR C2) — page 1 (this table's `legacy` row) carries
+ * the biodata band: a Doctor receives a copy with the address, phone/WhatsApp,
+ * email, marital-status and religion cells blanked (RmPageOneBiodataRedactor);
+ * the stored object is never written and every other role gets its bytes.
  */
 class MedicalRecordHandwritingImageController extends Controller
 {
@@ -47,6 +54,17 @@ class MedicalRecordHandwritingImageController extends Controller
         abort_if($record === null, 404);
 
         $this->authorizePage($record, self::authorOf($handwriting));
+
+        if (app(PatientIdentityPresenter::class)->audienceFor(auth()->user()) === PatientIdentityPresenter::AUDIENCE_DOCTOR) {
+            $redacted = app(RmPageOneBiodataRedactor::class)->redactStored($handwriting->handwriting_path);
+
+            // GD missing or a storage fault is a server fault (503); an absent or undecodable image
+            // is never served to a doctor (404) — never the unredacted bytes.
+            abort_if($redacted['status'] === RmPageOneBiodataRedactor::STATUS_UNAVAILABLE, 503);
+            abort_if($redacted['bytes'] === null, 404);
+
+            return $this->streamBytes($redacted['bytes']);
+        }
 
         return $this->stream($handwriting->handwriting_path);
     }

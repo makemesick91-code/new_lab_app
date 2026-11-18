@@ -5,6 +5,7 @@ namespace App\Modules\MedicalRecord\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use Closure;
 use Illuminate\Support\Collection;
@@ -218,6 +219,39 @@ class PatientRmWorkspaceResolver
         // Resolved here, not injected: MedicalRecordSheetWriteScope depends on
         // this resolver for the book.
         return $viewer === null ? $sheets : app(MedicalRecordSheetWriteScope::class)->readableSheets($viewer, $sheets);
+    }
+
+    /**
+     * Rule 243 §2.13 (PR A4, closes §2.8 item 8 (a); review LOW-1) — the visit a
+     * doctor works from at the patient's workspace address, chosen on the
+     * server, in this order: the patient's live encounter when it is the
+     * doctor's own ({@see ActiveEncounterResolver::currentFor()}); else the visit
+     * `$sourceVisitId` names when it is ANY RME visit of the doctor's own with
+     * the patient (a cashier_pending or past one needs no room, so the gate lets
+     * it through); else the doctor's latest own pre-exam visit (visit_date, id).
+     * A source id naming another doctor's visit chooses nothing. Null when the
+     * doctor has none of these.
+     */
+    public function doctorWorkingVisit(int $patientId, int $doctorId, ?int $sourceVisitId): ?ClinicVisit
+    {
+        $live = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        if ($live !== null && (int) $live->doctor_id === $doctorId) {
+            return $live;
+        }
+
+        $own = fn () => ClinicVisit::query()
+            ->whereIn('branch_id', $this->rmeBranchIds())
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId);
+
+        $source = $sourceVisitId === null ? null : $own()->whereKey($sourceVisitId)->first();
+
+        return $source ?? $own()
+            ->whereIn('status', ClinicVisit::PRE_EXAM_STATUSES)
+            ->orderByDesc('visit_date')
+            ->orderByDesc('id')
+            ->first();
     }
 
     /**
