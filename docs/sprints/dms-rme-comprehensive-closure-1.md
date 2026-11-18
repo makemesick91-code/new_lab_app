@@ -752,3 +752,26 @@ photos flag stays OFF, so the permissions grant nothing visible until a separate
   only (no patient data).
 - Obsidian: `docs/` is the knowledge base; this record and the module index are updated in place. The vault worktree
   is locked and is not edited (CG-02).
+
+### 11.1 Closure record (2026-11-18, after release 4)
+
+- **Canonical rules:** `.cursor/rules/237-…` to `244-…` are on the base and released (237–239 in releases 1–2; 240–244
+  in releases 3–4), each indexed in its domain file: 240–242 in `.claude/rules/rme-clinical.md`; 243 in
+  `rme-clinical`, `doctor-access`, `legacy-rme` and `patient-identity`; 244 in `patient-identity` and `legacy-import`.
+  Budgets hold on the released tree (`rme-clinical.md` 29,954 / 30,000 characters; AIR numbering contiguous).
+- **Graphify 0.9.99** (`graphify update .`, no LLM) on the released tree `988c1a9a` (195 s): 58,933 → **62,264**
+  nodes, 143,245 → **155,241** edges, 2,421 → **2,578** communities. Present: `RmeAmendmentService`,
+  `RmeClinicalPhotoService`, `ClinicalPhotoGalleryPresenter`, `PatientIdentityPresenter`, `PatientRmNumberAllocator`,
+  `RmeDoctorAssignmentsReconcileCommand`, `DoctorPatientScopeService`, `RmeVisitConsentDoctorSignature`.
+  `graphify-out/` untracked.
+- **Obsidian:** `docs/00-INDEX.md` routes to this program, its memo plan and traceability, and rules 240–244;
+  `docs/knowledge-base/module-index.md` links the rules to `ClinicVisit`, `MedicalRecord`, `Odontogram`, `Consent`,
+  `RME`, `Patient` and `DoctorAccess`, and adds the new modules `ClinicalPhoto` and `RmeAmendment`. Doc drift found and
+  not fixed here (proposal): the module `PerformedTreatment` predates this program and is missing from the module
+  index. The vault worktree is synchronized (detached checkout, never an edit) after this PR merges.
+- **Doc-text gates (local, PostgreSQL):** `DevflowAiInstructionSystemTest`, `ProductionShellCommandGuardTest`, the
+  `DeployHarden*` suites and the governance suites on this branch: 1,578 tests, 1,574 passed, 3 skipped, 1 error —
+  `PostgresRuntimeGovernanceTest` "leaves an enclosing postgres transaction usable", reproduced identically on the
+  untouched release tree `2928ad28` (local PostgreSQL environment; green in CI on `988c1a9a`), so not caused by this
+  change (CG-21).
+- **Dataviz:** a program summary page (counts only, no patient data), private artifact; link in the closure report.

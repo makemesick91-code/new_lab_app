@@ -1,7 +1,7 @@
 ---
 kb_status: snapshot
 kb_verified_against: 572a32a9
-kb_updated: 2026-11-06
+kb_updated: 2026-11-18
 ---
 
 # Indeks Modul DaengtisiaMS
@@ -29,7 +29,13 @@ dan audit bukti [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme
 ditautkan sebagai berikut: rule 228 ke `Consent`, `Prescription` dan `RME`; 8C ke `Prescription` dan `RME`; checkpoint
 owner dan audit bukti ke `RME` saja (rule 228 dan 8C belum tertaut di indeks ini sejak 2026-11-08). Pada hari yang
 sama sprint korektif [dms-rme-revision-program-8d](../sprints/dms-rme-revision-program-8d.md) (batas payload tanda
-tangan consent, amandemen rule 228 §10.3) ditautkan ke `RME` dan sebagai "Lihat juga" di `Consent`.
+tangan consent, amandemen rule 228 §10.3) ditautkan ke `RME` dan sebagai "Lihat juga" di `Consent`. Pada 2026-11-18
+program [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md) (memo internal 2026-10-17,
+rilis 3 `4f59c347` dan rilis 4 `988c1a9a`) menautkan rule 240 (kunci rekam final dan amandemen) ke `MedicalRecord`,
+`Odontogram` dan `RME`; rule 241 (tanda tangan ganda PTM) ke `Consent`; rule 242 (foto klinis, flag OFF) ke modul baru
+`ClinicalPhoto`, dan rule 240 juga ke modul baru `RmeAmendment`; rule 243 (cakupan encounter dokter, flag OFF; unduhan; field yang terlihat dokter) ke `ClinicVisit`,
+`RME` dan `DoctorAccess`; rule 244 (nomor RM otomatis, kartu kertas, field inti) ke `Patient`. Jumlah file dan dokumen
+modul lain tidak diturunkan ulang.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -59,29 +65,29 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `ClinicVisit`
 
 - Kode: `app/Modules/ClinicVisit/` — 16 file PHP; 51 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `199-rme-clinic-visit-branch-authority.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [audit-rme-clinic-visit-branch-authority-1](../sprints/audit-rme-clinic-visit-branch-authority-1.md), [bugfix-new-visit-patient-search-runtime-1](../sprints/bugfix-new-visit-patient-search-runtime-1.md), [revision-new-visit-global-patient-lookup-1](../sprints/revision-new-visit-global-patient-lookup-1.md) — total 4 dokumen sprint
+- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `199-rme-clinic-visit-branch-authority.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `243-rme-doctor-encounter-scope-downloads-fields.mdc` (identitas pasien yang terlihat dokter, pindah ruang dan ganti dokter saat flag ON)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md), [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [audit-rme-clinic-visit-branch-authority-1](../sprints/audit-rme-clinic-visit-branch-authority-1.md), [bugfix-new-visit-patient-search-runtime-1](../sprints/bugfix-new-visit-patient-search-runtime-1.md), [revision-new-visit-global-patient-lookup-1](../sprints/revision-new-visit-global-patient-lookup-1.md) — total 4 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md), [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `MedicalRecord`
 
 - Kode: `app/Modules/MedicalRecord/` — 43 file PHP; 36 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`, `224-rme-clinical-evidence-write-integrity.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`, `224-rme-clinical-evidence-write-integrity.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `240-rme-finalized-record-lock-and-amendment.mdc` (kunci saat final, segel halaman, riwayat versi, amandemen tersupervisi)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md), [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md), [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `Odontogram`
 
 - Kode: `app/Modules/Odontogram/` — 8 file PHP; 19 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `109-rme-exam-consent-odontogram-history.mdc`, `110-post-rme-odontogram-stabilization.mdc`, `134-odontogram-pre-consent-authoring.mdc`
-- Sprint terbaru: [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [post-rme-odontogram-stabilization-1](../sprints/post-rme-odontogram-stabilization-1.md) — total 6 dokumen sprint
+- Rule durable (`.cursor/rules/`, di luar vault): `109-rme-exam-consent-odontogram-history.mdc`, `110-post-rme-odontogram-stabilization.mdc`, `134-odontogram-pre-consent-authoring.mdc`, `240-rme-finalized-record-lock-and-amendment.mdc` (odontogram final terkunci; perubahan lewat amandemen)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md), [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [post-rme-odontogram-stabilization-1](../sprints/post-rme-odontogram-stabilization-1.md) — total 6 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [11_DaengtisiaMS_Odontogram_Rules](../ai-knowledge/11_DaengtisiaMS_Odontogram_Rules.md)
 
 ### `Consent`
 
 - Kode: `app/Modules/Consent/` — 8 file PHP; 5 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-rme-consent-payment-gate-print-ownership.mdc`, `109-rme-exam-consent-odontogram-history.mdc`, `134-odontogram-pre-consent-authoring.mdc`, `180-ktp-ocr-consent-d7.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc` (tanda tangan consent no-store; decoder kanvas bersama; batas payload tanda tangan consent sejak 8D)
-- Sprint terbaru: [bugfix-rme-preconsent-first-page-ui-gate-1](../sprints/bugfix-rme-preconsent-first-page-ui-gate-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [fix-rme-consent-workflow-print-ux-2](../sprints/fix-rme-consent-workflow-print-ux-2.md) — total 4 dokumen sprint
+- Rule durable (`.cursor/rules/`, di luar vault): `100-rme-consent-payment-gate-print-ownership.mdc`, `109-rme-exam-consent-odontogram-history.mdc`, `134-odontogram-pre-consent-authoring.mdc`, `180-ktp-ocr-consent-d7.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc` (tanda tangan consent no-store; decoder kanvas bersama; batas payload tanda tangan consent sejak 8D), `241-rme-ptm-double-signature.mdc` (tanda tangan pasien dan dokter sebelum menulis; templat v2026.2 tidak aktif sampai wording disetujui)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md), [bugfix-rme-preconsent-first-page-ui-gate-1](../sprints/bugfix-rme-preconsent-first-page-ui-gate-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [fix-rme-consent-workflow-print-ux-2](../sprints/fix-rme-consent-workflow-print-ux-2.md) — total 4 dokumen sprint
 - Lihat juga (namanya tidak memuat kata kunci modul ini): [dms-rme-revision-program-8d](../sprints/dms-rme-revision-program-8d.md) untuk batas payload tanda tangan consent di request dan service.
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
@@ -95,9 +101,21 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `RME`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc`
+- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc`, `237-rme-comprehensive-closure.mdc`, `238-rme-memo-2026-10-17-alignment.mdc`, `240-rme-finalized-record-lock-and-amendment.mdc`, `243-rme-doctor-encounter-scope-downloads-fields.mdc`
 - Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md) (audit RME menyeluruh, register pending kanonik, rule 237), [dms-rme-revision-program-8d](../sprints/dms-rme-revision-program-8d.md), [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md), [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
+
+### `ClinicalPhoto`
+
+- Kode: `app/Modules/ClinicalPhoto/` — 10 file PHP; 1 dokumen menyebut path modul ini (ditambahkan 2026-11-18).
+- Rule durable (`.cursor/rules/`, di luar vault): `242-rme-clinical-photos.mdc` (foto klinis encounter di disk bukti klinis privat; flag `rme.clinical_photos` OFF; prasyarat sebelum ON: backup disk bukti klinis + restore teruji)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md)
+
+### `RmeAmendment`
+
+- Kode: `app/Modules/RmeAmendment/` — 12 file PHP; 2 dokumen menyebut path modul ini (ditambahkan 2026-11-18).
+- Rule durable (`.cursor/rules/`, di luar vault): `240-rme-finalized-record-lock-and-amendment.mdc` (amandemen append-only: dokter mengajukan, Supervisor RME lain menyetujui, alasan tertulis, original tidak berubah, riwayat versi, halaman koreksi tulisan tangan)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md)
 
 ### `RmeDashboard`
 
@@ -170,9 +188,9 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `Patient`
 
 - Kode: `app/Modules/Patient/` — 44 file PHP; 32 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `127-rme-print-composition-no-duplicate-patient-card.mdc`, `131-legacy-odontogram-patient-lookup.mdc` — dan 11 lainnya
+- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `127-rme-print-composition-no-duplicate-patient-card.mdc`, `131-legacy-odontogram-patient-lookup.mdc`, `244-patient-rm-auto-number-core-fields.mdc` (nomor RM otomatis read-only, kartu kertas lama, field inti, pengecualian tanpa telepon, saran tempat lahir dari OCR) — dan 11 lainnya
 - Desain / ADR / runbook / operasi: [patient-ktp-archive-access-runbook](../runbooks/patient-ktp-archive-access-runbook.md), [ktp-camera-ocr-supervised-pilot-protocol](../runbooks/ktp-camera-ocr-supervised-pilot-protocol.md), [ktp-camera-ocr-pilot-activation-spn4-2026-10-10](../operations/ktp-camera-ocr-pilot-activation-spn4-2026-10-10.md), [full-patient-estate-reset-1-runbook](../operations/full-patient-estate-reset-1-runbook.md), [sunu-first-real-patient-checklist](../operations/sunu-first-real-patient-checklist.md)
-- Sprint terbaru: [hardening-rme-active-user-patient-selection-1](../sprints/hardening-rme-active-user-patient-selection-1.md), [audit-patient-ktp-archive-persistence-1](../sprints/audit-patient-ktp-archive-persistence-1.md), [governance-patient-ktp-new-patient-only-1](../sprints/governance-patient-ktp-new-patient-only-1.md) — total 20 dokumen sprint
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md), [hardening-rme-active-user-patient-selection-1](../sprints/hardening-rme-active-user-patient-selection-1.md), [audit-patient-ktp-archive-persistence-1](../sprints/audit-patient-ktp-archive-persistence-1.md), [governance-patient-ktp-new-patient-only-1](../sprints/governance-patient-ktp-new-patient-only-1.md) — total 20 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [09_DaengtisiaMS_Patient_RM_KTP_Rules](../ai-knowledge/09_DaengtisiaMS_Patient_RM_KTP_Rules.md)
 
 ### `PatientMerge`
@@ -194,7 +212,7 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `DoctorAccess`
 
 - Kode: `app/Modules/DoctorAccess/` — 63 file PHP; 24 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `153-doctor-single-active-session-lease.mdc`, `154-doctor-branch-lock-and-cover.mdc`, `156-doctor-fleet-rollout-readiness.mdc`, `157-doctor-access-governance-phase.mdc` — dan 2 lainnya
+- Rule durable (`.cursor/rules/`, di luar vault): `153-doctor-single-active-session-lease.mdc`, `154-doctor-branch-lock-and-cover.mdc`, `156-doctor-fleet-rollout-readiness.mdc`, `157-doctor-access-governance-phase.mdc`, `243-rme-doctor-encounter-scope-downloads-fields.mdc` (cakupan encounter dokter, flag `rme.doctor_encounter_scope` OFF; dokter tidak mengunduh) — dan 2 lainnya
 - Desain / ADR / runbook / operasi: [doctor-global-activation-window](../runbooks/doctor-global-activation-window.md), [doctor-branch-lock-operations](../runbooks/doctor-branch-lock-operations.md), [doctor-access-fleet-rollout-readiness-1-closure](../operations/doctor-access-fleet-rollout-readiness-1-closure.md), [doctor-branch-lock-and-cover](../architecture/doctor-branch-lock-and-cover.md), [doctor-single-active-session-lease](../architecture/doctor-single-active-session-lease.md) — dan 2 lainnya
 - Sprint terbaru: [doctor-access-global-activation-half-a-cutover](../sprints/doctor-access-global-activation-half-a-cutover.md), [doctor-access-global-device-enforcement-readiness-1](../sprints/doctor-access-global-device-enforcement-readiness-1.md), [doctor-access-global-activation-phase0-delta-recheck-1](../sprints/doctor-access-global-activation-phase0-delta-recheck-1.md) — total 12 dokumen sprint
 
