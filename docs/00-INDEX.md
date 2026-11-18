@@ -116,6 +116,16 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   `satusehat-` (7), `ent-` (12), `lab-` (11).
 - Era awal: 156 berkas `docs/sprint_*.md` di root folder docs (Sprint 3–64), misalnya
   [sprint_20_final_closure_report](sprint_20_final_closure_report.md).
+- Program penutupan RME menyeluruh (2026-11-16 s.d. 2026-11-18; memo internal 2026-10-17, rule 237–244):
+  [dms-rme-comprehensive-closure-1](sprints/dms-rme-comprehensive-closure-1.md) (register pending kanonik, empat
+  rilis produksi, bukti verifikasi), rencana memo
+  [dms-rme-comprehensive-closure-1-memo-implementation-plan](sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md)
+  dan keterlacakan memo
+  [dms-rme-comprehensive-closure-1-memo-traceability](sprints/dms-rme-comprehensive-closure-1-memo-traceability.md).
+  Aturan kanonik: `.cursor/rules/240-rme-finalized-record-lock-and-amendment.mdc`,
+  `241-rme-ptm-double-signature.mdc`, `242-rme-clinical-photos.mdc` (flag OFF),
+  `243-rme-doctor-encounter-scope-downloads-fields.mdc` (cakupan encounter, flag OFF),
+  `244-patient-rm-auto-number-core-fields.mdc`.
 - Templat: [sprint-runtime-template](engineering/sprint-runtime-template.md),
   [foundation-sprint-template](engineering/foundation-sprint-template.md),
   [hotfix-runtime-template](engineering/hotfix-runtime-template.md).

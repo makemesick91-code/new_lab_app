@@ -10,12 +10,18 @@ Full Suite deferred under the global temporary policy (CG-18): **not run, not pa
 ## 0. Status
 
 ```text
-PROGRAM_STATUS            = IN PROGRESS — PR1 #646 MERGED (daf2ac15, tree = tested head tree); PR2 rebased on it (§5–§6)
-RELEASE                   = NOT YET (needs merge, post-merge CI, owner-signed approval, deploy, verification)
-GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go, declared in .sprint/current.yml)
+PROGRAM_STATUS            = RELEASES 1–4 DEPLOYED / PRODUCTION VERIFIED (read-only) — GO PENDING THE OWNER'S DECISION (§9.7)
+RELEASE 1                 = DEPLOYED + VERIFIED: cab3a4c1 (PR1 #646 + PR2 #647), deploy 20261116-141906 (§9.3)
+RELEASE 2                 = DEPLOYED + VERIFIED: 0f3c3bb3 (closure wave), deploy 20261117-081816 (§9.6)
+RELEASE 3                 = DEPLOYED + VERIFIED: 4f59c347 (memo wave 1), deploy 20261118-064305 (§9.8)
+RELEASE 4                 = DEPLOYED + VERIFIED: 988c1a9a (memo wave 2), deploy 20261118-114249 (§9.10)
+FLAGS                     = rme.doctor_encounter_scope OFF; rme.clinical_photos OFF; consent template v2026.2 inactive
+GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go): withheld by the owner until every confirmed
+                            in-scope pending item is resolved and verified in production
 FULL_SUITE_STATUS         = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY (execution count 0)
 BK-2                      = NOT RUN (manual-only directive, rule 232)
 GLOBAL DOCTOR ENFORCEMENT = UNCHANGED (not touched; no flag, cohort or scope change)
+SATUSEHAT                 = DISABLED (unchanged; Rule 88 §2 / AIR-SSH-04 kept until official activation)
 ```
 
 ## 1. Scope, authority, environment
@@ -61,6 +67,99 @@ not a follow-up"). They were implemented under that brief, and the owner then co
 |---|---|---|
 | after PR #646 CI | Squash-merge #646 pinned to the tested head `37828b4f`? | **Yes, squash-merge #646** |
 | same question set | Confirm OD-7-6, OD-5-4 and OD-5-10(a), implemented under the brief | **Confirm all three** |
+| after PR #647 CI | Squash-merge #647 pinned to the tested head `bf48e9d5`? | **Yes, squash-merge #647** |
+| after post-merge CI on `cab3a4c1` | Written approval of the release SHA `cab3a4c1082923d92b665238eb72034b4af13e34` | **Approve this release** |
+| after production verification | GO and the tag on `cab3a4c1` with the residual register? | **NO-GO for now** |
+
+Closure-wave merges (2026-11-17), each asked separately and pinned with `--match-head-commit` to the head whose
+critical gate is recorded in §9.4:
+
+| PR | Tested head | Owner answer | Squash commit on the base |
+|---|---|---|---|
+| #651 | `9697d00a` | **Yes, squash-merge #651** | `5f4e7b75` |
+| #652 | `daf88277` | **Yes, squash-merge #652** | `5f55e776` |
+| #648 | `803db2e4` | **Yes, squash-merge #648** | `f97b906e` |
+| #649 | `71c1375c` | **Yes, squash-merge #649** | `9f32bc83` |
+| #650 | `0d701e35` | **Yes, squash-merge #650** | `01426e72` |
+| #657 | `85527d84` | **Yes, squash-merge #657** | `0d265631` |
+| #653 | `f44453a5` | **Yes, squash-merge #653** | `22d9c872` |
+| #654 | `0aa2b771` | **Yes, squash-merge #654** | `07ebe300` |
+| #655 | `af653175` | **Yes, squash-merge #655** | `d62408fd` |
+| #656 | `e11074fe` | **Yes, squash-merge #656** | `82cb6e13` |
+
+The base tree after #649, after #654 and after #656 equals the sequential merge simulation exactly; the final tree
+`eb3035ad` is the tree of the locally integrated run (§8b).
+
+Release 2 owner decisions (2026-11-17, structured question tool and written decisions "RELEASE 2 OWNER DECISIONS",
+"CONSENT STORAGE FALLBACK DECISION"):
+
+| Question | Owner answer |
+|---|---|
+| Release 2 at `c705f048` | **APPROVE**, conditional: required CI green on the exact SHA; approval signed by the owner (Contract 3); both migrations tested and compatible with production data; pre-deploy database backup succeeded; the runner on the Biznet VPS; production verification passes. Release 2 is an intermediate release; **no final GO tag** while the memo wave and every mandatory pending item are open |
+| Consent signature copy | **Show me the dry run first**: read-only dry run reporting files, conflicts, verification failures, missing sources and checksums; no `--apply` before the owner approves the dry run; do not remove or disable the old read fallback before the needed copies are migrated and verified |
+| Conflict found: `c705f048` had no read fallback (rule 121 §5, #648) | **Add temp fallback first**: a read-only fallback for historical signatures (new disk first; the old location only while the object is not on the new disk; nothing changed, copied, deleted or overwritten; authorization and BranchContext kept; regression tests for missing / invalid / unauthorized / fallback); required CI and a security review; then a NEW release SHA with post-merge CI and a NEW Contract 3 approval — the approval of `c705f048` is not reused; deploy on the Biznet VPS; pre-deploy backup; BK-2 SKIPPED; after the deploy: dry run, report, wait for approval; the fallback is removed only after every copy is verified and a separate approval |
+| Docs PR #659 | **APPROVE — merge after release 2 production verification**; the record states release 2 VERIFIED, memo wave PENDING, the program OPEN, the final GO tag not allowed, and every pending item with an owner, acceptance criteria and evidence requirements |
+
+The fallback is PR #661 (rule 237 §14.5a).
+
+| When | Question | Owner answer |
+|---|---|---|
+| After #661 merged (post-merge push run 44023053296 on `0f3c3bb3`: critical gate 10,664 passed / 0 failed, PostgreSQL) | Written approval of the NEW release-2 SHA `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` | **Approve 0f3c3bb3** |
+
+### 2b. Owner decision NO-GO (2026-11-16) and the closure wave
+
+The owner recorded the program as **DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE** and ordered
+the remaining pending work completed through the full DEVFLOW: "Jangan menganggap DEFERRED sebagai RESOLVED. Jangan
+mengubah scope secara diam-diam agar seluruh gate terlihat PASS." The GO tag waits until every confirmed in-scope
+pending item is resolved and production verification succeeds. The order named eight work items: D5-9 consent storage
+(OD-5-9), patient MRN audit and measurement, SATUSEHAT latent items without activation, the D4 ceremony with an
+authorized operator, D5 branch confirmation by valid human confirmation, the blank odontogram print, per-row
+authorization queries and the governance scanner. The constraints of the brief stay in force (no BK-2, runner on the
+VPS only, no global enforcement, no key or passphrase access, no automatic rollback, no fabricated evidence).
+
+Owner answers in the closure wave (structured question tool, 2026-11-16; verbatim labels, the owner's follow-up text
+summarised):
+
+| Item | Owner answer | Owner conditions (follow-up message) |
+|---|---|---|
+| R8A-2 (+ 8D finding 3) | **Fix** | authorization before validation, with negative tests |
+| OD-6-1 | **Fix with page revision** | optimistic concurrency per page, a reload message, two-device tests |
+| OD-5-8 | **Duplicate guard + supervised void** | a dedicated permission, a written reason, an audit trail, maker ≠ checker as the rules require, historical consents never deleted, re-sign only after a valid void, race and authorization tests |
+| OD-5-5 | **Refuse while in_progress** | an atomic check under a lock, a message naming the active visit, concurrency and regression tests |
+| OD-7-5 | **Backfill** | "Jangan menjalankan --apply pada production tanpa approval saya" |
+| OD-7-7 | free text | audit and fix without silently changing rule 153 |
+| R7-1 | free text | check the evidence; add or verify tests |
+| RA-1 | free text | accepted if the replacement CI on the same SHA is green |
+| OD-5-10(b) | free text | accepted by design if canonical |
+| OD-7-3 | **Keep allowed** | do not widen legacy odontogram access or cross-branch access |
+| D4 | **Not available yet** | never treat pilot devices or real doctor accounts as test-only; audit readiness; BLOCKED_EXTERNAL with the procedure if unavailable; no global enforcement |
+| OD-5-9 | NO-GO order, item 1 (supersedes answer 6 of §2) | "Audit dan implementasikan D5-9 Consent Storage sesuai aturan RME" |
+| CC1-ODO | **Keep empty state** | accepted by design, with references to the existing tests |
+| CC1-SAT-1a | **Keep canonical design** | Rule 88 §2 / AIR-SSH-04 kept; disabled until official activation; negative tests must prove nothing is sent while disabled |
+| CI workflow scope | **I will grant workflow scope** | least privilege; "Jangan meminta atau membaca token saya"; change no workflow beyond what is needed and reviewed; register the SATUSEHAT tests on the critical gate; Full Suite DEFERRED is never PASSED |
+| R7-1-FS | **Fix first-sheet race** (2026-11-17) | with focused, authorization, concurrency and regression tests |
+
+### 2c. Owner decisions on the internal memo of 2026-10-17 (2026-11-17)
+
+Asked through the structured question tool, then confirmed in three written owner decisions ("OWNER REQUIREMENTS
+DECISION", "OWNER DECISIONS M3/M4", "OWNER DECISIONS M4/M5/M6"). They revise earlier canonical rules on purpose;
+each revision is made explicitly in the rules after an impact analysis, never silently. Traceability:
+[[dms-rme-comprehensive-closure-1-memo-traceability]].
+
+| Memo item | Owner answer | Owner conditions (written decision) |
+|---|---|---|
+| M4.1 RM number | **Auto, read-only** | generated automatically, FO cannot edit it, DaengtisiaMS format kept, locking + database uniqueness, existing numbers never changed, Legacy RME compatibility kept, CC1-PAT-1 measured before implementation, safe overflow handling, the Sprint 23.8 manual-number rule revised explicitly |
+| M1.1–M1.3 PTM | **Both signatures gate writing** | patient signs through FO, doctor through the doctor dashboard; both required before RME and odontogram writing; "Mulai Pemeriksaan" before consent kept; permitted history reading stays; no clinical edit before both signatures are valid; consent audit trail and supervised void kept; affected canonical rules updated |
+| M2.1–M2.2 Doctor access | **Own encounter, history inside it** | a doctor handles only assigned encounters; relevant clinical history read-only during a legitimate service; never edit another doctor's encounter; after the service, access follows the encounters the doctor handled; a reassignment revokes the old access through valid state transitions; impact on Legacy RME, BranchContext, room assignment and session locking audited; regression and negative authorization tests |
+| Immediate | **All four**: hide payment totals, treatment on worklist, transfer reference required, fix first-sheet race | focused, authorization, concurrency and regression tests |
+| M3.1 Doctor fields | **Memo list + RM number** | name, RM number, place and date of birth, age, occupation, planned treatment; phone, WhatsApp, address, email and NIK hidden from doctor screens; NIK stays on the consent document where the rules require it |
+| M4.2 Required fields | **Core fields, NIK optional** | core administrative fields mandatory for new patients; NIK and KTP scan optional; existing patients never blocked by incomplete history; a controlled exception for patients without a phone number |
+| M2.4 Doctor downloads | **Deny archive + PTM print** | doctors read permitted archives but never print or download Legacy RME or the PTM; native RME / odontogram print stays denied; prescription print stays; an owner revision of rule 93 §12; FO / Admin Klinik keep a legitimate print path |
+| M3.3 After finalization | **Lock on finalize + amendment** | finalizing locks the RME sheet or odontogram at once; corrections only through a supervised amendment with reason, approval, version history and audit trail; payment changes stay with FO/Kasir maker-checker (reverses Sprint 59 editing of finalized records) |
+| M4.4 Clinical photos | **Build + split consent clause 8** | before / after / progress photos as clinical documentation; clinical documentation consent separated from publication / promotion; refusing publication never blocks care; private storage, authorization, BranchContext, audit trail, limited access; no automatic FO/Kasir access; the new consent version tested and historical consents never changed |
+| M5.1/M5.2 Payments | **Wait for the discussion** | current payment workflow kept; no supplementary invoice and no change to immutable invoices without a management decision; the approved transfer-reference validation done; additional lab fees, post-payment correction and roll-out expansion recorded as REQUIRES OWNER DECISION |
+| M6.2 Storage | **Usage report + owner measurement** | a read-only capacity report (database, private files, RME, PDF, clinical photos, free space), no patient information; growth projection and cost estimate from verified rates; no BK-2; the running production backup unchanged |
+| M6.1, C4 Organizational | **Record, do not block technical GO** | migration responsibility (IT and clinical side) and management UAT before all-branch roll-out are organizational gates; technical GO when every mandatory technical gate passes; all-branch roll-out stays HOLD until the organizational approvals exist; BUSINESS ROLLOUT APPROVED is never claimed without evidence |
 
 ## 3. Historical items in the brief, verified
 
@@ -126,6 +225,40 @@ documented, owner-visible follow-up with its trigger), BY DESIGN.
 | CC1-RXPRINT-WRITE | printing a prescription sets `printed_at` on a GET | — | BY DESIGN (rule 226 §1.7a) | — |
 | CC1-LAB-FLASH | lab delivery POD signatures are flashed the same way | — | OUT OF SCOPE (lab module) — recorded for the lab owner | — |
 | CC1-LAB-UTC | lab `InvoiceNumberGeneratorService` / `PaymentNumberGeneratorService` still use the UTC month | — | OUT OF SCOPE (lab module) — same class as P8R-S6, recorded for the lab owner | — |
+
+### 4.3 Closure wave (after the NO-GO, §2b) — supersedes the matching §4.2 rows
+
+"Implemented" means code and tests are on a PR; an item counts as RESOLVED only after merge, post-merge CI, release
+and production verification (§9.4). Nothing here is DEFERRED-as-resolved.
+
+| Id | Owner basis | Change | PR | State |
+|---|---|---|---|---|
+| OD-5-9 (+ P8R-S4b) | NO-GO order, item 1 | consent signatures written through `ClinicalEvidenceStorage` (rule 121); read through `ClinicalEvidenceStorage::dataUri`, no fallback | #648 | implemented |
+| OD-5-9 copy phase | same | `rme:consent-signatures-migrate` (dry run default; `--apply` copies key for key, SHA-256 verified, never overwrites a CONFLICT, never deletes; counts only; one audit row) | #649 | implemented; production `--apply` needs the owner's approval (§10.5) |
+| CC1-ORPHAN | folded into OD-5-9 | a failure after the object writes removes the uncommitted objects (rule 224 compensation) | #648 | implemented |
+| OD-5-8 | duplicate guard + supervised void | one active consent per visit under the visit lock; void needs `void_rme_consents` (Supervisor RME), a 10–1000 character reason, voider ≠ signer inside the transaction, an `in_progress` visit; audit `RME_CONSENT_VOIDED`; the row is kept; re-sign only after the void | #648 | implemented |
+| R8A-2 (+ 8D finding 3) | fix | consent and prescription FormRequests authorize through `Gate::inspect` before validation; the HTTP signed-lock audit moved into the request | #648, #650 | implemented |
+| OD-6-1 | page revision | each handwriting page carries an opaque revision; a stale save is refused under the record lock before any object is written, with a reload message | #650 | implemented |
+| OD-5-5 | refuse while in_progress | a new visit is refused while the patient has an examination in progress, decided under the lock, naming the active visit | #650 | implemented |
+| OD-7-5 | backfill | `rme:lab-candidates-backfill` (dry run default with counts per paid month; `--apply` needs an explicit `--paid-from` clinic date, optional `--paid-to`; per invoice under its row lock, idempotent, one audit row per invoice filled, counts only) | #657 (split from #650 to keep #650 within the scope gate) | implemented; production `--apply` needs the owner's approval (§10.6) |
+| CC1-PERF | NO-GO order, item 7 | `DoctorIdentityResolver` memoised per routed request and cleared by `DoctorAccountLinkService` | #651 | implemented |
+| CC1-CG08 | NO-GO order, item 8 | `AndroidReleaseGovernanceScanner` reads flags through `FeatureFlagService` (CG-08) | #651 | implemented |
+| OD-7-7 | fix without silently changing rule 153 | lease in-flight grace (`doctor_access.lease.in_flight_grace_seconds`, 30 s); rule 153 and AIR-DAC-08 amended openly | #652 | implemented |
+| CC1-SAT-1b, OPS-SAT | NO-GO order, item 3 | excluding a candidate cancels its not-yet-sent items; the claim re-checks exclusion; `satusehat:retry-sweep` (a no-op while disabled) scheduled only while the gateway is enabled; negative tests prove nothing is sent and nothing is queued while disabled | PR6 | implemented; waits for the CI token (the workflow change needs the `workflow` scope the owner is granting) |
+| CC1-SAT-1a | keep canonical design | branch pilot approval stays as designed (Rule 88 §2, AIR-SSH-04) | — | BY DESIGN (owner) |
+| R7-1 | check evidence, add or verify tests | both sub-cases reproduced (RED 6 of 7 on the base); one handwriting book per patient after the book's visit is cancelled or a merge puts an earlier visit in front of it (also a never-stamped pre-64.0 book); the canonical visit is decided on its locked row | #653 | implemented |
+| R7-1-FS | found while fixing R7-1; not reproduced | the "Buat Rekam Medis" first-sheet path picks the canonical visit without the new lock: two concurrent first-sheet clicks with a cancel of the earliest visit between them could leave two sheets (both visible, nothing lost) | — | OPEN — candidate, owner decision (fix now or record) |
+| RA-1 | accepted if the replacement CI on the same SHA is green | run `42309524995` attempt 2 on `c0e12382`: critical gate **9,615 passed, 47,546 assertions, 0 failed** (PostgreSQL); Full Suite skipped (deferred) | — | **ACCEPTED** (condition met) |
+| OD-5-10(b) | accepted by design if canonical | the oversight widgets scope through `scopedBranchIdsFor` (the canonical branch authority) | — | **ACCEPTED BY DESIGN** (condition met) |
+| OD-7-3 | keep allowed | unchanged; no widening of legacy odontogram or cross-branch access | — | BY DESIGN (owner) |
+| CC1-ODO | keep empty state | unchanged; covered by `StructuredOdontogramPrintTemplateTest` ("empty odontogram renders the safe empty state"), `OdontogramSavedResultTablePreviewTest` ("safe empty state"), `MedicalRecordPrintOdontogramSeparationTest` | — | **ACCEPTED BY DESIGN** (owner) |
+| CC1-PAT-1..4 | measure first | measured read-only by the owner on 2026-11-17 (§10.2: 1,522 patients, all canonical, 0 duplicates, unique index present); the automatic number is memo RM PR-2 (rule 244) | — | MEASURED; implementation in the memo wave |
+| CC1-ADJ-1 | found 2026-11-17 by the doctor-scope A1b re-review (pre-existing, live in production with every flag OFF) | the previous/next visit arrows on the odontogram and prescription pages (`ClinicVisitRepository::adjacentVisitsForPatient`) were scoped only to all RME-enabled branches: Front Office / Admin Klinik / Kasir at branch A saw another branch's visit number and date (CG-05, rule 228 §5). Fix PR from the base, filtered per viewer through the clinical-document read authority; ships in the next release | fix PR in progress | OPEN — FIX IN PROGRESS |
+| CC1-CI-1 | found 2026-11-17 (CG-17) | a push run diffs only against `github.event.before`: when a Markdown-only commit lands on a base whose code push run was cancelled (`cancel-in-progress`), the green push run on the new tip ran no critical regression test; the release guard accepts it. Remedy used: a `workflow_dispatch` run on the exact SHA (classifier fails closed). A workflow change needs the `workflow` scope and is not made here | — | OPEN — RECORDED; owner decision on a workflow fix |
+| D4 | not available yet | readiness re-audit and ceremony procedure (§10.7) | — | **BLOCKED_EXTERNAL** |
+| D5 | valid human confirmation | confirmation template (§10.8) | — | OPEN — HUMAN OPERATION |
+| OPS-KTP | HUMAN OPERATION | §10.1 | — | OPEN — HUMAN OPERATION |
+| R7-F, P8-FIX1, P8-SEED, R8A-3, RA-4, D3-NEW-3, D3-NEW-5, RA-3, RA-5 | owner register | unchanged | — | OPEN — OWNER DEFINITION / DECISION |
 
 ## 5. Implementation
 
@@ -220,6 +353,40 @@ confirmed every intended behaviour A1–A6 and B1–B4 in code.
 | F10 | INFO | PR2 depends on PR1 (manifest, dontFlash, token) | PR2 rebased on the merged PR1 |
 | F11 | INFO | receipt PDF and patient/payment reports lacked no-store; lab numbers use UTC; I7-05 tests the refresh | no-store extended to 7 more routes; lab item recorded out of scope (§4.2); I7-05 kept as the refresh test |
 
+### 8b. Closure wave — independent review rounds (2026-11-17)
+
+Each PR was reviewed by a separate read-only session given the code and the rules, not the author's conclusions.
+Every finding was fixed RED-first (or recorded with a reason) in a follow-up commit, and every follow-up commit was
+re-reviewed by another separate session. Force-push was refused by the session's safety policy, so each fix landed as
+a fast-forward commit carrying exactly the tested tree.
+
+| PR | Round 1 (HIGH / MEDIUM / LOW+INFO) | Notable | Re-review | Final head |
+|---|---|---|---|---|
+| #648 consent integrity | 0 / 0 / 9 | scope re-check inside `sign()`/`void()`; Super Admin void form; two CI nondeterminism failures (an unordered event read; a random queue number colliding with queue 1, reproduced on `cab3a4c1`) | all resolved | `803db2e4` |
+| #649 signature copy | 0 / 3 / 1 | failed write leaked an object key; unreadable object empty-copied; root refusal; a PHP fatal found by the integrated critical run | resolved; fail-closed root check added | `71c1375c` |
+| #650 page revision, OD-5-5 | 0 / 1 / 4 | two examinations could still be open at once via "Mulai Pemeriksaan" — per-patient advisory lock 92_005 in both paths, no lock cycle; backfill split to #657 | resolved; namespace inventory pinned | `0d701e35` |
+| #651 identity memo, scanner | 0 / 0 / 2 | flag with no declared default passed | resolved | `9697d00a` |
+| #652 lease in-flight grace | 0 / 1 / 0 | same-browser double submit locked the doctor out — hashed CSRF claim nonce + double-submit guard | resolved; two timings remain a recorded residual (rule 153, rule 237 §17) | `daf88277` |
+| #653 one RM book | 0 / 3 / 1 | later sheet taken as the book; stamping un-anchored a legacy book; vacuous concurrency test; first-sheet race (R7-1-FS, owner-approved) | resolved; service re-asserts `create` on the locked visit | `f44453a5` |
+| #654 RM-number foundation | 0 / 1 / 3 | an oversized existing number would block a branch-year; dry run printed a reconstructable RM number | resolved | `0aa2b771` |
+| #655 memo quick wins | 0 / 0 / 5 | rule 238 index not loaded for payment code; soft-deleted transfer method passed | resolved | `af653175` |
+| #656 storage report | 0 / 0 / 4 | a stat failure aborted the run and printed a host path; top-level symlinks followed | resolved | `e11074fe` |
+| #657 lab backfill | (round 1 under #650) | `--apply` needs an explicit payment window | resolved | `85527d84` |
+
+A sequential merge simulation of all ten heads on the base is textually clean; combined rule-file sizes stay under the
+30,000-character budget (`rme-clinical.md` 29,973 — the next memo PR must condense it first).
+
+Local integrated run on the simulated merge tree `6882f001` (workstation, not a CI gate; reported as measured):
+
+| Run | Result |
+|---|---|
+| Governance suites (SQLite) | 0 failed |
+| Full critical filter (PostgreSQL 16, isolated schema) | 10,638 tests; 147 failed, all in the known local-environment classes: multi-process concurrency suites (payment submission, billing dispute ×2, performed treatment, refund settlement, refund request, zero-value closure, invoice correction ×3, owner reference registry, tariff provisioning — "competing transaction did not take its locks"), Poppler legacy batch suites (odontogram publish/review ×4), and one Observability diagnostics page |
+| Observability diagnostics page | the same failure reproduced on the untouched base `cab3a4c1` (`SQLSTATE[25P02]`) — local environment, not introduced by the wave |
+
+CI is the authority for these classes. Each PR's NSF-R011 Critical Test Gate ran on PostgreSQL on its final head with
+0 failures (§9.4).
+
 ## 9. Release and production
 
 ### 9.1 PR1 — #646
@@ -230,11 +397,180 @@ confirmed every intended behaviour A1–A6 and B1–B4 in code.
 | PR CI | run `43850156576` (pull_request): all required checks success; NSF-R011 Critical Test Gate on PostgreSQL **10,455 passed, 51,892 assertions, 0 failed** (the three new suites and every touched suite in the log); Full Suite Gate SKIPPED (CG-18, not passed) |
 | Merge | squash, `--match-head-commit 37828b4f`, owner approval §2a → `daf2ac15b0a0809b604126a69b7ea1de4797509d`; merge tree `e6553990` = tested head tree |
 
-Pending for the release: PR2, post-merge CI on the release SHA, owner approval and signature, deploy, verification. Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
+Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
 written approval of the full release SHA → owner signs locally (`scripts/release-approval-sign.sh`) →
 `submit-approval` → `check-approval` GO → `start` on the Biznet host through the deploy operator → `follow` →
 `verify <deploy-id>` (`DEPLOY RUNNER OK`) → read-only production verification → GO tag. Not inside 02:25–02:40 WITA.
-Deploy before 2026-11-30 16:00 UTC so P8R-S6 is live for the 2026-12-01 boundary.
+
+### 9.2 PR2 — #647
+
+| Item | Evidence |
+|---|---|
+| Tested head | `bf48e9d5` |
+| PR CI | run `43861427094`: required checks success; NSF-R011 Critical Test Gate on PostgreSQL **10,478 passed, 51,975 assertions, 0 failed**; Full Suite Gate SKIPPED (CG-18, not passed) |
+| Merge | squash, `--match-head-commit bf48e9d5`, owner approval §2a → `cab3a4c1082923d92b665238eb72034b4af13e34`; merge tree = tested head tree |
+| Post-merge push CI | run `43871132383` on `cab3a4c1`: every required job success; critical gate **10,478 passed, 51,975 assertions, 0 failed**; Full Suite Gate SKIPPED (deferred, not passed) |
+
+### 9.3 Release 1 — `dms-rme-comprehensive-closure-1` at `cab3a4c1` (P8R-S6 live before the 2026-12-01 boundary)
+
+| Item | Evidence |
+|---|---|
+| Pre-release posture (deploy operator, read-only) | `SUDO_POLICY=LEAST_PRIVILEGE`, `PRIVSEP_DRIFT=NONE`, operator entrypoint CURRENT |
+| Owner approval | written approval of the full SHA (§2a), then signed in the owner's own terminal (Contract 3, rule 236): approval id `2d1425769ef560eef5a23d64b2a052bb`, bundle SHA-256 `2aa6b428d28f24b7efa7baf18e80050b30c38ad71c4fb5f9c9ec0824f2e50bf5`, record SHA-256 `091033d67c463f1967ed1d968ee0cc195225f5c909b0ba30688f89eb449008ef`, valid until 2026-11-18T14:17:59Z. The key and passphrase never left the owner's terminal |
+| Approval check | `submit-approval`, then `check-approval` = GO |
+| Deploy | `start` on the Biznet host through the deploy operator (runner on the VPS, never local): deploy id **`20261116-141906`**, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`, `DEPLOY OK`; `verify 20261116-141906` → **`DEPLOY RUNNER OK`** |
+| Migrations | none in this release (release 2 will carry additive migrations: the lease claim-nonce column of #652 and the RM-number sequence table of #654) |
+| Production verification (read-only) | HEAD = `cab3a4c1`; health / smoke 200 / 403 / 302 as expected; `LARAVEL_LOG_ERROR_LINES=166` = the baseline recorded at the last three GO closures (no new application errors); `PRIVSEP_DRIFT=NONE`; queue worker and timers unchanged |
+| Pre-deploy database dump | taken by the runner inside the deploy; the line itself sits in the root-only deploy log and is read by the owner (§10.3) |
+| Release id | spent; the next release uses a new id |
+| GO | **NO-GO (owner, §2b)** — no tag created |
+
+### 9.4 Closure wave — CI on the final heads (before merge)
+
+NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: pgsql`; passes only, 0 failed):
+
+| PR | Final head | Workflow run | Critical gate |
+|---|---|---|---|
+| #648 | `803db2e4` | 43914546878 | 10,497 passed |
+| #649 | `71c1375c` | 43926359393 | 10,490 passed |
+| #650 | `0d701e35` | 43926373031 | 10,501 passed |
+| #651 | `9697d00a` | 43926386917 | 10,491 passed |
+| #652 | `daf88277` | 43926397404 | 10,485 passed |
+| #653 | `f44453a5` | 43926409786 | 10,494 passed |
+| #654 | `0aa2b771` | 43920506608 | 10,508 passed |
+| #655 | `af653175` | 43924260896 | 10,497 passed |
+| #656 | `e11074fe` | 43924269075 | 10,491 passed |
+| #657 | `85527d84` | 43920501415 | 10,486 passed |
+
+### 9.5 Release 2 — candidate (closure wave + rules headroom)
+
+| Item | Content |
+|---|---|
+| Candidate SHA (superseded) | `c705f048377f558e872bba81b0f4f6e49d81efed` = the ten closure-wave squashes (§2a) + #658 (rules only). Approved by the owner with conditions, then **superseded**: it had no read fallback for pre-release consent signatures, which conflicted with the owner's later directive (§2a, release 2 decisions); that approval is not reused |
+| Candidate SHA (current) | `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` = `c705f048` + #661 (temporary read-only fallback, rule 237 §14.5a; security review + re-review CLEAN; PR CI critical gate 10,664 passed / 0 failed on PostgreSQL); merge tree = tested head tree. Needs a NEW written owner approval and a NEW Contract 3 signature |
+| Migrations (additive) | `2026_11_17_100001_add_claim_nonce_hash_to_trx_doctor_session_leases_table` (#652), `2026_11_17_100001_create_mst_patient_rm_sequences_table` (#654, dormant) |
+| Permissions | `void_rme_consents` → Supervisor RME (#648); after deploy §10.4 |
+| Post-deploy, same window | §10.5 consent signature copy (dry run, then `--apply` with owner approval) — rule 121 has no read fallback |
+| Optional, owner approval | §10.6 lab backfill; `patient:rm-sequence-seed` is NOT needed until the automatic-number PR (memo RM PR-2) ships |
+| Excluded on purpose | memo M3.3 lock PRs (the lock ships only with its amendment path), PTM PR1–3 (one release), PR6 (needs the `workflow` scope) |
+| Post-merge CI (superseded candidate) | push run 43967765523 on `c705f048`: success, but the classifier diffed against the previous commit only (#658, Markdown) → `gate_profile=docs_only`, critical regression tests **SKIPPED** (CG-17: skipped is not passed). The push run on `82cb6e13` that would have run them was cancelled by the #658 push. Remedy: `workflow_dispatch` run 43968947617 on `c705f048` (no base → the classifier fails closed to the full critical gate): **NSF-R011 Critical Test Gate 10,638 passed, 52,938 assertions, 0 failed, PostgreSQL**; release safety and release evidence gates success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+
+### 9.6 Release 2 — `dms-rme-comprehensive-closure-1-r2` at `0f3c3bb3` (intermediate release; the program stays OPEN)
+
+| Item | Evidence |
+|---|---|
+| Owner approval | written approval of the full SHA `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` (§2a release 2 decisions; the `c705f048` approval was not reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `2dddde3cd9fe5bba398688d418b95164`, bundle SHA-256 `56429db42764d00102cf9935c4315b4c1853d0fd4b4c455efc955ac009a0cc93` (re-computed locally before submission), record SHA-256 `00afa456655857c29a050ad447ee1a752c6e8fbccafe721105fa4b33dcd32d3c`, signature SHA-256 `f72a1fe20600adc2a24860305bcaa155869a0ab354761ee179aaf41f370a381d`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-19T08:16:48Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` → `PRODUCTION_TARGET=VERIFIED`; `sudo-policy-check` → `SUDO_POLICY=LEAST_PRIVILEGE`, entrypoint CURRENT; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature against the host anchor, SHA = base tip, release and approval unspent, required CI push run 44023053296 success with "Run critical regression tests" ran) |
+| Deploy | `start` through the deploy operator (runner on the VPS, never local) at 16:18 WITA: deploy id **`20261117-081816`**, finished 08:19:54Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261117-081816` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | the two additive migrations (`2026_11_17_100001_add_claim_nonce_hash_to_trx_doctor_session_leases_table`, `2026_11_17_100001_create_mst_patient_rm_sequences_table`) ran inside the runner's `migrate --force` after its pre-deploy dump; the runner aborts on a failed dump or migration, so `DEPLOY OK` implies both; the log lines sit in the root-only deploy log (owner read, §10.3b) |
+| Production verification (read-only) | `posture`: `HEAD=0f3c3bb3`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), queue worker and timers unchanged; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200, `/rme/visits`, `/settings/patients`, the consent signature stream → 302 to login (unauthenticated) |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| GO | **none** — release 2 is intermediate; the final GO tag waits for the memo wave and every mandatory item |
+
+Owner steps after release 2, run from the owner's own terminal on 2026-11-18 (outputs pasted to the session):
+
+| Step | Result |
+|---|---|
+| §10.3b deploy log read (root) | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261117-081818.sql sha256=550f966d2ebe39fde8719836627c6815a228386771c421cdbae03d4633d09c0e`; both `2026_11_17_100001_*` migrations DONE; `backup-verify.json` written and present; `DEPLOY OK: 20261117-081818` |
+| §10.4 permissions (runtime user) | run together with release 3's (§9.8): `PermissionSeeder` and `RoleSeeder` seeded, `permission:cache-reset` silent (the seeders had already cleared the cache; the command prints only on a flush or a failure) |
+| §10.5 consent signature copy, **dry run** | `REFERENCES=22`, `INLINE=0`, `ALREADY_COPIED=0`, `TO_COPY=22`, `COPIED=0`, `MISSING=0`, `CONFLICT=0`, `UNREADABLE=0`, `WRITE_FAILED=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=DRY_RUN` |
+
+| §10.5 `--apply` (owner approval 2026-11-18, structured answer "Approve --apply" after the dry run above; run by the owner as the runtime user) | `REFERENCES=22`, `TO_COPY=22`, **`COPIED=22`**, `MISSING=0`, `CONFLICT=0`, `UNREADABLE=0`, `WRITE_FAILED=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=APPLIED`; nothing deleted (the command never deletes from the old disk) |
+| §10.5 re-check, dry run | `ALREADY_COPIED=22`, `TO_COPY=0`, every failure count 0, `CONSENT_SIGNATURE_MIGRATION=DRY_RUN` |
+
+| Visual check (rule 237 §14.5a) | owner, 2026-11-18: **YES** — a consent signed before release 2 renders its signatures on `https://daengtisia.online` |
+
+Release 2 has no pending owner step. The old disk and the read fallback stay; removing either is a separate owner
+decision (§9.7).
+
+### 9.7 Program status after release 2 — OPEN (no GO tag)
+
+Release 2 is **DEPLOYED and PRODUCTION VERIFIED (read-only)**. Release 3 (memo wave 1) is **DEPLOYED and PRODUCTION
+VERIFIED (read-only)** at `4f59c347` (§9.8); release 4 (memo wave 2) is **DEPLOYED and PRODUCTION VERIFIED
+(read-only)** at `988c1a9a` (§9.10). Every engineering item of the memo is released. The program
+DMS-RME-COMPREHENSIVE-CLOSURE-1 stays **OPEN**; the final GO tag `dms-rme-comprehensive-closure-1-go` is **not
+allowed** until every mandatory item below is done, released and production verified (owner directive, §2a).
+
+| Pending item | Owner | Acceptance criteria | Evidence required |
+|---|---|---|---|
+| Release 3 follow-ups (§9.8) — **DONE** 2026-11-18 | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line, all 11 release-3 migrations DONE and `DEPLOY OK`; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed (6 new permissions) | pasted command outputs, recorded in §9.8 |
+| Release 2 follow-ups (§9.6) — **DONE** 2026-11-18 (log, permissions, dry run `TO_COPY=22` / `CONFLICT=0` / `VERIFY_FAILED=0`, owner visual check YES) | Owner (root / runtime-user commands) | deploy log shows the pre-deploy backup line and both `2026_11_17_100001_*` migrations DONE; `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` succeed; `rme:consent-signatures-migrate` dry run reports `CONFLICT=0`, `VERIFY_FAILED=0`; one pre-release consent shows its signatures (fallback) | pasted command outputs and the owner's visual confirmation, recorded in §9.6 |
+| Consent signature copy `--apply` — **DONE** 2026-11-18 (`COPIED=22`, re-check `ALREADY_COPIED=22`) | Owner (separate approval after the dry run) | `CONSENT_SIGNATURE_MIGRATION=APPLIED`, `CONFLICT=0`, `VERIFY_FAILED=0`, nothing deleted | command output; re-run dry run shows `ALREADY_COPIED` = total |
+| Removing the read fallback (rule 237 §14.5a) | Owner (separate approval after the copy is verified) | all needed copies verified; fallback removed by a reviewed PR | PR + CI + release evidence |
+| Memo M3.3 (rule 240) PR1–PR7 — **merged** as one series PR #667 (`8929e570`→`7482f4bd`, owner re-approved after two test-only CI fixes; critical gate 11,362 passed on the exact head; post-merge CI green) — **released in release 3** (§9.8) | Engineering; owner approves each merge and the release | every PR independently reviewed (fix rounds closed), CI green on the exact heads, merged back-to-back, released together, production verified (lock, seal, amendment request/approve, version chain, handwriting amendment page, labels) | review records, PR CI runs, deploy id + verification |
+| Memo PTM (rules 241/242) PR1–PR3 — **merged**: #663 `b204b2d6`→`fd2bf03e`, #664 `69872fb9`→`ae07ccb5`, #665 `b15f4fa9`→`c1b17367` (each on its exact re-tested head; #664/#665 updated after the previous squash with a strategy-`ours` merge, tree byte-identical to the tested head; critical gates 10,862 / 10,862 / 10,891 passed) — **released in release 3** (§9.8; + PR4/PR5 clinical photos, wave 2 PR #670) | Engineering; Owner supplies the clause 8/9 wording | PR1–PR3 ship together; v2026.2 stays **inactive** in production until the owner approves the final wording; photos flag `rme.clinical_photos` stays OFF until an owner decision | review records, CI, deploy; owner's written wording approval before any activation |
+| Memo RM number (rule 244) PR-2, PR-3, PR-3b, PR-4, PR-4b — **merged** as one series PR #666 (`b9ea67c9`→`9f799c31`, owner "ONE PR PER SERIES"; critical gate 11,112 passed on the exact head) — **released in release 3** (§9.8; + PR-5 OCR suggestion, wave 2 PR #669) | Engineering; owner approves merges/release | auto number, claim cap per batch, paper-card reason (restricted), core fields + no-phone; existing numbers never changed | review records, CI, deploy, production smoke of registration |
+| Memo doctor scope (rule 243) B (#660, merged `41fecc06`); A1–A3b + integration **merged** as one series PR #668 (`57d18f7a`→`4f59c347`, critical gate 11,558 passed; flag OFF, flag-OFF parity measured identical) — **released in release 3** (§9.8); A4, C1, C2 (wave 2 PR #671) | Engineering; Owner decides turning the flag ON | B effective on release; encounter scope flag `rme.doctor_encounter_scope` stays OFF until A2–A4 (incl. the A3 list surfaces), C1–C2, M3.3 released, a dry run, doctor UAT and an owner decision | review records, CI, deploy; dry-run + UAT records; owner decision |
+| CC1-ADJ-1 adjacent-visit arrows (#662, merged `b5772008` after every required gate passed on `ec274cf5`, critical gate 10,684 passed; **released in release 3**, §9.8) | Engineering; owner approves merge/release | arrows offer only visits the viewer may open | review, CI, deploy, production smoke |
+| PR6 SATUSEHAT submission guard | Owner | **SKIPPED by owner decision (2026-11-18): "skip SATUSEHAT work (will inactive later)"** — not part of this program's GO; SATUSEHAT is to be inactivated later in a separate owner-decided change; the local PR6 branch is not pushed | owner decision recorded here |
+| CC1-CI-1 docs-only push run after a cancelled code run | Owner decision on a workflow fix (needs the `workflow` scope) | either a workflow fix or a recorded operating rule (dispatch run on release SHAs) | decision record |
+| D4 readiness ceremony | BLOCKED_EXTERNAL | §10.7 | ceremony record |
+| D5 branch confirmations; OPS-KTP timer | Owner (human operation) | §10.8, §10.1 | signed confirmations; timer status |
+| R7-F, P8-FIX1, P8-SEED, R8A-3, RA-4, D3-NEW-3, D3-NEW-5, RA-3, RA-5 | Owner (definition / decision) | owner definition recorded | decision record |
+| M5.1/M5.2 lab fees, post-payment correction, rollout | Owner (discussion) | owner decision | decision record |
+| M6.2 storage cost | Owner (verified rate) | report + rate | `storage:usage-report` output + rate source |
+| M6.1 / C4 organizational approvals | Owner / management | approvals exist before any all-branch rollout (no BUSINESS ROLLOUT APPROVED claim without evidence) | approval records |
+
+### 9.8 Release 3 — `dms-rme-comprehensive-closure-1-r3` at `4f59c347` (memo wave 1; intermediate release, the program stays OPEN)
+
+| Item | Evidence |
+|---|---|
+| Candidate | `4f59c347e71a0f0ad5ec3ea27c1bd468b3a4e0a0` (tree `866fbc7c`), the squash merge of #668 and the base tip; wave 1 = #660, #662, PTM #663–#665, RM series #666, M3.3 series #667, doctor scope series #668 (encounter scope flag OFF) |
+| Post-merge CI | push run 44229561608 of `foundation-evidence-gates.yml` on `4f59c347`: **NSF-R011 Critical Test Gate 11,558 passed, 59,069 assertions, 0 failed, PostgreSQL** ("Run critical regression tests" ran); NSF-R012 Quality Gate and CICD-CTRL Gate Classifier success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+| Owner approval | structured answer 2026-11-18 "Approve 4f59c347" for the full SHA (the release 2 approval was not reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `d099b97368d0184f42d251f49342262e`, bundle SHA-256 `3f0f846ad1a912aab6ddf9abef3179629491f68637c0816bf876d05f34da5898` (re-computed locally before submission), record SHA-256 `fb135fea7a5ac84b1aaab21bc1b5bbb30def9291527f48e4cd413471fdf54870`, signature SHA-256 `dd93e3afef0bff0470bc72f4c2d1e6241fdd124ea108153084477787e6484bd5`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-20T06:40:18Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` → `PRODUCTION_TARGET=VERIFIED`; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature good against the host anchor, SHA = base tip with nothing merged after it, release and approval unspent, required CI push run 44229561608 success) |
+| Deploy | base tip re-confirmed `4f59c347` immediately before `start`; `start` through the deploy operator (runner on the VPS, never local) at 14:43 WITA: deploy id **`20261118-064305`**, started 06:43:05Z, finished 06:44:44Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261118-064305` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | 11 additive migrations: `2026_11_17_200001` (doctor-patient status index; handwriting page seal columns; `trx_rme_visit_consent_doctor_signatures`), `2026_11_17_210001` publication consent, `2026_11_17_300001` `trx_rme_record_versions`, `2026_11_17_400001` `trx_rme_amendments`, `2026_11_17_500001` applied version, `2026_11_17_600001` correction page, `2026_11_18_100001` lower-case medical record number indexes, `2026_11_18_100002` `trx_patient_rm_paper_card_registrations`, `2026_11_18_100003` place of birth and no-phone exception. They ran inside the runner's `migrate --force` after its pre-deploy dump; the runner aborts on a failed dump or migration, so `DEPLOY RUNNER OK` implies them; the log lines sit in the root-only deploy log (owner read, §10.9). No RM counter seeding is needed (rule 244 §9) |
+| Production verification (read-only) | `posture`: `HEAD=4f59c347`, `TRACKED_MODIFIED=0`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), php8.3-fpm / nginx / postgresql active, queue worker and timers unchanged, deploy / release / rollback locks IDLE; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200; `/rme/visits`, `/settings/patients`, the new `/settings/patients/paper-card-registrations` and `/rme/amendments` → 302 to login (unauthenticated), while an unknown path answers 404, so the new routes are live |
+| Flags | no production flag was changed: `rme.doctor_encounter_scope` ships at its default OFF; consent template v2026.2 ships inactive; clinical photos are not in this release (wave 2) |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| GO | **none** — release 3 is intermediate; the final GO tag waits for release 4 and every mandatory item (§9.7) |
+
+Owner steps after release 3, run from the owner's own terminal on 2026-11-18 (outputs pasted to the session):
+
+| Step | Result |
+|---|---|
+| §10.9 deploy log read (root) | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261118-064307.sql sha256=7c88dd5107a90980e16597f3f77e536a1026872fe7918ed8da07b61771f981f9`; all 11 release-3 migrations DONE (6.09–105.46 ms each); `backup-verify.json` written and present; `DEPLOY OK: 20261118-064307` |
+| §10.9 permissions (runtime user) | `PermissionSeeder` and `RoleSeeder` seeded; `permission:cache-reset` silent (cache already cleared by the seeders). The six release-3 permissions are now granted per `RoleSeeder` |
+
+Release 3 has no pending owner step. Wave 2 merges one series PR at a time on its exact green head (§9.9) and ships
+as release 4.
+
+### 9.9 Wave 2 merges (release 4 candidate)
+
+| PR | Head tested | CI on that head | Merge |
+|---|---|---|---|
+| #670 clinical photos series (PR4a…PR5, flag `rme.clinical_photos` OFF) | `cf9d39d3` against base `4f59c347` | run 44241489900: critical gate **11,640 passed**, 59,884 assertions; all required gates success | owner "Approve cf9d39d3" → squash `e855b5a0`; post-merge push run 44256260309 success, critical gate 11,640 passed |
+| #669 RM PR-5 (KTP OCR place-of-birth suggestion) | first `f0002d49`, but that CI ran against the older base `7482f4bd` (before #668); owner chose "update, retest, merge": base merged in (PR changed lines byte-identical before and after, 13 files +1022/−20), new head `8cdab409` | run 44256320437: critical gate **11,649 passed**, 60,029 assertions; all required gates success | squash `9aee8245` (pinned to `8cdab409`); post-merge push run 44268084628 success, critical gate 11,649 passed |
+| #671 doctor scope wave 2 (A4 + C1 + C2, flag OFF) | `6be3b7a7` green alone (run 44252031211, 11,641 passed); then the base `9aee8245` merged in with three conflict resolutions (both presenters kept in `ClinicVisitController`; both rule-file edits kept, `rme-clinical.md` 29,954 / 30,000 chars, AIR numbering contiguous); merged tree byte-identical to a local trial that passed 714/714 focused PostgreSQL tests and 51/51 JS tests; new head `eb6fcdb0` | run 44268163641: critical gate **11,732 passed**, 60,707 assertions; all required gates success | owner "Approve eb6fcdb0" (new head, re-approved because it is not tree-identical to `6be3b7a7`) → squash **`988c1a9a`** after the #669 post-merge run had finished (the workflow cancels an in-progress base run on a new push); merge tree `2928ad28` byte-identical to the tested head; post-merge push run 44283078156 success, critical gate 11,732 passed; **released in release 4** (§9.10) |
+
+Wave 2 is complete: **`988c1a9a1b7de328408c1e2a2ae68644fae4feb1`** is the release 4 candidate (2 additive migrations
+`2026_11_18_100001_create_trx_rme_clinical_photos_table`, `2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table`;
+3 new permissions `upload_rme_clinical_photos`, `view_rme_clinical_photos`, `void_rme_clinical_photos`; flags
+`rme.clinical_photos` and `rme.doctor_encounter_scope` ship default OFF). Photo routes answer 403 to an account
+without the permission and 404 to a holder while the flag is OFF (owner decision 2026-11-18, repo pattern).
+
+### 9.10 Release 4 — `dms-rme-comprehensive-closure-1-r4` at `988c1a9a` (memo wave 2; last release of the program)
+
+| Item | Evidence |
+|---|---|
+| Candidate | `988c1a9a1b7de328408c1e2a2ae68644fae4feb1` (tree `2928ad28`), the squash merge of #671 and the base tip; wave 2 = #670, #669, #671 (§9.9) |
+| Post-merge CI | push run 44283078156 on `988c1a9a`: **NSF-R011 Critical Test Gate 11,732 passed, 60,707 assertions, 0 failed, PostgreSQL** ("Run critical regression tests" ran; `gate_profile=permissions_security`); NSF-R012 Quality Gate and CICD-CTRL Gate Classifier success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+| Owner approval | structured answer 2026-11-18 "Approve 988c1a9a" for the full SHA (no earlier approval reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `0b0e1bfff3f3ffb82d0ba9a780c2951f`, bundle SHA-256 `0be6ceb51a990edb068265094c4c8cd3af16286815f43c72b0714b0923ce5b3f` (re-computed locally before submission), record SHA-256 `9586d889dfbfc9c38ba182f77ccc5463948465c8ce35f34a0bc0c02137a40644`, signature SHA-256 `bbe969564a857794bc5854eed5ef0f2ccf2babea3b61c879ec4d0037539169e2`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-20T11:41:24Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` (from the release checkout) → `PRODUCTION_TARGET=VERIFIED`; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature good against the host anchor, SHA = base tip, release and approval unspent, required CI push run 44283078156 success) |
+| Deploy | base tip re-confirmed `988c1a9a` immediately before `start`; `start` through the deploy operator (runner on the VPS, never local) at 19:42 WITA: deploy id **`20261118-114249`**, started 11:42:49Z, finished 11:44:33Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261118-114249` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | 2 additive: `2026_11_18_100001_create_trx_rme_clinical_photos_table`, `2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table`; inside the runner's `migrate --force` after its pre-deploy dump (log lines: owner read, §10.10) |
+| Production verification (read-only) | `posture`: `HEAD=988c1a9a`, `TRACKED_MODIFIED=0`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), php8.3-fpm / nginx / postgresql active, queue worker and timers unchanged, locks IDLE; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200; `/rme/visits`, `/settings/patients`, `/rme/amendments` and the new `/rme/clinical-photos/{id}/image` → 302 to login (unauthenticated), an unknown path 404 |
+| Flags | no production flag changed: `rme.clinical_photos` and `rme.doctor_encounter_scope` ship at their default OFF; consent template v2026.2 stays inactive |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| Owner steps (§10.10), run from the owner's terminal 2026-11-18 | `Pre-deploy backup: storage/app/backups/deploy/pre_auto_deploy_20261118-114251.sql sha256=e46305ba82a68c38334a70f1944b8f552541acd0d3f06417c7cf3faf396dd494`; both release-4 migrations DONE (134.01 ms, 10.88 ms); `backup-verify.json` written and present; `DEPLOY OK: 20261118-114251`; `PermissionSeeder` and `RoleSeeder` seeded, `permission:cache-reset` silent (cache already cleared by the seeders) |
+| GO | **not yet** — the final GO tag waits for the closure gates (canonical rules, Graphify, Obsidian, Dataviz; §11) and the mandatory-item check (§9.7) |
 
 ## 10. Owner actions prepared by this program
 
@@ -280,6 +616,139 @@ SELECT code, is_active, is_rme_enabled FROM mst_branches ORDER BY code;
 ROLLBACK;
 ```
 
+**Result (owner, 2026-11-17, production, read-only `BEGIN READ ONLY … ROLLBACK` as the runtime user through
+`php artisan db`; counts and aggregates only — the extended query of the memo implementation plan, M4.1 section):**
+
+| Measure | Value |
+|---|---|
+| Live patients | 1,522 (all registered in the last 90 days) |
+| RM number missing / not canonical / unknown branch code / branch mismatch / registered in the future | 0 / 0 / 0 / 0 / 0 |
+| Generator-format (`DG-YYYYMM-NNNNNN`) / other free text / override-like (CC1-PAT-1) | 0 / 0 / **0** |
+| Number part differs from `manual_rm_number` / non-numeric / shorter than 4 digits / 4 digits / longer | 0 / 0 / 0 / 1,522 / 0 |
+| Number year ≠ registration year / future year | 0 / 0 |
+| Per branch-year | one group: SPN4, 2026 — 1,522 numbers, max 4 digits, none above 9999, no numerically equal duplicates, gaps present |
+| NIK present but not 16 digits (CC1-PAT-4) | 84 |
+| Core-field gaps among live patients (M4.2) | date of birth 1, phone and WhatsApp 5, address 2, occupation 103, gender 0 |
+| RM number unique index | `mst_patients_medical_record_number_unique`, unique |
+| Branch flags | ATG3, LDK2, SPN4, TLK1 active and RME-enabled; MAIN active, **RME disabled**; SYN4A inactive, RME disabled |
+
+Consequences: the free override was never used (CC1-PAT-1 = 0), so retiring it needs no reconciliation; every
+existing number is canonical, 4 digits and in one branch-year, so the sequence seed is a single counter (SPN4 2026 =
+the highest existing number, shown only by the host-side dry run; gaps are never reused); MAIN is not RME-enabled in
+production (CC1-PAT-3 is a fresh-seed concern only); the 84 non-16-digit NIK values and the core-field gaps are legacy
+data that the M4.2 rules never force (new patients only).
+
+### 10.3 Release 1 — the pre-deploy dump line (root-only log, owner's admin password)
+
+The deploy operator replays only the summary of a finished deploy, and the full log is root-only. Read the dump and
+outcome lines from the owner's own terminal:
+
+```bash
+ssh -t daengtisiams-biznet-prod 'sudo grep -E "Pre-deploy backup|DEPLOY OK|DEPLOY_SNAPSHOT_CLEANED" /var/lib/daengtisiams-deploy/runner/deploy-20261116-141906.log'
+```
+
+### 10.4 Release 2 — permissions after deploy (runtime user, CG-15)
+
+PR #648 adds the permission `void_rme_consents` and grants it to Supervisor RME. After the release-2 deploy, as the
+runtime user in the app directory: `PermissionSeeder`, then `RoleSeeder`, then `permission:cache-reset`.
+
+### 10.5 Release 2 — consent signature copy (owner approval for `--apply`)
+
+Rule 121 has no read fallback: after release 2, a consent signed before it renders its signatures only once the copy
+has run. The copy belongs in the release window, right after verification. Dry run first; `--apply` only with the
+owner's approval, which is requested together with the release approval:
+
+```bash
+php artisan rme:consent-signatures-migrate            # dry run: counts only
+php artisan rme:consent-signatures-migrate --apply    # owner-approved: copies, verifies, never deletes
+```
+
+Expected: `CONFLICT=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=APPLIED`; a `MISSING` count is a WATCH
+(objects already unreadable before the run). Purging the old disk is a separate phase and a separate owner decision.
+
+### 10.6 Release 2 — lab candidate backfill (owner approval for `--apply`)
+
+Since #657 (rule 237 §18) `--apply` needs an explicit payment window in clinic dates (WITA); the dry run shows the
+counts per month to choose it from:
+
+```bash
+php artisan rme:lab-candidates-backfill                                              # dry run: counts per month
+php artisan rme:lab-candidates-backfill --apply --paid-from=YYYY-MM-DD [--paid-to=YYYY-MM-DD]   # owner approval only
+```
+
+### 10.7 D4 — readiness re-audit and ceremony (BLOCKED_EXTERNAL)
+
+The authoritative ceremony is `docs/operations/doctor-real-device-readiness-campaign.md` §13, with the D4 conditions
+of `dms-rme-revision-program-8-owner-operational-closure.md` (a dedicated device that is not an operational clinic
+tablet, enrolled through the canonical approval path with the Android Keystore proof and a device-bound passkey; a
+dedicated test doctor account linked one-to-one, never a real clinician's account). The owner's 2026-11-16 answer
+adds: pilot devices and real doctor accounts are never treated as test-only, and global enforcement stays off.
+
+Readiness re-audit, read-only, as the runtime user (counts and states only; keep doctor and device identifiers out of
+any shared evidence):
+
+```bash
+php artisan webauthn:readiness
+php artisan doctor:rollout-readiness | grep -E 'ENFORCEMENT_FLAG_ARMED|GLOBAL_ENFORCEMENT_ACTIVE'
+php artisan doctor:fleet-readiness
+php artisan doctor:estate-resilience
+```
+
+D4 stays BLOCKED_EXTERNAL until the owner names the dedicated device and the dedicated test doctor. `webauthn:readiness`
+ARMED means "configured", not "proven live".
+
+### 10.8 D5 — branch confirmation template (one per branch: SPN4, TLK1, LDK2, ATG3)
+
+A confirmation counts only when a person responsible at the branch gives it; it is recorded here by role, date and
+channel, never by personal name or patient detail (public repository):
+
+| Field | Value |
+|---|---|
+| Branch code | |
+| Confirmer's role at the branch | |
+| Date (WITA) and channel | |
+| Paper RME archives remaining at the branch | YES / NO |
+| If YES: approximate count and whether intake should continue | |
+| Recorded by | |
+
+After all four are recorded, the canonical closure path of the Program 8 owner checkpoint record (D5 section) runs
+step by step, dry run first, as the runtime user.
+
+
+### 10.9 Release 3 — deploy log and permissions (root and runtime user, owner's admin password)
+
+1. Read the dump and migration lines from the root-only log:
+
+```bash
+ssh -t daengtisiams-biznet-prod 'sudo grep -aE "Pre-deploy backup|backup-verify|2026_11_1[78]_[0-9]{6}_|DEPLOY OK" /var/lib/daengtisiams-deploy/runner/deploy-20261118-064305.log'
+```
+
+Expected: a `Pre-deploy backup: … sha256=…` line, the 11 release-3 migrations marked DONE, and `DEPLOY OK`.
+
+2. Release 3 adds six permissions: `countersign_rme_consents` (Doctor), `request_rme_amendments` (Doctor),
+`approve_rme_amendments` (Supervisor RME), `register_patient_paper_card_rm` and `view_patient_rm_paper_card_reasons`
+(Supervisor RME; the reasons also Owner), `register_patient_without_phone` (Admin Klinik and Front Office). Until
+the seeders run, those actions answer 403 for everyone but Super Admin. As the runtime user (CG-15):
+
+```bash
+ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -u daengtisiams php artisan db:seed --class=PermissionSeeder --force && sudo -u daengtisiams php artisan db:seed --class=RoleSeeder --force && sudo -u daengtisiams php artisan permission:cache-reset'
+```
+
+
+### 10.10 Release 4 — deploy log and permissions (root and runtime user, owner's admin password)
+
+From PowerShell (through WSL, where the production SSH configuration lives):
+
+```powershell
+wsl.exe ssh -t daengtisiams-biznet-prod 'sudo grep -a -e Pre-deploy.backup -e backup-verify -e 2026_11_18_ -e DEPLOY.OK /var/lib/daengtisiams-deploy/runner/deploy-20261118-114249.log'
+wsl.exe ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -u daengtisiams php artisan db:seed --class=PermissionSeeder --force && sudo -u daengtisiams php artisan db:seed --class=RoleSeeder --force && sudo -u daengtisiams php artisan permission:cache-reset'
+```
+
+Expected: the pre-deploy backup line, both release-4 migrations DONE and `DEPLOY OK`; then the three photo
+permissions (`upload_rme_clinical_photos`, `view_rme_clinical_photos`, `void_rme_clinical_photos`) seeded. The
+photos flag stays OFF, so the permissions grant nothing visible until a separate owner decision turns it ON
+(preconditions: rule 242 §8/§10.6).
+
 ## 11. Graphify, Dataviz, Obsidian
 
 - Graphify baseline recorded in §1; the post-change refresh is recorded at closure.
@@ -287,3 +756,29 @@ ROLLBACK;
   only (no patient data).
 - Obsidian: `docs/` is the knowledge base; this record and the module index are updated in place. The vault worktree
   is locked and is not edited (CG-02).
+
+### 11.1 Closure record (2026-11-18, after release 4)
+
+- **Canonical rules:** `.cursor/rules/237-…` to `244-…` are on the base and released (237–239 in releases 1–2; 240–244
+  in releases 3–4), each indexed in its domain file: 240–242 in `.claude/rules/rme-clinical.md`; 243 in
+  `rme-clinical`, `doctor-access`, `legacy-rme` and `patient-identity`; 244 in `patient-identity` and `legacy-import`.
+  Budgets hold on the released tree (`rme-clinical.md` 29,954 / 30,000 characters; AIR numbering contiguous).
+- **Graphify 0.9.99** (`graphify update .`, no LLM) on the released tree `988c1a9a` (195 s): 58,933 → **62,264**
+  nodes, 143,245 → **155,241** edges, 2,421 → **2,578** communities. Present: `RmeAmendmentService`,
+  `RmeClinicalPhotoService`, `ClinicalPhotoGalleryPresenter`, `PatientIdentityPresenter`, `PatientRmNumberAllocator`,
+  `RmeDoctorAssignmentsReconcileCommand`, `DoctorPatientScopeService`, `RmeVisitConsentDoctorSignature`.
+  `graphify-out/` untracked.
+- **Obsidian:** `docs/00-INDEX.md` routes to this program, its memo plan and traceability, and rules 240–244;
+  `docs/knowledge-base/module-index.md` links the rules to `ClinicVisit`, `MedicalRecord`, `Odontogram`, `Consent`,
+  `RME`, `Patient` and `DoctorAccess`, and adds the new modules `ClinicalPhoto` and `RmeAmendment`. Doc drift found and
+  not fixed here (proposal): the module `PerformedTreatment` predates this program and is missing from the module
+  index. The vault worktree is synchronized (detached checkout, never an edit) after this PR merges.
+- **Doc-text gates (local, PostgreSQL):** `DevflowAiInstructionSystemTest`, `ProductionShellCommandGuardTest`, the
+  `DeployHarden*` suites and the governance suites on this branch: 1,578 tests, 1,574 passed, 3 skipped, 1 error —
+  `PostgresRuntimeGovernanceTest` "leaves an enclosing postgres transaction usable", reproduced identically on the
+  untouched release tree `2928ad28` (local PostgreSQL environment; green in CI on `988c1a9a`), so not caused by this
+  change (CG-21).
+- **Dataviz:** a program summary page (four releases, critical-gate count on every merge SHA 10,478 → 11,732, migrations
+  and permissions per release, error-line baseline, what ships OFF), measured data only, no patient data, host address,
+  account name or key material; single-series color validated with the dataviz validator (light and dark: all checks
+  pass). Private artifact, shared by the owner if wanted.
