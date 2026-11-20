@@ -303,7 +303,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` | BK-2 manual-only: not a sprint, GO or deploy gate; runner dump stays mandatory; only an explicit owner order runs BK-2 |
 | `.cursor/rules/233-deploy-privilege-separation.mdc` | No root PHP; no root path mutation of runtime trees; source claim; drift gate; deploy security baseline index |
 | `.cursor/rules/235-deploy-least-privilege-sudo.mdc` | Operator entrypoint; password-only admin; build sandbox; restore evidence |
-| `.cursor/rules/236-direct-signed-release-approval.mdc` | Approval contract 3: direct signed approval, host-verified CI |
+| `.cursor/rules/236-direct-signed-release-approval.mdc` | Approval contract 3: direct signed approval, host-verified CI (push or exact-SHA manual dispatch, §5) |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

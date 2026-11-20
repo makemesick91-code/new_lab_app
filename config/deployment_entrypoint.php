@@ -262,6 +262,14 @@ return [
                     'dms_release_approval_ci_verify "$prod_repo" "$approved_sha" "$branch"',
                     'no fallback to another contract',
                     'spent/approval-',
+                    // CI-CD-PR-ONLY-POLICY-1 phase B: the required CI accepts the
+                    // events the authority lists (push, workflow_dispatch) on the
+                    // exact commit only, and never a CI-PERF-04 evaluation run.
+                    'dms_release_approval_ci_events "$declared_events"',
+                    'r.get("event") in accepted',
+                    'r.get("head_sha") == sha',
+                    'an evaluation run is never release evidence (rule 212)',
+                    'declares no evaluation step (DMS_PRODUCTION_CI_EVALUATION_STEP)',
                 ],
             ],
             'trusted_path_library' => [
@@ -404,6 +412,9 @@ return [
             'DMS_PRODUCTION_CI_REQUIRED_JOBS',
             'DMS_PRODUCTION_CI_REQUIRED_STEP',
             'DMS_PRODUCTION_CI_FORBIDDEN_STEP',
+            // CI-CD-PR-ONLY-POLICY-1 phase B (rule 236 §2.3).
+            'DMS_PRODUCTION_CI_EVENTS',
+            'DMS_PRODUCTION_CI_EVALUATION_STEP',
         ],
         // Rule 231: these facts are fixed for production. The trust anchor and the
         // evidence directory live outside the checkout and outside anything the
@@ -415,6 +426,10 @@ return [
             // DMS-RELEASE-APPROVAL-DIRECT-1: root's approval store, beside the evidence.
             'DMS_PRODUCTION_RELEASE_APPROVAL_STORE' => '/var/lib/daengtisiams-deploy/approvals',
             'DMS_PRODUCTION_CI_WORKFLOW' => '.github/workflows/foundation-evidence-gates.yml',
+            // CI-CD-PR-ONLY-POLICY-1 phase B: which runs count, and the step only a
+            // CI-PERF-04 evaluation run takes (it must never count).
+            'DMS_PRODUCTION_CI_EVENTS' => 'push workflow_dispatch',
+            'DMS_PRODUCTION_CI_EVALUATION_STEP' => 'NSF-R011 Critical Test Gate:Start resource sampler (CI-PERF-04 evaluation)',
         ],
         // deploy-vps.sh pins its branch as a literal; it must be the authority's.
         'deploy_branch_assignment_prefix' => 'BRANCH="',
