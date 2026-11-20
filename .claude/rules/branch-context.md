@@ -20,10 +20,10 @@ paths:
 
 # Branch context, branch codes, rooms & Front Office locks — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here (CG-05 branch isolation, CG-06 three-layer authorization, CG-12 clinical time and CG-15
-seeding order matter most). Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement
-follow the code, then the canonical rule, and report the drift.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here (CG-05 branch isolation, CG-06 three-layer authorization, CG-12 clinical time and CG-15 seeding order
+matter most). Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of current
+behaviour. A mismatch is implementation drift: report it.
 
 ## Invariants
 
@@ -184,6 +184,8 @@ follow the code, then the canonical rule, and report the drift.
   `rmeMakeFrontOfficeActive`, `rmeMakePerawatActive`, `rmeMakeKasirActive` in `tests/Pest.php`) or they 302 to
   `rme.online-context.select`; fixtures asserting visit dates or numbers use `clinicalToday()`. Source:
   `73-…` §7, `108-…` §25–26.
+- **AIR-BRC-32** Every RME billing or LAB-candidate read and write resolves branch scope through `RmeWorkingBranchScope`;
+  a null branch is refused (404), never "no filter". Design locked, not implemented. Source: rule 246; Gate 1 BR-01.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

@@ -17,9 +17,9 @@ paths:
 
 # Legacy import hub, legacy odontogram, legacy patient import, mass upload & batch review/publish — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
-code, then the canonical rule, and report the drift. Legacy RME archive internals live in `legacy-rme.md`.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here. Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of
+current behaviour. A mismatch is implementation drift: report it. Legacy RME archive internals live in `legacy-rme.md`.
 
 ## Invariants
 

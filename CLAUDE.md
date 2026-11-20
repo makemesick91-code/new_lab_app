@@ -17,12 +17,16 @@ sprint work.
 
 ## Where knowledge lives (authority order)
 
-1. **Code, migrations, routes, tests, config**: the source of truth. Verify a claim there before acting on it.
+What the system must do is set by owner decisions recorded in `docs/decisions/` and by canonical `.cursor/rules/`;
+what it does today is shown by the code. A mismatch is implementation drift: report it with evidence; never restate a
+rule to match the code, never read code behaviour as owner approval, and fix it only in an authorized sprint.
+
+1. **Code, migrations, routes, tests, config**: the evidence of current behaviour. Verify a claim there before acting on it.
 2. **`.cursor/rules/NNN-*.mdc`**: canonical durable rules, one per sprint or foundation. A later rule that says it
    supersedes an earlier one wins; `SUPERSEDED` markers are authoritative.
 3. **`.claude/rules/*.md`**: domain rules. Each loads automatically when you open a file it covers. It summarises
-   the domain's invariants and indexes its canonical `.cursor/rules` files. If it disagrees with the code or a
-   canonical rule, follow the code, then the canonical rule, and report the drift.
+   the domain's invariants and indexes its canonical `.cursor/rules` files. If it disagrees with a canonical rule, the
+   canonical rule wins; if the code disagrees with either, report implementation drift.
 4. **`docs/`**: the Obsidian knowledge base. Start at `docs/00-INDEX.md` through the `knowledge-base` skill and
    read on demand (never `@`-import it). Check `docs/knowledge-base/doc-status-registry.md`: `SNAPSHOT` and `STALE`
    are hints, not facts. Report doc drift as a proposal (format in `docs/knowledge-base/conventions.md`); never
@@ -33,8 +37,8 @@ sprint work.
 
 Domain rule files in `.claude/rules/`: `rme-clinical`, `rme-billing`, `branch-context`, `patient-identity`,
 `legacy-rme`, `legacy-import`, `doctor-device-android`, `doctor-access`, `lab`, `inventory`, `ui`, `satusehat`,
-`foundation-governance`, `cicd-testing`, `deploy-infra`, `monitoring`. A rule file loads only after you open a file
-it covers. When you plan work in a domain before opening any of its files, read its rule file first.
+`foundation-governance`, `cicd-testing`, `deploy-infra`, `monitoring`, `database-security`. A rule file loads only
+after you open a file it covers. When you plan work in a domain before opening any of its files, read its rule file first.
 
 ## Critical global rules
 

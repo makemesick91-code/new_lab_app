@@ -26,17 +26,23 @@ relatif biasa, sehingga tetap berfungsi di GitHub, VS Code, dan saat diunggah ke
 
 ### Urutan otoritas
 
+Dua pertanyaan, dua otoritas (A-21, 2026-11-20). Perilaku yang **wajib** ditentukan oleh keputusan Owner di
+`docs/decisions/` dan rule kanonik `.cursor/rules/`. Perilaku **saat ini** ditunjukkan oleh kode. Selisih keduanya
+adalah drift implementasi: laporkan dengan bukti, jangan ubah rule agar cocok dengan kode, dan jangan baca perilaku
+kode sebagai persetujuan Owner. Tabel di bawah mengurutkan sumber bukti tentang perilaku saat ini.
+
 | Prioritas | Sumber | Lokasi |
 |---|---|---|
-| 1 | Kode, migration, route, test, config | `app/`, `database/migrations/`, `routes/`, `tests/`, `config/` (di luar vault) |
+| 1 | Kode, migration, route, test, config (bukti perilaku saat ini) | `app/`, `database/migrations/`, `routes/`, `tests/`, `config/` (di luar vault) |
 | 2 | Rule durable & ADR yang `Accepted` | `.cursor/rules/*.mdc` (di luar vault), `docs/adr/` (daftar di bawah); aturan global kritis CG-01…CG-24 di `CLAUDE.md` |
-| 3 | Ringkasan aturan per domain (dimuat otomatis sesuai `paths`) | `.claude/rules/*.md` (di luar vault); jika bertentangan, nomor 1 lalu 2 yang menang |
+| 3 | Ringkasan aturan per domain (dimuat otomatis sesuai `paths`) | `.claude/rules/*.md` (di luar vault); jika bertentangan dengan rule kanonik, rule kanonik yang menang; selisih dengan kode dilaporkan sebagai drift |
 | 4 | Kontrak desain & runbook | `docs/architecture/`, `docs/runbooks/`, `docs/operations/` |
 | 5 | Catatan penutupan sprint | `docs/sprints/`, termasuk [arsip catatan lama `CLAUDE.md`](sprints/claude-md-archive/README.md) (verbatim, `HISTORICAL`) |
 | 5a | Ringkasan untuk AI (snapshot) | `docs/ai-knowledge/` |
 | 6 | Dokumen era awal (Sprint 3–64) | berkas `docs/*.md` di root folder docs |
 
-Jika dua sumber bertentangan, sumber dengan prioritas lebih tinggi menang. Di antara catatan
+Jika dua sumber bertentangan, sumber dengan prioritas lebih tinggi menang. Pengecualian: selisih antara kode dan
+keputusan Owner atau rule kanonik adalah drift implementasi yang dilaporkan, bukan alasan mengubah rule. Di antara catatan
 sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplisit** menyatakan
 `SUPERSEDED` mengalahkan bagian yang lebih lama.
 
@@ -72,6 +78,8 @@ sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplis
 - Kontrak: [database-performance-contract](architecture/database-performance-contract.md),
   [database-scale-governance-rules](architecture/database-scale-governance-rules.md),
   [dq-1-acid-constraint-data-quality-audit](architecture/dq-1-acid-constraint-data-quality-audit.md).
+- Least privilege PostgreSQL (R6; desain terkunci 2026-11-20, belum diimplementasikan, hak produksi belum
+  diverifikasi): [database-least-privilege-r6](architecture/database-least-privilege-r6.md), rule 245.
 - `STALE` (93 dari 163 tabel tidak disebut): [database_schema](database_schema.md), [erd](erd.md),
   [04 Database Schema](ai-knowledge/04_DaengtisiaMS_Database_Schema.md).
 
@@ -106,7 +114,8 @@ sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplis
 
 Register keputusan owner (bukan format ADR):
 [rme-billing-correction-owner-decisions](decisions/rme-billing-correction-owner-decisions.md),
-[rme-postpayment-correction-owner-decision-proposals](decisions/rme-postpayment-correction-owner-decision-proposals.md).
+[rme-postpayment-correction-owner-decision-proposals](decisions/rme-postpayment-correction-owner-decision-proposals.md),
+[rme-lab-fee-approval-1-owner-design-lock](decisions/rme-lab-fee-approval-1-owner-design-lock.md).
 Nomor ADR berikutnya yang tersedia: **0017**.
 
 ### Spesifikasi fitur dan catatan sprint
@@ -116,6 +125,11 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   `satusehat-` (7), `ent-` (12), `lab-` (11).
 - Era awal: 156 berkas `docs/sprint_*.md` di root folder docs (Sprint 3–64), misalnya
   [sprint_20_final_closure_report](sprint_20_final_closure_report.md).
+- Persetujuan biaya LAB dan remediasi R6 (2026-11-20; desain terkunci, belum diimplementasikan, Gate 1 NO-GO,
+  rule 245–249): [rme-lab-fee-approval-1](sprints/rme-lab-fee-approval-1.md); spesifikasi
+  [state machine keuangan](architecture/rme-lab-financial-state-machine.md),
+  [FULL_REVERSAL dan ICFR](architecture/rme-billing-reversal-icfr.md),
+  [maker-checker](architecture/maker-checker-authorization.md).
 - Program penutupan RME menyeluruh (2026-11-16 s.d. 2026-11-18; memo internal 2026-10-17, rule 237–244):
   [dms-rme-comprehensive-closure-1](sprints/dms-rme-comprehensive-closure-1.md) (register pending kanonik, empat
   rilis produksi, bukti verifikasi), rencana memo
