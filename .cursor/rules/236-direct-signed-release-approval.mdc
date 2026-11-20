@@ -44,7 +44,8 @@ never permit bypassing the guard that is active on the host.
    release, refused while a deploy holds the release lock; root stores record, signature and receipt (0400) under
    `DMS_PRODUCTION_RELEASE_APPROVAL_STORE` (root 0700, outside the checkout) by exclusive create and rename.
 3. **The deploy re-verifies everything.** `start` (runner) and the bootstrap (inside the lock) verify the stored
-   approval with every contract-2 binding that does not need a commit, plus the required CI: the latest push run of
+   approval with every contract-2 binding that does not need a commit, plus the required CI: the latest run, of an
+   event `DMS_PRODUCTION_CI_EVENTS` lists (§5; push only when it lists none), of
    `DMS_PRODUCTION_CI_WORKFLOW` on exactly the target SHA, branch and repository (no fork) completed with success; each
    `DMS_PRODUCTION_CI_REQUIRED_JOBS` job succeeded (a skipped job never counts) and the critical job ran its tests
    (`DMS_PRODUCTION_CI_REQUIRED_STEP`), never the docs-only skip (`DMS_PRODUCTION_CI_FORBIDDEN_STEP`). Network, HTTP or
@@ -77,3 +78,35 @@ records are never edited. If contract 3 misbehaves, releases keep using contract
 Runbook `docs/runbooks/production-host-identity.md` §6g. If the base branch's push run of the target was cancelled
 (`cancel-in-progress`), re-run it before submitting. An interrupted submission is cleared by re-running
 `submit-approval`.
+
+## 5. Accepted CI evidence: push or manual dispatch (CI-CD-PR-ONLY-POLICY-1 phase B)
+
+Amendment, 2026-11-21, owner-authorised as a compatibility step towards "CI runs automatically only for pull
+requests". Sprint record: `docs/sprints/ci-cd-pr-only-policy-1.md`.
+
+1. **Two evidence kinds, one contract.** `DMS_PRODUCTION_CI_EVENTS` (authority) lists the run events that count:
+   `push` (the base branch's post-merge run) and/or `workflow_dispatch` (a manual run of the same workflow on the base
+   branch). Anything else (`schedule`, `pull_request`, `repository_dispatch`, `workflow_run`, a typo, a duplicate) is
+   refused before any request. An authority without the key accepts push runs only, exactly as before; with one event
+   the GitHub query keeps its event filter, with both the evaluator filters every run itself. The request budget is
+   unchanged (2).
+2. **Exact commit, nothing else.** A dispatch runs on the tip of the ref it names, so it proves the commit the branch
+   held at dispatch time; it counts only when that commit equals `--approved-sha`, on the authority's branch,
+   workflow path and repository (no fork). A dispatch after the branch moved on proves the newer commit and never the
+   release. The branch name is never the proof: the commit is, and the guard's own ancestry checks still bind it to
+   the fetched base branch.
+3. **The latest accepted run decides.** Among the runs of either listed event for the commit, the newest must be
+   completed/success; a newer failed, cancelled, queued or running push or dispatch run denies even when an older one
+   succeeded. Its latest attempt must pass every job and step check of §2.3, the same as a push run.
+4. **Never an evaluation run.** A dispatch may be a CI-PERF-04 evaluation (rule 212 §3: never a gate's verdict). No
+   job named in `DMS_PRODUCTION_CI_EVALUATION_STEP` may have taken that step (present and not skipped; an unknown
+   conclusion counts as taken). The key is mandatory whenever `workflow_dispatch` is listed and its job must be a
+   required job; it is pinned to the workflow's real step, which runs only when the resolver labels an evaluation.
+5. **CI is evidence, never authority.** A green dispatch never replaces the owner-signed approval, a spent release or
+   approval id, the window or any other binding (§2.2–§2.4). Write access to the repository lets someone dispatch CI;
+   it never lets anyone approve a release.
+6. **Activation boundary.** The guard and authority that verify a release are the ones installed on the host before
+   it (the checkout beside the runner). The release carrying this amendment is therefore still verified on its
+   **push** run; dispatch evidence becomes usable only after that release is deployed, verified and GO-tagged.
+   Removing the base push trigger stays a separate owner decision that may follow only then; this section does not
+   remove it. States are reported separately: IMPLEMENTED IN BRANCH → MERGED → DEPLOYED → VERIFIED IN PRODUCTION.

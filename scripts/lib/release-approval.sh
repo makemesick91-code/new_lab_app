@@ -416,12 +416,16 @@ dms_release_approval_verify_inner() {
 
     # ── 12. Required CI of the exact commit (contract 3) ─────────────────────
     # Asked of GitHub by the host itself, from the authority's repository,
-    # branch, workflow and job names — never from anything in the record.
+    # branch, workflow, job names and accepted run events (push, and since
+    # CI-CD-PR-ONLY-POLICY-1 phase B a manual dispatch on the base branch at the
+    # exact commit) — never from anything in the record.
     dms_release_approval_ci_verify "$prod_repo" "$approved_sha" "$branch" \
       "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_WORKFLOW)" \
       "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_REQUIRED_JOBS)" \
       "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_REQUIRED_STEP)" \
-      "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_FORBIDDEN_STEP)" || return
+      "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_FORBIDDEN_STEP)" \
+      "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_EVENTS)" \
+      "$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_CI_EVALUATION_STEP)" || return
   fi
 
   DMS_RELEASE_APPROVED_SHA="$approved_sha"
@@ -1240,24 +1244,38 @@ def main():
         return "OK %d %d %d %s" % (values[0], values[1], values[2], when)
     if mode == "runs":
         repo, sha, branch, workflow = sys.argv[2:6]
+        # The events the authority accepts (dms_release_approval_ci_events):
+        # "push", "workflow_dispatch" or both. Every other event (schedule,
+        # pull_request, repository_dispatch, workflow_run, ...) never counts.
+        accepted = sys.argv[6].split(" ")
+        if not accepted or any(e not in ("push", "workflow_dispatch") for e in accepted):
+            return "DENY the accepted CI events are not push and/or workflow_dispatch"
         runs = doc.get("workflow_runs")
         if not isinstance(runs, list):
             return "DENY the GitHub response lists no workflow runs"
         found = [r for r in runs if isinstance(r, dict) and type(r.get("id")) is int
                  and r.get("path") == workflow and r.get("head_sha") == sha
-                 and r.get("head_branch") == branch and r.get("event") == "push"
+                 and r.get("head_branch") == branch and r.get("event") in accepted
                  and full_name(r, "repository") == repo and full_name(r, "head_repository") == repo]
         if not found:
-            return "DENY no push run of %s for %s on %s in %s" % (safe(workflow), safe(sha), safe(branch), safe(repo))
+            return "DENY no %s run of %s for %s on %s in %s" % (
+                " or ".join(accepted), safe(workflow), safe(sha), safe(branch), safe(repo))
+        # The LATEST run of any accepted event is the evidence: a newer failed,
+        # cancelled or unfinished run of the same commit denies even when an
+        # older one succeeded.
         run = max(found, key=lambda r: r["id"])
         if run.get("status") != "completed" or run.get("conclusion") != "success":
-            return "DENY the latest push run %d of %s for %s is %s/%s, not completed/success" % (
-                run["id"], safe(workflow), safe(sha), safe(run.get("status")), safe(run.get("conclusion")))
-        return "OK %d" % run["id"]
+            return "DENY the latest %s run %d of %s for %s is %s/%s, not completed/success" % (
+                run["event"], run["id"], safe(workflow), safe(sha), safe(run.get("status")), safe(run.get("conclusion")))
+        return "OK %d %s" % (run["id"], run["event"])
     if mode == "jobs":
         sha, run_id, names = sys.argv[2], int(sys.argv[3]), sys.argv[4].split(";")
         required_job, required_step = sys.argv[5].split(":", 1)
         forbidden_job, forbidden_step = sys.argv[6].split(":", 1)
+        # Optional "<job>:<step>" that only a CI-PERF-04 evaluation run takes
+        # (rule 212 §3: an evaluation run is never a gate's verdict).
+        evaluation = sys.argv[7] if len(sys.argv) > 7 else ""
+        evaluation_job, evaluation_step = evaluation.split(":", 1) if evaluation else ("", "")
         jobs = doc.get("jobs")
         total = doc.get("total_count")
         if not isinstance(jobs, list) or type(total) is not int:
@@ -1280,6 +1298,13 @@ def main():
             if not isinstance(j, dict):
                 continue
             steps = j.get("steps")
+            # A step that is present and not skipped was taken (fail closed:
+            # an unknown or missing conclusion counts as taken).
+            if evaluation and j.get("name") == evaluation_job and isinstance(steps, list) and any(
+                    isinstance(st, dict) and st.get("name") == evaluation_step and st.get("conclusion") != "skipped"
+                    for st in steps):
+                return "DENY job %s took the step %s: an evaluation run is never release evidence (rule 212)" % (
+                    safe(evaluation_job), safe(evaluation_step))
             if j.get("name") == forbidden_job and isinstance(steps, list) and any(
                     isinstance(st, dict) and st.get("name") == forbidden_step and st.get("conclusion") == "success" for st in steps):
                 return "DENY job %s took the step %s: its tests did not run" % (safe(forbidden_job), safe(forbidden_step))
@@ -1355,13 +1380,48 @@ dms_release_approval_ci_budget() {
   return 0
 }
 
+dms_release_approval_ci_events() {
+  # dms_release_approval_ci_events <declared events> — prints the run events
+  # the required CI accepts (DMS_PRODUCTION_CI_EVENTS, space-separated), or the
+  # reason the declaration is refused and returns 1. Only `push` (the base
+  # branch's post-merge run) and `workflow_dispatch` (a manual run on the base
+  # branch) exist; each at most once. An authority that declares nothing
+  # predates the dispatch path and accepts push runs only — exactly the
+  # original contract 3 (CI-CD-PR-ONLY-POLICY-1 phase B, rule 236 §2.3).
+  local declared="${1:-}" event seen=" "
+  local -a events=()
+  if [ -z "$declared" ]; then
+    printf 'push'
+    return 0
+  fi
+  if ! [[ "$declared" =~ ^[a-z_]{1,32}( [a-z_]{1,32})?$ ]]; then
+    printf "the authority's DMS_PRODUCTION_CI_EVENTS '%s' is not a space-separated list of push and workflow_dispatch" "$declared"
+    return 1
+  fi
+  IFS=' ' read -r -a events <<< "$declared"
+  for event in "${events[@]}"; do
+    case "$event" in
+      push|workflow_dispatch) ;;
+      *) printf "the authority's DMS_PRODUCTION_CI_EVENTS names '%s', which is not an accepted CI event (push, workflow_dispatch)" "$event"; return 1 ;;
+    esac
+    if [[ "$seen" == *" ${event} "* ]]; then
+      printf "the authority's DMS_PRODUCTION_CI_EVENTS names '%s' twice" "$event"
+      return 1
+    fi
+    seen+="${event} "
+  done
+  printf '%s' "$declared"
+}
+
 dms_release_approval_ci_verify() {
   # dms_release_approval_ci_verify <repository OWNER/REPO> <sha> <branch> <workflow path> <required jobs, ';'-separated>
-  #   <required step, "<job>:<step>"> <forbidden step, "<job>:<step>">
+  #   <required step, "<job>:<step>"> <forbidden step, "<job>:<step>"> [<accepted events>] [<evaluation step, "<job>:<step>">]
   #
   # Contract 3's explicit CI gate (it replaces the approval pull request's own
-  # CI). Asks GitHub for the push runs of <workflow path> on exactly <sha> and
-  # <branch> in <repository>: the latest such run must be completed/success,
+  # CI). Asks GitHub for the runs of <workflow path> on exactly <sha> and
+  # <branch> in <repository> whose event the authority accepts
+  # (DMS_PRODUCTION_CI_EVENTS: `push`, `workflow_dispatch` or both; push only
+  # when it declares none): the latest such run must be completed/success,
   # and in its latest attempt every required job name must have at least one
   # successful job and none concluding anything but success or skipped (a
   # skipped job never satisfies a requirement). Any network, HTTP or parse
@@ -1369,15 +1429,24 @@ dms_release_approval_ci_verify() {
   # workflow is DENIED (77). Every input comes from the authority and the
   # operator's --approved-sha, never from an approval record.
   #
+  # A manual dispatch always runs on the tip of the ref it names, so a dispatch
+  # run carries the commit the branch held when it was dispatched: it counts
+  # only when that commit IS <sha> (the same exact-commit match as a push run).
+  # A dispatch after the branch moved on proves the newer commit, never <sha>.
+  #
   # A job can conclude success without testing anything: the classifier's
   # docs_only profile skips the critical test step. So every successful job
   # named in <required step> must have run that step with success, and no job
-  # named in <forbidden step> may have taken that (docs-only skip) step.
+  # named in <forbidden step> may have taken that (docs-only skip) step. A
+  # dispatch may also be a CI-PERF-04 evaluation (rule 212 §3: never a gate's
+  # verdict): no job named in <evaluation step> may have taken that step. The
+  # evaluation step is required whenever workflow_dispatch is accepted.
   # First GET /rate_limit (dms_release_approval_ci_budget): too few requests
   # left for the two calls plus the caller's reserve is DENIED before either.
   # Sets DMS_RELEASE_APPROVAL_CI_RUN_ID to the verified run.
   local repo="$1" sha="$2" branch="$3" workflow="$4" jobs="$5" required_step="${6:-}" forbidden_step="${7:-}"
-  local name out verdict run_id spec
+  local declared_events="${8:-}" evaluation_step="${9:-}"
+  local name out verdict run_id run_event spec events event_query=""
   local -a required=()
   DMS_RELEASE_APPROVAL_CI_RUN_ID=""
   [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
@@ -1404,13 +1473,28 @@ dms_release_approval_ci_verify() {
   done
   dms_release_approval_ci_job_listed "${required_step%%:*}" "${required[@]}" \
     || { dms_release_approval_deny "required CI: the required step's job '${required_step%%:*}' is not a required job"; return; }
+  events="$(dms_release_approval_ci_events "$declared_events")" \
+    || { dms_release_approval_deny "required CI: ${events}"; return; }
+  if [ -n "$evaluation_step" ]; then
+    [[ "$evaluation_step" =~ ^([A-Za-z0-9][A-Za-z0-9\ ._\&()-]{0,99}):([A-Za-z0-9][A-Za-z0-9\ ._\&()-]{0,99})$ ]] \
+      || { dms_release_approval_deny "required CI: '${evaluation_step}' is not '<job>:<step>' (DMS_PRODUCTION_CI_EVALUATION_STEP)"; return; }
+    dms_release_approval_ci_job_listed "${evaluation_step%%:*}" "${required[@]}" \
+      || { dms_release_approval_deny "required CI: the evaluation step's job '${evaluation_step%%:*}' is not a required job"; return; }
+  elif [[ " ${events} " == *" workflow_dispatch "* ]]; then
+    # Without it a CI-PERF-04 evaluation dispatch could stand in for the gate.
+    dms_release_approval_deny "required CI: the authority accepts workflow_dispatch runs but declares no evaluation step (DMS_PRODUCTION_CI_EVALUATION_STEP)"
+    return
+  fi
+  # One accepted event is filtered by GitHub too (for push: the original
+  # query, byte for byte); with both, the evaluator filters every run itself.
+  [[ "$events" == *" "* ]] || event_query="&event=${events}"
   command -v curl >/dev/null 2>&1 || { dms_release_approval_deny "required CI: curl is not installed"; return; }
   command -v python3 >/dev/null 2>&1 || { dms_release_approval_deny "required CI: python3 is not installed"; return; }
   dms_release_approval_ci_budget || return
 
-  out="$(dms_release_approval_github_get "${DMS_RELEASE_APPROVAL_GITHUB_API}/repos/${repo}/actions/runs?head_sha=${sha}&event=push&branch=${branch}&per_page=50")" \
+  out="$(dms_release_approval_github_get "${DMS_RELEASE_APPROVAL_GITHUB_API}/repos/${repo}/actions/runs?head_sha=${sha}${event_query}&branch=${branch}&per_page=50")" \
     || { dms_release_approval_deny "required CI: ${out}"; return; }
-  verdict="$(printf '%s' "$out" | python3 -I -S -c "$(dms_release_approval_ci_program)" runs "$repo" "$sha" "$branch" "$workflow" 2>/dev/null)" \
+  verdict="$(printf '%s' "$out" | python3 -I -S -c "$(dms_release_approval_ci_program)" runs "$repo" "$sha" "$branch" "$workflow" "$events" 2>/dev/null)" \
     || verdict="DENY the GitHub response could not be evaluated"
   verdict="${verdict%%$'\n'*}"
   case "$verdict" in
@@ -1418,11 +1502,15 @@ dms_release_approval_ci_verify() {
     "DENY "*) dms_release_approval_deny "required CI: ${verdict#DENY }"; return ;;
     *) dms_release_approval_deny "required CI: the GitHub response could not be evaluated"; return ;;
   esac
+  run_event="${run_id#* }"
+  run_id="${run_id%% *}"
   [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || { dms_release_approval_deny "required CI: no run id"; return; }
+  [[ "$run_event" =~ ^(push|workflow_dispatch)$ && " ${events} " == *" ${run_event} "* ]] \
+    || { dms_release_approval_deny "required CI: the run's event is not one the authority accepts"; return; }
 
   out="$(dms_release_approval_github_get "${DMS_RELEASE_APPROVAL_GITHUB_API}/repos/${repo}/actions/runs/${run_id}/jobs?filter=latest&per_page=100")" \
     || { dms_release_approval_deny "required CI: ${out}"; return; }
-  verdict="$(printf '%s' "$out" | python3 -I -S -c "$(dms_release_approval_ci_program)" jobs "$sha" "$run_id" "$jobs" "$required_step" "$forbidden_step" 2>/dev/null)" \
+  verdict="$(printf '%s' "$out" | python3 -I -S -c "$(dms_release_approval_ci_program)" jobs "$sha" "$run_id" "$jobs" "$required_step" "$forbidden_step" "$evaluation_step" 2>/dev/null)" \
     || verdict="DENY the GitHub response could not be evaluated"
   verdict="${verdict%%$'\n'*}"
   case "$verdict" in
@@ -1431,7 +1519,7 @@ dms_release_approval_ci_verify() {
     *) dms_release_approval_deny "required CI: the GitHub response could not be evaluated"; return ;;
   esac
   DMS_RELEASE_APPROVAL_CI_RUN_ID="$run_id"
-  echo "PASS: required CI — push run ${run_id} of ${workflow} on ${sha} (${repo}, ${branch}) completed with success; required jobs succeeded: ${jobs}; '${required_step#*:}' ran"
+  echo "PASS: required CI — ${run_event} run ${run_id} of ${workflow} on ${sha} (${repo}, ${branch}) completed with success; required jobs succeeded: ${jobs}; '${required_step#*:}' ran"
   return 0
 }
 
