@@ -17,10 +17,12 @@
 | MERGED | code: **yes** — #673 squash-merged as `452011a8`; its post-merge push run 44823046028 is green. Manifest switch: **yes** — #674 squash-merged as `f31b554be922d1c147d23e7e00523b2d23e4a413` (tree identical to the tested head); its post-merge push run 44862172974 is green |
 | DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
 | RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
-| VERIFIED IN PRODUCTION | **no** — the dispatch path is not yet proven in production: first `check-approval` GO on a dispatch run (runbook §6g step 0, phase B4) |
+| VERIFIED IN PRODUCTION | **yes** — 2026-11-21 (phase B4, decision 13): the installed guard answered `check-approval` GO with `PASS: required CI — workflow_dispatch run 44898680653` for `ca86734e80846744ea2cdecc6f4aa9c5acb172d2`; test approval `49b95a0323c6effb9477423d86057b13` withdrawn, then DENIED; no deploy. See "Phase B4 result" |
 
 Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
-authorised deploy (decision 10); see "Release and GO tag (phase B)".
+authorised deploy (decision 10); see "Release and GO tag (phase B)". Phase B4 added only the test approval's
+stored record, its withdrawal marker and its spent marker in the host's approval store: no code, configuration,
+service, timer or database change.
 
 ## Owner decisions (CG-22)
 
@@ -218,6 +220,52 @@ authorised deploy (decision 10); see "Release and GO tag (phase B)".
       restoring the DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest, removing worktrees without a separate approval. After B4,
       a report and a stop before phase B5.
     - **Status when this record was written: NOT STARTED** (no dispatch, no test approval).
+    - Outcome (2026-11-21): **COMPLETED**, acceptance 13 of 13; see "Phase B4 result".
+14. 2026-11-21 — **Phase B4 closure record**: after the owner withdrew the test approval, the assistant re-runs
+    `check-approval` (must be DENIED), verifies production HEAD `f31b554b…`, drift NONE, every lock idle and no
+    configuration or database change, keeps the base freeze until that verification ends, reports, and prepares one
+    docs-only pull request recording phase B4 (CG-22); merging it needs a separate owner approval. A phase B5 plan
+    (removing the automatic `push` and `schedule` triggers) is prepared but not implemented: B5 needs its own owner
+    decision. Not authorised: deploy, rollback, GO tag changes, workflow changes, BK-2.
+
+## Phase B4 result (production verification, 2026-11-21)
+
+Decision 13, through the deploy operator on the verified Biznet host. Times in WITA (UTC+8), UTC in brackets.
+
+| Step | Time | Result |
+|---|---|---|
+| Base frozen, target recorded | 19:14 (11:14Z) | #679 squash-merged as `ca86734e80846744ea2cdecc6f4aa9c5acb172d2` (tree `1be49c92…`, identical to the reviewed head); post-merge push run 44898175731 green (`docs_only`) |
+| Pre-checks | 19:15 | target VERIFIED; `RELEASE GUARD TRUST: READY`; `SUDO_POLICY=LEAST_PRIVILEGE`; posture HEAD `f31b554b…`, tracked 0, locks idle, ERROR 166; `PRIVSEP_DRIFT=NONE`; a default dispatch resolves `evaluation=false`; DEVFLOW GO (`sprint:release-check` NO-GO only on the GO tag collision, expected after phase B was tagged) |
+| `workflow_dispatch` | 19:21–20:56 (11:21:01–12:56:30Z) | run **44898680653**, attempt 1, base branch, head `ca86734e…`, `completed`/`success`; classifier `unknown_high_risk` (no event base), `run_critical_tests=true`; `Run critical regression tests` **11804 passed (61107 assertions)**, sequential, 1 worker; `Start resource sampler (CI-PERF-04 evaluation)` skipped; NSF-R011 Critical (hosted), NSF-R012 Quality and CICD-CTRL Classifier succeeded; the self-hosted twin skipped; Full Suite gate skipped (DEFERRED under rule 107, not passed). The newest run of the commit |
+| Installed-guard replay | after the run | guard and authority of `f31b554b` against the GitHub API: `PASS: required CI — workflow_dispatch run 44898680653` |
+| Owner signature | 23:03:28 (15:03:28Z) | release id `ci-cd-pr-only-policy-1-b4-dispatch-test`, approval `49b95a0323c6effb9477423d86057b13`, target `ca86734e…`, GO tag `ci-cd-pr-only-policy-1-phase-b-go`, valid 2 hours (until 01:03:28 WITA); signed by the owner in the owner's own terminal |
+| Bundle verification | 23:05 | bundle SHA-256 `75a34928a7f3b8be8d951c47b58f6d976a8fe15518a6718cd81dd2e3e94bde0e`, record SHA-256 `6c130b6a8d58835d65f613c9f3cb57ed68afc7ba789e909006012362c7c3a9ab`, signature SHA-256 `ed06055e607a9d999136e04d5f2c535e43efcff4b5c545e9798106c855d51aa5`; good owner signature; installed library parses it; 15 of 15 record checks against the authority and the target commit |
+| Pre-submit checks | 23:05–23:06 | target VERIFIED; trust READY; sudo policy, posture and drift identical to 19:15; base tip still `ca86734e…`, no queued run |
+| `submit-approval` | 23:06:40 | `RELEASE APPROVAL SUBMITTED: 49b95a03…`; record and signature SHA-256 on the host equal the local verification |
+| `check-approval` | 23:06:47 | `RELEASE APPROVAL CHECK: GO — read-only: nothing was claimed, recorded or launched`: host and host key, origin, signature against the anchor, only docs after the target, release and approval unspent, GitHub budget 60 of 60, **`PASS: required CI — workflow_dispatch run 44898680653`**, window, contract 3, GO tag `ci-cd-pr-only-policy-1-phase-b-go`. No `start`, no `follow` |
+| Withdrawal (owner) | between 23:06:47 and 23:12:11 | the owner, as the administrator, ran `scripts/release-approval-withdraw.sh` on the host: `RELEASE APPROVAL WITHDRAWN`, exit 0 |
+| `check-approval` after the withdrawal | 23:12:11 | `DENIED — … has stored approvals but none is active (49b95a03… withdrawn …)`; `DEPLOYMENT=DENIED`; refused before launch, no log, record or process; exit 77 |
+| After the test | 23:12–23:16 | posture identical to 19:15 (HEAD `f31b554b…`, tracked 0, deploy, release and rollback locks idle, ERROR 166); `PRIVSEP_DRIFT=NONE`; sudo policy and trust unchanged; no failed unit; `php8.3-fpm` and nginx start times unchanged since the phase-B deploy; timers unchanged; migration files identical to the phase-B deploy (237 files, same name and content digests); last deploy still `20261121-095125`; smoke `/login`, `/health/live`, `/health/ready`, `/health/lb` 200, `/storage/` 403; base tip still `ca86734e…`; GO tag unchanged |
+
+Acceptance of decision 13: 13 of 13 met.
+
+1. The dispatch succeeded on the target SHA.
+2. The critical tests ran.
+3. The guard accepted the dispatch evidence.
+4. `check-approval` was GO.
+5. Nothing was deployed.
+6. The test approval was withdrawn.
+7. The check after the withdrawal was DENIED.
+8. Production HEAD is unchanged.
+9. The locks are idle.
+10. Drift is NONE.
+11. Services and timers are unchanged.
+12. BK-2 was neither run nor triggered.
+13. All of this is recorded here.
+
+The approval `49b95a03…` is spent by its withdrawal; the test approval was never used to release code, and the
+release id `ci-cd-pr-only-policy-1-b4-dispatch-test` is never to be reused for a real release. Lifting the base
+freeze (PR #672 and later merges) is left to the owner.
 
 ## Release and GO tag (phase B)
 
@@ -485,8 +533,12 @@ unsetting it (the setting CI uses) passes them. Environmental, not caused by thi
    `--go-tag ci-cd-pr-only-policy-1-phase-b-go` ("Manifest switch" above).
 3. Production verification: the first release whose newest accepted run is a dispatch → `check-approval` GO with
    `PASS: required CI — workflow_dispatch run <id>`; record the run id here. Until then: DEPLOYED ≠ VERIFIED.
+   **Done 2026-11-21 (phase B4):** run 44898680653 on `ca86734e…`, `check-approval` GO with a withdrawn test approval
+   (no deploy); see "Phase B4 result".
 
 ## Future removal of the automatic push trigger (not in this phase)
+
+Step 3 above was met on 2026-11-21 (phase B4). The removal still needs its own owner decision (phase B5).
 
 Only after step 3 above, and by a new owner decision: a PR removes `push` (and `schedule`) from
 `foundation-evidence-gates.yml`, updates `DeployHardenDirectApprovalTest`'s trigger assertion and rule 107. From then
