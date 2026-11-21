@@ -176,6 +176,48 @@ authorised deploy (decision 10); see "Release and GO tag (phase B)".
     authorised: `workflow_dispatch`, a new signed approval, production `submit-approval` or `check-approval`,
     redeploy, rollback, GO tag changes, trigger or workflow changes, VPS or database changes, BK-2, restoring the
     DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest, removing worktrees without a named list.
+13. 2026-11-21 — **Phase B4, production verification of dispatch evidence: APPROVED.** It proves that the deployed
+    guard accepts a valid `workflow_dispatch` run of the exact base commit. It is a release-approval test, not a new
+    deploy.
+    - CG-22: this decision is recorded through a docs-only pull request before the test. Merging it needs a separate
+      owner approval; the base tip after that merge is the B4 target.
+    - Base freeze, from this record on the base until B4 ends: no merge or push to the base, PR #672 waits, and no
+      documentation change while the dispatch runs. If the base moves, the test stops and the target is re-evaluated.
+    - Dispatch: once every prerequisite passes, one normal `workflow_dispatch` of Foundation Evidence Gates on the base
+      branch at the frozen tip. Required: the official workflow; the base branch; head SHA equal to the B4 target; no
+      CI-PERF-04 evaluation input; the critical regression tests run; the required jobs succeed; completed/success;
+      the newest run the guard accepts. A failed or cancelled dispatch, or a changed SHA, stops the test.
+    - Test approval: release id `ci-cd-pr-only-policy-1-b4-dispatch-test`, target the frozen and verified tip, GO tag
+      `ci-cd-pr-only-policy-1-phase-b-go`, valid for 2 hours. The owner runs the signer in the owner's own terminal,
+      only after the dispatch succeeded and every signer prerequisite passes. The assistant never runs the signer,
+      reads the private key or asks for the passphrase.
+    - After the test approval is verified, the assistant submits it through the operator and runs `check-approval`.
+      The result must be GO, with `workflow_dispatch` evidence naming the correct run id. `start`, `follow` and any
+      deploy are forbidden; the test approval is never used to release code.
+    - Withdraw immediately after the GO. The owner runs the steps that need the administrator's password. Then the
+      withdrawal is verified, `check-approval` is run again and must be DENIED, and the production posture is checked
+      for no change. If the withdrawal fails, stop and report the still-active approval to the owner.
+    - Negative tests: no live CI-PERF-04 evaluation run; the "evaluation run is refused" path rests on the existing
+      repository tests. The mandatory production negative is `check-approval` after the withdrawal: DENIED.
+    - Acceptance:
+      1. the dispatch succeeded on the correct target SHA;
+      2. the critical regression tests ran;
+      3. the guard accepted the dispatch evidence;
+      4. `check-approval` GO;
+      5. no deploy;
+      6. the test approval withdrawn;
+      7. the check after the withdrawal DENIED;
+      8. production HEAD unchanged;
+      9. deploy locks idle;
+      10. production drift NONE;
+      11. services and timers unchanged;
+      12. no BK-2 run or trigger;
+      13. every piece of evidence recorded for CG-22.
+    - Not authorised: a new deploy, rollback, creating or changing a GO tag, push or schedule trigger removal,
+      disabling GitHub workflows, application code changes, database or production configuration changes, BK-2,
+      restoring the DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest, removing worktrees without a separate approval. After B4,
+      a report and a stop before phase B5.
+    - **Status when this record was written: NOT STARTED** (no dispatch, no test approval).
 
 ## Release and GO tag (phase B)
 
