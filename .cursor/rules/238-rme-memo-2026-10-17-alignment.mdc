@@ -52,6 +52,10 @@ and message, so it fails when the service re-assertion is removed).
 Additional lab fees, post-payment correction (PP-10), the correction roll-out beyond SPN4 and a backdating limit (D24)
 stay REQUIRES OWNER DECISION. No supplementary invoice exists and an issued invoice stays immutable (rule 194).
 
+**SUPERSEDED IN PART (2026-11-20):** the "additional lab fees" clause is decided by the owner design lock of
+RME-LAB-FEE-APPROVAL-1 and governed by rule 246 (LAB fee as a classified, approved RME invoice line; design locked,
+not implemented). PP-10, the correction roll-out beyond SPN4, D24 and the ban on supplementary invoices are unchanged.
+
 ## 5. CI
 
 The three suites are selected by the existing `RmePayment` and `DoctorRoomScoped` critical-gate tokens in both runner

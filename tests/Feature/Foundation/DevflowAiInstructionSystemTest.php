@@ -317,7 +317,7 @@ it('gives every domain rule file uniquely numbered invariants under one prefix a
 
         // Markdown re-wraps freely; compare the sentence, not its line breaks.
         $flowing = (string) preg_replace('/\s+/', ' ', $content);
-        expect($flowing)->toContain('Authority: code > canonical `.cursor/rules/` > this file > archive');
+        expect($flowing)->toContain('Authority: owner decisions > canonical `.cursor/rules/` > this file > archive');
         expect($content)->toContain('## Invariants');
 
         preg_match_all('/^- \*\*(AIR-([A-Z]+)-(\d\d))\*\*/m', $content, $m);

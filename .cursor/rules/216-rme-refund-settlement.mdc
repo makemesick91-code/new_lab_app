@@ -109,3 +109,20 @@ payout record only.
 * Edit or delete a settlement or its events; correct with abort (before money moved) or a new request.
 * Turn `rme.billing_refund_settlement` on before the refund request flag is live, an Owner-designated settler
   exists, the SOP is trained, and the Owner approves activation (separate gate: ACTIVATION-RME-REFUND-SETTLEMENT-1).
+
+## Amendment — reversal-sourced obligations (RME-LAB-FEE-APPROVAL-1, A-13, A-19; DESIGN LOCKED, NOT IMPLEMENTED)
+
+Owner decision 2026-11-20. Spec: `docs/architecture/rme-billing-reversal-icfr.md` §8. Until this amendment is
+implemented and verified, the text above is the enforced behaviour and a reversal of an invoice with money received
+stays blocked (rule 249, T5).
+
+1. An obligation has exactly one source, a correction (`source_correction_id`) or a billing reversal
+   (`source_billing_reversal_id`), enforced by a database CHECK.
+2. A settlement for a correction-sourced obligation requires a PAID invoice (unchanged); for a reversal-sourced
+   obligation a REVERSED invoice. Any other pair is refused (`OBLIGATION_SOURCE_STATUS_MISMATCH`).
+3. Amount reconciliation as in the rule 215 amendment: overpaid(grand_total, net received) equals the obligation
+   amount.
+4. After settlement the invoice balances and keeps its status: PAID for a correction source, REVERSED for a
+   reversal source. A settlement never writes the invoice status.
+5. Unchanged: settler ≠ approver, settler designation, evidence rules, flags, no automatic settlement, no payment
+   row written.

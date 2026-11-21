@@ -19,9 +19,9 @@ paths:
 
 # RME clinical workflow — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
-code, then the canonical rule, and report the drift.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here. Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of
+current behaviour. A mismatch is implementation drift: report it.
 
 Canonical flow: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`) → PTM: pasien
 (front office), lalu dokter countersign (RME, odontogram + finish unlocked) → RME + Odontogram → Dokter "Selesai

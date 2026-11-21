@@ -27,9 +27,9 @@ paths:
 
 # RME billing, receivables, invoice correction & oversight — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
-code, then the canonical rule, and report the drift.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here. Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of
+current behaviour. A mismatch is implementation drift: report it.
 
 ## Invariants
 
@@ -247,38 +247,24 @@ code, then the canonical rule, and report the drift.
   real visit). Source: rule 222 §1.6–§1.8.
 - **AIR-RMB-47** `{receiptSnapshot}` is global (no `whereNumber`); oversight `{patient}` is per route. Rule 222 §1.10.
 
-## Current posture (snapshot 2026-10-25 — verify before relying on it)
+### LAB fee, billing reversal and refund sources (rules 246, 249, 215/216 — design locked, NOT IMPLEMENTED)
 
-- `rme.invoice_correction` **ON** as a pilot (SPN4, one maker + one checker), `PILOT_ACTIVE`, probe WATCH. Full pilot
-  GO **NO_GO**: the one real correction reconciles (PASS RECONSTRUCTED) but `OWNER_CASE_APPROVAL=UNVERIFIED` and
-  `HUMAN_SEPARATION=RED_FLAG_UNRESOLVED`; the closure tag does not exist.
-- `rme.invoice_postpayment_correction` **OFF** (`IMPLEMENTATION_GO / FLAG_OFF`, deployed `b7ffa92b`); PP-1…PP-10
-  ratified; activation needs its own owner decision (PP-10), blocked while the pre-payment pilot is NO_GO.
-- Receipt snapshots written by every payment regardless of flags; none observed live as of 2026-10-26.
-- Dispute hold live on all branches; one SPN4 reviewer designation as of 2026-10-25. Payment idempotency live; older
-  payments have no submission row. Pricing MANUAL everywhere; strict tariff mode and price exceptions OFF.
-- **Deployed, flag OFF:** refund request & approval (rule 215; D4 via RF-1, D18 via RF-2; runtime `9826bd69`, 2026-10-31;
-  identity allowlist EMPTY, nobody can act); refund settlement (rule 216; D5 via RF-9, D25 via RF-10; runtime
-  `a550e00d`, 2026-10-31; settler list EMPTY, permission held by no role, nobody can settle); Owner reference
-  registry (rule 214, `61450801`); **"Selesai Tanpa Biaya"** (rule 217, Sprint 6/7, owner decisions S6-D1…S6-D8
-  of 2026-11-01): a legitimate Rp0 Konsultasi / Kontrol invoice closes to the terminal status `NO_CHARGE` (never
-  PAID, no payment row) and completes its visit — runtime `4520a276`, 2026-11-01, flag `rme.zero_value_closure`
-  OFF, activation a separate Owner decision. **Hardening 2026-11-01 (rule 217 §9):** S6-Q1/S6-Q2 APPROVED, S6-Q3
-  REVISED AND APPROVED — a Kontrol may be Rp0 but a normally paid treatment on it is billed > Rp0 and paid normally
-  (mixed invoice ≠ NO_CHARGE); approved free services = `consultation` category + reserved `control` category on a
-  valid Kontrol; flag-gated Kontrol issuance guard; batch-path #36 residual resolved for closable invoices; read-only
-  oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer) — runtime `ba33f9bb`, deployed and verified
-  2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Rule 218 (owner CB-Q1/Q2/Q3, 2026-11-01):** a
-  DETECTIVE clinical vs billing cross-check is recorded with every NO_CHARGE closure and shown in oversight; a signal
-  never refuses (a fault fails closed) — runtime `1043b815`, deployed 2026-11-01, flag OFF; MEDIUM-1 `PARTIALLY_MITIGATED`. **Rule 219 (CB-Q1 input, DPT-Q1, 2026-11-01):** the treating doctor's structured "Tindakan Dilakukan" record (flag `rme.doctor_performed_treatments`, OFF) feeds rule 218 as signal `CBC_PERFORMED_TREATMENT_NOT_BILLED` (snapshot v2); "Tidak Ada Tindakan" = operational KONTROL, which is NEVER NO_CHARGE; still detective, MEDIUM-1 still `PARTIALLY_MITIGATED`. **DPT-Q2…Q10 ratified 2026-11-02:** NO_CHARGE blocking by
-  doctor evidence is a STAGED later step (not implemented); D28 recovery direction approved but no operation
-  authorized; pilot SPN4 only (rule 219 §15). **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
-  discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
-  only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
-- Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
-  reference becomes mandatory.
-- Residuals: `branchIdsFor(null)` still answers every RME branch (`RmeInvoiceController::rmeBranches()` and
-  `RmeReportController` rely on `auth`); a failed lab-candidate generation has no retry (OD-7-5, rule 225).
+- **AIR-RMB-48** A LAB fee enters an invoice only at issuance, as a classified `LAB_FEE` line linked to a
+  LAB-requiring line on the same invoice and backed by a pre-issuance approval consumed once (designated branch
+  checker ≠ maker); never free text, never through a correction, never a supplementary invoice. Source: rule 246.
+- **AIR-RMB-49** Items snapshot classification at issue; `item.subtotal` is NET, invoice `subtotal` is GROSS.
+  L > 0 → NN > 0 always; HAS_LAB with NN = 0 only as REVERSED or under a consumed single-use Owner LAB issuance
+  exception (A-02); a legitimate Rp0 invoice is never rejected. Source: rule 246.
+- **AIR-RMB-50** Only the billing reversal service writes REVERSED (terminal, model M1). Payments, receipts, clinical
+  records, visit completion and lab-domain records never change; refused while LAB work or LAB obligations are
+  unresolved, an obligation is OPEN or a billing dispute is active; ICFR is derived. Source: rule 249.
+- **AIR-RMB-51** Refund request and settlement accept a reversal-sourced obligation only on a REVERSED invoice and a
+  correction-sourced one only on a PAID invoice; both reconcile overpaid(G, net) to the obligation. Source: rules
+  215 and 216 as amended (A-19).
+
+## Current posture
+
+Snapshot of 2026-10-25 moved verbatim to `docs/operations/rme-billing-posture-2026-10-25.md`; verify before relying on it.
 
 ## Canonical rules — read the relevant one before changing this area
 
@@ -319,6 +305,9 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit, invoice, receipt and oversight visit/patient route keys constrained |
 | `.cursor/rules/238-rme-memo-2026-10-17-alignment.mdc` | Bank Transfer payment needs its reference (stored method, fail closed, re-asserted at the insert); dashboard totals need payment authority |
+| `.cursor/rules/246-rme-lab-fee-approval-and-billing-integrity.mdc` | LAB fee classification, pre-issuance approval, snapshots, invariants, A-02 exception |
+| `.cursor/rules/247-maker-checker-independence.mdc` | Per-account, per-case, branch-designated checker; DB CHECK |
+| `.cursor/rules/249-rme-billing-reversal-and-icfr.mdc` | FULL_REVERSAL (M1), REVERSED, ICFR derived, T1–T10, LAB and dispute guards |
 
 ## History
 

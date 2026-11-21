@@ -1,0 +1,34 @@
+---
+description: RME-LAB-FEE-APPROVAL-1 (rule 248) — financial, approval and LAB-evidence records are append-only at three layers: model guard, PostgreSQL trigger (UPDATE, DELETE, TRUNCATE) owned by the object owner, and runtime privileges (rule 245). DESIGN LOCKED 2026-11-20, NOT IMPLEMENTED.
+globs: app/Modules/LabOrder/Models/AuditLog.php, app/Modules/RmeInvoice/**, app/Modules/PatientMerge/**, app/Modules/LabOrder/**, database/migrations/**
+alwaysApply: false
+---
+
+# Audit trail append-only (rule 248)
+
+Owner design lock 2026-11-20 (evidence needs of A-02, A-05, A-30). Findings: AUD-01, AUD-02, AUD-03, AUD-04.
+
+## Current state (verified 2026-11-20)
+
+`sys_audit_logs` (every `RmeFinancialAuditEvent`) has no model guard and no trigger; its migration only describes it as
+immutable. Financial event tables are immutable at the model layer only. `trx_lab_order_status_logs` cascades on
+lab-order delete. This is implementation drift against this rule until it is implemented.
+
+## Locked target
+
+1. Layer 1 (independent of rule 245): model guards refuse update and delete; triggers refuse UPDATE, DELETE and TRUNCATE
+   on `sys_audit_logs`, every financial and approval `*_events` table and `trx_lab_order_status_logs`; their foreign
+   keys restrict on delete.
+2. Layer 2 (with rule 245): the runtime holds SELECT and INSERT only on those tables.
+3. Layer 3 (optional, detective): a hash chain verified read-only.
+4. Patient merge records the moved ids in an append-only audit row, not only in a mutable case column.
+5. An audit written after a rollback asserts transaction level 0.
+
+No agent or operator prunes, edits or truncates these tables; retention is an owner decision executed by the owner role.
+
+## Acceptance criteria
+
+- On PostgreSQL 16, UPDATE, DELETE and TRUNCATE on each listed table fail (trigger now; also SQLSTATE 42501 after
+  rule 245).
+- Deleting a lab order that has status logs is refused; model update and delete throw; a merge writes one audit row
+  listing the moved ids.

@@ -14,10 +14,11 @@ paths:
 
 # Patient identity, lookup, KTP OCR & duplicate resolution — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here (CG-05 branch isolation, CG-11 KTP/NIK masking and private clinical storage, CG-12 clinical
-time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most). Authority: code > canonical
-`.cursor/rules/` > this file > archive. On disagreement follow the code, then the canonical rule, and report the drift.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here (CG-05 branch isolation, CG-11 KTP/NIK masking and private clinical storage, CG-12 clinical time,
+CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most). Authority: owner decisions > canonical
+`.cursor/rules/` > this file > archive; code is evidence of current behaviour. A mismatch is implementation drift:
+report it.
 
 ## Invariants
 
