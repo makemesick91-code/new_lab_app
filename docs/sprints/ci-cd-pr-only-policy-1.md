@@ -15,11 +15,12 @@
 |---|---|
 | IMPLEMENTED IN BRANCH | yes — code: `security/ci-release-guard-dispatch-evidence-1`; manifest switch: `governance/ci-cd-pr-only-policy-1-phase-b-current-manifest` |
 | MERGED | code: **yes** — #673 squash-merged as `452011a8`; its post-merge push run 44823046028 is green. Manifest switch: **yes** — #674 squash-merged as `f31b554be922d1c147d23e7e00523b2d23e4a413` (tree identical to the tested head); its post-merge push run 44862172974 is green |
-| DEPLOYED | **no** — release target `f31b554b…` (release id `ci-cd-pr-only-policy-1-phase-b`), to be released under the installed guard (push evidence) |
-| VERIFIED IN PRODUCTION | **no** — first `check-approval` GO on a dispatch run (runbook §6g step 0) |
+| DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
+| RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
+| VERIFIED IN PRODUCTION | **no** — the dispatch path is not yet proven in production: first `check-approval` GO on a dispatch run (runbook §6g step 0, phase B4) |
 
-Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production access in this phase: read-only
-audit only (owner decision 4), see "Release readiness (phase B3)".
+Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
+authorised deploy (decision 10); see "Release and GO tag (phase B)".
 
 ## Owner decisions (CG-22)
 
@@ -162,6 +163,70 @@ audit only (owner decision 4), see "Release readiness (phase B3)".
       RME/LAB changes, BK-2, configuration or database changes outside this release. After the deploy and smoke, a
       full report and a stop at P-6 (GO tag).
     - **Status when this record was written: signed, NOT SUBMITTED, NOT DEPLOYED.**
+11. 2026-11-21 — **P-6, GO tag: APPROVED** by the owner on the P-5 result (deploy `20261121-095125`,
+    `DEPLOY RUNNER OK`, production SHA = target, contract 3, push run 44862172974, smoke passed, drift NONE, 13/13
+    acceptance). One annotated tag `ci-cd-pr-only-policy-1-phase-b-go` exactly on
+    `f31b554be922d1c147d23e7e00523b2d23e4a413`, after fetching references and tags, with the tag absent locally and
+    remotely and the target's tree and manifest re-verified. Push only that tag. Never move, delete, re-create or
+    force-push it; no other branch or commit, no DMS-RME-COMPREHENSIVE-CLOSURE-1 tag. Not authorised: redeploy,
+    rollback, a new approval, phase B4, trigger or workflow changes, VPS or database changes, BK-2.
+12. 2026-11-21 — **Closure record and phase B4 audit**: one docs-only pull request that records the P-5 and P-6
+    evidence in this file and states that phase B is RELEASED GO while the B4 dispatch proof is open; it stops at
+    review, and merging needs a separate owner approval. A read-only B4 readiness audit and technical plan. Not
+    authorised: `workflow_dispatch`, a new signed approval, production `submit-approval` or `check-approval`,
+    redeploy, rollback, GO tag changes, trigger or workflow changes, VPS or database changes, BK-2, restoring the
+    DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest, removing worktrees without a named list.
+
+## Release and GO tag (phase B)
+
+The one deploy authorised by decision 10, through the deploy operator on the verified Biznet host, 2026-11-21 (WITA):
+
+| Step | Time | Result |
+|---|---|---|
+| Migrations (owner, own terminal) | before 17:50 | `migrate:status`: 237 Ran, 0 Pending, last `2026_11_18_300001_…`, last batch 95 |
+| Pre-checks | 17:50 | target VERIFIED; `RELEASE GUARD TRUST: READY` (one anchor key, the owner's); `SUDO_POLICY=LEAST_PRIVILEGE`; posture: HEAD `988c1a9a`, tracked 0, locks idle, ERROR 166; `PRIVSEP_DRIFT=NONE`; only this file follows the target; installed-guard CI replay PASS; approval valid |
+| `submit-approval` | 17:50:46 | `RELEASE APPROVAL SUBMITTED: afda8f3fd490be6206e93b82d3f71c2f`; record and signature SHA-256 on the host equal the local verification |
+| `check-approval` | 17:50:58 | `RELEASE APPROVAL CHECK: GO` — host and host key, origin, signature against the anchor, only docs after the target, release and approval id unspent, GitHub budget, `PASS: required CI — push run 44862172974`, window, contract 3, GO tag `ci-cd-pr-only-policy-1-phase-b-go`; no DENY or BUSY |
+| `start` | 17:51:20 | deploy id `20261121-095125` (one start; the runner on the VPS) |
+| `follow` / `verify 20261121-095125` | 17:51–17:53 | verified pre-deploy dump (fail-fast), `Nothing to migrate`, governance gates GO, `final exit=0`; `DEPLOY RUNNER OK`, `DEPLOY_APPROVED_TARGET_MATCH=YES`, contract 3, approval `afda8f3f…`, record SHA-256 `e445d9bc…`, CI run 44862172974 |
+| Smoke (canonical URL) | 17:53 | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; `/storage/` 403 |
+| After the deploy | 17:54 | HEAD `f31b554b…` (the only posture change), tracked 0, locks idle, ERROR lines 166 (baseline), `PRIVSEP_DRIFT=NONE`, sudo policy unchanged, trust READY, no failed unit, `php8.3-fpm` restarted by the deploy, nginx not restarted, timers unchanged, queue worker unchanged (inactive, disabled), migration files identical to O1 |
+| GO tag (decision 11) | 18:10 | `ci-cd-pr-only-policy-1-phase-b-go`, annotated (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`), target `f31b554b…`, pushed alone without force; the remote ref peels to the target; base tip and production HEAD unchanged |
+
+Acceptance of decision 10: 13 of 13 met. The release id `ci-cd-pr-only-policy-1-phase-b` and approval
+`afda8f3f…` are spent: a redeploy needs a new release id and a new signature. The tag was created from a checkout at
+the approved commit following runbook §6b step 8 and the tagging rules of `scripts/sprint-release.sh`; the wrapper
+itself was not run, because its tagging path also runs a deploy from the local checkout (CG-15). The host's
+authority now lists `DMS_PRODUCTION_CI_EVENTS="push workflow_dispatch"` (HEAD is the target, tracked
+modifications 0).
+
+## Phase B4 readiness (read-only audit, 2026-11-21)
+
+Phase B4 proves in production that the guard accepts dispatch evidence (runbook §6g step 0). Findings:
+
+- **Dispatch is possible**: the repository's default branch is the base branch, and the base has 15 earlier
+  `workflow_dispatch` runs of this workflow.
+- **A dispatch runs the critical tests**: a dispatch has no event base, so the classifier resolves `unknown_high_risk`.
+  Run 43968947617 (dispatch, `c705f048`) shows `base_sha=none`, `run_critical_tests=true`, the critical step run and
+  the CI-PERF-04 evaluation step skipped.
+- **The installed guard accepts real dispatch evidence**: the guard and authority of `f31b554b`, replayed against
+  the GitHub API for `c705f048`, print `PASS: required CI — workflow_dispatch run 43968947617`; the previous push-only
+  guard denies the same commit, whose push run was docs-only.
+- **A docs-only tip needs the dispatch**: for the current tip, whose only run is a `docs_only` push run, the installed
+  guard denies ("took the step Note skipped critical regression tests"). The B4 dispatch must therefore run on the
+  tip it proves, and be its newest accepted run.
+- **Target and GO tag**: a dispatch runs on the branch tip, so the B4 test approval targets that tip. Production HEAD
+  `f31b554b…` is its ancestor, and its `.sprint/current.yml` still declares `ci-cd-pr-only-policy-1-phase-b-go`.
+  The guard binds the record to the manifest's `go_tag` and does not check whether the tag exists. This is the rule
+  236 precedent (`dms-release-approval-direct-1-c3-test`: signed, submitted, checked GO, withdrawn). The signer is
+  unchanged after the target.
+- **No historical CI-PERF-04 evaluation dispatch exists** on the base; the "evaluation run is refused" path is
+  covered by `DeployHardenDirectApprovalTest`.
+- **Base freeze**: no merge to the base from the dispatch until the B4 `check-approval`. A new push would move the tip
+  and cancel the running dispatch (shared concurrency group).
+- **Rollback after PR-only CI (phase B5)**: the rollback floor is this release. An older target reinstalls the
+  push-only guard, which no later contract-3 release could pass without push runs. Recovery would be contract 2 or a
+  reviewed PR that restores the `push` trigger. `scripts/rollback-vps.sh` needs neither an approval nor CI.
 
 ## Release readiness (phase B3, 2026-11-21)
 
