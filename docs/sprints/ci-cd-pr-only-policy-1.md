@@ -14,11 +14,12 @@
 | State | Status |
 |---|---|
 | IMPLEMENTED IN BRANCH | yes — code: `security/ci-release-guard-dispatch-evidence-1`; manifest switch: `governance/ci-cd-pr-only-policy-1-phase-b-current-manifest` |
-| MERGED | code: **yes** — #673 squash-merged as `452011a8`; its post-merge push run 44823046028 is green. Manifest switch: **no** — PR stops at review; merging needs a separate owner approval |
-| DEPLOYED | **no** — the release target is the manifest-switch merge commit, released under the installed guard (push evidence) |
+| MERGED | code: **yes** — #673 squash-merged as `452011a8`; its post-merge push run 44823046028 is green. Manifest switch: **yes** — #674 squash-merged as `f31b554be922d1c147d23e7e00523b2d23e4a413` (tree identical to the tested head); its post-merge push run 44862172974 is green |
+| DEPLOYED | **no** — release target `f31b554b…` (release id `ci-cd-pr-only-policy-1-phase-b`), to be released under the installed guard (push evidence) |
 | VERIFIED IN PRODUCTION | **no** — first `check-approval` GO on a dispatch run (runbook §6g step 0) |
 
-Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. No production access in this phase.
+Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production access in this phase: read-only
+audit only (owner decision 4), see "Release readiness (phase B3)".
 
 ## Owner decisions (CG-22)
 
@@ -33,6 +34,91 @@ Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. No production
    tests, commit, push, PR) that stops at review; merging needs a separate owner approval. Not authorised: VPS access,
    production changes, BK-2, GO tags, approval signatures, deployment, CI trigger changes. Gate 1 of
    RME-LAB-FEE-APPROVAL-1 stays NO-GO; the Ready Pilot SPN4 target is unchanged.
+4. 2026-11-21 — **P-1, read-only production audit**: the assistant may run read-only checks on the verified Biznet
+   host only (target verification, trust-check, sudo-policy-check, posture, drift-check, deploy status and historical
+   verify, service and lock state, backup timer state without sudo, HTTP GET of the health and login endpoints). No
+   sudo, no change to files, configuration, services, timers, database or deployment; no Hostinger; no BK-2.
+5. 2026-11-21 — **O1, migration status**: the owner ran `php artisan migrate:status` as the runtime user in the
+   owner's own terminal (read-only; the assistant did not use sudo). Owner-reported result: 237 migrations, 237 Ran,
+   0 Pending, last `2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table`.
+6. 2026-11-21 — **P-3, release identity and activation plan approved**:
+   - target `f31b554be922d1c147d23e7e00523b2d23e4a413`, release id `ci-cd-pr-only-policy-1-phase-b`, planned GO tag
+     `ci-cd-pr-only-policy-1-phase-b-go`, the verified Biznet production host, type SECURITY_FIX / Deploy; none of
+     these may change without a new owner approval;
+   - base freeze until the guard is active in production and the phase B4 dispatch proof is recorded; PR #672 is not
+     merged during the freeze;
+   - conditions: no unexpected pending migration; release guard, trust anchor and host identity valid; every deploy
+     lock idle; production drift NONE; the required CI keeps satisfying the guard;
+   - signed approval valid for 24 hours from signing (P-4); no deploy start between 02:25 and 02:40 WITA; an expired
+     approval needs a new one;
+   - deploy only manually through the Biznet procedure (runner on the VPS, never a workstation or GitHub Actions);
+   - rollback only on an explicit owner decision, to the previous release `988c1a9a` after its full SHA and
+     eligibility are re-verified; code only, never an automatic database restore;
+   - read-only smoke after the authorised deploy: `/login`, `/health/live`, `/health/ready`, `/health/lb`, private
+     storage protection, services, queue and scheduler, backup timers, deploy posture, production drift; no change to
+     patient data or clinic transactions;
+   - GO tag only after the deploy completed, `DEPLOY RUNNER OK` is verified, the production SHA matches the target,
+     the smoke passed, no new drift, and the owner approved the tag;
+   - BK-2 out of scope (not run, changed, rescheduled or triggered);
+   - authorised now: a dedicated signing worktree at the target and read-only checks of the signer. Not authorised:
+     running the signer, the owner's passphrase, creating or submitting a signed approval, production
+     `check-approval`, deploy, rollback, GO tag, CI trigger removal, production or database changes.
+7. 2026-11-21 — **P-4, signing: PREPARED / NOT YET AUTHORIZED.** No traceable explicit owner authorisation of the
+   signing is recorded. Signing needs an explicit owner authorisation, recorded in this document after this record is
+   merged.
+   - Prepared under decision 6: a dedicated signing worktree detached at the target, and read-only checks of the signer
+     and its prerequisites (see "Release readiness (phase B3)").
+   - Planned parameters, for the owner to authorise or change: release id `ci-cd-pr-only-policy-1-phase-b`, target
+     `f31b554b…`, `--go-tag ci-cd-pr-only-policy-1-phase-b-go --hours 24`, signed by the owner in the owner's own
+     terminal from that worktree.
+   - Constraints proposed for that authorisation: the assistant may give instructions and check the resulting metadata.
+     It may not run the signer, see the passphrase or the private key, copy key material, submit the approval, run
+     production `check-approval`, deploy, tag, roll back or touch BK-2. A mismatch of SHA, branch, host identity, trust
+     anchor or validity window stops the process.
+   - P-5 (submit, check, deploy) needs its own approval.
+   - **Status: NOT SIGNED.** The signer has not been run and no approval bundle exists.
+8. 2026-11-21 — **Option A, CG-22 record**: decisions 4–7 are recorded through one docs-only pull request that changes
+   only this file (new worktree and branch from the verified remote base, local documentation and DEVFLOW checks,
+   commit, push, pull request, review of its CI). Merging it needs a separate owner approval. Base freeze, the release
+   target `f31b554b…` and every prohibition of decision 6 stay in force. Signing is not authorised (decision 7).
+
+## Release readiness (phase B3, 2026-11-21)
+
+Read-only evidence gathered before any signature. Nothing on the host was changed (posture identical before and after
+every check).
+
+| Check | Result |
+|---|---|
+| Post-merge CI of the target | push run 44862172974, attempt 1, success; critical regression tests ran: 11804 passed (61107 assertions); not a CI-PERF-04 evaluation run; Full Suite DEFERRED (CG-18), not passed |
+| Installed guard vs this run | the guard library and authority at `988c1a9a` (the running release; tracked modifications 0; push only), taken from git and replayed locally against the GitHub API: `PASS: required CI — push run 44862172974`; the phase-B guard: same |
+| GO tag binding | `.sprint/current.yml` of the target declares `ci-cd-pr-only-policy-1-phase-b-go` (guard and signer pipeline); tag absent locally and on the remote |
+| Production identity and trust | target verification VERIFIED (administrator and operator aliases); `RELEASE GUARD TRUST: READY`, approval contracts `2 3`, one anchor key (the owner's); `SUDO_POLICY=LEAST_PRIVILEGE` |
+| Production state | HEAD `988c1a9a`, tracked modifications 0, deploy/release/rollback locks idle, `PRIVSEP_DRIFT=NONE`, application log ERROR lines at the 166 baseline; last deploy `20261118-114249` `DEPLOY RUNNER OK` |
+| Migrations | host `database/migrations`: 237 files, names and contents identical to `988c1a9a` and `f31b554b`; owner's `migrate:status`: 237 Ran, 0 Pending (decision 5); the release adds none |
+| Backups | database backup and BK-2 package timers active, last run successful; BK-2 not invoked |
+| Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` return 200 on the canonical URL |
+| DEVFLOW | `devflow:base-ref-check`, `sprint:manifest-check`, `sprint:scope-audit --strict` (release delta), `sprint:release-check --strict` (CI evidence: run 44862172974), `foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`: GO |
+| Signer prerequisites (P-4 preparation; not an authorisation) | signing worktree detached at the target, clean, signer/library/authority/manifest blobs identical to the target; the owner's public key fingerprint equals the production trust anchor |
+
+### Effect of a docs-only record on the release and on phase B4
+
+Audited before this record was committed (decision 8):
+
+- While the pull request is open the base branch does not move. Its CI runs as `pull_request` on its own concurrency
+  group and branch, so it neither cancels base runs nor counts for the guard (branch and commit differ).
+- After a merge, the release target stays `f31b554b…`. Guard step 9 accepts it, because only `docs/**/*.md` follows
+  the target (the installed guard's own rule, replayed on this file's path). Step 12 asks for runs of exactly
+  `f31b554b…`, so the docs commit's own push run, classified `docs_only`, which skips the critical tests, is never
+  read for this release. The signer accepts any target that is an ancestor of `origin/<base>`. The deploy
+  fast-forwards to the approved SHA and refuses any other final HEAD (`scripts/deploy-vps.sh`), so production gets
+  `f31b554b…`, not the docs tip.
+- Phase B4: a dispatch always runs on the branch tip, so after a merge the dispatch proof (runbook §6g step 0) runs on
+  the docs tip, not on `f31b554b…`. A dispatch has no event base, so the classifier resolves the strongest profile
+  (`unknown_high_risk`) and the critical tests run (verified locally with `scripts/ci/resolve-gates.sh`). The dispatch
+  is newer than the docs commit's push run and is therefore the run the guard reads. The B4 test approval names that
+  tip as its target. Production HEAD (`f31b554b…` once phase B is deployed) is its ancestor, and its
+  `.sprint/current.yml` still declares `ci-cd-pr-only-policy-1-phase-b-go`. B4 proves that dispatch evidence is
+  accepted; it never deploys, and the release target does not change.
 
 ## Manifest switch (OD-B3-1)
 
