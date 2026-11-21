@@ -108,6 +108,60 @@ audit only (owner decision 4), see "Release readiness (phase B3)".
    - Not authorised: deploy, rollback, GO tag, CI workflow change, push or schedule trigger removal, application or
      database change, service or timer change, BK-2.
    - **Status when this record was written: NOT SIGNED.** The signer has not been run and no approval bundle exists.
+10. 2026-11-21 — **P-5, activation of the phase-B release guard through one manual Biznet deploy: APPROVED,
+    conditionally.** The owner signed the approval under decision 9 (see "Signed approval (P-4 result)").
+    - Identity: target `f31b554be922d1c147d23e7e00523b2d23e4a413`, release id `ci-cd-pr-only-policy-1-phase-b`, planned
+      GO tag `ci-cd-pr-only-policy-1-phase-b-go`, CI evidence push run 44862172974, approval contract 3, signed
+      approval valid until 2026-11-22 17:10:10 WITA. None of these may change without a new owner decision.
+    - CG-22 option (a): this decision is recorded through a docs-only pull request; merging it needs a separate owner
+      approval. No submission or deploy before this record is on the base branch.
+    - Authorised, once this record is merged and every prerequisite is re-verified, one manual deploy sequence for
+      this release id, through the operator entrypoint on the verified Biznet host:
+      1. production target verification;
+      2. trust-check;
+      3. sudo-policy-check;
+      4. production posture;
+      5. drift-check;
+      6. base freeze and CI evidence;
+      7. submit the signed approval;
+      8. check-approval;
+      9. start;
+      10. follow;
+      11. verify;
+      12. read-only smoke;
+      13. posture and drift after the deploy.
+      `start` only if `check-approval` says GO. Any unexpected change stops the sequence and returns it to the owner.
+    - Bounds: only the verified Biznet host, only the operator entrypoint, the runner only on the VPS, never Hostinger,
+      no parallel deploy, no second start after a dropped SSH session (follow the same deploy), no start between 02:25
+      and 02:40 WITA, and the approval must still be valid whenever an operation needs it.
+    - Backup and migrations: the runner's own pre-deploy backup must run and be verified (it is not BK-2). BK-2 is not
+      run or triggered, and no backup timer changes. Migrations must still be 237 Ran / 0 Pending before the deploy;
+      any unexpected pending migration stops it. No `migrate:fresh`, `migrate:reset` or manual migration outside the
+      runner.
+    - Acceptance:
+      1. `DEPLOY RUNNER OK`;
+      2. `DEPLOY_APPROVED_TARGET_MATCH=YES`;
+      3. contract 3 and the approval id match;
+      4. the CI run id matches;
+      5. production HEAD equals the target;
+      6. deploy locks back to idle;
+      7. `PRIVSEP_DRIFT=NONE`;
+      8. the health endpoints and login pass;
+      9. private storage stays protected;
+      10. application ERROR lines do not rise above the 166 baseline;
+      11. services and timers match the baseline;
+      12. no new pending migration;
+      13. no unexpected change to the queue, the scheduler or system permissions.
+    - Stop on: host identity mismatch; trust-check failure; `check-approval` DENIED; an expired approval; a spent
+      release id; CI evidence not accepted; a GitHub API rate limit that blocks verification; a lock HELD or BUSY; a
+      pre-deploy backup that does not verify; `verify` not OK; production HEAD not the target; new drift; rising ERROR
+      lines; any database or service change outside the scope. No workaround and no disabled safeguard.
+    - Rollback is not authorised by P-5. If the deploy fails or does not meet the acceptance, stop and report. A
+      rollback needs an explicit owner approval based on the real state and a verified rollback target.
+    - Not authorised by P-5: GO tag, push or schedule trigger removal, disabling GitHub workflows, phase B4, phase B5,
+      RME/LAB changes, BK-2, configuration or database changes outside this release. After the deploy and smoke, a
+      full report and a stop at P-6 (GO tag).
+    - **Status when this record was written: signed, NOT SUBMITTED, NOT DEPLOYED.**
 
 ## Release readiness (phase B3, 2026-11-21)
 
@@ -126,6 +180,23 @@ every check).
 | Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` return 200 on the canonical URL |
 | DEVFLOW | `devflow:base-ref-check`, `sprint:manifest-check`, `sprint:scope-audit --strict` (release delta), `sprint:release-check --strict` (CI evidence: run 44862172974), `foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`: GO |
 | Signer prerequisites (P-4 preparation; not an authorisation) | signing worktree detached at the target, clean, signer/library/authority/manifest blobs identical to the target; the owner's public key fingerprint equals the production trust anchor |
+
+### Signed approval (P-4 result)
+
+The owner ran the signer in the owner's own terminal (decision 9). The approval was verified read-only on 2026-11-21
+between 09:11 and 09:16 UTC; no private key, passphrase or full bundle was read into any report.
+
+| Item | Value / result |
+|---|---|
+| Approval id | `afda8f3fd490be6206e93b82d3f71c2f` |
+| Record SHA-256 | `e445d9bcc0347326fd427b9b8a7ce6bc542ebcd6d28b14362f58827c1ff406f0` |
+| Bundle SHA-256 | `4f876b01f4cbf0aebe341fba1f474e4d86d500ee853af730427f16df9dd27494` |
+| Window | `2026-11-21T09:10:10Z` → `2026-11-22T09:10:10Z` (24 h; until 2026-11-22 17:10:10 WITA) |
+| Split and parse | canonical with the library of the target and with the installed library (`988c1a9a`, used by the host for `submit-approval`) |
+| Signature | good for the owner's public key in namespace `dms-release-approval`; that key is the single production trust anchor key |
+| Record vs installed guard | release id, approval id, contract 3, scope, target, repository, host, pinned host key, base branch, tree, GO tag (= the target's manifest), approver `owner`, 24 h window: all match |
+| Bundle integrity | SHA-256 and modification time identical at the start and end of the verification |
+| Spend state of the release id on the host | provable only by `check-approval` (P-5); read-only evidence shows no earlier use |
 
 ### Effect of a docs-only record on the release and on phase B4
 
