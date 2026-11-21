@@ -1,39 +1,33 @@
-# Sprint manifest — CI-CD-PR-ONLY-POLICY-1, phase B (release guard compatibility).
-# Validate: php artisan sprint:manifest-check
+# DMS-RME-COMPREHENSIVE-CLOSURE-1 (2026-11-16). Owner-ordered comprehensive RME audit and remediation of every
+# confirmed pending RME item, under owner decisions taken 2026-11-16 (recorded in
+# docs/sprints/dms-rme-comprehensive-closure-1.md §2). Delivered as TWO implementation pull requests because
+# `sprint:scope-audit --strict` refuses more than 10 changed app/*.php files under SECURITY_FIX:
+# PR1 (#646) = clinic-month document numbers (P8R-S6 + RMECOR/RMEOVP/RMEDSP), refused clinical forms never flash
+# signatures or canvases into the session, clinical and patient-data prints answer private no-store, handwriting
+# payload bounds, queue timing order (OPS-Q), OD-7-6 odontogram batch scope, OD-5-4 deactivated account presence,
+# OD-7-1 and unsigned-print rule text (rule 237 §1-§8).
+# PR2 (this) = OD-5-6 sheet only on the consented encounter, OD-5-10(a) cancelled prior visit and no "Buat Kontrol"
+# from it, prescription lock after signing with a content-version check (rule 237 §9-§11, rule 228 §12.2 amended).
+# One deploy and the GO tag follow PR2.
+# No schema, migration, permission, role or package change; no flag, enforcement scope, branch lock, queue worker
+# activation, scheduler or KTP timer change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
+# clinical correctness). Full Suite deferred (CG-18), not passed.
 #
-# ACTIVE manifest since owner decision OD-B3-1 (option A, 2026-11-21). The release guard (rule 229, rule 236), the
-# signing helper and scripts/sprint-release.sh read the GO tag from the release commit's own .sprint/current.yml, so
-# the phase-B release must be a commit whose current.yml declares this sprint's go_tag. The phase-B code merged as
-# 452011a8 (#673), whose current.yml still declares the DMS-RME-COMPREHENSIVE-CLOSURE-1 tag: the release target is the
-# merge commit that installs this manifest, never 452011a8.
-#
-# PARKED, verbatim: DMS-RME-COMPREHENSIVE-CLOSURE-1 stays OPEN with its go_tag unchanged; its manifest lives at
-# .sprint/dms-rme-comprehensive-closure-1.yml until the owner orders it restored to this path. Restore it only after
-# this release is deployed, verified, GO-tagged and its dispatch proof is recorded, and before any further
-# DMS-RME-COMPREHENSIVE-CLOSURE-1 release (docs/sprints/ci-cd-pr-only-policy-1.md, "Manifest switch").
-#
-# Owner decision 2026-11-21: CI runs automatically only for pull requests. Phase B (owner-authorised
-# "release guard compatibility PR only") teaches the production release guard (rule 236, approval contract 3) to
-# accept a successful manual `workflow_dispatch` run of the Foundation Evidence Gates workflow on the base branch at
-# the exact release commit, beside the existing post-merge push run. No workflow trigger changes (push and schedule
-# stay); no application code, schema, permission, flag or BK-2 change. Foundation-First Sprint Lock stays ACTIVE
-# (allowed category: security fix / deployment). Full Suite deferred (CG-18), not passed. Gate 1 stays NO-GO.
-#
-# Previous manifest: DMS-RME-COMPREHENSIVE-CLOSURE-1 (OPEN, parked as above).
+# Previous manifest: DMS-RELEASE-APPROVAL-DIRECT-1 (rule 236); its record stays in docs/sprints/dms-release-approval-direct-1.md.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: CI-CD-PR-ONLY-POLICY-1
+id: DMS-RME-COMPREHENSIVE-CLOSURE-1
 type: SECURITY_FIX
-module: Deploy
-title: "Release guard accepts verified manual-dispatch CI of the exact commit (rule 236 phase B)"
+module: Rme
+title: "RME comprehensive closure PR2: RM sheet only on the encounter, no cancelled Kontrol parent, signed prescription locked to its doctor (rule 237)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: ci-cd-pr-only-policy-1-phase-b-go
+go_tag: dms-rme-comprehensive-closure-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -1,8 +1,9 @@
 # CI-CD-PR-ONLY-POLICY-1 — phase B: release guard accepts verified manual-dispatch CI (rule 236 §5)
 
-- Type: SECURITY_FIX · Module: Deploy · Manifest: `.sprint/current.yml` since owner decision OD-B3-1 (2026-11-21);
-  before that the dedicated `.sprint/ci-cd-pr-only-policy-1.yml`. The DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest is
-  parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml` ("Manifest switch" below).
+- Type: SECURITY_FIX · Module: Deploy · Manifest: `.sprint/ci-cd-pr-only-policy-1.yml` again since owner decision 16
+  (2026-11-21, content unchanged); from owner decision OD-B3-1 until then `.sprint/current.yml`, while the
+  DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest was parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml`
+  ("Manifest switch" below). That manifest is `.sprint/current.yml` again.
 - Base branch: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `3a231c28` (code, #673);
   manifest switch @ `452011a8`
 - Planned GO tag: `ci-cd-pr-only-policy-1-phase-b-go` (only after merge, deploy and production verification, CG-16)
@@ -227,6 +228,30 @@ service, timer or database change.
     docs-only pull request recording phase B4 (CG-22); merging it needs a separate owner approval. A phase B5 plan
     (removing the automatic `push` and `schedule` triggers) is prepared but not implemented: B5 needs its own owner
     decision. Not authorised: deploy, rollback, GO tag changes, workflow changes, BK-2.
+15. 2026-11-21 — **Phase B5 design: APPROVED as design and planning only, not as implementation.**
+    - **B5-1 option A**: remove the automatic `push` and `schedule` triggers from `foundation-evidence-gates.yml`,
+      amending rule 107 and CICDCTRL-R004/R012 so that the Full Suite fallback is the manual `workflow_dispatch`.
+      The global temporary Full Suite policy stays ACTIVE.
+    - **B5-2 option A**: the production authority stays unchanged (`DMS_PRODUCTION_CI_EVENTS="push workflow_dispatch"`).
+    - **B5-3 option A**: B5 takes effect when it merges, with no deploy of its own, and rides the next release; the GO
+      tag follows that release.
+    - **Order**: merge #680, then restore the DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest, then B5.
+    - Before any B5 change, CG-16 is re-audited against `CLAUDE.md`, `docs/governance/go-tag-exceptions.md` and both
+      manifests (decision 16). No GO tag exception may be made on an assumption.
+    - Not authorised: changes to workflows, triggers, CI configuration or B5 tests.
+16. 2026-11-21 — **Restore of the DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest: APPROVED, limited scope.**
+    - In scope:
+      - one worktree and branch cut from the verified base tip (`693becff`);
+      - `.sprint/dms-rme-comprehensive-closure-1.yml` moved back to `.sprint/current.yml` with an identical content and
+        blob;
+      - the phase-B manifest moved to `.sprint/ci-cd-pr-only-policy-1.yml` unchanged;
+      - decisions 15 and 16 recorded here (CG-22);
+      - DEVFLOW and isolated local tests;
+      - commit, push, pull request, CI verification, then a stop for the merge decision.
+    - The base freeze stays and PR #672 is not merged.
+    - B5: no workflow, trigger, CI configuration or test change. The CG-16 audit is reported, with a recommendation and
+      the governance changes it needs, for the next owner decision.
+    - Not authorised: merge, deploy, VPS or database changes, rollback, GO tag, BK-2, worktree cleanup.
 
 ## Phase B4 result (production verification, 2026-11-21)
 
@@ -442,6 +467,17 @@ Suite stays deferred on that push run (policy ACTIVE).
   or after it, and its record names `dms-rme-comprehensive-closure-1-go` as releases 1–4 did. The phase-B GO tag stays
   bound to its own commit. A restore before the phase-B deploy would make the release target undeployable (step 9).
 - If it is forgotten, the signer refuses that sprint's tag (fail closed); nothing passes silently.
+- **Restored (decision 16, 2026-11-21)** by the pull request that records decision 16. The pull request is cut from
+  `693becff` and contains two `git mv` operations with no content change:
+
+  | Path after the restore | Blob | `go_tag` |
+  |---|---|---|
+  | `.sprint/current.yml` | `d1c4af5e`, the same blob as `.sprint/current.yml` at `452011a8` (before the switch) | `dms-rme-comprehensive-closure-1-go` |
+  | `.sprint/ci-cd-pr-only-policy-1.yml` | `d3e8e039`, the phase-B manifest | `ci-cd-pr-only-policy-1-phase-b-go` (created on `f31b554b`) |
+
+  `sprint:*` commands without `--manifest` read DMS-RME-COMPREHENSIVE-CLOSURE-1 again. Work on this sprint passes
+  `--manifest=.sprint/ci-cd-pr-only-policy-1.yml`. No deploy is needed: the host reads `.sprint/current.yml` only
+  from a release commit's git object, at release time.
 
 ## Release guard findings (before this change)
 
