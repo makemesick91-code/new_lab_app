@@ -6,21 +6,24 @@ uses()->group('Cicd', 'Ci', 'CiTriggerRemoval', 'FoundationGovernance');
 
 /*
 |--------------------------------------------------------------------------
-| CI-CD-PR-ONLY-POLICY-1 phase B5 — governance contract (owner decisions 17 and 18)
+| CI-CD-PR-ONLY-POLICY-1 phase B5 — governance contract (owner decisions 17, 18 and 19)
 |--------------------------------------------------------------------------
 |
 | CG-16 gains one narrow class that closes without a deploy and receives no
 | GO tag of its own: the owner-authorised removal of the `push` and `schedule`
-| triggers of .github/workflows/foundation-evidence-gates.yml. The owner
-| required the class to read the same in the rule (CLAUDE.md CG-16), in the
-| register that implements it (docs/governance/go-tag-exceptions.md) and in
-| the tests, and never to become a general exception for GitHub Actions.
+| triggers of .github/workflows/foundation-evidence-gates.yml, and its only
+| rollback, the byte-for-byte restoration of the pinned pre-removal file. The
+| owner required the class to read the same in the rule (CLAUDE.md CG-16), in
+| the register that implements it (docs/governance/go-tag-exceptions.md) and
+| in the tests, and never to become a general exception for GitHub Actions.
 |
-| This file pins three things:
-|  1. the rule and the register state the same, narrow class;
-|  2. the workflow invariants that a trigger removal must keep (they hold
-|     before and after the removal, so the removal cannot weaken them);
-|  3. B5-RESIDUAL-1: the `config/` and `app/` texts that will still describe
+| This file pins four things:
+|  1. the rule and the register state the same, narrow classes;
+|  2. the two approved workflow states (SHA-256) and a classifier that accepts
+|     only the exact removal and the exact restoration, rejecting every other
+|     change to the workflow;
+|  3. the workflow invariants both changes must keep;
+|  4. B5-RESIDUAL-1: the `config/` and `app/` texts that will still describe
 |     the removed triggers. They stay OPEN, pinned here so that they can
 |     neither be "fixed" nor grow silently, with the proof that nothing on the
 |     runtime, deploy, release-guard or security path reads them.
@@ -28,6 +31,21 @@ uses()->group('Cicd', 'Ci', 'CiTriggerRemoval', 'FoundationGovernance');
 
 const CTRG_WORKFLOW = '.github/workflows/foundation-evidence-gates.yml';
 const CTRG_BASE_BRANCH = 'feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report';
+
+// The two approved states of the workflow (decision 19). Also pinned in the register and the sprint record.
+const CTRG_PRE_REMOVAL_SHA256 = '978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4';
+const CTRG_POST_REMOVAL_SHA256 = '4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0';
+
+// The exact lines the removal deletes: pre-removal lines 7–9 and 55–56.
+const CTRG_PUSH_LINES = [
+    '  push:',
+    '    branches:',
+    '      - '.CTRG_BASE_BRANCH,
+];
+const CTRG_SCHEDULE_LINES = [
+    '  schedule:',
+    "    - cron: '0 2 * * 0'",
+];
 
 function ctrgNormalise(string $text): string
 {
@@ -45,15 +63,36 @@ function ctrgCg16(): string
     return substr($claude, (int) $start, (int) $end - (int) $start);
 }
 
-/** The CI trigger removal bullet of the GO-tag register, up to the next heading. */
-function ctrgRemovalClause(): string
+function ctrgRegister(): string
 {
-    $register = (string) file_get_contents(base_path('docs/governance/go-tag-exceptions.md'));
+    return (string) file_get_contents(base_path('docs/governance/go-tag-exceptions.md'));
+}
+
+/** Both register bullets (removal and restoration), up to the next heading. */
+function ctrgClasses(): string
+{
+    $register = ctrgRegister();
     $start = strpos($register, '- A **CI trigger removal**');
     expect($start)->not->toBeFalse('the GO-tag register must state the CI trigger removal class');
     $end = strpos($register, "\n## ", (int) $start);
 
     return substr($register, (int) $start, ($end === false ? strlen($register) : $end) - (int) $start);
+}
+
+function ctrgRemovalClause(): string
+{
+    $classes = ctrgClasses();
+    $split = strpos($classes, '- A **CI trigger restoration**');
+    expect($split)->not->toBeFalse('the GO-tag register must state the CI trigger restoration');
+
+    return substr($classes, 0, (int) $split);
+}
+
+function ctrgRestorationClause(): string
+{
+    $classes = ctrgClasses();
+
+    return substr($classes, (int) strpos($classes, '- A **CI trigger restoration**'));
 }
 
 function ctrgWorkflowRaw(): string
@@ -64,6 +103,62 @@ function ctrgWorkflowRaw(): string
 function ctrgWorkflow(): array
 {
     return Yaml::parseFile(base_path(CTRG_WORKFLOW));
+}
+
+/** Pre-removal content minus exactly the push and schedule lines. */
+function ctrgRemove(string $pre): string
+{
+    $lines = explode("\n", $pre);
+    expect(array_slice($lines, 6, 3))->toBe(CTRG_PUSH_LINES)
+        ->and(array_slice($lines, 54, 2))->toBe(CTRG_SCHEDULE_LINES);
+
+    return implode("\n", array_merge(array_slice($lines, 0, 6), array_slice($lines, 9, 45), array_slice($lines, 56)));
+}
+
+/** Post-removal content with exactly the push and schedule lines put back. */
+function ctrgRestore(string $post): string
+{
+    $lines = explode("\n", $post);
+
+    return implode("\n", array_merge(
+        array_slice($lines, 0, 6), CTRG_PUSH_LINES, array_slice($lines, 6, 45), CTRG_SCHEDULE_LINES, array_slice($lines, 51),
+    ));
+}
+
+/** The approved pre-removal and post-removal contents, derived from the checked-in file in either state. */
+function ctrgStates(): array
+{
+    $current = ctrgWorkflowRaw();
+    $sha = hash('sha256', $current);
+    // (`toContain` is variadic, so the reason lives in `toBeTrue`.)
+    expect(in_array($sha, [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256], true))
+        ->toBeTrue("the workflow ({$sha}) must be in one of the two approved states; any other change is outside the CG-16 CI trigger classes");
+
+    return $sha === CTRG_PRE_REMOVAL_SHA256
+        ? ['pre' => $current, 'post' => ctrgRemove($current)]
+        : ['pre' => ctrgRestore($current), 'post' => $current];
+}
+
+/**
+ * Classifies a change to the workflow under the CG-16 CI trigger classes:
+ * `removal`, `restoration`, `unchanged`, or `rejected` for everything else.
+ */
+function ctrgClassify(string $before, string $after): string
+{
+    if ($before === $after) {
+        return 'unchanged';
+    }
+    $from = hash('sha256', $before);
+    $to = hash('sha256', $after);
+
+    if ($from === CTRG_PRE_REMOVAL_SHA256 && $to === CTRG_POST_REMOVAL_SHA256 && ctrgRemove($before) === $after) {
+        return 'removal';
+    }
+    if ($from === CTRG_POST_REMOVAL_SHA256 && $to === CTRG_PRE_REMOVAL_SHA256 && ctrgRestore($before) === $after) {
+        return 'restoration';
+    }
+
+    return 'rejected';
 }
 
 /**
@@ -98,11 +193,11 @@ function ctrgFilesMatching(array $dirs, string $pattern): array
 
 /*
 |--------------------------------------------------------------------------
-| 1. The rule and the register state the same, narrow class
+| 1. The rule and the register state the same, narrow classes
 |--------------------------------------------------------------------------
 */
 
-it('states the CI trigger removal class in CLAUDE.md CG-16, the rule the register implements', function () {
+it('states the CI trigger removal and its rollback in CLAUDE.md CG-16, the rule the register implements', function () {
     $cg16 = ctrgNormalise(ctrgCg16());
 
     foreach ([
@@ -112,15 +207,18 @@ it('states the CI trigger removal class in CLAUDE.md CG-16, the rule the registe
         'docs, rules or tests-only',
         'CI trigger removal of `docs/governance/go-tag-exceptions.md`',
         'deleting the `push` and `schedule` triggers of `.github/workflows/foundation-evidence-gates.yml`',
-        'keeps `pull_request` and `workflow_dispatch`',
-        'weakens no job or gate',
-        'never extends to another GitHub Actions change',
+        'a separately owner-approved PR, green CI before merge',
+        'restores the file byte for byte to its pinned pre-removal SHA-256',
+        'keep `pull_request` and `workflow_dispatch`',
+        'weaken no job or gate',
+        'deploy nothing',
+        'never extend to another GitHub Actions change',
     ] as $phrase) {
         expect(str_contains($cg16, $phrase))->toBeTrue("CLAUDE.md CG-16 lost: {$phrase}");
     }
 });
 
-it('states the same class, with all six conditions, in the GO-tag register', function () {
+it('states the removal, with all six conditions, in the GO-tag register', function () {
     $raw = ctrgRemovalClause();
     $clause = ctrgNormalise($raw);
 
@@ -136,41 +234,127 @@ it('states the same class, with all six conditions, in the GO-tag register', fun
         '`app/`, `config/`, `scripts/`, `deploy/`, `database/`, `routes/`, `resources/`, `bootstrap/`, `public/` or `.sprint/`',
         'the release guard, the signer, the runner and every approval contract stay unchanged',
         'states that the change was not deployed',
-        'never reported as deployed or released',
-        'keeps its own manifest `go_tag`',
-        'covers no other GitHub Actions change',
+        CTRG_PRE_REMOVAL_SHA256,
+        CTRG_POST_REMOVAL_SHA256,
     ] as $phrase) {
-        expect(str_contains($clause, $phrase))->toBeTrue("go-tag-exceptions.md CI trigger removal clause lost: {$phrase}");
+        expect(str_contains($clause, $phrase))->toBeTrue("go-tag-exceptions.md CI trigger removal lost: {$phrase}");
     }
 
     preg_match_all('/^ {2}([1-9])\. /m', $raw, $conditions);
     expect($conditions[1])->toBe(['1', '2', '3', '4', '5', '6']);
 });
 
-it('keeps the class narrow: one workflow file, two triggers, no general GitHub Actions exception', function () {
-    foreach (['CLAUDE.md CG-16' => ctrgCg16(), 'go-tag-exceptions.md' => ctrgRemovalClause()] as $where => $text) {
+it('states the rollback, a byte-for-byte restoration with six conditions, in the GO-tag register', function () {
+    $raw = ctrgRestorationClause();
+    $clause = ctrgNormalise($raw);
+
+    foreach ([
+        'CI trigger restoration',
+        'the rollback of that removal',
+        'without a deploy and with no GO tag of its own',
+        'byte for byte to the approved pre-removal version',
+        'the pinned post-removal SHA-256, after it the pinned pre-removal SHA-256',
+        'A partial or edited restoration is not a restoration',
+        'Conditions 2 to 5 of the removal hold',
+        'no other trigger, job, step, `permissions`, `concurrency`, `env`, secret use, runner selection, classifier input, critical-gate filter or release gate changes',
+        'its own pull request with its own written owner approval',
+        'Its CI runs on the exact head and passes before the merge',
+        'deploys nothing and changes nothing on the VPS',
+        'states that the change was not deployed',
+        'Neither change is ever reported as deployed or released',
+        'keeps its own manifest `go_tag`',
+        'The two classes cover no other GitHub Actions change',
+        'adding or editing a trigger, job or workflow, a partial restoration, or a restoration to any other content is outside them',
+    ] as $phrase) {
+        expect(str_contains($clause, $phrase))->toBeTrue("go-tag-exceptions.md CI trigger restoration lost: {$phrase}");
+    }
+
+    preg_match_all('/^ {2}([1-9])\. /m', $raw, $conditions);
+    expect($conditions[1])->toBe(['1', '2', '3', '4', '5', '6']);
+
+    // The sprint record pins the same two states.
+    $record = (string) file_get_contents(base_path('docs/sprints/ci-cd-pr-only-policy-1.md'));
+    expect($record)->toContain(CTRG_PRE_REMOVAL_SHA256)->toContain(CTRG_POST_REMOVAL_SHA256);
+});
+
+it('keeps the classes narrow: one workflow file, two triggers, no general GitHub Actions exception', function () {
+    foreach (['CLAUDE.md CG-16' => ctrgCg16(), 'go-tag-exceptions.md' => ctrgClasses()] as $where => $text) {
         preg_match_all('#\.github/workflows/[A-Za-z0-9._-]+#', $text, $paths);
         expect(array_values(array_unique($paths[0])))
-            ->toBe([CTRG_WORKFLOW], "{$where} may name only the one workflow the class covers");
+            ->toBe([CTRG_WORKFLOW], "{$where} may name only the one workflow the classes cover");
 
         $prose = strtolower(ctrgNormalise($text));
         foreach (['any workflow', 'all workflows', 'any trigger', 'any github actions', 'every workflow'] as $widening) {
-            expect(str_contains($prose, $widening))->toBeFalse("{$where} must not widen the class: {$widening}");
+            expect(str_contains($prose, $widening))->toBeFalse("{$where} must not widen the classes: {$widening}");
         }
     }
-
-    // The class removes triggers; it never adds, restores or edits one.
-    expect(ctrgNormalise(ctrgRemovalClause()))
-        ->toContain('adding, restoring or editing a trigger, job or workflow is outside it');
 });
 
 /*
 |--------------------------------------------------------------------------
-| 2. Workflow invariants a CI trigger removal must keep
+| 2. The two approved workflow states and the change classifier
 |--------------------------------------------------------------------------
 */
 
-it('pins the workflow invariants a CI trigger removal must keep', function () {
+it('keeps the checked-in workflow in one of the two pinned states, which differ by exactly the trigger lines', function () {
+    $states = ctrgStates();
+
+    expect(hash('sha256', $states['pre']))->toBe(CTRG_PRE_REMOVAL_SHA256)
+        ->and(hash('sha256', $states['post']))->toBe(CTRG_POST_REMOVAL_SHA256)
+        ->and(ctrgRemove($states['pre']))->toBe($states['post'])
+        ->and(ctrgRestore($states['post']))->toBe($states['pre']);
+
+    $pre = Yaml::parse($states['pre']);
+    $post = Yaml::parse($states['post']);
+    expect(array_keys($pre['on']))->toBe(['pull_request', 'push', 'workflow_dispatch', 'schedule'])
+        ->and(array_keys($post['on']))->toBe(['pull_request', 'workflow_dispatch'])
+        ->and($post['jobs'])->toBe($pre['jobs'])
+        ->and($post['concurrency'])->toBe($pre['concurrency'])
+        ->and($post['on']['pull_request'])->toBe($pre['on']['pull_request'])
+        ->and($post['on']['workflow_dispatch'])->toBe($pre['on']['workflow_dispatch']);
+});
+
+it('accepts only the exact removal and the exact restoration', function () {
+    $states = ctrgStates();
+
+    expect(ctrgClassify($states['pre'], $states['post']))->toBe('removal')
+        ->and(ctrgClassify($states['post'], $states['pre']))->toBe('restoration')
+        ->and(ctrgClassify($states['pre'], $states['pre']))->toBe('unchanged');
+});
+
+it('rejects every workflow change other than the exact removal or restoration', function (Closure $mutate, string $from) {
+    $states = ctrgStates();
+    [$before, $after] = $mutate($states['pre'], $states['post']);
+
+    // Each case must really differ from the approved pair it imitates, or it would prove nothing.
+    $approved = $from === 'post' ? [$states['post'], $states['pre']] : [$states['pre'], $states['post']];
+    expect([$before, $after])->not->toBe($approved, 'the negative case did not change anything')
+        ->and(ctrgClassify($before, $after))->toBe('rejected');
+})->with([
+    'restoration plus an extra trigger' => [fn (string $pre, string $post) => [$post, str_replace("on:\n", "on:\n  release:\n    types: [published]\n", $pre)], 'post'],
+    'restoration plus a job edit' => [fn (string $pre, string $post) => [$post, preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', $pre, 1)], 'post'],
+    'restoration plus token permissions' => [fn (string $pre, string $post) => [$post, str_replace("\nconcurrency:", "\npermissions: write-all\nconcurrency:", $pre)], 'post'],
+    'restoration plus a new secret' => [fn (string $pre, string $post) => [$post, str_replace('secrets.CI_DB_PASSWORD', 'secrets.CI_DEPLOY_KEY', $pre)], 'post'],
+    'restoration with concurrency weakened' => [fn (string $pre, string $post) => [$post, str_replace('cancel-in-progress: true', 'cancel-in-progress: false', $pre)], 'post'],
+    'restoration with a classifier input change' => [fn (string $pre, string $post) => [$post, str_replace('resolve-gates.sh', 'resolve-gates-lenient.sh', $pre)], 'post'],
+    'restoration with a different cron' => [fn (string $pre, string $post) => [$post, str_replace("cron: '0 2 * * 0'", "cron: '0 3 * * 0'", $pre)], 'post'],
+    'partial restoration: push only' => [fn (string $pre, string $post) => [$post, str_replace(implode("\n", CTRG_SCHEDULE_LINES)."\n", '', $pre)], 'post'],
+    'partial restoration: schedule only' => [fn (string $pre, string $post) => [$post, str_replace(implode("\n", CTRG_PUSH_LINES)."\n", '', $pre)], 'post'],
+    'restoration with a whitespace-only difference' => [fn (string $pre, string $post) => [$post, $pre."\n"], 'post'],
+    'restoration onto an unapproved base' => [fn (string $pre, string $post) => [$post."# drift\n", $pre], 'post'],
+    'removal of push only' => [fn (string $pre, string $post) => [$pre, str_replace(implode("\n", CTRG_PUSH_LINES)."\n", '', $pre)], 'pre'],
+    'removal plus a job edit' => [fn (string $pre, string $post) => [$pre, preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', $post, 1)], 'pre'],
+    'removal that also drops pull_request' => [fn (string $pre, string $post) => [$pre, str_replace("  pull_request:\n    branches:\n      - ".CTRG_BASE_BRANCH."\n", '', $post)], 'pre'],
+    'an unrelated edit of the approved file' => [fn (string $pre, string $post) => [$pre, str_replace('name: Foundation Evidence Gates', 'name: Foundation Evidence Gates (edited)', $pre)], 'pre'],
+]);
+
+/*
+|--------------------------------------------------------------------------
+| 3. Workflow invariants both changes must keep
+|--------------------------------------------------------------------------
+*/
+
+it('pins the workflow invariants a CI trigger removal or restoration must keep', function () {
     $workflow = ctrgWorkflow();
     $raw = ctrgWorkflowRaw();
     $on = $workflow['on'];
@@ -210,7 +394,7 @@ it('pins the workflow invariants a CI trigger removal must keep', function () {
 
 /*
 |--------------------------------------------------------------------------
-| 3. B5-RESIDUAL-1 — open, pinned, and off every runtime path
+| 4. B5-RESIDUAL-1 — open, pinned, and off every runtime path
 |--------------------------------------------------------------------------
 */
 

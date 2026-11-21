@@ -19,7 +19,7 @@
 | DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
 | RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
 | VERIFIED IN PRODUCTION | **yes** — 2026-11-21 (phase B4, decision 13): the installed guard answered `check-approval` GO with `PASS: required CI — workflow_dispatch run 44898680653` for `ca86734e80846744ea2cdecc6f4aa9c5acb172d2`; test approval `49b95a0323c6effb9477423d86057b13` withdrawn, then DENIED; no deploy. See "Phase B4 result" |
-| PHASE B5 (CI trigger removal) | **not started** — path P2 (decisions 17–18): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G open; implementation PR-B5 not authorised. B5 is never reported as deployed. See "Phase B5 governance contract" |
+| PHASE B5 (CI trigger removal) | **not started** — path P2 (decisions 17–19): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G open; implementation PR-B5 not authorised. B5 is never reported as deployed. See "Phase B5 governance contract" |
 
 Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
 authorised deploy (decision 10); see "Release and GO tag (phase B)". Phase B4 added only the test approval's
@@ -306,6 +306,23 @@ service, timer or database change.
     - The base freeze stays and PR #672 is not merged.
     - Not authorised: merging PR-G, implementing PR-B5, any workflow trigger change, deploy or VPS changes, database
       changes, GO tag, rollback, BK-2.
+19. 2026-11-22 — **PR-G revision: a rollback path for the CI trigger removal.**
+    - The owner approves the P2 governance design and the handling of `B5-RESIDUAL-1` as reported.
+    - Before the merge of #682, one limited revision adds the **CI trigger restoration**:
+      1. the restoration returns `.github/workflows/foundation-evidence-gates.yml` byte for byte to the approved
+         pre-B5 version;
+      2. the file's SHA-256 before and after must match the pinned values;
+      3. no trigger is added, and no job, permission, secret, concurrency, the classifier or a release gate changes;
+      4. it is its own pull request with its own owner approval;
+      5. its CI runs and passes before the merge;
+      6. it deploys nothing and changes nothing on the VPS;
+      7. `CLAUDE.md`, `docs/governance/go-tag-exceptions.md`, this record and the tests state it consistently;
+      8. a negative test rejects every workflow change other than the exact restoration.
+    - The revision is a new commit on the #682 branch, with no amend or force-push. DEVFLOW, isolated local tests and
+      CI on the newest head are re-run; the work stops after CI for the merge decision.
+    - After PR-G merges, the owner decides on PR-B5 separately. The base freeze stays and PR #672 is not merged.
+    - Not authorised: changing a GitHub Actions trigger, deploy, VPS or database changes, migration, GO tag, BK-2,
+      or an actual rollback.
 
 ## Phase B4 result (production verification, 2026-11-21)
 
@@ -348,12 +365,13 @@ freeze (PR #672 and later merges) is left to the owner.
 
 ## Phase B5 governance contract (PR-G, 2026-11-22)
 
-Decisions 17 and 18. This section is the contract that PR-B5 must meet. **PR-B5 is not authorised yet.**
+Decisions 17, 18 and 19. This section is the contract that PR-B5, and any rollback of it, must meet. **PR-B5 is not
+authorised yet.**
 
 ### The CI trigger removal class (CG-16)
 
-- **Where it is stated:** `CLAUDE.md` CG-16 states the class, and `docs/governance/go-tag-exceptions.md` states its
-  six conditions.
+- **Where it is stated:** `CLAUDE.md` CG-16 states the class and its rollback, and
+  `docs/governance/go-tag-exceptions.md` states six conditions for each and pins the two approved workflow states.
 - **What the conditions cover:**
   - one workflow, two triggers;
   - the file equals its base minus exactly those lines;
@@ -364,10 +382,28 @@ Decisions 17 and 18. This section is the contract that PR-B5 must meet. **PR-B5 
   - the record names the merge commit and says it was not deployed.
 - **Which test keeps both texts aligned:** `tests/Feature/Cicd/CiTriggerRemovalGovernanceTest.php`. It selects the
   critical gate through the `Cicd` token in both variants.
+- **The rollback, a CI trigger restoration (decision 19):**
+  - It returns the workflow byte for byte to the pinned pre-removal state: the SHA-256 goes from
+    `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` to
+    `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4`.
+  - Removal conditions 2 to 5 hold.
+  - It is its own pull request with its own written owner approval.
+  - Its CI runs on the exact head and passes before the merge.
+  - It deploys nothing and changes nothing on the VPS.
+  - The record names the merge commit and says it was not deployed.
+- **How the test enforces it:** `CiTriggerRemovalGovernanceTest` pins both SHA-256 values. It requires the checked-in
+  workflow to be in one of the two states, and it classifies a change as removal, restoration or rejected. Its
+  negative cases are rejected, among them:
+  - a restoration with an extra trigger, a job, permission, secret or concurrency edit, a classifier input change or a
+    changed cron;
+  - a partial restoration;
+  - a restoration onto an unapproved base;
+  - a whitespace-only difference;
+  - a removal of only one trigger.
 - **What it does not cover:**
   - It is not a GO tag naming exception.
-  - It covers no other GitHub Actions change. Adding, restoring or editing a trigger, job or workflow is outside it,
-    and so is a revert of the removal.
+  - It covers no other GitHub Actions change. Adding or editing a trigger, job or workflow, a partial restoration, or
+    a restoration to any other content is outside it.
 
 ### PR-B5 change and evidence (planned)
 
@@ -418,10 +454,11 @@ Decisions 17 and 18. This section is the contract that PR-B5 must meet. **PR-B5 
   in one line and keeps `dms-rme-comprehensive-closure-1-go`.
 - **Rollback:**
   - Before the merge: close PR-B5.
-  - After the merge: a revert pull request restores the lines. Its merge commit gets a push run, because GitHub reads
-    the triggers from the pushed commit's workflow.
-  - The production authority still accepts push runs (B5-2), so nothing on the host changes.
-  - The revert is outside the trigger removal class, so its release handling needs an owner decision at that time.
+  - After the merge: a CI trigger restoration pull request (decision 19), which needs its own owner approval and
+    green CI before the merge. It restores the pinned pre-removal file. Its merge commit gets a push run, because
+    GitHub reads the triggers from the pushed commit's workflow; that run is the evidence that the triggers are back.
+  - The production authority still accepts push runs (B5-2), so nothing on the host changes. No deploy, no VPS
+    change, no GO tag. Its closure state is the same as the removal's: never `DEPLOYED` or `RELEASED`.
 
 ### `B5-RESIDUAL-1` (open, not fixed)
 
@@ -752,7 +789,7 @@ unsetting it (the setting CI uses) passes them. Environmental, not caused by thi
 ## Future removal of the automatic push trigger (not in this phase)
 
 Step 3 above was met on 2026-11-21 (phase B4). The removal still needs its own owner decision (phase B5). Its path
-(P2, decisions 17–18) and contract are in "Phase B5 governance contract"; where this section differs, that one wins.
+(P2, decisions 17–19) and contract are in "Phase B5 governance contract"; where this section differs, that one wins.
 
 Only after step 3 above, and by a new owner decision: a PR removes `push` (and `schedule`) from
 `foundation-evidence-gates.yml`, updates `DeployHardenDirectApprovalTest`'s trigger assertion and rule 107. From then

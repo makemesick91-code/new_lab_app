@@ -145,8 +145,10 @@ it covers. When you plan work in a domain before opening any of its files, read 
   (also named in the tag message); those are not created. Nothing else is an exception. Two change classes close
   without a deploy and get no GO tag of their own, and are never reported as deployed: a docs, rules or tests-only
   change, and the owner-authorised CI trigger removal of `docs/governance/go-tag-exceptions.md`. That class covers
-  only deleting the `push` and `schedule` triggers of `.github/workflows/foundation-evidence-gates.yml`, keeps
-  `pull_request` and `workflow_dispatch`, weakens no job or gate, and never extends to another GitHub Actions change.
+  only deleting the `push` and `schedule` triggers of `.github/workflows/foundation-evidence-gates.yml`, and its
+  rollback: a separately owner-approved PR, green CI before merge, that restores the file byte for byte to its pinned
+  pre-removal SHA-256. Both keep `pull_request` and `workflow_dispatch`, weaken no job or gate, deploy nothing, and
+  never extend to another GitHub Actions change.
 
 ### CI and testing
 
