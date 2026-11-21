@@ -19,6 +19,7 @@
 | DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
 | RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
 | VERIFIED IN PRODUCTION | **yes** — 2026-11-21 (phase B4, decision 13): the installed guard answered `check-approval` GO with `PASS: required CI — workflow_dispatch run 44898680653` for `ca86734e80846744ea2cdecc6f4aa9c5acb172d2`; test approval `49b95a0323c6effb9477423d86057b13` withdrawn, then DENIED; no deploy. See "Phase B4 result" |
+| PHASE B5 (CI trigger removal) | **not started** — path P2 (decisions 17–18): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G open; implementation PR-B5 not authorised. B5 is never reported as deployed. See "Phase B5 governance contract" |
 
 Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
 authorised deploy (decision 10); see "Release and GO tag (phase B)". Phase B4 added only the test approval's
@@ -252,6 +253,59 @@ service, timer or database change.
     - B5: no workflow, trigger, CI configuration or test change. The CG-16 audit is reported, with a recommendation and
       the governance changes it needs, for the next owner decision.
     - Not authorised: merge, deploy, VPS or database changes, rollback, GO tag, BK-2, worktree cleanup.
+17. 2026-11-22 — **Merge of #681 and the phase B5 path (direction only).**
+    - #681 was squash-merged as `9e0790daf883fffc7f39a6f2dc535520cac6665c` (head `d33a7fc2…`).
+      `.sprint/current.yml` is the DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest again (blob `d1c4af5e`), and the phase-B
+      manifest is at `.sprint/ci-cd-pr-only-policy-1.yml` (blob `d3e8e039`). No deploy, no GO tag.
+    - Phase B5 follows **P2** as a design direction: a CI trigger change without a deploy of its own. Implementation
+      waits for a governance contract:
+      - a CG-16 amendment limited to CI trigger changes;
+      - no weakening of a job, permission, secret, the classifier, the critical gate, the release guard or owner
+        approval;
+      - the historical phase-B manifest kept whole;
+      - a record that DEVFLOW and the GO-tag rules accept;
+      - an audit of the `app/` and `config/` residuals;
+      - a correction of decision 15's B5-3;
+      - the change list, acceptance criteria and rollback plan.
+    - The base freeze stays. PR #672 is not merged before B5 ends and its integration is re-checked.
+18. 2026-11-22 — **Phase B5 governance contract: P2 APPROVED.** PR-G is authorised: prepare, test, commit, push and
+    open it. Merging it and PR-B5 are not authorised.
+    - The CG-16 amendment is consistent in four places:
+      - `CLAUDE.md` CG-16, the rule;
+      - `docs/governance/go-tag-exceptions.md`, the implementing register;
+      - this record;
+      - the tests.
+    - The amendment's scope:
+      - it covers only removing the `push` and `schedule` triggers of `.github/workflows/foundation-evidence-gates.yml`;
+      - `pull_request` and `workflow_dispatch` stay;
+      - no job, the classifier, the critical tests, permissions, secrets, concurrency, the runner or the release guard
+        is weakened;
+      - no application, database, runtime configuration or deploy-script change is made;
+      - it is never a general exception for GitHub Actions.
+    - Structure: PR-G (governance amendment, docs and rule tests), then PR-B5 (the trigger removal) after PR-G
+      merges. Each merge needs its own owner approval.
+    - Manifests and tags:
+      - the historical phase-B manifest does not change;
+      - the active DMS-RME-COMPREHENSIVE-CLOSURE-1 manifest stays;
+      - B5 creates or moves no GO tag.
+    - **Decision 15's B5-3 is corrected.**
+      - B5 is closed without a deploy and receives **no GO tag**; no later deploy releases it.
+      - Its workflow file reaches the host inertly with the next release of another sprint, which keeps its own
+        `go_tag` (`dms-rme-comprehensive-closure-1-go`).
+      - The wording "rides the next release; the GO tag follows that release" is withdrawn. It would make that release
+        multi-sprint and supersede that sprint's own tag (`docs/governance/go-tag-exceptions.md`, condition 3).
+      - No B5 closure state says or implies that B5 was deployed.
+    - Residual: deferring the fix of the R004/R012 text and of the `schedule` marker in `config/` is accepted only as
+      `B5-RESIDUAL-1`. It must be:
+      - proven not to affect runtime, deploy, the release guard or a security decision;
+      - pinned by a test;
+      - closed by the next legitimately released CI governance sprint;
+      - never reported as fixed.
+
+      A functional or security impact stops the work for an owner decision.
+    - The base freeze stays and PR #672 is not merged.
+    - Not authorised: merging PR-G, implementing PR-B5, any workflow trigger change, deploy or VPS changes, database
+      changes, GO tag, rollback, BK-2.
 
 ## Phase B4 result (production verification, 2026-11-21)
 
@@ -291,6 +345,129 @@ Acceptance of decision 13: 13 of 13 met.
 The approval `49b95a03…` is spent by its withdrawal; the test approval was never used to release code, and the
 release id `ci-cd-pr-only-policy-1-b4-dispatch-test` is never to be reused for a real release. Lifting the base
 freeze (PR #672 and later merges) is left to the owner.
+
+## Phase B5 governance contract (PR-G, 2026-11-22)
+
+Decisions 17 and 18. This section is the contract that PR-B5 must meet. **PR-B5 is not authorised yet.**
+
+### The CI trigger removal class (CG-16)
+
+- **Where it is stated:** `CLAUDE.md` CG-16 states the class, and `docs/governance/go-tag-exceptions.md` states its
+  six conditions.
+- **What the conditions cover:**
+  - one workflow, two triggers;
+  - the file equals its base minus exactly those lines;
+  - nothing else in `.github/` changes;
+  - nothing in `app/`, `config/`, `scripts/`, `deploy/`, `database/`, `routes/`, `resources/`, `bootstrap/`,
+    `public/` or `.sprint/` changes;
+  - the authority, guard, signer, runner and approval contracts stay unchanged;
+  - the record names the merge commit and says it was not deployed.
+- **Which test keeps both texts aligned:** `tests/Feature/Cicd/CiTriggerRemovalGovernanceTest.php`. It selects the
+  critical gate through the `Cicd` token in both variants.
+- **What it does not cover:**
+  - It is not a GO tag naming exception.
+  - It covers no other GitHub Actions change. Adding, restoring or editing a trigger, job or workflow is outside it,
+    and so is a revert of the removal.
+
+### PR-B5 change and evidence (planned)
+
+- **Workflow change:** `.github/workflows/foundation-evidence-gates.yml` at `9e0790da` has SHA-256
+  `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4`. PR-B5 deletes lines 7–9 (`push`) and 55–56
+  (`schedule`) and nothing else. Expected SHA-256: `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0`.
+- **Invariants PR-G already pins**, which PR-B5 must keep:
+  - `pull_request` (base branch) and `workflow_dispatch` with the inputs `run_full_suite`,
+    `full_suite_policy_override`, `runner_mode` and `critical_test_workers`;
+  - nine jobs;
+  - no top-level `permissions`;
+  - the only secret is `CI_DB_PASSWORD`;
+  - no `pull_request_target`;
+  - the concurrency group;
+  - identical critical-gate filters in both variants.
+- **Other PR-B5 files:**
+  - tests: `DeployHardenDirectApprovalTest` l.1418 and `TemporaryFullSuiteScheduleGateTest` l.352 (both assert the
+    removed triggers), plus a trigger test that adds the absence of `push` and `schedule`;
+  - rules: rule 107 and rule 236 §5, with their index lines in `.claude/rules/cicd-testing.md` and
+    `.claude/rules/deploy-infra.md`. No new rule number; PR #672 uses 245–249;
+  - docs: runbook §6g steps 0–1, `docs/governance/global-temporary-full-suite-policy.md` and this record.
+- **DEVFLOW**, simulated read-only with `--changed-files` on that list:
+  - `sprint:manifest-check` GO for the default manifest and for `--manifest=.sprint/ci-cd-pr-only-policy-1.yml`;
+  - `sprint:scope-audit --strict` GO for both;
+  - classifier `ci_workflow` with `run_critical_tests=true`.
+
+  `sprint:release-check` does not apply: there is no release.
+- **Acceptance:**
+  - PR level:
+    - the SHA-256 values above;
+    - a deletion-only diff confined to the `on:` block;
+    - the pinned invariants hold;
+    - no file outside the class changes;
+    - the focused tests pass locally and are selected in both critical variants;
+    - `foundation:ci-runtime-control-check` and `foundation:cicd-enterprise-gate-check` stay GO;
+    - DEVFLOW is GO;
+    - PR CI is green with the critical tests run.
+  - After merge:
+    - **no `push` run exists for the merge commit**;
+    - with a separate owner authorisation, one normal dispatch on the tip is green and the installed guard's replay
+      prints `PASS: required CI — workflow_dispatch run <id>`;
+    - no `schedule` run after the next Sunday 02:00 UTC (observed, not waited for);
+    - production is unchanged (read-only posture and drift);
+    - both manifest blobs are unchanged;
+    - this record holds the evidence.
+- **Closure state:** `MERGED — EFFECT VERIFIED — NOT DEPLOYED — NO GO TAG`. It is never `DEPLOYED` or `RELEASED`.
+  When the next release of DMS-RME-COMPREHENSIVE-CLOSURE-1 carries the workflow file, that release's record says so
+  in one line and keeps `dms-rme-comprehensive-closure-1-go`.
+- **Rollback:**
+  - Before the merge: close PR-B5.
+  - After the merge: a revert pull request restores the lines. Its merge commit gets a push run, because GitHub reads
+    the triggers from the pushed commit's workflow.
+  - The production authority still accepts push runs (B5-2), so nothing on the host changes.
+  - The revert is outside the trigger removal class, so its release handling needs an owner decision at that time.
+
+### `B5-RESIDUAL-1` (open, not fixed)
+
+After PR-B5, these texts describe triggers that no longer exist. PR-B5 does not change them. They are deferred under
+decision 18.
+
+| Location | Text | Effect after PR-B5 |
+|---|---|---|
+| `config/ci_runtime_control.php` `required_workflow_markers` | `'schedule'` | still satisfied, but only by the `full_suite_gate` condition text `github.event_name == 'schedule'`; removing that text later makes the scanner fail (fails closed) |
+| `config/ci_runtime_control.php` `full_suite_fallback_triggers` | `schedule`, `workflow_dispatch` | satisfied by `workflow_dispatch`; correct |
+| `config/ci_runtime_control.php` `deferred_automatic_events` | `schedule`, `push` | the events stop occurring; the resolver still fails closed if one reappears |
+| `app/Services/Foundation/CiRuntimeControlGovernanceService.php` CICDCTRL-R004 / R012 | "via schedule (weekly), manual workflow_dispatch, and push-to-base"; "the weekly schedule and the post-merge push" | inaccurate description in the `foundation:ci-runtime-control-check` output; the GO decision is unchanged |
+
+No runtime, deploy, release-guard or security impact. The evidence, pinned by `CiTriggerRemovalGovernanceTest`:
+
+- **Who reads the code:** the only code that reads `config/ci_runtime_control.php` or the CI runtime control classes
+  is seven governance and tooling files under `app/`:
+  - the two check commands;
+  - the governance service and the scanner;
+  - the self-hosted runner governance service;
+  - `DevflowScanner`, which reads only `skip_critical_profiles` and `default_profile`;
+  - the five-branch readiness service, which reads the cached evidence decision.
+- **Where it is absent:** `routes/`, `scripts/` (release guard, signer, runner), `deploy/`, `bootstrap/`, `resources/`,
+  `database/` and `public/` reference none of them.
+- **Which key is read:** only `CiRuntimeControlScanner` reads `required_workflow_markers` and
+  `full_suite_fallback_triggers`.
+- **What the deploy runs:** the deploy runner never runs `foundation:ci-runtime-control-check` or
+  `foundation:self-hosted-runner-check`.
+- **What monitoring does:** the monitoring entry `audit_ci_runtime_control` is `auto_run: false`, so the web page only
+  reads the cached decision.
+
+Closure: the next CI governance sprint that is released under its own manifest and `go_tag`. It will:
+
+- drop the `'schedule'` marker and add a negative check that `on` has no `push` or `schedule`;
+- set `full_suite_fallback_triggers` to `workflow_dispatch`;
+- correct R004, R012 and the scanner message;
+- declare the trigger test in `critical_gate_mandatory_suites`, which is a `config/` change and so cannot ship in
+  PR-G or PR-B5.
+
+That sprint is closed when:
+
+- `foundation:ci-runtime-control-check` is GO;
+- the scanner fails on a fixture workflow carrying `push` or `schedule`;
+- the pin in `CiTriggerRemovalGovernanceTest` is replaced by its inverse.
+
+Until then, `B5-RESIDUAL-1` is reported as open.
 
 ## Release and GO tag (phase B)
 
@@ -574,7 +751,8 @@ unsetting it (the setting CI uses) passes them. Environmental, not caused by thi
 
 ## Future removal of the automatic push trigger (not in this phase)
 
-Step 3 above was met on 2026-11-21 (phase B4). The removal still needs its own owner decision (phase B5).
+Step 3 above was met on 2026-11-21 (phase B4). The removal still needs its own owner decision (phase B5). Its path
+(P2, decisions 17–18) and contract are in "Phase B5 governance contract"; where this section differs, that one wins.
 
 Only after step 3 above, and by a new owner decision: a PR removes `push` (and `schedule`) from
 `foundation-evidence-gates.yml`, updates `DeployHardenDirectApprovalTest`'s trigger assertion and rule 107. From then

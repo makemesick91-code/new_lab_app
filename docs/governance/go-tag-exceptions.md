@@ -26,6 +26,24 @@ Nothing else is an exception. In particular:
 - An infrastructure release is not exempt merely for being infrastructure: the condition is "more than one sprint in
   one deploy" plus a written owner naming.
 - A superseded `go_tag` that later appears on any commit is a governance violation, not a backfill.
+- A **CI trigger removal** is closed without a deploy and receives no GO tag of its own (CLAUDE.md CG-16; owner
+  decision 18 of CI-CD-PR-ONLY-POLICY-1, `docs/sprints/ci-cd-pr-only-policy-1.md`). It is one change that the owner
+  authorises in writing, and every condition below holds.
+  1. Its only `.github/` change deletes the whole `push` and `schedule` entries from the `on:` block of
+     `.github/workflows/foundation-evidence-gates.yml`. The file equals its base version minus exactly those lines,
+     and the pull request records both SHA-256 values.
+  2. `pull_request` and `workflow_dispatch` stay, with their branches and inputs unchanged.
+  3. Nothing else under `.github/` changes: no job, step, `if`, `permissions`, `concurrency`, `env`, secret use,
+     runner selection, classifier input, critical-gate filter, policy file or other workflow.
+  4. It touches nothing under `app/`, `config/`, `scripts/`, `deploy/`, `database/`, `routes/`, `resources/`,
+     `bootstrap/`, `public/` or `.sprint/`. Its other files are tests, rules and docs that describe it.
+  5. The production authority, the release guard, the signer, the runner and every approval contract stay unchanged.
+  6. The sprint record names the merge commit and states that the change was not deployed.
+
+  A CI trigger removal is never reported as deployed or released. The workflow file reaches the production host
+  inertly with the next release of another sprint; that release does not release the removal and keeps its own
+  manifest `go_tag`. The class covers no other GitHub Actions change: adding, restoring or editing a trigger, job or
+  workflow is outside it.
 
 ## Registry
 

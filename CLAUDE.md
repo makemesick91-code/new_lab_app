@@ -142,7 +142,11 @@ it covers. When you plan work in a domain before opening any of its files, read 
   docs-only evidence commit after the GO commit is not deployed. One narrow exception: when a single production
   deploy releases more than one sprint, the owner may name the release tag in writing; it still matches the `-go`
   pattern and is registered in `docs/governance/go-tag-exceptions.md`, which lists the superseded `go_tag` values
-  (also named in the tag message); those are not created. Nothing else is an exception.
+  (also named in the tag message); those are not created. Nothing else is an exception. Two change classes close
+  without a deploy and get no GO tag of their own, and are never reported as deployed: a docs, rules or tests-only
+  change, and the owner-authorised CI trigger removal of `docs/governance/go-tag-exceptions.md`. That class covers
+  only deleting the `push` and `schedule` triggers of `.github/workflows/foundation-evidence-gates.yml`, keeps
+  `pull_request` and `workflow_dispatch`, weakens no job or gate, and never extends to another GitHub Actions change.
 
 ### CI and testing
 
