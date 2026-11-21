@@ -81,6 +81,33 @@ audit only (owner decision 4), see "Release readiness (phase B3)".
    only this file (new worktree and branch from the verified remote base, local documentation and DEVFLOW checks,
    commit, push, pull request, review of its CI). Merging it needs a separate owner approval. Base freeze, the release
    target `f31b554b…` and every prohibition of decision 6 stay in force. Signing is not authorised (decision 7).
+9. 2026-11-21 — **P-4, signing of the phase-B release approval: AUTHORISED** by the owner. This explicit decision
+   supersedes the status recorded in decision 7.
+   - Identity: target `f31b554be922d1c147d23e7e00523b2d23e4a413`, release id `ci-cd-pr-only-policy-1-phase-b`, planned
+     GO tag `ci-cd-pr-only-policy-1-phase-b-go`, signed approval valid for 24 hours from signing, the verified Biznet
+     production host. None of these may change without a new owner approval.
+   - CG-22: this decision is recorded through a docs-only pull request that changes only this file. Merging it needs a
+     separate owner approval, and the record must be on the base branch before the signer runs.
+   - Before signing, the assistant re-verifies and stops on any mismatch:
+     1. the target SHA is still valid;
+     2. only documentation the release guard allows follows the target on the base;
+     3. the target's CI still satisfies the release guard;
+     4. the signing worktree is detached at the target and clean;
+     5. its signer, library, authority and manifest match the target;
+     6. the GO tag does not exist;
+     7. the release id is unused, as far as read-only evidence shows;
+     8. the production trust anchor is valid;
+     9. production posture shows nothing that blocks the release;
+     10. no process or operation is left over.
+   - Signing: only after every prerequisite passes and this record is merged. The assistant gives the exact
+     instructions; the owner runs the signer in the owner's own terminal and checks every record field before
+     confirming. The assistant does not run the signer, enter or ask for the passphrase, read or copy the private key,
+     keep secret material in any report, or change the signed approval.
+   - After signing, the assistant checks only non-secret metadata: release id, target SHA, approval id, digests, GO tag,
+     expiry. It does not submit the approval or run production `check-approval`. P-5 needs a separate approval.
+   - Not authorised: deploy, rollback, GO tag, CI workflow change, push or schedule trigger removal, application or
+     database change, service or timer change, BK-2.
+   - **Status when this record was written: NOT SIGNED.** The signer has not been run and no approval bundle exists.
 
 ## Release readiness (phase B3, 2026-11-21)
 
