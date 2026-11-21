@@ -63,25 +63,29 @@ audit only (owner decision 4), see "Release readiness (phase B3)".
    - authorised now: a dedicated signing worktree at the target and read-only checks of the signer. Not authorised:
      running the signer, the owner's passphrase, creating or submitting a signed approval, production
      `check-approval`, deploy, rollback, GO tag, CI trigger removal, production or database changes.
-7. 2026-11-21 — **P-4, signing approved conditionally**: decision 6 must first be recorded here and every signer
-   prerequisite re-verified. The owner will sign `ci-cd-pr-only-policy-1-phase-b` for `f31b554b…` with
-   `--go-tag ci-cd-pr-only-policy-1-phase-b-go --hours 24`, in the owner's own terminal, from the dedicated signing
-   worktree. The assistant may give instructions and check the resulting metadata; it may not run the signer, see the
-   passphrase or the private key, copy key material, submit the approval, run production `check-approval`, deploy,
-   tag, roll back or touch BK-2. A mismatch of SHA, branch, host identity, trust anchor or validity window stops the
-   process. P-5 (submit, check, deploy) needs a separate approval.
-   **Status when this record was written: NOT SIGNED** — the signer has not been run and no approval bundle exists.
-   The prerequisites were re-verified (see "Release readiness (phase B3)"); the recording condition is met only once
-   this record is merged into the base branch.
+7. 2026-11-21 — **P-4, signing: PREPARED / NOT YET AUTHORIZED.** No traceable explicit owner authorisation of the
+   signing is recorded. Signing needs an explicit owner authorisation, recorded in this document after this record is
+   merged.
+   - Prepared under decision 6: a dedicated signing worktree detached at the target, and read-only checks of the signer
+     and its prerequisites (see "Release readiness (phase B3)").
+   - Planned parameters, for the owner to authorise or change: release id `ci-cd-pr-only-policy-1-phase-b`, target
+     `f31b554b…`, `--go-tag ci-cd-pr-only-policy-1-phase-b-go --hours 24`, signed by the owner in the owner's own
+     terminal from that worktree.
+   - Constraints proposed for that authorisation: the assistant may give instructions and check the resulting metadata.
+     It may not run the signer, see the passphrase or the private key, copy key material, submit the approval, run
+     production `check-approval`, deploy, tag, roll back or touch BK-2. A mismatch of SHA, branch, host identity, trust
+     anchor or validity window stops the process.
+   - P-5 (submit, check, deploy) needs its own approval.
+   - **Status: NOT SIGNED.** The signer has not been run and no approval bundle exists.
 8. 2026-11-21 — **Option A, CG-22 record**: decisions 4–7 are recorded through one docs-only pull request that changes
    only this file (new worktree and branch from the verified remote base, local documentation and DEVFLOW checks,
    commit, push, pull request, review of its CI). Merging it needs a separate owner approval. Base freeze, the release
-   target `f31b554b…` and every prohibition of decisions 6 and 7 stay in force.
+   target `f31b554b…` and every prohibition of decision 6 stay in force. Signing is not authorised (decision 7).
 
 ## Release readiness (phase B3, 2026-11-21)
 
-Read-only evidence gathered before the owner's signature. Nothing on the host was changed (posture identical before
-and after every check).
+Read-only evidence gathered before any signature. Nothing on the host was changed (posture identical before and after
+every check).
 
 | Check | Result |
 |---|---|
@@ -94,7 +98,7 @@ and after every check).
 | Backups | database backup and BK-2 package timers active, last run successful; BK-2 not invoked |
 | Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` return 200 on the canonical URL |
 | DEVFLOW | `devflow:base-ref-check`, `sprint:manifest-check`, `sprint:scope-audit --strict` (release delta), `sprint:release-check --strict` (CI evidence: run 44862172974), `foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`: GO |
-| Signer prerequisites (re-verified before P-4) | signing worktree detached at the target, clean, signer/library/authority/manifest blobs identical to the target; the owner's public key fingerprint equals the production trust anchor |
+| Signer prerequisites (P-4 preparation; not an authorisation) | signing worktree detached at the target, clean, signer/library/authority/manifest blobs identical to the target; the owner's public key fingerprint equals the production trust anchor |
 
 ### Effect of a docs-only record on the release and on phase B4
 
