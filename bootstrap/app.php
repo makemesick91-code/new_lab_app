@@ -185,15 +185,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // is restricted the same way, on both registration forms (Master Data at
         // the top level, Kunjungan → Pasien Baru under `new_patient`).
         //
-        // DMS-SPN4-READY-PILOT-1 G6 / REM-2a (CG-11) — the KTP/NIK never reaches
-        // the session either. Audited input names: `ktp_number` (Master Data
+        // DMS-SPN4-READY-PILOT-1 G6 / REM-2a (CG-11) — identity numbers do not
+        // reach the session either. The inputs below are the ones the audit
+        // traced (form, request, controller, script): `ktp_number` (Master Data
         // create and edit), `new_patient.ktp_number` (Kunjungan → Pasien Baru),
-        // `image_base64` (the KTP scan upload, a picture of the card), and the two
-        // reference fields that are refused precisely when they look like a NIK
-        // (`owner_approval_reference`, `patient_request_reference`). After a
-        // refusal the NIK field is empty (or shows the stored value on edit) and
-        // is typed again; the scan token and the OCR flags are still flashed, so
-        // an uploaded scan stays attached.
+        // `image_base64` (the KTP scan upload, a picture of the card), the two
+        // reference fields refused precisely when they look like a NIK
+        // (`owner_approval_reference`, `patient_request_reference`), and — R2-6,
+        // found after the first pass, which searched for ktp/nik names only —
+        // `consenter_identity_number`, the KTP/SIM number of a guardian on the
+        // consent form. A new input carrying an identity number must be added
+        // here. After a refusal such a field is empty (on edit: the stored
+        // value) and is typed again; the scan token and the OCR flags are still
+        // flashed, so an uploaded scan stays attached.
         $exceptions->dontFlash([
             'consenter_signature',
             'doctor_signature',
@@ -208,6 +212,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'image_base64',
             'owner_approval_reference',
             'patient_request_reference',
+            'consenter_identity_number',
         ]);
 
         // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — every rendered exception passes

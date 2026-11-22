@@ -10,14 +10,17 @@ declare(strict_types=1);
 | On a validation failure the framework flashes the whole request input into the
 | session (only passwords are excluded by default), and the session driver is the
 | database. A refused registration therefore left the full NIK in the sessions
-| table (CG-11). bootstrap/app.php now lists every input the audit found that
-| holds a NIK or can hold one by mistake:
+| table (CG-11). bootstrap/app.php now lists the inputs the audit traced that
+| hold an identity number or can hold one by mistake:
 |
 |   ktp_number                 Master Data → Tambah / Ubah Pasien
 |   new_patient.ktp_number     Kunjungan → Pasien Baru
 |   image_base64               the KTP scan upload (a picture of the card)
 |   owner_approval_reference   refused exactly when it looks like a NIK
 |   patient_request_reference  refused exactly when it looks like a NIK
+|   consenter_identity_number  a guardian's KTP/SIM on the consent form (R2-6,
+|                              found after the first pass; its real-route test is
+|                              RmeVisitConsentGuardianIdentityNeverFlashedTest)
 |
 | The refund-request controller re-flashes input explicitly (withInput()), which
 | bypasses dontFlash, so it excludes both references itself. Every other field is
@@ -50,6 +53,7 @@ const PKFL_NEVER_FLASHED = [
     'image_base64',
     'owner_approval_reference',
     'patient_request_reference',
+    'consenter_identity_number',
 ];
 
 beforeEach(function (): void {
