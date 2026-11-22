@@ -6,6 +6,7 @@ use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Patient\Services\PatientDataCompletenessService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
+use App\Support\Database\ForeignKeyCatalog;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +19,7 @@ class Dq1AuditService
 {
     public function __construct(
         private readonly PatientDataCompletenessService $patientPrivacy,
+        private readonly ForeignKeyCatalog $foreignKeys = new ForeignKeyCatalog,
     ) {}
 
     /**
@@ -458,24 +460,11 @@ class Dq1AuditService
             return false;
         }
 
-        $result = DB::selectOne(
-            'SELECT 1 AS ok
-             FROM information_schema.table_constraints tc
-             JOIN information_schema.key_column_usage kcu
-               ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-             JOIN information_schema.constraint_column_usage ccu
-               ON ccu.constraint_name = tc.constraint_name
-              AND ccu.table_schema = tc.table_schema
-             WHERE tc.constraint_type = ?
-               AND tc.table_name = ?
-               AND kcu.column_name = ?
-               AND ccu.table_name = ?
-             LIMIT 1',
-            ['FOREIGN KEY', $table, $column, $referencedTable],
-        );
-
-        return $result !== null;
+        // pg_catalog, not information_schema: constraint_column_usage only shows
+        // tables owned by the current role, so after the rule 245 ownership split
+        // every key would read as missing and `--fail-on=error` would stop every
+        // deploy. Both tables are matched in the current schema, by OID.
+        return $this->foreignKeys->exists($table, $column, $referencedTable, DB::connection());
     }
 
     private function hasUniqueIndex(string $table, string $column): bool
