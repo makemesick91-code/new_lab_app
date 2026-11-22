@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 6f790a7e
+kb_verified_against: 71cc096b
 kb_updated: 2026-11-22
 ---
 
@@ -9,9 +9,9 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). G1 counts as formally recorded only after this document is merged into the base and verified. No implementation is authorised by this document |
-| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` |
-| Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9) comes in PR-C2, which is not yet authorised |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`) |
+| Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | **NO-GO**. The seven Gate 1 blockers stay open, and LAB-fee stays disabled |
 | `.sprint/current.yml` | Stays **DMS-RME-COMPREHENSIVE-CLOSURE-1** and is not changed |
@@ -298,6 +298,13 @@ Until the matching gate:
 
 OD-1 (approval of charter v4 and of this final text) was decided by the owner on 2026-11-22 (DL-1).
 
+**Status after G4 and G5 (2026-11-22, §10 G5-1 and G5-2):**
+- OD-4 is decided: Path B, with no A6.
+- OD-2 does not apply.
+- OD-3 is not needed, because R-1 has no HIGH finding.
+- OD-5 is PENDING OWNER CLASSIFICATION (§12.6).
+- OD-6 to OD-10 remain open.
+
 ## 9. Manifest and GO tag
 
 - `.sprint/current.yml` stays CC1.
@@ -318,6 +325,12 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 | DL-5 | 2026-11-22 | PR-C1 is authorised: a new isolated worktree and branch from the verified base; this document plus one entry in `docs/00-INDEX.md`; DEVFLOW and local documentation tests; commit, push, and a PR without auto-merge; CI checked to completion; then a stop before the merge for the owner's review |
 | DL-6 | 2026-11-22 | Not authorised by DL-5: application code; database or migrations; `.sprint/current.yml`; PR-C2; production access or changes; deploy; GO tags; BK-2; enabling LAB-fee. Approving the charter is not an acceptance of the R6-01 risk, and G1 is not formally complete until PR-C1 is merged and verified |
 | DL-7 | 2026-11-22 | Review of PR-C1 #685. The owner authorises a correction of Annex A so that the role audit never concludes PASS from a truncated walk: R1-S3 without a fixed depth limit and fail-closed (BLOCKED when incomplete), `ADMIN OPTION` read by effective capability and membership path, and R1-S3 checked against R1-S4. Validation on an isolated local PostgreSQL 16 with temporary fixtures, and no repository test file. Repository changes stay limited to the two approved documentation files. The fix lands as a new commit on the PR #685 branch, with no amend or force-push |
+| G2–G3 | 2026-11-22 | PR-C1 #685 was merged into the base as `a6b32c16`: G1 recorded, G2 done. PR-C2 #686 was merged as `71cc096b` and added the parked manifest: G3 done. `.sprint/current.yml` is unchanged (CC1) |
+| G4-1 | 2026-11-22 | The owner authorises the read-only G4 audit. It covers: repository baseline and DEVFLOW; the eight VPS checks through the operator path; the R6-A pack, R1-S1…R1-S5 and a D-2 aggregate pack, run by the owner as the application login role in read-only transactions; S-4; and read-only audits of L-1, S-1…S-3, C-1, A-1, O-1 and O-2. Not authorised: production changes, sudo by the assistant, BK-2, LAB-fee, cutover, acceptance of the R6-01 risk, G5, P0 implementation |
+| G4-2 | 2026-11-22 | The owner closes G4 as **AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN**, on the reconciled owner-run evidence (§12): R-1 PASS; R6-01 exposure verified; D-2 BLOCKED. A complete audit does not mean the blockers pass. No production query is run again to close G4 |
+| G5-1 | 2026-11-22 | **OD-4 = Path B — remediation before production cutover.** Path A is not chosen. No R6-01 risk is accepted through A6, and approving the charter is not a risk acceptance. OD-2 does not apply. Database privilege separation is completed before G12/G13. R6-01 is not marked CLOSED before R6-D is verified. R-1 is run again after R6-D and must be PASS. UAT G10 on the TESTING database may be planned separately, and stays subject to its blockers and to the G10 authorisation |
+| G5-2 | 2026-11-22 | The Path B selection is approved. Formal G5 closure waits for OD-5 (PENDING OWNER CLASSIFICATION, §12.6) and for this record to be merged. OD-3 is not needed, because R-1 has no HIGH finding. No change to database privileges is authorised now |
+| G5-3 | 2026-11-22 | The owner authorises preparation only: this G4/G5 record as a local patch; the OD-5 reconciliation; the R6-B, R6-C and R6-D designs; the blocker inventory and remediation sequence; safe local checks and DEVFLOW; and a PR package for review. Each of the following needs a new authorisation: commit, push, PR, merge, G6 implementation, production change, deploy, cutover, pilot activation |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -344,8 +357,252 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 
   Perubahan repository tetap terbatas pada dua file dokumentasi. Perbaikan masuk sebagai commit baru di branch
   PR #685, tanpa amend atau force-push.
-- **Masih terbuka:** keputusan Owner OD-2 sampai OD-10 (§8). Penerimaan risiko A6 hanya dapat diberikan di G5 sebagai
-  keputusan tersendiri.
+- **Masih terbuka (saat G1):** keputusan Owner OD-2 sampai OD-10 (§8). Penerimaan risiko A6 hanya dapat diberikan di G5
+  sebagai keputusan tersendiri.
+- **G2–G3.** PR-C1 #685 di-merge sebagai `a6b32c16`, PR-C2 #686 sebagai `71cc096b`. `.sprint/current.yml` tetap CC1.
+- **G4-1.** Owner mengizinkan audit G4 read-only: baseline dan DEVFLOW; delapan cek VPS; paket R6-A, R1-S1…S5 dan D-2
+  yang dijalankan Owner sebagai role login aplikasi dalam transaksi read-only; S-4; audit read-only blocker lain.
+- **G4-2.** G4 ditutup sebagai **AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN** (§12):
+  - R-1 PASS;
+  - eksposur R6-01 terbukti;
+  - D-2 BLOCKED.
+  Audit lengkap tidak berarti blocker lulus.
+- **G5-1.** **OD-4 = Path B**, remediasi sebelum cutover produksi:
+  - Path A tidak dipilih, dan tidak ada penerimaan risiko lewat A6;
+  - OD-2 tidak berlaku;
+  - pemisahan hak akses database selesai sebelum G12/G13;
+  - R6-01 tidak CLOSED sebelum R6-D terverifikasi;
+  - R-1 dijalankan ulang setelah R6-D dan harus PASS;
+  - UAT G10 di database TESTING boleh direncanakan terpisah, tetapi tetap tunduk pada blocker dan izin G10.
+- **G5-2.** Pemilihan Path B disetujui. Penutupan formal G5 menunggu OD-5 (PENDING OWNER CLASSIFICATION) dan merge
+  catatan ini. OD-3 tidak diperlukan. Belum ada izin mengubah privilege database.
+- **G5-3.** Hanya persiapan yang diizinkan:
+  - catatan ini sebagai patch lokal;
+  - rekonsiliasi OD-5;
+  - desain R6-B, R6-C dan R6-D;
+  - urutan remediasi;
+  - pemeriksaan lokal dan DEVFLOW;
+  - paket PR.
+  Commit, push, PR, merge, implementasi G6, perubahan produksi, deploy, cutover, dan aktivasi pilot masing-masing butuh
+  izin baru.
+- **Pilot tetap NO-GO.**
+
+---
+
+## 12. G4 audit record and G5 decision (2026-11-22)
+
+**G4 = AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5 = Path B selected; formal closure pending OD-5. Pilot: NO-GO.**
+
+### 12.1 Evidence and custody
+
+**Owner-run packs.** The owner ran three packs through `php artisan db` as the application login role, each in a
+read-only transaction ended by `ROLLBACK`:
+- the R6-A pack (`docs/architecture/database-least-privilege-r6.md` §9, verbatim, SHA-256 `837ed7dc…`);
+- R1-S1…R1-S5 (Annex A, verbatim, `98d26c26…`);
+- a D-2 aggregate pack (D2-0…D2-7: counts and non-patient metadata only, `b2fdc758…`).
+
+Result sets: **12/12, 6/6 and 9/9**. Two incidents did not affect the result:
+- an initial syntax error ran outside any transaction and executed nothing;
+- a redundant `BEGIN` inside the already-open read-only transaction was a no-op.
+
+**Identity: PASS.** `current_user` = `session_user` in both Q1 and R1-S1. The owner also checked that
+`database.default` = `pgsql` and that the configured username equals `session_user`.
+
+**S-4: PASS.** The owner ran `rbac:front-office-branch-pin-audit --strict` as the runtime user:
+- device flag OFF;
+- armed 1 of the maximum 4 (the SPN4 admin account only);
+- every `agree` ok;
+- exit 0.
+
+Account names are not recorded.
+
+**Custody.**
+- The reconciliation used the owner's terminal transcript supplied in the conversation. No capture file existed at the
+  named path when checked.
+- The owner archives the original. The assistant recreated no evidence.
+- The per-query reconciliation stays outside this public repository, because the output names production roles.
+
+### 12.2 R-1 = PASS
+
+- R1-S3 verdict: **PASS**, `actors=5 reachable=4 max_depth=2`. Checks C1–C4 `ok`. No E or H finding, which means no
+  CRITICAL and no HIGH finding.
+- R1-S4: no membership in any sensitive role.
+- R1-S5: no server-file capability, and no EXECUTE on the seven server-file functions.
+- Login-role attributes are all false; `is_superuser` is off.
+
+**Observation (LOW, not an R-1 class finding).** The runtime role is a member of `pg_monitor` and `pg_read_all_stats`,
+which the application's monitoring uses. R6-B decides how this is handled. Rule 245's target is no membership.
+
+### 12.3 R6-01 exposure verified
+
+- The runtime login role owns:
+  - 186 of 186 tables and all 177 sequences in `public`;
+  - the schema `public`, with CREATE;
+  - the three trigger functions.
+- The database itself is owned by the superuser role.
+- **38 of 38 sensitive tables** have no RLS, and the runtime holds UPDATE, DELETE and TRUNCATE on all of them,
+  including `sys_audit_logs`.
+- The six guard triggers on three tables are enabled. Their functions:
+  - are owned by the runtime;
+  - are not `SECURITY DEFINER`;
+  - have no pinned `search_path`.
+
+  The runtime can therefore disable or replace them.
+- Default privileges defined by the superuser role grant the runtime full DML on objects that role creates.
+- Only two non-predefined roles exist: the runtime login role and the superuser. There is no staff database login.
+  PostgreSQL listens on loopback only.
+- **Blast radius: the whole database, every branch.**
+
+R6-01 needs structural remediation under rules 245 and 248, which are DESIGN LOCKED and not implemented.
+
+### 12.4 D-2 BLOCKED
+
+**SPN4 (id 5, active, RME-enabled) facts:**
+- 1,523 patients: **L 1,519** (one committed batch; branch, MRN and batch markers consistent), **U 4**, **A 0**.
+- T cannot be proven: no recorded test-id list exists (rule 221 §6).
+- A is 0 because creating a patient records no actor.
+- Integrity:
+  - MRN: none missing, non-canonical or duplicated;
+  - **84** NIK values are not 16 digits (not treated as errors automatically);
+  - **one** possible duplicate group by name and date of birth;
+  - 0 records predate the 2026-09-24 estate reset (rule 165);
+  - 20 legacy RME archives, consistent with Program 8 D5 condition 1.
+
+**Handling:**
+- The four U patients stay fully protected and PENDING VERIFICATION.
+- No record is changed, deleted, merged or marked.
+- No record is declared ELIGIBLE.
+
+**D-2 PASS needs:**
+- OD-7: the disposition of the four U patients and a test-data policy;
+- verification of L: C-1, the duplicate group, and a review of the 84 NIK values;
+- an owner-approved ELIGIBLE list;
+- D-1 (the §0.8 plan).
+
+### 12.5 Path B plan (designed, not implemented)
+
+| Stage | Content | Authorisation | Exit evidence |
+|---|---|---|---|
+| R6-B (repository) | The pieces of the rule 245 target. Connection: `pgsql_migrate` with an explicit `SET ROLE` to the owner role. Inventory: a runtime class for every table (R6-T02), declared by migrations (rule 245 #6). Deploy runner: a privilege step behind a host switch. Check: a read-only `foundation:db-privilege-check`. CI: a PostgreSQL 16 role-separation job (SQLSTATE 42501 negative tests, row locks, runtime smoke) selected in both critical variants. Audit: rule 248 layer-1 guards for the audit and event tables. A provisioning runbook | G6 per PR. The CI job is a workflow change: it needs its own owner approval, a governed update of the pinned workflow states (`CiTriggerRemovalGovernanceTest`), the GitHub `workflow` scope (currently revoked), and PR CI that runs the critical tests. The deploy-runner change is a runtime release (O-2, AT-7) and needs a manifest-switch decision (§9) | CI green on the candidate SHA with the role-separation job run; `foundation:db-privilege-check` exits 0 in CI |
+| R6-C (rehearsal) | **C1:** schema-only provisioning with synthetic data on an isolated PostgreSQL 16, with no patient data. **C2:** a full-data restore rehearsal, only on an explicit owner order, using the documented off-server procedure (isolated workstation, no network) and the safeguards set by the owner | Owner, per stage | Restore integrity; provisioning; negative tests; migration as the migrator; backup and restore of the new layout; rollback; measured durations |
+| R6-D (production, must be completed and verified before G12/G13) | A maintenance window after a verified dump, run by the administrator with the owner's sudo password (rule 235). Provisioning, ownership transfer, grants per class, verification. An explicit rollback (R6 §8); a code rollback does not undo role changes | Owner (production change). R6-B released under contract 3 first | `foundation:db-privilege-check` exits 0 on production. The owner re-runs R6-A and R1-S: the runtime owns 0 objects; UPDATE, DELETE and TRUNCATE on append-only tables are 0; triggers enabled; R1-S3 PASS |
+
+**R6-B, R6-C and R6-D each need their own implementation authorisation. This record authorises none of them.**
+
+**Prerequisites found during design (repository evidence, reproduced on a local PostgreSQL 16 fixture):**
+- Two foreign-key lookups read `information_schema.constraint_column_usage`. That view shows only tables owned by a
+  role the session is acting as.
+  - **Patient merge.** After the split, the unregistered foreign-key guard of patient merge would find no foreign key
+    and **fail open** (`PatientMergeOwnershipRepository`).
+  - **DQ1.** The DQ1 constraint check would report every foreign key as missing. The deploy runs it with
+    `--fail-on=error`, so it would stop deploys (`Dq1AuditService`).
+  - Both lookups move to `pg_catalog` and are released **before** R6-D.
+  - Each fix has positive and negative tests on PostgreSQL 16, run both as the owner and as a non-owner runtime role.
+    The tests prove three things:
+    - an existing foreign key is found;
+    - a missing foreign key is reported;
+    - a merge that meets an unregistered foreign key is refused.
+  - **Neither fix is implemented yet.**
+- Two tables planned as append-only are row-locked and partly updated by the runtime: `trx_inventory_movements`
+  (batch backfill) and `trx_rme_amendments` (decision status). Their class is APPEND_ONLY_WITH_COLUMNS.
+- The application's monitoring needs the privileges of `pg_read_all_stats` and `pg_read_all_settings`. The handling
+  is an R6-B design decision.
+- One staging restore-drill script expects the runtime role to hold CREATEDB, which conflicts with rule 245 #5.
+- The database identity of the host-only BK-2 package step cannot be determined from the repository. It is verified
+  on the host by reading its unit and script only, without running BK-2 (rule 232), before R6-D.
+
+The detailed designs, the rehearsal plan and the runbook are prepared outside the repository for review. The
+provisioning runbook lands with its implementation (R6 §8), and production role names stay out of this public
+repository.
+
+### 12.6 OD-5: PENDING OWNER CLASSIFICATION
+
+The repository holds only the ids of the private register, not its contents, and no repository text ties any of them
+to SPN4.
+
+- **R7-F, P8-FIX1, P8-SEED, R8A-3, RA-4** have no public definition. They are not guessed, and each needs an owner
+  classification (touches SPN4: yes/no). RA-4 is listed both as decided and as open, and needs reconciliation.
+- **RA-3 and RA-5** have public one-line definitions. Both are host-level; RA-5 (restore-drill evidence) relates to
+  R6-C.
+- **D3-NEW-3/5** are deferred with a cross-branch trigger. A single-branch pilot does not trigger them, unless it is
+  used across branches.
+- **OPS-SAT and P8R-S4b** are among the seven undefined ids of Sprint 0 but missing from the §3 list. The owner
+  confirms whether they belong to OD-5.
+
+Every item classified "touches SPN4" becomes an additional blocker.
+
+### 12.7 Status
+
+| Blocker | Status |
+|---|---|
+| R-1 | PASS |
+| R-2 | PATH B SELECTED, REMEDIATION OPEN |
+| D-1 | NOT RUN |
+| D-2 | BLOCKED |
+| L-1 | PASS (narrow) / WATCH |
+| S-1 | PASS locally on PostgreSQL 16; critical-gate selection missing (CG-19) |
+| S-2 | FAIL: KTP prune timer installed but disabled; NIK in session flash and in unscrubbed query-exception logs |
+| S-3 | PASS locally on PostgreSQL 16 |
+| S-4 | PASS |
+| C-1 | OPEN (D5 SPN4; REM-5) |
+| A-1 | OPEN (OD-6, OD-8; D4 BLOCKED_EXTERNAL) |
+| O-1 | PASS (baseline) |
+| O-2 | N/A (no runtime change yet) |
+
+| Criterion | Status |
+|---|---|
+| AT-1 | PASS |
+| AT-2 | BLOCKED until remediation |
+| AT-3 | PASS (narrow) / WATCH |
+| AT-4 | NOT MET (CG-19 selection) |
+| AT-5 | FAIL (S-2) |
+| AT-6 | PASS (Full Suite DEFERRED) |
+| AT-7 | NOT RUN |
+| AT-8 | PASS (observation: host restart pending) |
+| AO-1 … AO-7 | NOT RUN |
+
+Local test runs without the environment file are recorded as WARN, not as a clean PASS.
+
+### 12.8 Remediation items (open; each needs G6 or an owner operation)
+
+- **REM-1 (CG-19).** Select the branch-context and patient-data-completeness suites in both critical variants.
+  This is a workflow change (see R6-B above).
+- **REM-2 (NIK protection).**
+  - Add the NIK fields to `dontFlash`.
+  - Scrub bindings from non-unique query exceptions before logging.
+  - Add regression tests.
+  - The consent screen is not changed before the owner decides the CG-11 interpretation.
+- **REM-3 (OPS-KTP).** Dry run, then activation of the installed timer, then monitoring. This is an owner operation.
+- **REM-4 (provenance).** The §0.8 plan and the OD-7 decisions. Optionally, a creation-actor audit for future
+  patients.
+- **REM-5 (D5 SPN4).** A governance decision on whether SPN4 may run `branch-drain` and `branch-complete` on its own
+  confirmation, while the wave-level `complete` still needs all four branches. Closure is not run here.
+
+**Retained:**
+- B5-RESIDUAL-1 OPEN;
+- FIN-01/FIN-02 per the RME-LAB-FEE-APPROVAL-1 register;
+- D4 as a dependency when a trusted Android device is needed;
+- dedicated non-operational UAT devices;
+- maker ≠ checker;
+- LAB-fee stays disabled.
+
+### 12.9 Decision boundary
+
+- **The pilot stays NO-GO.** G12 (cutover) and G13 (pilot activation) are not authorised.
+- Gate 1 RME-LAB-FEE-APPROVAL-1 stays NO-GO. BK-2 is SKIPPED.
+- No production database role, ownership or privilege changes until R6-D is separately authorised.
+
+**Final status (2026-11-22):**
+
+| Item | Status |
+|---|---|
+| G4 | AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN |
+| G5 | PATH B SELECTED (formal closure pending OD-5) |
+| R6-01 | REMEDIATION OPEN |
+| D-2 | BLOCKED |
+| G12 / G13 | NOT AUTHORIZED |
+| Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
+| BK-2 | SKIPPED |
 
 ---
 
