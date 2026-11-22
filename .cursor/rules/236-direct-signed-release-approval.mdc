@@ -75,9 +75,10 @@ records are never edited. If contract 3 misbehaves, releases keep using contract
 
 ## 4. Operations
 
-Runbook `docs/runbooks/production-host-identity.md` §6g. If the base branch's push run of the target was cancelled
-(`cancel-in-progress`), re-run it before submitting. An interrupted submission is cleared by re-running
-`submit-approval`.
+Runbook `docs/runbooks/production-host-identity.md` §6g. Since phase B5 (§5.7) the release's CI evidence is a manual
+dispatch of the exact commit; if that run was cancelled or failed, dispatch again while the tip is still the release
+commit (a historical push run of an older target that was cancelled is re-run instead). An interrupted submission is
+cleared by re-running `submit-approval`.
 
 ## 5. Accepted CI evidence: push or manual dispatch (CI-CD-PR-ONLY-POLICY-1 phase B)
 
@@ -110,3 +111,18 @@ requests". Sprint record: `docs/sprints/ci-cd-pr-only-policy-1.md`.
    **push** run; dispatch evidence becomes usable only after that release is deployed, verified and GO-tagged.
    Removing the base push trigger stays a separate owner decision that may follow only then; this section does not
    remove it. States are reported separately: IMPLEMENTED IN BRANCH → MERGED → DEPLOYED → VERIFIED IN PRODUCTION.
+   Phase B was released and VERIFIED IN PRODUCTION on 2026-11-21 (dispatch run 44898680653 accepted by the
+   installed guard).
+7. **PR-only CI (phase B5, 2026-11-22, owner decisions 17–20).**
+   - The workflow `.github/workflows/foundation-evidence-gates.yml` has no `push` or `schedule` trigger. CI runs
+     automatically only for pull requests, and the release evidence is a `workflow_dispatch` run of the exact commit
+     (runbook §6g steps 0–1).
+   - The change is a CG-16 CI trigger removal (`docs/governance/go-tag-exceptions.md`): closed without a deploy and
+     with no GO tag of its own. It is never reported as deployed.
+   - The authority still lists `push workflow_dispatch` (owner choice B5-2), so the guard keeps accepting a historical
+     push run of an older commit. No new push runs are created.
+   - Rollback floor: the phase-B release (`ci-cd-pr-only-policy-1-phase-b-go`). An older target reinstalls a guard
+     that counts push runs only, and without push runs no later contract-3 release passes step 12. Recovery is
+     contract 2, or the CI trigger restoration: a separately owner-approved PR with green CI before the merge that
+     restores the workflow byte for byte to its pinned pre-removal SHA-256. `scripts/rollback-vps.sh` needs neither an
+     approval nor CI.

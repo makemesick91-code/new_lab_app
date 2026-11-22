@@ -349,9 +349,14 @@ it('keeps the Full Suite deferred, never deleted', function () {
     $raw = tfsWorkflowRaw();
     $on = tfsWorkflow()['on'];
 
-    // CICDCTRL-R004 / R012: the triggers and the job survive; only the timing moved.
-    expect($on)->toHaveKey('schedule')
+    // CICDCTRL-R004 / R012: the job and its manual fallback survive; only the timing moved.
+    // CI-CD-PR-ONLY-POLICY-1 phase B5 (CG-16 CI trigger removal, owner decisions 17–19) removed the
+    // automatic `schedule` and `push` triggers: no automatic run can reach the gate, and a deliberate
+    // dispatch with both authorising inputs remains the only path to the Full Suite.
+    expect($on)->not->toHaveKey('schedule')
+        ->and($on)->not->toHaveKey('push')
         ->and($on)->toHaveKey('workflow_dispatch')
+        ->and($on['workflow_dispatch']['inputs'])->toHaveKeys(['run_full_suite', 'full_suite_policy_override'])
         ->and(tfsWorkflow()['jobs'])->toHaveKey('full_suite_gate')
         ->and($raw)->toContain('Run full Pest suite')
         // NSF-9 / CICDCTRL-R003: suppressing the Full Suite must not disable CI.

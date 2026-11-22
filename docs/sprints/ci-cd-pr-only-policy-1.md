@@ -19,7 +19,7 @@
 | DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
 | RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
 | VERIFIED IN PRODUCTION | **yes** — 2026-11-21 (phase B4, decision 13): the installed guard answered `check-approval` GO with `PASS: required CI — workflow_dispatch run 44898680653` for `ca86734e80846744ea2cdecc6f4aa9c5acb172d2`; test approval `49b95a0323c6effb9477423d86057b13` withdrawn, then DENIED; no deploy. See "Phase B4 result" |
-| PHASE B5 (CI trigger removal) | **not started** — path P2 (decisions 17–19): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G open; implementation PR-B5 not authorised. B5 is never reported as deployed. See "Phase B5 governance contract" |
+| PHASE B5 (CI trigger removal) | **IMPLEMENTED IN BRANCH, not merged** — path P2 (decisions 17–20): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G merged as `35591fc5` (#682). Implementation PR-B5 (branch `ci/ci-cd-pr-only-policy-1-b5-trigger-removal`) is open; merging it and the post-merge dispatch need separate owner decisions. B5 is never reported as deployed. See "Phase B5 governance contract" and "Phase B5 implementation" |
 
 Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
 authorised deploy (decision 10); see "Release and GO tag (phase B)". Phase B4 added only the test approval's
@@ -323,6 +323,26 @@ service, timer or database change.
     - After PR-G merges, the owner decides on PR-B5 separately. The base freeze stays and PR #672 is not merged.
     - Not authorised: changing a GitHub Actions trigger, deploy, VPS or database changes, migration, GO tag, BK-2,
       or an actual rollback.
+20. 2026-11-22 — **PR-G merged; PR-B5 implementation AUTHORISED (limited).**
+    - PR-G #682 was squash-merged as `35591fc5d165c7fc2b46bcb29462403b3ed7ffed` (head `f0106ba7…`), and the tested
+      byte-for-byte rollback path is approved as part of it.
+    - Authorised, from base `35591fc5` in a new isolated worktree and branch:
+      - delete exactly the approved `push` and `schedule` blocks of `.github/workflows/foundation-evidence-gates.yml`;
+      - keep `pull_request` and `workflow_dispatch` with every input;
+      - the result must match the pinned post-removal SHA-256 byte for byte;
+      - update only the files of the approved B5 change list;
+      - fix the three assertions proven incompatible with the removal (`TemporaryFullSuiteScheduleGateTest`, two in
+        `DeployHardenDirectApprovalTest`), without deleting a security test or weakening an assertion;
+      - align rules 107 and 236 and the CI and deploy docs;
+      - keep CG-18 and `B5-RESIDUAL-1` (open);
+      - validate (DEVFLOW, scope audit, manifest check, CI and deploy tests, diff and SHA-256, unauthorised-change
+        check);
+      - commit with explicit paths, push, open PR-B5 without auto-merge, verify that its CI ran the critical tests,
+        and stop before the merge.
+    - After the merge, the owner chose one `workflow_dispatch` on the merge commit as the final evidence. It is not
+      authorised yet.
+    - Not authorised: merging PR-B5, a manual dispatch, deploy or VPS mutation, database or migration, GO tag,
+      rollback, BK-2, merging PR #672, any change outside the B5 change list. The base freeze stays.
 
 ## Phase B4 result (production verification, 2026-11-21)
 
@@ -505,6 +525,70 @@ That sprint is closed when:
 - the pin in `CiTriggerRemovalGovernanceTest` is replaced by its inverse.
 
 Until then, `B5-RESIDUAL-1` is reported as open.
+
+## Phase B5 implementation (PR-B5, 2026-11-22)
+
+Decision 20. Base `35591fc5`; branch `ci/ci-cd-pr-only-policy-1-b5-trigger-removal`. **State: IMPLEMENTED IN BRANCH,
+not merged, not deployed, no GO tag.**
+
+### Workflow
+
+| | SHA-256 of `.github/workflows/foundation-evidence-gates.yml` |
+|---|---|
+| base `35591fc5` (pinned pre-removal) | `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4` |
+| PR-B5 (pinned post-removal) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` — **match** |
+
+The diff deletes lines 7–9 (`push` on the base branch) and 55–56 (`schedule`, `0 2 * * 0`) and adds nothing. `on` is
+now exactly `pull_request` (base branch) and `workflow_dispatch` with `run_full_suite`, `full_suite_policy_override`,
+`runner_mode` and `critical_test_workers`. Unchanged:
+
+- jobs and steps;
+- the `if` conditions, including the now-dead `schedule` and `push` branches (`B5-RESIDUAL-1`);
+- the classifier and the critical filters;
+- permissions (none), secrets (`CI_DB_PASSWORD`) and concurrency;
+- runners.
+
+`CiTriggerRemovalGovernanceTest` classifies the change as `removal`.
+
+### Tests
+
+Before the change, a local simulation of the post-removal workflow (uncommitted, reverted) over the 26 tests that
+read the workflow plus `CicdEnterpriseGateCheckCommandTest` showed that exactly three assertions assert the removed
+triggers. The other tests passed in both states. All three are rewritten to assert the new trigger set, and none is
+weakened:
+
+| Test | Before | After |
+|---|---|---|
+| `TemporaryFullSuiteScheduleGateTest` "keeps the Full Suite deferred, never deleted" | `on` has `schedule` | `on` has no `schedule` or `push`, has `workflow_dispatch` with `run_full_suite` and `full_suite_policy_override`; the job and every other gate stay asserted |
+| `DeployHardenDirectApprovalTest` "declares the phase-B CI facts…" | `on` has `push` and `workflow_dispatch` | `on` has `pull_request` and `workflow_dispatch`, and no `push` or `schedule` |
+| `DeployHardenDirectApprovalTest` "declares the contract-3 facts… keeps the suite mandatory" | a `push:` block on the deploy branch | a `pull_request:` block on the authority's deploy branch, and no `push:` block |
+
+No test is deleted, no new test file is added, and the `B5-RESIDUAL-1` pin is unchanged.
+
+### Rules and docs
+
+- **Rule 107:** `push` and `schedule` are no longer triggers. "Deferred, never deleted" now covers the job and its
+  `workflow_dispatch` fallback. The CI trigger restoration is the only rollback, and the cancel section applies only
+  to push runs that still exist.
+- **Rule 236:**
+  - §4: a cancelled or failed release run is dispatched again;
+  - §5.6: phase B is VERIFIED IN PRODUCTION;
+  - new §5.7: PR-only CI, the authority unchanged (B5-2), the rollback floor and recovery.
+- **Domain index:** `.claude/rules/cicd-testing.md` AIR-CIT-15/18 and `.claude/rules/deploy-infra.md` (rule 236 line).
+- **`docs/runbooks/production-host-identity.md` §6g:** dispatch is the CI evidence of every release, and a merge
+  starts no run.
+- **`docs/governance/global-temporary-full-suite-policy.md` §6:** the `push` and `schedule` rows are historical and no
+  weekly run remains. The policy stays ACTIVE (CG-18), and the residual is named.
+
+### Not changed
+
+- No files under `app/`, `config/`, `scripts/`, `deploy/`, `database/`, `routes/`, `resources/`, `bootstrap/`,
+  `public/` or `.sprint/`.
+- The authority, guard, signer, runner and approval contracts.
+- Both manifests (`d1c4af5e`, `d3e8e039`) and every GO tag.
+
+The PR description and the CI run carry the validation evidence. The post-merge proof (no `push` run on the merge
+commit; one authorised dispatch; installed-guard replay) is recorded after the merge.
 
 ## Release and GO tag (phase B)
 

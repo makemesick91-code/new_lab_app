@@ -4,9 +4,6 @@ on:
   pull_request:
     branches:
       - feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-  push:
-    branches:
-      - feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
   workflow_dispatch:
     inputs:
       run_full_suite:
@@ -52,8 +49,6 @@ on:
           - '1'
           - '2'
           - '4'
-  schedule:
-    - cron: '0 2 * * 0'
 
 concurrency:
   group: foundation-evidence-${{ github.ref }}
