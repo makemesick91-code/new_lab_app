@@ -1,0 +1,30 @@
+# Sprint manifest — DMS-SPN4-READY-PILOT-1 (Fast-Track Ready Pilot, one branch: SPN4 Sunu). DRAFT FOR PR-C2.
+# Validate: php artisan sprint:manifest-check --manifest=.sprint/dms-spn4-ready-pilot-1.yml
+#
+# PARKED manifest: .sprint/current.yml stays DMS-RME-COMPREHENSIVE-CLOSURE-1 and is not changed. Run every sprint:*
+# command for this sprint with --manifest. Design lock: docs/sprints/dms-spn4-ready-pilot-1.md (recorded at G1/PR-C1).
+# Foundation-First categories: SECURITY FIX, DEPLOYMENT / OPERATIONS, BACKUP / RESTORE / MONITORING / CI-CD GATES,
+# FOUNDATION DOCUMENTATION. No feature work.
+# Gate 1 RME-LAB-FEE-APPROVAL-1 NO-GO: no LAB-fee path enabled or added (rules 245–249 stay NOT IMPLEMENTED).
+# Approving the charter is not an acceptance of the R6-01 risk; that is a separate owner decision (A6, G5).
+# The database stays TESTING until the owner's cutover decision (rule 221 §19, policy §0.8, G12).
+# No deploy without a separate owner release decision (G11); a runtime release needs its own manifest-switch decision.
+# Full Suite deferred (CG-18), never reported as passed. BK-2 skipped (rule 232).
+#
+# Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
+id: DMS-SPN4-READY-PILOT-1
+type: SECURITY_FIX
+module: Rme
+title: "Fast-Track Ready Pilot: one-branch readiness of SPN4 Sunu (P0 security, data transition, operations)"
+base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+runtime_change: false
+schema_change: false
+frontend_change: false
+security_impact: true
+branch_isolation_impact: true
+ledger_impact: false
+deploy_required: false
+browser_required: true
+test_profiles: [focused, security_regression]
+go_tag: dms-spn4-ready-pilot-1-go
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
