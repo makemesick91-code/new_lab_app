@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 71cc096b
+kb_verified_against: 72bf7721
 kb_updated: 2026-11-22
 ---
 
@@ -9,8 +9,8 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **Pilot: NO-GO.** No implementation is authorised by this document |
-| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`) |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: LOCAL PREPARATION ONLY** (§13). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | **NO-GO**. The seven Gate 1 blockers stay open, and LAB-fee stays disabled |
@@ -603,6 +603,334 @@ Local test runs without the environment file are recorded as WARN, not as a clea
 | G12 / G13 | NOT AUTHORIZED |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
 | BK-2 | SKIPPED |
+
+---
+
+## 13. G6 local preparation record (2026-11-22)
+
+**G6: LOCAL PREPARATION ONLY.** The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
+§12: G4 AUDIT COMPLETE, G5 Path B selected with formal closure pending OD-5. No Design Lock decision (DL-1 to DL-7)
+is changed here.
+
+The owner's directive of 2026-11-22 authorised local implementation and tests of R6-B1 and REM-2, and the
+preparation (design, proposal, diff) of REM-1, R6-B, R6-C and R6-D. Each change lives on its own branch, cut from the
+base at `72bf77219f27a5221948336351179e0ee12ac25a`. The owner authorised the publication of this record alone on
+2026-11-23. It authorises no other publication, no merge, no deploy and no production change; each needs its own
+owner decision (§13.8).
+
+**R6-B1 and REM-2 are implemented and tested locally only. Their code is not in the base, not released and not
+deployed. REM-1 needs a governance decision. R6-D is not authorised. G12 and G13 are not authorised. The pilot stays
+NO-GO.**
+
+**No production change of any kind happens without a separate, explicit owner authorisation.** Not authorised and
+not done:
+- any production role, privilege, ownership or schema change, or production migration;
+- a deploy, a rollback, a VPS configuration change or a restart;
+- KTP timer activation, a BK-2 run, a manifest switch, a GO tag, G12, G13 or LAB-fee;
+- a change to the consent page before the owner decides the CG-11 interpretation.
+
+### 13.1 R6-B1 — foreign-key introspection that does not depend on table ownership (implemented locally)
+
+**Root cause.** PostgreSQL filters the `information_schema` constraint views by the current role:
+- `constraint_column_usage` shows a row only when `pg_has_role(<owner of the referenced table>, 'USAGE')`;
+- `table_constraints` and `key_column_usage` need ownership or a privilege other than SELECT.
+
+After the rule 245 split the runtime owns nothing, so those views return nothing to it. The `pg_catalog` tables
+(`pg_constraint`, `pg_class`, `pg_namespace`, `pg_attribute`) are readable by every role and are not filtered.
+
+**Change.** One read-only helper, `App\Support\Database\ForeignKeyCatalog`, reads `pg_catalog`. It matches
+constraints by OID, never by name, and resolves both tables in the connection's current schema.
+- **Patient merge guard** (`PatientMergeOwnershipRepository`). It reads the catalog. A patient foreign key from
+  another schema is reported schema-qualified, so it can never match the registry and always blocks. A catalog that
+  shows no patient foreign key at all is itself reported, so the merge is refused (fail closed). The blocker code is
+  unchanged (`OWNERSHIP_REGISTRY_INCOMPLETE`).
+- **DQ1-CONSTRAINT-001** (`Dq1AuditService`). It reads the catalog. This also closes a second defect: the old query
+  had no schema filter, so a same-named table in another schema could satisfy it.
+- The SQLite paths are unchanged.
+
+**Evidence: disposable local PostgreSQL 16 cluster, synthetic schema from the migrations, no rows, separate LOGIN
+roles.** The owner role ran the migrations (186 tables, 177 sequences). The runtime role owns nothing and holds DML
+and sequence grants.
+
+| State | Login | Before (DQ1 / merge guard) | After (DQ1 / merge guard) |
+|---|---|---|---|
+| Clean schema | owner | PASS, exit 0 / none | PASS, exit 0 / none |
+| Clean schema | runtime | **FAIL, 6 keys "missing", exit 1** (false FAIL; every deploy stops) / none | PASS, exit 0 / none |
+| Unregistered patient FK added | owner | PASS / reported | PASS / reported |
+| Unregistered patient FK added | runtime | FAIL / **none: merge allowed (fail open)** | PASS / **reported: merge refused** |
+| Critical FK dropped | owner | FAIL, 1 missing, exit 1 | FAIL, 1 missing, exit 1 |
+| Critical FK dropped | runtime | FAIL, 6 missing | **FAIL, exactly the dropped key, exit 1** |
+
+**Negative privilege tests as the runtime login.** Each was refused with SQLSTATE `42501`: dropping a constraint,
+disabling triggers, `TRUNCATE`, `CREATE TABLE`, `SET ROLE` to the owner, and reading a table without a grant. A role
+with no table privilege still reads the same 33 patient foreign keys from `pg_catalog`, and 0 rows from
+`constraint_column_usage`.
+
+**Tests.** Two new suites:
+- `tests/Feature/PatientMerge/PatientMergeForeignKeyCatalogRoleSeparationTest.php` (7 tests);
+- `tests/Feature/DataQuality/Dq1ForeignKeyCatalogRoleSeparationTest.php` (5 tests).
+
+They are selected by the existing `PatientMerge` and `Dq1` tokens in both variants and declared in
+`critical_gate_mandatory_suites` (CG-19). The non-owner role is created inside the test transaction and rolled back
+with it. A test identity that is neither a superuser nor CREATEROLE gets a visible skip, never a pass.
+
+| Run | Result |
+|---|---|
+| New suites against the unchanged code | 7 failed: they detect both defects |
+| New suites, superuser identity (as in the active CI variant) | 12 passed |
+| New suites, CREATEROLE non-superuser identity | 12 passed |
+| New suites, plain identity | 5 passed, 7 skipped (visible) |
+| Regression (all PatientMerge and DataQuality suites and the other callers), PostgreSQL 16 | 205 tests, 0 failed, 0 skipped |
+| Same regression, SQLite | 205 tests, 0 failed, 15 skipped (PostgreSQL-only) |
+
+All local results are WARN, not a clean PASS, because the worktree has no environment file.
+
+### 13.2 REM-2 — the NIK never reaches the session or the application log (implemented locally)
+
+**REM-2a, session flash.** The audit followed the input names from forms, requests, controllers and scripts:
+
+| Input | Where | Handling |
+|---|---|---|
+| `ktp_number` | Master Data, new and edit | Added to `dontFlash` |
+| `new_patient.ktp_number` | Visit registration, new patient | Added to `dontFlash` |
+| `image_base64` | KTP scan upload (a picture of the card) | Added to `dontFlash` |
+| `owner_approval_reference`, `patient_request_reference` | Refused exactly when they look like a NIK | Added to `dontFlash`. The refund-request controller re-flashes input explicitly, which bypasses `dontFlash`, so it now excludes both itself |
+| `ktp_scan_token`, `ktp_ocr_*` | Scan reference and OCR flags; no NIK | Still flashed, so an uploaded scan stays attached |
+| OCR `lines` and `fields` | The OCR endpoint answers JSON (no flash). Other forms refill these generic names | Not added: that would break other forms. Residual, recorded |
+
+After a refusal the NIK field is empty (on edit it shows the stored value) and is typed again. Every other field is
+still flashed.
+
+**REM-2b, query values in the log.** Laravel's query exception message carries every binding verbatim. PostgreSQL's
+DETAIL line echoes the row (`Failing row contains (…)`, `Key (…)=(…)`). Several services log `$e->getMessage()`
+themselves.
+
+Every writing log channel now carries one tap (`App\Support\Logging\RedactDatabaseErrors`). A stack channel merges
+its members' processors, so it is covered too. The processor rewrites only records that carry a database error. It
+keeps the diagnosis:
+- exception class, SQLSTATE and driver code, connection name;
+- the first driver line, with identifiers kept and values redacted;
+- the SQL template with placeholders, and the binding count (never a value);
+- the file:line trace without arguments.
+
+It never catches, rethrows or changes an exception, so HTTP answers and rollbacks behave as before. The record keeps
+its level, so the ERROR count the monitoring reads does not change. If redaction itself fails, the record is replaced
+by a fixed line rather than written raw (fail closed).
+
+**Not changed:** historic logs; the consent page (pending the CG-11 decision); exception text that a failed queued job
+would store (the queue worker is inactive). These are residuals, recorded.
+
+**Tests.** Three new suites:
+- `tests/Feature/Patient/PatientKtpNeverFlashedTest.php` (7 tests);
+- `tests/Feature/Patient/PatientKtpDatabaseErrorLogRedactionTest.php` (10 tests; they read the log file Monolog
+  actually wrote);
+- `tests/Feature/RmeRefundRequest/RmeRefundRequestNikNeverFlashedTest.php` (3 tests).
+
+They are selected by the existing `PatientKtp` and `RmeRefundRequest` tokens and declared in
+`critical_gate_mandatory_suites`. The NIK values are synthetic.
+
+| Run | Result |
+|---|---|
+| New suites against the unchanged wiring | 17 failed; the 3 control tests pass both ways |
+| New suites, PostgreSQL 16 / SQLite | 20 passed / 19 passed and 1 skipped (PostgreSQL-only) |
+| Regression (Patient, visit registration, refund request, invoice correction, Observability, monitoring), PostgreSQL 16 | 1677 tests, 0 failed, 0 skipped |
+| Same regression, SQLite | 1 failed: `LegacyPatientStagedVerificationCancelTest` (500-row batch). It fails identically, twice, on a worktree without these changes, so it is pre-existing and SQLite-only (CG-21). It passes on PostgreSQL 16 |
+
+### 13.3 REM-1 — CG-19 critical selection (prepared, NOT applied)
+
+**Evidence.** No token of either critical variant matches these suites:
+- `BranchContextTest`;
+- `BranchContextFallbackTest`;
+- `FixClinicOpsWorkingBranchContextTest`;
+- `PatientDataCompletenessAuditTest`.
+
+`LabIntegrationTest` runs only in the selective `Lab` job, which runs only when lab paths change. That suite carries
+the branch onto lab case candidates.
+
+**Proposed change** (two lines of `.github/workflows/foundation-evidence-gates.yml`, plus `config/ci_runner.php`):
+- Insert `BranchContext|PatientDataCompleteness|LabIntegration` before the last token of BOTH critical filters, so
+  the filter keeps ending in `InventoryClinicCalendarBoundary`, as the parallelism contract requires.
+- Declare the five suites as mandatory.
+- Five files (53 tests) are newly selected; the other `BranchContext` suites already run through existing tokens.
+- No trigger, job, permission, secret, concurrency or classifier change.
+
+**Governance.** The change edits the critical-gate filter, so it is **not** one of the CG-16 CI trigger classes. It
+closes as a normal change released with this sprint: merge, deploy, verification and the sprint GO tag. It never
+closes on its own.
+
+`CiTriggerRemovalGovernanceTest` pins the workflow to two SHA-256 states and rejects every other edit. Before the
+change can merge, an owner-approved amendment of that test must:
+- pin two further states;
+- define the exact token insertion;
+- keep the B5 rollback available on the selected file;
+- reject removing the tokens again (CG-17).
+
+| State | SHA-256 |
+|---|---|
+| B5 pre-removal (pinned) | `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4` |
+| B5 post-removal, current (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
+| **REM-1 selected** (proposed) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
+| **REM-1 selected, B5 rollback target** (proposed) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
+
+With the proposed change applied, every CI suite passes except the 17 CTRG tests, which fail by design until the
+amendment lands. Pushing a workflow file needs the GitHub `workflow` scope, which is revoked. The owner pushes the
+branch, or re-grants the scope temporarily; the assistant never widens a token. The R6-B role-separation CI job will
+need a later amendment of the same kind.
+
+### 13.4 R6-B, R6-C and R6-D — design changes found during G6
+
+- **N-9 (new). A disaster restore would undo the split at the database level.**
+  - `scripts/restore_postgres.sh` makes the restored database owned by the application login role when no `--owner`
+    is given, and `scripts/restore-rehearsal.sh` does the same.
+  - A database owner can create schemas. On the local fixture, the runtime role then succeeded in `CREATE SCHEMA`;
+    with a superuser-owned database it is refused with `42501`.
+  - R6-B6 must keep the database owner at the superuser and fail closed when the owner role is missing. A dump
+    replays `OWNER TO` the owner role.
+- **Dumps keep working after the split.** The pre-deploy dump, the rollback dump and the backup timer run as the
+  application login role. On the fixture, a non-owner runtime with SELECT and sequence grants produced a full dump.
+  A superuser restore into a superuser-owned database left 0 objects owned by the runtime.
+- **The restore drill without CREATEDB.** `scripts/rollout-restore-drill.sh` runs `createdb`, `dropdb` and the
+  replay as the application login role. It moves to the superuser path that `restore-rehearsal.sh` already uses, and
+  it refuses to run when the runtime holds CREATEDB. The runtime never receives CREATEDB.
+- **Column grants for row-locked append-only tables.**
+  - `trx_inventory_movements` needs UPDATE on `inventory_batch_id` and `updated_at`.
+  - `trx_rme_amendments` needs UPDATE on its decision columns only. Its trigger already refuses changes to the
+    identity columns and to a decided row.
+  - On the fixture, the row locks and the allowed column updates succeeded, and any other column was refused with
+    `42501`.
+- **Monitoring.** The application needs only the privileges of `pg_read_all_stats` and `pg_read_all_settings`, not
+  all of `pg_monitor` (D-Q1). Resetting `pg_stat_statements` needs a separate guard (R6-B3), not a grant.
+- **BK-2.** The repository contains no BK-2 packaging script, so its database identity stays NOT VERIFIED. It is
+  checked on the host by reading only, without running BK-2, before R6-D.
+- **Synthetic pre-rehearsal (not the formal R6-C).** The fixture reproduced the production baseline: the runtime owns
+  the schema, 186 tables, 177 sequences and 3 trigger functions. Then:
+  - one provisioning transaction (70 ms on an empty schema) moved everything to the owner role;
+  - every negative test returned `42501`;
+  - both R6-B1 checks passed as the runtime;
+  - a migrator with an explicit `SET ROLE` created a table owned by the owner role, and without `SET ROLE` it was
+    refused;
+  - one rollback transaction (65 ms) restored the baseline.
+
+  These durations come from an empty schema. They are not a measurement of the production window; R6-C measures it.
+
+**R6-B2 to R6-B8 and their dependencies.** Each is design only and needs its own G6 authorisation.
+
+| PR | Content | Depends on |
+|---|---|---|
+| R6-B2 | Migration connection `pgsql_migrate` with an explicit `SET ROLE` to the owner role; class-declaration helper; runtime class inventory of every table (including the column grants above) | D-Q3; R6-B1 released |
+| R6-B3 | `foundation:db-privilege-apply` (dry run by default, `--print-sql`) and the read-only `foundation:db-privilege-check`, plus a new check that the database owner is the superuser and the runtime has no CREATE on the database (N-9); guard for the `pg_stat_statements` reset | R6-B2 |
+| R6-B4 | Deploy runner: host switch for the migrator; apply, then check; a failed check stops the deploy before smoke | R6-B3; a runtime release (manifest switch, §9) |
+| R6-B5 | Rule 248 layer 1 (trigger and model guards), including a guard trigger for `trx_inventory_movements` | D-Q4 |
+| R6-B6 | Restore tooling: N-9 (restored database owned by the superuser, fail closed without the owner role), N-5 (restore drill on the superuser path, refusing a runtime with CREATEDB) | D-Q6 (N-9 remedy), D-Q7 (drill path) |
+| R6-B7 | PostgreSQL 16 role-separation CI job, selected in both critical variants | A second `CiTriggerRemovalGovernanceTest` amendment of the REM-1 kind; the GitHub `workflow` scope (owner) |
+| R6-B8 | Provisioning runbook in the repository (placeholders only), rule index, sprint record | R6-B2 to R6-B7 |
+
+**R6-C plan (not run).**
+- R6-C1: provisioning with the released SQL on an isolated PostgreSQL 16 with synthetic data only. It covers
+  restore and integrity of the new layout, negative tests (`42501`), runtime smoke, migration through the migrator,
+  backup and restore, rollback, audit protection, branch isolation (the REM-1 suites), the N-9 and restore-drill
+  fixes, and monitoring. Durations are measured.
+- R6-C2: a full-data restore rehearsal, only on an explicit, specific owner order, with the owner's safeguards. No
+  copy of production data is made for it.
+- Entry to R6-D: every R6-C scenario PASS, the provisioning SQL checksum recorded, and measured durations replacing
+  estimates.
+
+**R6-D plan (not authorised).**
+- A maintenance window after a fresh, verified dump.
+- The BK-2 package identity verified on the host by reading only.
+- Provisioning in one transaction from the released SQL, checked against the R6-C checksum.
+- Verification: privilege check, runtime and migrator checks, DQ1 as the runtime, smoke, and the owner re-running the
+  R-1 and R6-A query packs.
+- An explicit privilege rollback in one transaction. A code rollback does not undo ownership or privilege changes, and
+  a code rollback to before R6-B1 is not allowed while the split is active.
+- Stop conditions at every step.
+- R6-01 is closed only by an owner decision after acceptance.
+
+Production role names, host details and the full runbook stay outside this public repository until the provisioning
+runbook lands with its implementation (R6 §8).
+
+### 13.5 Validation (local, per branch)
+
+| Check | R6-B1 | REM-2 |
+|---|---|---|
+| `devflow:base-ref-check` | PASS (remote base; stale local ref is informational) | PASS |
+| `sprint:manifest-check`, current and with the SPN4 manifest | GO / GO | GO / GO |
+| `sprint:scope-audit --strict` with the SPN4 manifest | GO | GO |
+| `foundation:devflow-check --strict` | GO | GO |
+| `foundation:shared-service-audit --strict` | GO | GO |
+| `deploy:forbidden-command-check` | PASS | PASS |
+| `git diff --check`, Pint | PASS | PASS |
+| `sprint:test-plan` with the SPN4 manifest | Escalates to the Full Suite: **DEFERRED** (CG-18), not run | Same |
+| CI | NOT RUN (nothing published) | NOT RUN |
+
+The SPN4 manifest declares `runtime_change: false`. R6-B1 and REM-2 are runtime changes, so releasing them needs the
+manifest-switch decision of §9 (OD-B3-1 precedent).
+
+### 13.6 Status after G6 local preparation
+
+| Item | Status |
+|---|---|
+| G4 | AUDIT COMPLETE |
+| G5 | PATH B SELECTED, OD-5 PENDING |
+| R6-01 | REMEDIATION OPEN |
+| G6 | LOCAL PREPARATION ONLY (R6-B1 and REM-2 implemented and tested locally, not released; REM-1 prepared, needs a governance decision; R6-B/C/D designs updated) |
+| R6-D | NOT AUTHORIZED |
+| D-2 | BLOCKED |
+| G12 / G13 | NOT AUTHORIZED |
+| Pilot | NO-GO |
+| Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
+| BK-2 | SKIPPED |
+
+**Open blockers.** G6 changes no blocker status; local evidence is not a release.
+
+| Blocker | Status | Path |
+|---|---|---|
+| OD-5 | PENDING OWNER CLASSIFICATION (§12.6) | Owner answers per register id |
+| R-2 / R6-01 | REMEDIATION OPEN | R6-B1 release, R6-B2 to R6-B8, R6-C, R6-D |
+| D-1 | NOT RUN | §3 |
+| D-2 | BLOCKED | OD-7, U disposition |
+| S-1 | PASS locally; critical-gate selection missing | REM-1 |
+| S-2 | FAIL | REM-2 (local only, not released); REM-3 (KTP prune timer, owner operation) |
+| C-1 | OPEN | REM-5 (D5 SPN4) |
+| A-1 | OPEN | OD-6, OD-8; D4 when a trusted Android device is needed |
+| AT-2 / AT-4 / AT-5 / AT-7 | BLOCKED / NOT MET / FAIL / NOT RUN | R6-D / REM-1 / S-2 / runtime release |
+| AO-1 to AO-7 | NOT RUN | Owner acceptance |
+| OD-6 to OD-10 | OPEN | Owner |
+
+### 13.7 Pull request plan
+
+Each pull request needs its own owner decision to publish and to merge.
+
+| PR | Content | Depends on |
+|---|---|---|
+| PR-G6-GOV | This record | — |
+| PR-R6-B1 | §13.1 | PR-G6-GOV |
+| PR-REM2 | §13.2 | PR-G6-GOV |
+| PR-REM1-GOV | The `CiTriggerRemovalGovernanceTest` amendment (the two proposed states) and the GO-tag register note | PR-G6-GOV (the SHA-256 values above) |
+| PR-REM1 | The workflow and `config/ci_runner.php` change; pushed by the owner (workflow scope) | PR-REM1-GOV |
+
+R6-B1, REM-2 and REM-1 are released together with the SPN4 manifest switch, in one deploy, under the sprint GO tag.
+R6-B1 must be released before R6-D.
+
+### 13.8 Owner decisions requested
+
+1. Publication of PR-G6-GOV, then of PR-R6-B1 and PR-REM2 (each separately; merge separately).
+2. REM-1 governance:
+   - approve the two additional pinned states and the CTRG amendment;
+   - choose how the workflow branch is pushed (by the owner, or a temporary re-grant of the `workflow` scope);
+   - confirm that REM-1 closes with the SPN4 release, not as a CG-16 class.
+3. Manifest switch for the runtime release (§9).
+4. OD-5 classification (§12.6), unchanged and still pending.
+5. The CG-11 interpretation of the consent page, which REM-2 deliberately left unchanged.
+6. The R6-B design questions:
+   - D-Q1: the runtime's monitoring membership (recommended: only the privileges of `pg_read_all_stats` and
+     `pg_read_all_settings`, instead of `pg_monitor`);
+   - D-Q2: whether to create the read-only role now (recommended: later, when it has a consumer);
+   - D-Q3: how a migration declares a table's runtime class;
+   - D-Q4: rule 248 layer 1 before R6-D (recommended: yes);
+   - D-Q5: revoking TEMP from PUBLIC (recommended: after the pilot);
+   - D-Q6: the N-9 remedy (owner of a restored database);
+   - D-Q7: the restore-drill operator and path.
 
 ---
 
