@@ -68,13 +68,17 @@ CI, not only written down.** `full_suite_gate` additionally requires
 
 - `pull_request` → **never fires** (unchanged). A fix sprint's own PR is
   structurally `FULL_SUITE_EXECUTION_COUNT = 0`.
-- `push` to the base branch → **DEFERRED** while ACTIVE, even though a
-  squash-merge is such a push. Reason `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`.
-- `schedule` (weekly) → **DEFERRED** while ACTIVE. Same reason code. The run
-  still happens and every other gate still executes.
+- `push` to the base branch → **no longer a trigger** since CI-CD-PR-ONLY-POLICY-1
+  phase B5 (CG-16 CI trigger removal). Before B5 it was DEFERRED while ACTIVE,
+  even though a squash-merge is such a push, with reason
+  `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. The resolver still defers the event if
+  it ever reappears (fail closed).
+- `schedule` (weekly) → **no longer a trigger** since phase B5. Before B5 it was
+  DEFERRED while ACTIVE with the same reason code, and the run still executed
+  every other gate.
 - `workflow_dispatch` + `run_full_suite=true` → **DEFERRED** unless
   `full_suite_policy_override=true` is also ticked. Both together are the
-  authorised consolidated-closure path.
+  authorised consolidated-closure path, and since phase B5 the only one.
 
 Canonical state lives in exactly one file, `.github/ci-policy/full-suite-policy.json`,
 read by both `scripts/ci/resolve-full-suite-policy.sh` and PHP governance — so CI
@@ -84,12 +88,19 @@ authorised. Restoring the automatic cadence means flipping that status to
 `RETIRED` — a deliberate governance act reserved for the consolidated closure,
 **never** a side effect of another sprint.
 
-The gate is **deferred, never deleted**: both triggers and the job remain, and
-suppressing the Full Suite must never disable any other CI gate.
+The gate is **deferred, never deleted**: the job and its `workflow_dispatch`
+fallback remain, and suppressing the Full Suite must never disable any other CI
+gate. The automatic `push` and `schedule` triggers were removed by
+CI-CD-PR-ONLY-POLICY-1 phase B5 under the CG-16 CI trigger removal class (owner
+decisions 17–20, `docs/governance/go-tag-exceptions.md`). Their only permitted
+rollback is the byte-for-byte CI trigger restoration that the same register
+defines. Any other trigger change is outside that class.
 
 `.sprint/current.yml` matches no classifier pattern → `unknown_high_risk`, so
-every real sprint (which updates its manifest) enables the post-merge Full Suite
-step. Only a genuinely docs-only change set resolves to `docs_only`.
+every real sprint (which updates its manifest) runs the critical tests and marks
+the Full Suite as required, which still means deferred unless both dispatch
+inputs authorise it. Only a genuinely docs-only change set resolves to
+`docs_only`.
 
 Always resolve the profile with the real tool before pushing:
 `scripts/ci/resolve-gates.sh --base origin/<base> --head HEAD`.
@@ -99,6 +110,9 @@ edit CI merely to hide a failure or force a skip, or manufacture a fake
 docs-only change to obtain a weaker profile.
 
 ## Cancelling a post-merge run — permitted only under proof
+
+Since phase B5 a merge starts no run. This section still governs any push-to-base
+run that exists, for example after a CI trigger restoration.
 
 An official `gh run cancel` of the push-to-base run is permitted **only** when
 all hold: the pre-merge candidate was green on an identical tree; the cancel

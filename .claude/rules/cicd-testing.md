@@ -99,10 +99,11 @@ code, then the canonical rule, and report the drift.
 
 - **AIR-CIT-15** The policy state lives only in `.github/ci-policy/full-suite-policy.json`, read by
   `scripts/ci/resolve-full-suite-policy.sh` and `App\Support\Cicd\CiRuntimeControlScanner`; resolution fails closed to
-  ACTIVE. `full_suite_gate` additionally requires `needs.classify.outputs.full_suite_authorized == 'true'`; `schedule`
-  and `push` to base are deferred, and only `workflow_dispatch` with both `run_full_suite=true` and
-  `full_suite_policy_override=true` authorizes. Never delete the job or its triggers. Source: `107-…`, archive
-  `CI-TEMP-FULL-SUITE-SCHEDULE-GATE`.
+  ACTIVE. `full_suite_gate` additionally requires `needs.classify.outputs.full_suite_authorized == 'true'`; only
+  `workflow_dispatch` with both `run_full_suite=true` and `full_suite_policy_override=true` authorizes. Since
+  CI-CD-PR-ONLY-POLICY-1 phase B5 the workflow has no `push` or `schedule` trigger (CG-16 CI trigger removal; the only
+  rollback is the byte-for-byte CI trigger restoration). Never delete the job or its dispatch fallback, and change no
+  other trigger. Source: `107-…`, `236-…` §5.7, archive `CI-TEMP-FULL-SUITE-SCHEDULE-GATE`.
 - **AIR-CIT-16** One explicit authorization is one attempt, consumed at trigger. FAIL, TIMEOUT, CANCELLED, PARTIAL,
   runner loss, wrong SHA and misroute are terminal: no automatic rerun. The tested tree is frozen from trigger and must
   equal the merged, deployed and GO-tag tree; run evidence goes in the annotated tag and the CI run, never a post-PASS
@@ -111,7 +112,8 @@ code, then the canonical rule, and report the drift.
   authorized automatic Full Suite). Never dispatch twice on one ref: the workflow's `concurrency:
   foundation-evidence-${{ github.ref }}` has `cancel-in-progress: true`. Source: `126-…`, archive
   `AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2`.
-- **AIR-CIT-18** Cancel a post-merge push run only when the candidate was green on an identical tree, the cancel lands
+- **AIR-CIT-18** (Since phase B5 a merge starts no run; this applies to any push run that still exists.) Cancel a
+  post-merge push run only when the candidate was green on an identical tree, the cancel lands
   before the Full Suite job starts tests, and the `startedAt == completedAt` proof is recorded; never cancel a
   scheduled run or one already executing. Verify execution from the step:
   `gh run view <id> --json jobs --jq '.jobs[]|select(.name=="NSF-R011 Full Suite Gate")|.steps[]|select(.name|test("full Pest suite"))|.conclusion'`.

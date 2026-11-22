@@ -508,21 +508,27 @@ was re-provisioned with `submit-approval` (rule 236 §3). No approval branch, co
    `verify <deploy-id>` passes and the GO tag exists, the first release whose newest accepted run is a dispatch is
    proven read-only with `check-approval` (step 4): `PASS: required CI — workflow_dispatch run <id>` and
    `RELEASE APPROVAL CHECK: GO`. Record that run id in the sprint doc as the production verification of §5.
+   Done on 2026-11-21: dispatch run 44898680653 (CI-CD-PR-ONLY-POLICY-1 phase B4).
 
-1. **Release commit:** implementation PR merged; its **post-merge push CI** green on the exact SHA (the host checks it
-   too). If a later push cancelled that run (`cancel-in-progress`), re-run it for the SHA first.
+   **PR-only CI (rule 236 §5.7, phase B5):** the workflow has no `push` or `schedule` trigger, so a merge to the base
+   branch starts no run. The release's CI evidence is the manual dispatch below. A push run exists only for commits
+   from before phase B5, or after a CI trigger restoration (`docs/governance/go-tag-exceptions.md`).
 
-   **Or a manual dispatch run (rule 236 §5)** — only on a host whose installed authority lists `workflow_dispatch` in
-   `DMS_PRODUCTION_CI_EVENTS` (the release carrying rule 236 §5 deployed and verified; until then the host accepts
-   push runs only). While the base branch tip **is** the release SHA, dispatch the workflow on the base branch with
+1. **Release commit:** implementation PR merged, with its pull request CI green. The host needs CI of the exact merge
+   commit, which since phase B5 only a manual dispatch provides.
+
+   **The manual dispatch run (rule 236 §5)** — on a host whose installed authority lists `workflow_dispatch` in
+   `DMS_PRODUCTION_CI_EVENTS` (true since the phase-B release, deployed and verified on 2026-11-21). While the base
+   branch tip **is** the release SHA, dispatch the workflow on the base branch with
    its default inputs: `gh workflow run foundation-evidence-gates.yml --ref <base branch>`. Never set
    `critical_test_workers` (a CI-PERF-04 evaluation run is refused, rule 212 §3); `runner_mode` and the Full Suite
    inputs are not needed. Then confirm the run is for the release SHA:
    `gh run list --workflow foundation-evidence-gates.yml --branch <base branch> --event workflow_dispatch --limit 1 --json databaseId,headSha,status,conclusion`
    → `headSha` equals the SHA and the run ends `completed`/`success`. A dispatch after the branch moved on runs the
-   newer tip and never proves the release SHA. A dispatch on the base branch shares the push run's concurrency group,
-   so it cancels a push run still in progress (and the reverse): the newest run of either kind is the one the host
-   checks, so let it finish green. The dispatch is CI evidence only, never an approval (step 2 stays mandatory).
+   newer tip and never proves the release SHA. Two dispatches on the base branch share one concurrency group, so a
+   second dispatch cancels the first (and so would a push run after a restoration): the newest run is the one the
+   host checks, so dispatch once and let it finish green. The dispatch is CI evidence only, never an approval (step 2
+   stays mandatory).
 2. **Owner approval and signature (owner only, own terminal):** the owner states the written approval of the full SHA
    (CG-22, recorded in the sprint doc), then runs
    `bash scripts/release-approval-sign.sh --release-id <id> --target-sha <SHA> --go-tag <go_tag> [--hours 48]`

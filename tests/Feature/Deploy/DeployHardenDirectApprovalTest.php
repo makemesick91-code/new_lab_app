@@ -1412,10 +1412,14 @@ it('declares the phase-B CI facts in the production authority, pinned to real wo
         ->and(config('deployment_entrypoint.approval_guard_expectations.pinned_authority_values.DMS_PRODUCTION_CI_EVENTS'))->toBe(DRA_EVENTS)
         ->and(config('deployment_entrypoint.approval_guard_expectations.pinned_authority_values.DMS_PRODUCTION_CI_EVALUATION_STEP'))->toBe(DRA_EVALUATION_STEP);
 
-    // Both run kinds the guard accepts exist as triggers, and the base push stays
-    // until a later, separately approved change removes it (rule 236 §2.3).
+    // CI-CD-PR-ONLY-POLICY-1 phase B5 (CG-16 CI trigger removal, owner decisions 17–19): CI runs
+    // automatically only for pull requests. The release evidence is a manual dispatch of the exact
+    // commit; the authority still lists `push` (B5-2), so the guard keeps accepting historical push
+    // runs, but the workflow no longer creates them (rule 236 §5).
     $workflow = Yaml::parseFile(base_path(DRA_WORKFLOW));
-    expect($workflow['on'])->toHaveKeys(['push', 'workflow_dispatch']);
+    expect($workflow['on'])->toHaveKeys(['pull_request', 'workflow_dispatch'])
+        ->and($workflow['on'])->not->toHaveKey('push')
+        ->and($workflow['on'])->not->toHaveKey('schedule');
 
     // In both critical-gate variants the evaluation step exists, runs ONLY on a
     // CI-PERF-04 evaluation, and the required test step exists beside it.
@@ -1779,7 +1783,11 @@ it('declares the contract-3 facts in the production authority and keeps the suit
     foreach (explode(';', DRA_JOBS) as $name) {
         expect($workflow)->toContain("    name: {$name}\n");
     }
-    expect($workflow)->toMatch('/^  push:\n    branches:\n      - '.preg_quote(trim((string) preg_replace('/^.*DMS_PRODUCTION_DEPLOY_BRANCH=(\S+).*$/s', '$1', $authority)), '/').'$/m');
+    // The workflow's pull_request trigger targets the deploy branch the authority names; since phase B5
+    // there is no push trigger, so the base branch's runs are the manual dispatches the guard checks.
+    $deployBranch = preg_quote(trim((string) preg_replace('/^.*DMS_PRODUCTION_DEPLOY_BRANCH=(\S+).*$/s', '$1', $authority)), '/');
+    expect($workflow)->toMatch('/^  pull_request:\n    branches:\n      - '.$deployBranch.'$/m')
+        ->and($workflow)->not->toMatch('/^  push:$/m');
 });
 
 it('requires exactly the CI jobs that run on every push of the base branch', function () {
