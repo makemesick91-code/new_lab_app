@@ -184,6 +184,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // Rule 244 §5.3 (owner decision 2026-11-17) — the no-phone exception note
         // is restricted the same way, on both registration forms (Master Data at
         // the top level, Kunjungan → Pasien Baru under `new_patient`).
+        //
+        // DMS-SPN4-READY-PILOT-1 G6 / REM-2a (CG-11) — the KTP/NIK never reaches
+        // the session either. Audited input names: `ktp_number` (Master Data
+        // create and edit), `new_patient.ktp_number` (Kunjungan → Pasien Baru),
+        // `image_base64` (the KTP scan upload, a picture of the card), and the two
+        // reference fields that are refused precisely when they look like a NIK
+        // (`owner_approval_reference`, `patient_request_reference`). After a
+        // refusal the NIK field is empty (or shows the stored value on edit) and
+        // is typed again; the scan token and the OCR flags are still flashed, so
+        // an uploaded scan stays attached.
         $exceptions->dontFlash([
             'consenter_signature',
             'doctor_signature',
@@ -193,6 +203,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'paper_card_reason_note',
             'no_phone_reason_note',
             'new_patient.no_phone_reason_note',
+            'ktp_number',
+            'new_patient.ktp_number',
+            'image_base64',
+            'owner_approval_reference',
+            'patient_request_reference',
         ]);
 
         // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — every rendered exception passes

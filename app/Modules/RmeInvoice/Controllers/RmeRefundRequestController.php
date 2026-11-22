@@ -31,6 +31,9 @@ class RmeRefundRequestController extends Controller
 {
     use AuthorizesRequests;
 
+    /** Inputs a refusal never flashes back (same names as the handler's dontFlash). */
+    private const NEVER_FLASH = ['owner_approval_reference', 'patient_request_reference'];
+
     public function __construct(
         private readonly RmeRefundRequestService $refunds,
         private readonly RmeRefundSettlementService $settlements,
@@ -153,7 +156,12 @@ class RmeRefundRequestController extends Controller
         } catch (RmeRefundRequestRefused $refused) {
             abort_if($refused->notFound, 404);
 
-            return back()->withInput()->withErrors([$refused->field => $refused->displayMessage()]);
+            // REM-2a (CG-11): an explicit withInput() bypasses the handler's
+            // dontFlash, and both references are refused exactly when they look
+            // like a NIK, so they are never flashed back.
+            return back()
+                ->withInput(request()->except(self::NEVER_FLASH))
+                ->withErrors([$refused->field => $refused->displayMessage()]);
         }
     }
 }

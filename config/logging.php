@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Logging\RedactDatabaseErrors;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -60,6 +61,8 @@ return [
 
         'single' => [
             'driver' => 'single',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
@@ -67,6 +70,8 @@ return [
 
         'daily' => [
             'driver' => 'daily',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
@@ -75,6 +80,8 @@ return [
 
         'slack' => [
             'driver' => 'slack',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'url' => env('LOG_SLACK_WEBHOOK_URL'),
             'username' => env('LOG_SLACK_USERNAME', 'Laravel Log'),
             'emoji' => env('LOG_SLACK_EMOJI', ':boom:'),
@@ -84,6 +91,8 @@ return [
 
         'papertrail' => [
             'driver' => 'monolog',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'level' => env('LOG_LEVEL', 'debug'),
             'handler' => env('LOG_PAPERTRAIL_HANDLER', SyslogUdpHandler::class),
             'handler_with' => [
@@ -96,6 +105,8 @@ return [
 
         'stderr' => [
             'driver' => 'monolog',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'level' => env('LOG_LEVEL', 'debug'),
             'handler' => StreamHandler::class,
             'formatter' => env('LOG_STDERR_FORMATTER'),
@@ -107,6 +118,8 @@ return [
 
         'syslog' => [
             'driver' => 'syslog',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'level' => env('LOG_LEVEL', 'debug'),
             'facility' => env('LOG_SYSLOG_FACILITY', LOG_USER),
             'replace_placeholders' => true,
@@ -114,6 +127,8 @@ return [
 
         'errorlog' => [
             'driver' => 'errorlog',
+            // REM-2b (CG-11): database errors are logged without their query values.
+            'tap' => [RedactDatabaseErrors::class],
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
         ],
