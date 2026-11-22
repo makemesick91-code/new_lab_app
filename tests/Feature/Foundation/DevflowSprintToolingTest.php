@@ -10,6 +10,7 @@ use App\Support\Devflow\SprintManifest;
 use App\Support\Devflow\SprintManifestValidator;
 use App\Support\Devflow\SprintScopeAuditor;
 use App\Support\Devflow\SprintTestPlanner;
+use Symfony\Component\Process\Process;
 
 /*
  * DEVFLOW-1 — safe sprint acceleration tooling.
@@ -226,6 +227,50 @@ it('exits success for a valid manifest via sprint:manifest-check', function () {
 it('exits failure for a NO-GO release-check when CI is asserted failed', function () {
     $this->artisan('sprint:release-check', ['--manifest' => base_path('.sprint/current.yml'), '--ci-passed' => 'false'])
         ->assertExitCode(1);
+});
+
+// ------------------------------------------- Sprint manifests and the GO tag ---
+
+/*
+ * CI-CD-PR-ONLY-POLICY-1, owner decision OD-B3-1 (2026-11-21). `.sprint/current.yml` names the
+ * sprint a release belongs to. An open sprint whose manifest steps aside for another sprint's
+ * release is parked verbatim at `.sprint/<id>.yml` until the owner restores it, so every
+ * manifest in `.sprint/` must stay restorable. The release guard (rule 229, rule 236), the
+ * signing helper and scripts/sprint-release.sh never parse YAML: they bind the GO tag with
+ * the pipeline below. A quoted value or an inline comment would make them bind a string the
+ * manifest does not declare, and two manifests declaring one tag would make it ambiguous.
+ */
+it('keeps every sprint manifest valid, with a unique go_tag the release guard reads exactly', function () {
+    $example = realpath(base_path((string) config('devflow.files.manifest_example')));
+    $paths = array_values(array_filter(
+        glob(base_path('.sprint/*.yml')) ?: [],
+        fn (string $path): bool => realpath($path) !== $example,
+    ));
+    expect($paths)->toContain(base_path('.sprint/current.yml'));
+
+    $tags = [];
+    foreach ($paths as $path) {
+        $name = basename($path);
+        $manifest = SprintManifest::fromFile($path);
+        $result = (new SprintManifestValidator)->validate($manifest);
+        expect($result['valid'])->toBeTrue("{$name}: ".implode('; ', $result['errors']));
+
+        $declared = (string) $manifest->goTag();
+        expect(preg_match((string) config('devflow.manifest.go_tag_regex'), $declared))
+            ->toBe(1, "{$name}: go_tag '{$declared}' does not follow the -go convention");
+
+        $guard = new Process(
+            ['bash', '-c', 'sed -n "s/^go_tag:[[:space:]]*//p" "$1" | tail -n 1 | tr -d "[:space:]"', 'guard', $path],
+            base_path(),
+        );
+        $guard->mustRun();
+        expect($guard->getOutput())
+            ->toBe($declared, "{$name}: the release guard would bind '{$guard->getOutput()}', the manifest declares '{$declared}'");
+
+        $tags[$name] = $declared;
+    }
+
+    expect(array_unique($tags))->toBe($tags, 'two sprint manifests declare the same go_tag');
 });
 
 it('exits success for foundation:devflow-check --strict', function () {

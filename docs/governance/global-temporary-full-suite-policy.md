@@ -168,6 +168,12 @@ exactly three events. This is verified behaviour, not an assumption:
 > handling; the historical text is kept because the `gh run cancel` precedent it
 > describes remains valid evidence for runs that predate the gate.
 
+> **Since CI-CD-PR-ONLY-POLICY-1 phase B5 (2026-11-22)** the workflow has no `push` or `schedule` trigger. This is a
+> CG-16 CI trigger removal (`docs/governance/go-tag-exceptions.md`; owner decisions 17–20 in
+> `docs/sprints/ci-cd-pr-only-policy-1.md`). The `push` and `schedule` rows below describe the deferral that applied
+> while those triggers existed; it applies again if a CI trigger restoration brings them back. The resolver still
+> defers both events and fails closed. The policy status stays ACTIVE.
+
 | Event | Fired? (before) | Now (policy ACTIVE) |
 |---|---|---|
 | `pull_request` | **No** — not in the job's `if` condition | Unchanged. Structurally guaranteed zero; a fix sprint's own PR validation is always `FULL_SUITE_EXECUTION_COUNT = 0`. |
@@ -180,7 +186,8 @@ classifier pattern and therefore resolves to `unknown_high_risk`. Since every
 real sprint updates its manifest, **every real fix merge resolves to
 `run_critical_tests=true`** — so the post-merge Full Suite *step* is enabled, not
 skipped. Only a genuinely docs-only change set resolves to `docs_only` and skips
-the step.
+the step. Since phase B5 a merge starts no run; the same classification applies
+to the pull request and to a manual dispatch of the merge commit.
 
 ### 6.0 Governance-only changes deliberately do not touch the manifest
 
@@ -258,6 +265,15 @@ Treat its result as an informational baseline signal only.
 > A scheduled run is therefore no longer an "informational baseline signal" for
 > the Full Suite — the suite does not run. Every other gate in that run still
 > does, and the deferral reason is published by the always-run `classify` job.
+
+> **Superseded in part by CI-CD-PR-ONLY-POLICY-1 phase B5 (2026-11-22).** The
+> `push` and `schedule` triggers are no longer retained; the job and its
+> `workflow_dispatch` fallback are, so `full_suite_fallback_triggers` still holds
+> through `workflow_dispatch` and `foundation:ci-runtime-control-check` stays GO.
+> There is no weekly scheduled run any more. The texts that still name the removed
+> triggers (CICDCTRL-R004/R012 and the `schedule` marker in
+> `config/ci_runtime_control.php`) are the open residual `B5-RESIDUAL-1`, recorded
+> in `docs/sprints/ci-cd-pr-only-policy-1.md`.
 
 ---
 

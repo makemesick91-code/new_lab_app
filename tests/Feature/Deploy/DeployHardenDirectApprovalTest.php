@@ -1,6 +1,7 @@
 <?php
 
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 
 uses()->group('Deploy', 'Security', 'ReleaseSafety');
 
@@ -38,6 +39,9 @@ const DRA_JOBS = 'NSF-R011 Critical Test Gate;NSF-R012 Quality Gate;CICD-CTRL Ga
 const DRA_RUN_ID = 1001;
 const DRA_REQUIRED_STEP = 'NSF-R011 Critical Test Gate:Run critical regression tests';
 const DRA_FORBIDDEN_STEP = 'NSF-R011 Critical Test Gate:Note skipped critical regression tests (docs-only change)';
+/** CI-CD-PR-ONLY-POLICY-1 phase B: the run events production accepts, and the step only an evaluation run takes. */
+const DRA_EVENTS = 'push workflow_dispatch';
+const DRA_EVALUATION_STEP = 'NSF-R011 Critical Test Gate:Start resource sampler (CI-PERF-04 evaluation)';
 /** When the stubbed GitHub rate limit resets (any fixed instant). */
 const DRA_RATE_RESET = 1795000000;
 
@@ -369,13 +373,37 @@ function draVerify(array $s, array $overrides = []): array
 
 function draCiVerify(array $s, array $overrides = []): array
 {
+    // `events` / `evaluation_step` empty: an authority that predates
+    // CI-CD-PR-ONLY-POLICY-1 phase B (push runs only, no evaluation step).
     $a = array_merge(['repo' => DRA_REPO, 'sha' => $s['sha'], 'branch' => $s['branch'], 'workflow' => DRA_WORKFLOW, 'jobs' => DRA_JOBS,
-        'required_step' => DRA_REQUIRED_STEP, 'forbidden_step' => DRA_FORBIDDEN_STEP, 'reserve' => null], $overrides);
+        'required_step' => DRA_REQUIRED_STEP, 'forbidden_step' => DRA_FORBIDDEN_STEP, 'events' => '', 'evaluation_step' => '', 'reserve' => null], $overrides);
     // The reserve is set the way the runner's check-approval sets it: after sourcing.
     $reserve = $a['reserve'] === null ? '' : 'DMS_RELEASE_APPROVAL_CI_RESERVE='.escapeshellarg((string) $a['reserve']).'; ';
 
     return draBash($s, 'set -euo pipefail; source "$1"; shift; '.$reserve.'rc=0; dms_release_approval_ci_verify "$@" || rc=$?; echo "ci_run=${DMS_RELEASE_APPROVAL_CI_RUN_ID:-}"; exit "$rc"',
-        [base_path('scripts/lib/release-approval.sh'), $a['repo'], $a['sha'], $a['branch'], $a['workflow'], $a['jobs'], $a['required_step'], $a['forbidden_step']]);
+        [base_path('scripts/lib/release-approval.sh'), $a['repo'], $a['sha'], $a['branch'], $a['workflow'], $a['jobs'], $a['required_step'], $a['forbidden_step'],
+            $a['events'], $a['evaluation_step']]);
+}
+
+/** The required-CI gate as production declares it since phase B: push or workflow_dispatch runs, evaluation step set. */
+function draDispatchCiVerify(array $s, array $overrides = []): array
+{
+    return draCiVerify($s, array_merge(['events' => DRA_EVENTS, 'evaluation_step' => DRA_EVALUATION_STEP], $overrides));
+}
+
+/** A green manual dispatch run of the workflow on the base branch at the release commit. */
+function draDispatchRun(array $s, array $overrides = []): array
+{
+    return draRun($s, array_merge(['event' => 'workflow_dispatch'], $overrides));
+}
+
+/** The jobs of a green sequential dispatch run: the evaluation sampler and the docs-only note were skipped. */
+function draDispatchJobs(array $s, ?string $sampler = 'skipped', string $tests = 'success'): array
+{
+    return draCriticalSteps($s, draSteps(array_merge(
+        $sampler === 'absent' ? [] : ['Start resource sampler (CI-PERF-04 evaluation)' => $sampler],
+        ['Run critical regression tests' => $tests, 'Note skipped critical regression tests (docs-only change)' => 'skipped'],
+    )));
 }
 
 /** @return array{0: int, 1: string} a shell snippet run from the repository root */
@@ -1154,6 +1182,268 @@ it('denies a contract-3 deploy whose commit has no green CI', function () {
     draDenied(draVerify($s), 'required CI: the latest push run 1001');
 });
 
+// ─── 4b. Manual dispatch evidence (CI-CD-PR-ONLY-POLICY-1 phase B) ─────────
+//
+// The authority may also accept a `workflow_dispatch` run of the same workflow
+// on the base branch. GitHub runs a dispatch on the tip of the ref it names, so
+// such a run proves exactly the commit the branch held when it was dispatched:
+// it counts only when that commit IS the release commit. Everything a push run
+// must prove, a dispatch run must prove too, and it must not be a CI-PERF-04
+// evaluation (rule 212 §3).
+
+it('accepts a green push run of the exact commit where the authority accepts push and workflow_dispatch', function () {
+    draRequiresTooling();
+    $s = draSandbox();
+    draCi($s, [draRun($s)]);
+
+    $r = draDispatchCiVerify($s);
+
+    expect($r['exit'])->toBe(0, $r['output'])
+        ->and($r['output'])->toContain('PASS: required CI — push run 1001 of '.DRA_WORKFLOW." on {$s['sha']}")
+        ->and($r['output'])->toContain('ci_run=1001')
+        // Two accepted events: GitHub filters commit and branch, the evaluator every event.
+        ->and(draRequests($s))->toContain('https://api.github.com/repos/'.DRA_REPO."/actions/runs?head_sha={$s['sha']}&branch={$s['branch']}&per_page=50")
+        ->and(draRequests($s))->not->toContain('event=')
+        ->and(draRequests($s))->toContain('https://api.github.com/repos/'.DRA_REPO.'/actions/runs/1001/jobs?filter=latest&per_page=100')
+        // Still exactly two counted requests: the budget is unchanged.
+        ->and($r['output'])->toContain('(this check needs 2, reserve 0;');
+});
+
+it('accepts a green manual dispatch run of the exact commit on the base branch', function (?string $sampler) {
+    draRequiresTooling();
+    $s = draSandbox();
+    draCi($s, [draDispatchRun($s)], draDispatchJobs($s, $sampler));
+
+    $r = draDispatchCiVerify($s);
+
+    expect($r['exit'])->toBe(0, $r['output'])
+        ->and($r['output'])->toContain('PASS: required CI — workflow_dispatch run 1001 of '.DRA_WORKFLOW." on {$s['sha']} (".DRA_REPO.", {$s['branch']}) completed with success")
+        ->and($r['output'])->toContain("'Run critical regression tests' ran")
+        ->and($r['output'])->toContain('ci_run=1001');
+})->with([
+    'the evaluation sampler skipped (sequential run)' => ['skipped'],
+    'no evaluation sampler step at all' => ['absent'],
+]);
+
+it('accepts only one kind of run where the authority names one event', function (string $events, string $event, bool $accepted, string $query) {
+    draRequiresTooling();
+    $s = draSandbox();
+    draCi($s, [draRun($s, ['event' => $event])], draDispatchJobs($s));
+
+    $r = draDispatchCiVerify($s, ['events' => $events]);
+
+    expect($r['exit'])->toBe($accepted ? 0 : 77, $r['output'])
+        ->and(draRequests($s))->toContain("/actions/runs?head_sha={$s['sha']}&{$query}branch={$s['branch']}&per_page=50");
+    if (! $accepted) {
+        expect($r['output'])->toContain("required CI: no {$events} run of");
+    }
+})->with([
+    'push only: a push run' => ['push', 'push', true, 'event=push&'],
+    'push only: a dispatch run is not evidence' => ['push', 'workflow_dispatch', false, 'event=push&'],
+    'dispatch only: a dispatch run' => ['workflow_dispatch', 'workflow_dispatch', true, 'event=workflow_dispatch&'],
+    'dispatch only: a push run is not evidence' => ['workflow_dispatch', 'push', false, 'event=workflow_dispatch&'],
+]);
+
+it('never takes a dispatch run as evidence on a host whose authority predates it', function () {
+    draRequiresTooling();
+    $s = draSandbox();
+    draCi($s, [draDispatchRun($s)], draDispatchJobs($s));
+
+    // No DMS_PRODUCTION_CI_EVENTS: push runs only, the original query byte for byte.
+    $r = draCiVerify($s);
+
+    expect($r['exit'])->toBe(77, $r['output'])
+        ->and($r['output'])->toContain('required CI: no push run of')
+        ->and(draRequests($s))->toContain("/actions/runs?head_sha={$s['sha']}&event=push&branch={$s['branch']}&per_page=50");
+});
+
+it('denies every dispatch outcome but a green dispatch run of the exact commit', function (callable $arrange, string $reason) {
+    draRequiresTooling();
+    $s = draSandbox();
+    $arrange($s);
+
+    $r = draDispatchCiVerify($s);
+
+    expect($r['exit'])->toBe(77, $r['output'])
+        ->and($r['output'])->toContain('DEPLOYMENT=DENIED')
+        ->and($r['output'])->toContain('required CI: ')
+        ->and($r['output'])->toContain($reason)
+        ->and($r['output'])->not->toContain('PASS: required CI')
+        ->and($r['output'])->toContain('ci_run='."\n");
+})->with([
+    // Identity: commit, branch, repository, fork, workflow, event.
+    'no run at all (missing evidence)' => [fn (array $s) => draCi($s, []), 'no push or workflow_dispatch run of'],
+    'a dispatch after the branch moved on (it ran on the newer tip)' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_sha' => sha1('a newer tip of the base branch')])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch of an older commit' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_sha' => $s['base']])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch on another branch' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_branch' => 'feature/someone-else'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch on a ref that only resembles the branch' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_branch' => "{$s['branch']}-copy"])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch in another repository' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['repository' => ['full_name' => 'someone/fork']])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch from a fork' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_repository' => ['full_name' => 'someone/fork']])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch of another workflow' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['path' => '.github/workflows/deploy-vps.yml'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a dispatch run without a numeric id' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['id' => '1001'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a repository_dispatch run (an API event, not a manual dispatch)' => [fn (array $s) => draCi($s, [draRun($s, ['event' => 'repository_dispatch'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a scheduled run' => [fn (array $s) => draCi($s, [draRun($s, ['event' => 'schedule'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a workflow_run run' => [fn (array $s) => draCi($s, [draRun($s, ['event' => 'workflow_run'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    'a pull request run' => [fn (array $s) => draCi($s, [draRun($s, ['event' => 'pull_request'])], draDispatchJobs($s)), 'no push or workflow_dispatch run of'],
+    // State of the run.
+    'the dispatch run is still in progress' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['status' => 'in_progress', 'conclusion' => null])], draDispatchJobs($s)), 'the latest workflow_dispatch run 1001 of '.DRA_WORKFLOW],
+    'the dispatch run is queued' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['status' => 'queued', 'conclusion' => null])], draDispatchJobs($s)), 'is queued/None, not completed/success'],
+    'the dispatch run failed' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['conclusion' => 'failure'])], draDispatchJobs($s)), 'is completed/failure, not completed/success'],
+    'the dispatch run was cancelled' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['conclusion' => 'cancelled'])], draDispatchJobs($s)), 'is completed/cancelled'],
+    'the dispatch run timed out' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['conclusion' => 'timed_out'])], draDispatchJobs($s)), 'is completed/timed_out'],
+    'the dispatch run concluded neutral' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['conclusion' => 'neutral'])], draDispatchJobs($s)), 'is completed/neutral'],
+    'the dispatch run was skipped' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['conclusion' => 'skipped'])], draDispatchJobs($s)), 'is completed/skipped'],
+    // The latest run of either event decides.
+    'a newer dispatch of the commit failed after a green push run' => [fn (array $s) => draCi($s, [draRun($s), draDispatchRun($s, ['id' => 1002, 'conclusion' => 'failure'])], draDispatchJobs($s)), 'the latest workflow_dispatch run 1002'],
+    'a newer push run of the commit failed after a green dispatch' => [fn (array $s) => draCi($s, [draDispatchRun($s), draRun($s, ['id' => 1002, 'conclusion' => 'failure'])], draDispatchJobs($s)), 'the latest push run 1002'],
+    'a newer dispatch of the commit is still running' => [fn (array $s) => draCi($s, [draRun($s), draDispatchRun($s, ['id' => 1002, 'status' => 'in_progress', 'conclusion' => null])], draDispatchJobs($s)), 'the latest workflow_dispatch run 1002'],
+    // Jobs and steps of a green run.
+    'a required job skipped' => [fn (array $s) => draCi($s, [draDispatchRun($s)], array_map(fn (array $j) => $j['name'] === 'NSF-R012 Quality Gate' ? array_merge($j, ['conclusion' => 'skipped']) : $j, draDispatchJobs($s))), 'NSF-R012 Quality Gate did not succeed (missing or skipped)'],
+    'a required job missing' => [fn (array $s) => draCi($s, [draDispatchRun($s)], array_values(array_filter(draDispatchJobs($s), fn (array $j) => $j['name'] !== 'CICD-CTRL Gate Classifier'))), 'CICD-CTRL Gate Classifier did not succeed (missing or skipped)'],
+    'a green run with a failed required job' => [fn (array $s) => draCi($s, [draDispatchRun($s)], [...array_filter(draDispatchJobs($s), fn (array $j) => $j['name'] !== 'NSF-R012 Quality Gate'), draJob($s, 'NSF-R012 Quality Gate', 'failure')]), 'NSF-R012 Quality Gate concluded failure'],
+    'a green run with a cancelled required job' => [fn (array $s) => draCi($s, [draDispatchRun($s)], [...draDispatchJobs($s), draJob($s, 'NSF-R012 Quality Gate', 'cancelled')]), 'NSF-R012 Quality Gate concluded cancelled'],
+    'a green run with a neutral required job' => [fn (array $s) => draCi($s, [draDispatchRun($s)], [...draDispatchJobs($s), draJob($s, 'CICD-CTRL Gate Classifier', 'neutral')]), 'CICD-CTRL Gate Classifier concluded neutral'],
+    'the critical test step skipped' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, 'skipped', 'skipped')), 'did not run the step Run critical regression tests with success (skipped)'],
+    'the critical test step failed inside a green job' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, 'skipped', 'failure')), 'did not run the step Run critical regression tests with success (failure)'],
+    'the critical test step missing' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draCriticalSteps($s, draSteps(['Something else' => 'success']))), 'did not run the step Run critical regression tests with success (no such step)'],
+    'a docs-only skip' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draCriticalSteps($s, draSteps([
+        'Run critical regression tests' => 'skipped', 'Note skipped critical regression tests (docs-only change)' => 'success']))), 'took the step Note skipped critical regression tests (docs-only change): its tests did not run'],
+    'a job of another run' => [fn (array $s) => draCi($s, [draDispatchRun($s)], [...draDispatchJobs($s), draJob($s, 'NSF-R012 Quality Gate', 'success', ['run_id' => 7])]), 'belongs to another run or commit'],
+    'a job of another commit' => [fn (array $s) => draCi($s, [draDispatchRun($s)], [...draDispatchJobs($s), draJob($s, 'NSF-R012 Quality Gate', 'success', ['head_sha' => $s['base']])]), 'belongs to another run or commit'],
+    // A CI-PERF-04 evaluation dispatch is never a gate's verdict (rule 212 §3).
+    'an evaluation dispatch (the sampler ran)' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, 'success')), 'took the step Start resource sampler (CI-PERF-04 evaluation): an evaluation run is never release evidence (rule 212)'],
+    'an evaluation dispatch whose sampler failed' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, 'failure')), 'an evaluation run is never release evidence (rule 212)'],
+    'an evaluation step with no conclusion' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, null)), 'an evaluation run is never release evidence (rule 212)'],
+    // The API.
+    'a network error' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s), [], ['runs' => 6]), 'could not be reached (curl exit 6'],
+    'a server error on the runs' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s), ['runs' => 500]), 'answered HTTP 500'],
+    'rate limited on the jobs' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s), ['jobs' => 403]), 'answered HTTP 403 — this may be its rate limit'],
+    'unparsable runs' => [fn (array $s) => draCi($s, '{"workflow_runs": [', draDispatchJobs($s)), 'is not valid JSON'],
+    'unparsable jobs' => [fn (array $s) => draCi($s, [draDispatchRun($s)], '{"jobs": '), 'is not valid JSON'],
+    'runs that are not a list' => [fn (array $s) => draCi($s, '{"total_count": 1, "workflow_runs": {"id": 1001}}', draDispatchJobs($s)), 'lists no workflow runs'],
+    'jobs without a count' => [fn (array $s) => draCi($s, [draDispatchRun($s)], json_encode(['jobs' => draDispatchJobs($s)])), 'lists no jobs'],
+    'a truncated job list' => [fn (array $s) => draCi($s, [draDispatchRun($s)], json_encode(['total_count' => 150, 'jobs' => draDispatchJobs($s)])), 'the run has 150 jobs and the response holds 5'],
+]);
+
+it('takes the accepted events and the evaluation step from the authority, and refuses a declaration it cannot read', function (array $overrides, string $reason) {
+    draRequiresTooling();
+    $s = draSandbox();
+    draCi($s, [draDispatchRun($s)], draDispatchJobs($s));
+
+    $r = draDispatchCiVerify($s, $overrides);
+
+    // Refused before a single request, the rate-limit read included.
+    expect($r['exit'])->toBe(77, $r['output'])->and($r['output'])->toContain($reason)->and(draRequests($s))->toBe('');
+})->with([
+    'an event GitHub never sends for a manual run' => [['events' => 'push repository_dispatch'], "names 'repository_dispatch', which is not an accepted CI event (push, workflow_dispatch)"],
+    'the schedule event' => [['events' => 'schedule'], "names 'schedule', which is not an accepted CI event"],
+    'the pull_request event' => [['events' => 'pull_request push'], "names 'pull_request', which is not an accepted CI event"],
+    'an event twice' => [['events' => 'push push'], "names 'push' twice"],
+    'a comma-separated list' => [['events' => 'push,workflow_dispatch'], 'is not a space-separated list of push and workflow_dispatch'],
+    'a double space' => [['events' => 'push  workflow_dispatch'], 'is not a space-separated list of push and workflow_dispatch'],
+    'three events' => [['events' => 'push workflow_dispatch push'], 'is not a space-separated list of push and workflow_dispatch'],
+    'an upper-case event' => [['events' => 'PUSH'], 'is not a space-separated list of push and workflow_dispatch'],
+    'dispatch without an evaluation step' => [['evaluation_step' => ''], 'accepts workflow_dispatch runs but declares no evaluation step (DMS_PRODUCTION_CI_EVALUATION_STEP)'],
+    'dispatch only, without an evaluation step' => [['events' => 'workflow_dispatch', 'evaluation_step' => ''], 'declares no evaluation step'],
+    'an evaluation step without its job' => [['evaluation_step' => 'Start resource sampler (CI-PERF-04 evaluation)'], "is not '<job>:<step>' (DMS_PRODUCTION_CI_EVALUATION_STEP)"],
+    'an evaluation step of a job that is not required' => [['evaluation_step' => 'CICD-CTRL Selective Module Gate:Start'], "the evaluation step's job 'CICD-CTRL Selective Module Gate' is not a required job"],
+]);
+
+it('verifies a contract-3 release on dispatch evidence alone, and binds the run it verified', function () {
+    draRequiresTooling();
+    $s = draSandbox();
+    draAuthority($s, ['DMS_PRODUCTION_CI_EVENTS' => '"'.DRA_EVENTS.'"', 'DMS_PRODUCTION_CI_EVALUATION_STEP' => '"'.DRA_EVALUATION_STEP.'"']);
+    draSubmitted(draSubmit($s, ($b = draBundle($s))['bundle']), $b['id']);
+    draCi($s, [draDispatchRun($s, ['id' => 2002])], array_map(fn (array $j) => array_merge($j, ['run_id' => 2002]), draDispatchJobs($s)));
+
+    $r = draVerify($s);
+
+    draGo($r, '3');
+    expect($r['output'])->toContain('PASS: required CI — workflow_dispatch run 2002 of '.DRA_WORKFLOW." on {$s['sha']}")
+        ->and($r['output'])->toContain("PASS: approval {$b['id']} is unspent on this host")
+        ->and($r['output'])->toContain('ci_run=2002');
+});
+
+it('denies a contract-3 release whose only dispatch run proves a newer tip, or is an evaluation', function (callable $arrange, string $reason) {
+    draRequiresTooling();
+    $s = draSandbox();
+    draAuthority($s, ['DMS_PRODUCTION_CI_EVENTS' => '"'.DRA_EVENTS.'"', 'DMS_PRODUCTION_CI_EVALUATION_STEP' => '"'.DRA_EVALUATION_STEP.'"']);
+    draSubmitted(draSubmit($s, ($b = draBundle($s))['bundle']), $b['id']);
+    $arrange($s);
+
+    draDenied(draVerify($s), $reason);
+})->with([
+    'the branch moved on before the dispatch' => [fn (array $s) => draCi($s, [draDispatchRun($s, ['head_sha' => sha1('a newer tip of the base branch')])], draDispatchJobs($s)), 'required CI: no push or workflow_dispatch run of'],
+    'an evaluation dispatch' => [fn (array $s) => draCi($s, [draDispatchRun($s)], draDispatchJobs($s, 'success')), 'an evaluation run is never release evidence (rule 212)'],
+    'the authority lists dispatch but no evaluation step' => [fn (array $s) => draAuthority($s, ['DMS_PRODUCTION_CI_EVALUATION_STEP' => null]), 'declares no evaluation step (DMS_PRODUCTION_CI_EVALUATION_STEP)'],
+]);
+
+it('never lets green dispatch evidence stand in for the owner approval, or replay a spent one', function () {
+    draRequiresTooling();
+    // No stored approval and no contract-2 record: denied, and GitHub is never asked.
+    $s = draSandbox();
+    draAuthority($s, ['DMS_PRODUCTION_CI_EVENTS' => '"'.DRA_EVENTS.'"', 'DMS_PRODUCTION_CI_EVALUATION_STEP' => '"'.DRA_EVALUATION_STEP.'"']);
+    mkdir($s['store'], 0o700);
+    mkdir(draStoreDir($s), 0o700);
+    draCi($s, [draDispatchRun($s)], draDispatchJobs($s));
+
+    draDenied(draVerify($s), 'the release is not approved');
+    expect(draRequests($s))->toBe('');
+
+    // A spent approval id stays spent whatever CI says (rule 231 / rule 236 §2.4).
+    $t = draSandbox();
+    draAuthority($t, ['DMS_PRODUCTION_CI_EVENTS' => '"'.DRA_EVENTS.'"', 'DMS_PRODUCTION_CI_EVALUATION_STEP' => '"'.DRA_EVALUATION_STEP.'"']);
+    draSubmitted(draSubmit($t, ($b = draBundle($t))['bundle']), $b['id']);
+    draCi($t, [draDispatchRun($t)], draDispatchJobs($t));
+    mkdir("{$t['evidence']}/spent", 0o700, true);
+    chmod($t['evidence'], 0o700);
+    file_put_contents("{$t['evidence']}/spent/approval-{$b['id']}.spent", "approval_id={$b['id']}\n");
+
+    draDenied(draVerify($t), "{$b['id']} spent");
+});
+
+it('declares the phase-B CI facts in the production authority, pinned to real workflow steps', function () {
+    $authority = (string) file_get_contents(base_path('deploy/production-host.conf'));
+
+    expect($authority)->toMatch('/^DMS_PRODUCTION_CI_EVENTS="push workflow_dispatch"$/m')
+        ->and($authority)->toMatch('/^DMS_PRODUCTION_CI_EVALUATION_STEP="'.preg_quote(DRA_EVALUATION_STEP, '/').'"$/m')
+        ->and(config('deployment_entrypoint.approval_guard_expectations.required_authority_keys'))
+        ->toContain('DMS_PRODUCTION_CI_EVENTS', 'DMS_PRODUCTION_CI_EVALUATION_STEP')
+        ->and(config('deployment_entrypoint.approval_guard_expectations.pinned_authority_values.DMS_PRODUCTION_CI_EVENTS'))->toBe(DRA_EVENTS)
+        ->and(config('deployment_entrypoint.approval_guard_expectations.pinned_authority_values.DMS_PRODUCTION_CI_EVALUATION_STEP'))->toBe(DRA_EVALUATION_STEP);
+
+    // CI-CD-PR-ONLY-POLICY-1 phase B5 (CG-16 CI trigger removal, owner decisions 17–19): CI runs
+    // automatically only for pull requests. The release evidence is a manual dispatch of the exact
+    // commit; the authority still lists `push` (B5-2), so the guard keeps accepting historical push
+    // runs, but the workflow no longer creates them (rule 236 §5).
+    $workflow = Yaml::parseFile(base_path(DRA_WORKFLOW));
+    expect($workflow['on'])->toHaveKeys(['pull_request', 'workflow_dispatch'])
+        ->and($workflow['on'])->not->toHaveKey('push')
+        ->and($workflow['on'])->not->toHaveKey('schedule');
+
+    // In both critical-gate variants the evaluation step exists, runs ONLY on a
+    // CI-PERF-04 evaluation, and the required test step exists beside it.
+    [$job, $step] = explode(':', DRA_EVALUATION_STEP, 2);
+    foreach (['critical_test_gate', 'critical_test_gate_self_hosted'] as $key) {
+        $steps = collect($workflow['jobs'][$key]['steps'])->keyBy('name');
+        expect($workflow['jobs'][$key]['name'])->toBe($job)
+            ->and($steps->has($step))->toBeTrue("{$key} has no step '{$step}'")
+            ->and((string) $steps->get($step)['if'])->toContain("steps.critical_parallel.outputs.critical_parallel_evaluation == 'true'")
+            ->and($steps->has(explode(':', DRA_REQUIRED_STEP, 2)[1]))->toBeTrue();
+    }
+
+    // The resolver labels only a dispatch with a worker count as an evaluation.
+    $resolve = function (array $args): string {
+        $p = new Process(['bash', base_path('scripts/ci/resolve-critical-parallelism.sh'), ...$args], base_path());
+        $p->run();
+
+        return $p->getOutput();
+    };
+    expect($resolve(['--event', 'push']))->toContain('critical_parallel_evaluation=false')
+        ->and($resolve(['--event', 'workflow_dispatch', '--dispatch-workers', 'repository-default']))->toContain('critical_parallel_evaluation=false')
+        ->and($resolve(['--event', 'workflow_dispatch', '--dispatch-workers', '4']))->toContain('critical_parallel_evaluation=true');
+});
+
 // ─── 5. A real contract-3 deploy: runner record and verify ─────────────────
 
 it('deploys a stored approval with no approval commit on the branch, records it and proves it by identifier', function () {
@@ -1493,7 +1783,11 @@ it('declares the contract-3 facts in the production authority and keeps the suit
     foreach (explode(';', DRA_JOBS) as $name) {
         expect($workflow)->toContain("    name: {$name}\n");
     }
-    expect($workflow)->toMatch('/^  push:\n    branches:\n      - '.preg_quote(trim((string) preg_replace('/^.*DMS_PRODUCTION_DEPLOY_BRANCH=(\S+).*$/s', '$1', $authority)), '/').'$/m');
+    // The workflow's pull_request trigger targets the deploy branch the authority names; since phase B5
+    // there is no push trigger, so the base branch's runs are the manual dispatches the guard checks.
+    $deployBranch = preg_quote(trim((string) preg_replace('/^.*DMS_PRODUCTION_DEPLOY_BRANCH=(\S+).*$/s', '$1', $authority)), '/');
+    expect($workflow)->toMatch('/^  pull_request:\n    branches:\n      - '.$deployBranch.'$/m')
+        ->and($workflow)->not->toMatch('/^  push:$/m');
 });
 
 it('requires exactly the CI jobs that run on every push of the base branch', function () {
