@@ -130,6 +130,8 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   [state machine keuangan](architecture/rme-lab-financial-state-machine.md),
   [FULL_REVERSAL dan ICFR](architecture/rme-billing-reversal-icfr.md),
   [maker-checker](architecture/maker-checker-authorization.md).
+- Fast-Track Ready Pilot SPN4 (2026-11-22; Design Lock G1 untuk satu cabang SPN4 Sunu, belum ada implementasi; Gate 1
+  RME-LAB-FEE-APPROVAL-1 tetap NO-GO): [dms-spn4-ready-pilot-1](sprints/dms-spn4-ready-pilot-1.md).
 - Program penutupan RME menyeluruh (2026-11-16 s.d. 2026-11-18; memo internal 2026-10-17, rule 237–244):
   [dms-rme-comprehensive-closure-1](sprints/dms-rme-comprehensive-closure-1.md) (register pending kanonik, empat
   rilis produksi, bukti verifikasi), rencana memo
