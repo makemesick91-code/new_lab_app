@@ -230,6 +230,18 @@ return [
         'tests/Feature/PatientMerge/PatientMergeGuardAndSearchTest.php',
         'tests/Feature/PatientMerge/PatientMergeHardeningTest.php',
         /*
+         * DMS-SPN4-READY-PILOT-1 G6 / R6-B1 — the merge guard against unregistered
+         * patient foreign keys and DQ1-CONSTRAINT-001 read pg_catalog, so they give
+         * the same answer when the runtime role owns no table (rule 245). These
+         * suites prove it as a non-owner role on PostgreSQL 16: the guard never
+         * fails open, DQ1 never reports a present key missing (which would stop
+         * every deploy) nor a missing one present. Selected by the `PatientMerge`
+         * and `Dq1` tokens in BOTH critical variants; declared so a rename cannot
+         * drop them before the ownership split.
+         */
+        'tests/Feature/PatientMerge/PatientMergeForeignKeyCatalogRoleSeparationTest.php',
+        'tests/Feature/DataQuality/Dq1ForeignKeyCatalogRoleSeparationTest.php',
+        /*
          * FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — request telemetry runs on EVERY
          * request (global middleware). Its suites pin that telemetry never
          * stores a raw NIK/phone/password/token/binding, never breaks or slows
