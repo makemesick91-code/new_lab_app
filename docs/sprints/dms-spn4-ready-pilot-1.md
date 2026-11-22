@@ -9,7 +9,7 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-6 below). G1 counts as formally recorded only after this document is merged into the base and verified. No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). G1 counts as formally recorded only after this document is merged into the base and verified. No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` |
 | Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9) comes in PR-C2, which is not yet authorised |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -64,21 +64,38 @@ opening (G13) each need their own owner authorisation.
 
 **Subject:** the application's runtime login role, and every role it can reach.
 
-**PostgreSQL semantics the classification relies on:**
+**PostgreSQL 16 semantics the classification relies on** (each point reproduced on a local PostgreSQL 16.15
+fixture cluster; Annex A):
 - *Role attributes* (`SUPERUSER`, `BYPASSRLS`, `CREATEROLE`, `CREATEDB`, `REPLICATION`) are never inherited through
   membership. They become effective only on the role itself, or after `SET ROLE` to a role that holds them.
-- *Privileges*, including those of predefined roles such as `pg_read_server_files`, are effective either through
-  inheritance (`pg_has_role(…, 'USAGE')`) or through `SET ROLE` (`pg_has_role(…, 'SET')`, PostgreSQL 16).
-- An `ADMIN OPTION` lets the holder grant the role onward.
+- `SET ROLE` needs a membership chain in which **every** grant has `SET` (from the session user). A chain with one
+  grant lacking `SET` does not allow it, even if the other grants have it.
+- *Privileges*, including those of predefined roles such as `pg_read_server_files`, follow `INHERIT` chains. They are
+  also effective after `SET ROLE` to any role that inherits them. A mixed path (`SET` first, then `INHERIT`) is
+  therefore effective, although `pg_has_role(current_user, …, 'USAGE')` and `…'SET'` both report false for it.
+- An `ADMIN OPTION` is usable when it is held by the login role, by a role it inherits from, or by a role it can
+  `SET ROLE` to. A usable `ADMIN OPTION` on a role lets the login role **grant that role to itself `WITH SET`**, and
+  so gain its attributes and privileges, except for roles with `SUPERUSER`, which only a superuser can grant.
+  `pg_has_role(…, '… WITH ADMIN OPTION')` ignores `INHERIT` and `SET` and over-reports, so it is not used to decide.
+- **Actors**: every role whose identity the login role can assume. These are the login role itself; every role
+  reachable by an all-`SET` chain; and every non-`SUPERUSER` role it can grant to itself through a usable
+  `ADMIN OPTION`, together with that role's `SET` reach. This is repeated until nothing new is added. The effective
+  capability of the login role is the union of the attributes and the inherited privileges of all its actors.
 
 **What is audited:**
 1. the login role's attributes;
-2. **recursive** membership, with `admin_option`, `inherit_option` and `set_option` at each level;
-3. **`SET ROLE`** reach;
+2. **recursive** membership over every path with **no depth limit**, with `admin_option`, `inherit_option` and
+   `set_option` on each grant;
+3. **`SET ROLE`** reach and the actor set;
 4. effective privileges, including the session's `is_superuser`;
 5. **server-file capability**: the predefined roles **`pg_read_server_files`**, `pg_write_server_files` and
-   `pg_execute_server_program`, and `EXECUTE` on server-file functions;
-6. object ownership, which feeds R-2.
+   `pg_execute_server_program`, and `EXECUTE` on server-file functions, **for every actor**;
+6. usable `ADMIN OPTION`;
+7. object ownership, which feeds R-2.
+
+**Fail-closed:** R1-S3 checks that its recursive closures equal PostgreSQL's own role resolution (`pg_has_role`
+`MEMBER`, `SET`, `USAGE`). A failed check makes the verdict BLOCKED. A truncated or incomplete walk can therefore
+never produce PASS.
 
 **Evidence:**
 - The owner runs the R6-A query pack (`docs/architecture/database-least-privilege-r6.md` §9) and the supplementary pack
@@ -92,10 +109,13 @@ opening (G13) each need their own owner authorisation.
 
 | Class | Finding (any one is enough) | Consequence |
 |---|---|---|
-| **CRITICAL** | **E1** login role `rolsuper` or `rolbypassrls`, or `is_superuser = on`. **E2** can `SET ROLE` (at any depth) to a role with `rolsuper` or `rolbypassrls`, or holds `ADMIN OPTION` on such a role. **E3** effective (`USAGE` or `SET`) member of `pg_execute_server_program` or `pg_write_server_files`, or `EXECUTE` on a server-file **write** function (`lo_export(oid,text)`) | **Pilot NO-GO. Path B (R-2) is mandatory**; Path A is not available |
-| **HIGH** | **H1** login role `rolcreaterole`, `rolreplication` or `rolcreatedb`. **H2** can `SET ROLE` to a role with one of those attributes. **H3** effective (`USAGE` or `SET`) member of **`pg_read_server_files`**, or `EXECUTE` on a server-file **read** function (`pg_read_file`, `pg_read_binary_file`, `pg_ls_dir`, `pg_stat_file`, `lo_import`), meaning it can read files as the database server's OS user. **H4** effective member of `pg_read_all_data`, `pg_write_all_data`, `pg_signal_backend`, `pg_checkpoint` or `pg_create_subscription`. **H5** `ADMIN OPTION` on any role. **H6** member of a `rolsuper`/`rolbypassrls` role with neither `SET` nor `ADMIN` (attribute not effective, but an anomaly) | Must enter the R-2 assessment. Path A only if each HIGH finding is revoked through a planned change, or covered by a tested compensating control (owner decision OD-3) |
-| **PASS** | None of the above | Continue to R-2. R6-01 stays open |
-| **BLOCKED** | Any query of R6-A or R1-S not run; incomplete output; an error; or output that cannot be matched to the login role the application uses | No pilot and no partial conclusion. Run again |
+| **CRITICAL** | **E1** login role `rolsuper` or `rolbypassrls`, or `is_superuser = on`. **E2** another **actor** has `rolsuper` or `rolbypassrls` (reached by `SET ROLE` at any depth, or by a self-grant through a usable `ADMIN OPTION`). **E3** an actor has the privileges of `pg_execute_server_program` or `pg_write_server_files`, or `EXECUTE` on the server-file **write** function `lo_export(oid,text)` | **Pilot NO-GO. Path B (R-2) is mandatory**; Path A is not available |
+| **HIGH** | **H1** login role `rolcreaterole`, `rolreplication` or `rolcreatedb`. **H2** another actor has one of those attributes. **H3** an actor has the privileges of **`pg_read_server_files`**, or `EXECUTE` on a server-file **read** function (`pg_read_file`, `pg_read_binary_file`, `pg_ls_dir`, `pg_stat_file`, `lo_import`), meaning it can read files as the database server's OS user. **H4** an actor has the privileges of `pg_read_all_data`, `pg_write_all_data`, `pg_signal_backend`, `pg_checkpoint` or `pg_create_subscription`. **H5** an actor holds a usable `ADMIN OPTION` on any role. **H6** member, through any path, of a `rolsuper`/`rolbypassrls` role that is not an actor: no usable `SET` or `ADMIN` path, which includes an `ADMIN OPTION` on a `SUPERUSER` role. The attribute is not effective, but this is an anomaly | Must enter the R-2 assessment. Path A only if each HIGH finding is revoked through a planned change, or covered by a tested compensating control (owner decision OD-3) |
+| **PASS** | None of the above, and every R1-S3 check is `ok` | Continue to R-2. R6-01 stays open |
+| **BLOCKED** | Any query of R6-A or R1-S not run; incomplete output; an error; **an R1-S3 check (C1–C4) `FAILED`**; a cross-check (R1-S4, R1-S5) showing a capability that R1-S3 did not report; or output that cannot be matched to the login role the application uses | No pilot and no partial conclusion. Run again |
+
+The R-1 class is the **verdict row of R1-S3**, read together with its findings and checks. R1-S1, R1-S2, R1-S4 and
+R1-S5 are evidence and cross-checks; none of them can lower the class that R1-S3 reports.
 
 ### R-2 — One database identity for migrations and runtime (R6-01)
 
@@ -201,7 +221,7 @@ All criteria start as NOT RUN.
 
 | Id | Criterion |
 |---|---|
-| **AT-1** | R-1 PASS on complete original output (R6-A + R1-S1…S5) |
+| **AT-1** | R-1 PASS on complete original output (R6-A + R1-S1…S5): the R1-S3 verdict is PASS, every R1-S3 check is `ok`, and no cross-check contradicts it |
 | **AT-2** | R-2 satisfied by one of two paths: Path B (R6-D verified and R-1 re-run as PASS), or Path A (A1–A6 met) |
 | **AT-3** | L-1 PASS |
 | **AT-4** | S-1 and S-3 PASS on PostgreSQL 16, selected in both critical variants (CG-19) |
@@ -297,6 +317,7 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 | DL-4 | 2026-11-22 | Gate 1 of RME-LAB-FEE-APPROVAL-1 stays NO-GO, and LAB-fee stays disabled |
 | DL-5 | 2026-11-22 | PR-C1 is authorised: a new isolated worktree and branch from the verified base; this document plus one entry in `docs/00-INDEX.md`; DEVFLOW and local documentation tests; commit, push, and a PR without auto-merge; CI checked to completion; then a stop before the merge for the owner's review |
 | DL-6 | 2026-11-22 | Not authorised by DL-5: application code; database or migrations; `.sprint/current.yml`; PR-C2; production access or changes; deploy; GO tags; BK-2; enabling LAB-fee. Approving the charter is not an acceptance of the R6-01 risk, and G1 is not formally complete until PR-C1 is merged and verified |
+| DL-7 | 2026-11-22 | Review of PR-C1 #685. The owner authorises a correction of Annex A so that the role audit never concludes PASS from a truncated walk: R1-S3 without a fixed depth limit and fail-closed (BLOCKED when incomplete), `ADMIN OPTION` read by effective capability and membership path, and R1-S3 checked against R1-S4. Validation on an isolated local PostgreSQL 16 with temporary fixtures, and no repository test file. Repository changes stay limited to the two approved documentation files. The fix lands as a new commit on the PR #685 branch, with no amend or force-push |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -314,6 +335,15 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 - **DL-6.** Tidak diizinkan: mengubah kode aplikasi, database, atau migrasi; mengubah `.sprint/current.yml`; membuat
   PR-C2; mengakses atau mengubah produksi; deploy; GO tag; BK-2; mengaktifkan LAB-fee. Persetujuan charter bukan
   penerimaan risiko R6-01, dan G1 belum selesai secara formal sebelum PR-C1 di-merge dan diverifikasi.
+- **DL-7.** Review PR-C1 #685: Owner mengizinkan perbaikan Annex A supaya audit role tidak pernah menyimpulkan PASS
+  dari penelusuran yang terpotong. Rinciannya:
+  - R1-S3 tanpa batas kedalaman tetap dan fail-closed (BLOCKED bila tidak lengkap);
+  - `ADMIN OPTION` dinilai dari kemampuan efektif dan jalur keanggotaan;
+  - R1-S3 diverifikasi terhadap R1-S4;
+  - validasi di PostgreSQL 16 lokal yang terisolasi dengan fixture sementara, tanpa file test repository.
+
+  Perubahan repository tetap terbatas pada dua file dokumentasi. Perbaikan masuk sebagai commit baru di branch
+  PR #685, tanpa amend atau force-push.
 - **Masih terbuka:** keputusan Owner OD-2 sampai OD-10 (§8). Penerimaan risiko A6 hanya dapat diberikan di G5 sebagai
   keputusan tersendiri.
 
@@ -321,9 +351,12 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 
 ## Annex A — Supplementary query pack R1-S (read-only; owner-run as the application login role)
 
-Run with `php artisan db`. Follow the owner's read-only psql protocol: `\pset` on its own line, then check
-`BEGIN READ ONLY` / `ROLLBACK`. Syntax is validated on PostgreSQL 16.15 (local, read-only). R1-S4 and R1-S5 are
-authoritative for effective capability; R1-S3 shows the paths.
+Run with `php artisan db` as the application login role. Follow the owner's read-only psql protocol: `\pset` on its own
+line, then check `BEGIN READ ONLY` / `ROLLBACK`.
+
+**R1-S3 is authoritative.** It emits `finding` rows (class codes), `check` rows (C1–C4) and one `verdict` row
+(CRITICAL, HIGH, PASS or BLOCKED). R1-S1, R1-S2, R1-S4 and R1-S5 are evidence and cross-checks. A cross-check that shows
+a capability R1-S3 did not report makes the result BLOCKED.
 
 ```sql
 BEGIN READ ONLY;
@@ -336,25 +369,120 @@ SELECT current_user, session_user, current_setting('is_superuser') AS is_superus
 SELECT rolname, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication, rolinherit, rolcanlogin
 FROM pg_roles WHERE rolname = current_user;
 
--- R1-S3 recursive membership: every reachable role, how it is reached, and its attributes
-WITH RECURSIVE reach(roleid, path, via_inherit, via_set, via_admin, depth) AS (
-  SELECT m.roleid, ARRAY[m.roleid], m.inherit_option, m.set_option, m.admin_option, 1
-  FROM pg_auth_members m
-  WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+-- R1-S3 effective-capability report (authoritative). No depth limit; fail-closed consistency checks.
+WITH RECURSIVE
+me AS (SELECT oid AS id FROM pg_roles WHERE rolname = current_user),
+e AS (SELECT member, roleid, inherit_option, set_option, admin_option FROM pg_auth_members),
+-- transitive closures over every role; a path never repeats a role (PostgreSQL forbids circular membership,
+-- and the guard keeps the recursion finite even on an inconsistent catalog)
+memc(a, b, path) AS (
+  SELECT member, roleid, ARRAY[member, roleid] FROM e
   UNION ALL
-  SELECT m.roleid, r.path || m.roleid, r.via_inherit AND m.inherit_option, r.via_set AND m.set_option,
-         m.admin_option, r.depth + 1
-  FROM pg_auth_members m JOIN reach r ON m.member = r.roleid
-  WHERE NOT m.roleid = ANY (r.path) AND r.depth < 10
+  SELECT c.a, e.roleid, c.path || e.roleid FROM memc c JOIN e ON e.member = c.b
+  WHERE NOT e.roleid = ANY (c.path)
+),
+setc(a, b, path) AS (
+  SELECT member, roleid, ARRAY[member, roleid] FROM e WHERE set_option
+  UNION ALL
+  SELECT c.a, e.roleid, c.path || e.roleid FROM setc c JOIN e ON e.member = c.b
+  WHERE e.set_option AND NOT e.roleid = ANY (c.path)
+),
+inhc(a, b, path) AS (
+  SELECT member, roleid, ARRAY[member, roleid] FROM e WHERE inherit_option
+  UNION ALL
+  SELECT c.a, e.roleid, c.path || e.roleid FROM inhc c JOIN e ON e.member = c.b
+  WHERE e.inherit_option AND NOT e.roleid = ANY (c.path)
+),
+-- effective ADMIN: held by the actor itself, or by a role the actor inherits privileges from
+adm(x, y) AS (
+  SELECT member, roleid FROM e WHERE admin_option
+  UNION
+  SELECT c.a, e.roleid FROM inhc c JOIN e ON e.member = c.b WHERE e.admin_option
+),
+-- actors: every role whose identity the login role can assume. Itself; every role it can SET ROLE to; and every
+-- non-SUPERUSER role it can grant to itself WITH SET through an effective ADMIN (plus that role's SET reach),
+-- repeated to a fixed point. PostgreSQL 16 lets only superusers grant SUPERUSER roles.
+actors(id, via) AS (
+  SELECT id, 'self'::text FROM me
+  UNION
+  SELECT s.b, 'set_role' FROM setc s JOIN me ON s.a = me.id
+  UNION
+  SELECT n.id, 'admin_self_grant'
+  FROM actors a
+  JOIN adm ON adm.x = a.id
+  JOIN pg_roles t ON t.oid = adm.y AND NOT t.rolsuper
+  CROSS JOIN LATERAL (SELECT adm.y AS id UNION SELECT s.b FROM setc s WHERE s.a = adm.y) n
+),
+act AS (SELECT id, string_agg(DISTINCT via, '+' ORDER BY via) AS via FROM actors GROUP BY id),
+dangerous(rn, cls) AS (VALUES
+  ('pg_execute_server_program', 'E3'), ('pg_write_server_files', 'E3'), ('pg_read_server_files', 'H3'),
+  ('pg_read_all_data', 'H4'), ('pg_write_all_data', 'H4'), ('pg_signal_backend', 'H4'),
+  ('pg_checkpoint', 'H4'), ('pg_create_subscription', 'H4')),
+funcs(fn, cls) AS (VALUES
+  ('lo_export(oid,text)', 'E3'), ('pg_read_file(text)', 'H3'), ('pg_read_file(text,bigint,bigint,boolean)', 'H3'),
+  ('pg_read_binary_file(text)', 'H3'), ('pg_ls_dir(text)', 'H3'), ('pg_stat_file(text)', 'H3'),
+  ('lo_import(text)', 'H3')),
+findings(code, detail) AS (
+  SELECT 'E1', 'session is_superuser = on' WHERE current_setting('is_superuser') = 'on'
+  UNION ALL
+  SELECT CASE WHEN r.oid = (SELECT id FROM me) THEN 'E1' ELSE 'E2' END,
+         r.rolname || ' (' || a.via || ') has SUPERUSER or BYPASSRLS'
+  FROM act a JOIN pg_roles r ON r.oid = a.id WHERE r.rolsuper OR r.rolbypassrls
+  UNION ALL
+  SELECT CASE WHEN r.oid = (SELECT id FROM me) THEN 'H1' ELSE 'H2' END,
+         r.rolname || ' (' || a.via || ') has CREATEROLE, CREATEDB or REPLICATION'
+  FROM act a JOIN pg_roles r ON r.oid = a.id WHERE r.rolcreaterole OR r.rolcreatedb OR r.rolreplication
+  UNION ALL
+  SELECT d.cls, r.rolname || ' (' || a.via || ') has the privileges of ' || d.rn
+  FROM act a JOIN pg_roles r ON r.oid = a.id JOIN dangerous d ON pg_has_role(a.id, d.rn, 'USAGE')
+  UNION ALL
+  SELECT f.cls, r.rolname || ' (' || a.via || ') can EXECUTE ' || f.fn
+  FROM act a JOIN pg_roles r ON r.oid = a.id JOIN funcs f ON has_function_privilege(a.id, f.fn, 'EXECUTE')
+  UNION ALL
+  SELECT 'H5', ra.rolname || ' (' || a.via || ') holds an effective ADMIN OPTION on ' || rt.rolname
+  FROM act a JOIN adm ON adm.x = a.id JOIN pg_roles ra ON ra.oid = a.id JOIN pg_roles rt ON rt.oid = adm.y
+  UNION ALL
+  SELECT DISTINCT 'H6', 'member of ' || r.rolname || ' (SUPERUSER or BYPASSRLS) without a usable SET or ADMIN path'
+  FROM memc c JOIN me ON c.a = me.id JOIN pg_roles r ON r.oid = c.b
+  WHERE (r.rolsuper OR r.rolbypassrls) AND NOT EXISTS (SELECT 1 FROM act WHERE act.id = c.b)
+),
+-- fail-closed: the recursive closures must equal PostgreSQL's own role resolution, or the verdict is BLOCKED.
+-- For a SUPERUSER login role pg_has_role is true for every role, so C1-C3 do not apply; E1 already makes it CRITICAL.
+su AS (SELECT r.rolsuper AS is_su FROM pg_roles r JOIN me ON r.oid = me.id),
+checks(name, ok) AS (
+  SELECT 'C1 member reach = pg_has_role MEMBER', (SELECT is_su FROM su) OR
+         ARRAY(SELECT DISTINCT c.b FROM memc c JOIN me ON c.a = me.id ORDER BY 1)
+         = ARRAY(SELECT r.oid FROM pg_roles r, me
+                 WHERE r.oid <> me.id AND pg_has_role(me.id, r.oid, 'MEMBER') ORDER BY 1)
+  UNION ALL
+  SELECT 'C2 SET reach = pg_has_role SET', (SELECT is_su FROM su) OR
+         ARRAY(SELECT DISTINCT c.b FROM setc c JOIN me ON c.a = me.id ORDER BY 1)
+         = ARRAY(SELECT r.oid FROM pg_roles r, me
+                 WHERE r.oid <> me.id AND pg_has_role(me.id, r.oid, 'SET') ORDER BY 1)
+  UNION ALL
+  SELECT 'C3 inherit reach = pg_has_role USAGE', (SELECT is_su FROM su) OR
+         ARRAY(SELECT DISTINCT c.b FROM inhc c JOIN me ON c.a = me.id ORDER BY 1)
+         = ARRAY(SELECT r.oid FROM pg_roles r, me
+                 WHERE r.oid <> me.id AND pg_has_role(me.id, r.oid, 'USAGE') ORDER BY 1)
+  UNION ALL
+  SELECT 'C4 login role resolved', EXISTS (SELECT 1 FROM me)
 )
-SELECT g.rolname, g.rolsuper, g.rolbypassrls, g.rolcreaterole, g.rolreplication, g.rolcreatedb,
-       min(r.depth) AS depth, bool_or(r.via_inherit) AS inherits, bool_or(r.via_set) AS can_set_role,
-       bool_or(r.via_admin) AS has_admin_option
-FROM reach r JOIN pg_roles g ON g.oid = r.roleid
-GROUP BY g.rolname, g.rolsuper, g.rolbypassrls, g.rolcreaterole, g.rolreplication, g.rolcreatedb
-ORDER BY depth, g.rolname;
+SELECT 'finding' AS section, code AS result, detail FROM findings
+UNION ALL
+SELECT 'check', CASE WHEN ok THEN 'ok' ELSE 'FAILED' END, name FROM checks
+UNION ALL
+SELECT 'verdict',
+       CASE WHEN EXISTS (SELECT 1 FROM checks WHERE ok IS NOT TRUE) THEN 'BLOCKED'
+            WHEN EXISTS (SELECT 1 FROM findings WHERE code LIKE 'E%') THEN 'CRITICAL'
+            WHEN EXISTS (SELECT 1 FROM findings WHERE code LIKE 'H%') THEN 'HIGH'
+            ELSE 'PASS' END,
+       'actors=' || (SELECT count(*) FROM act)
+       || ' reachable=' || (SELECT count(DISTINCT c.b) FROM memc c JOIN me ON c.a = me.id)
+       || ' max_depth=' || coalesce((SELECT max(cardinality(c.path)) - 1 FROM memc c JOIN me ON c.a = me.id), 0)
+ORDER BY 1 DESC, 2, 3;
 
--- R1-S4 effective capability towards sensitive roles (PostgreSQL 16: MEMBER, USAGE, SET)
+-- R1-S4 cross-check: PostgreSQL's own resolution FROM THE LOGIN ROLE towards sensitive roles. Not authoritative: it
+-- does not see SET-then-INHERIT paths or self-grants through ADMIN OPTION. R1-S3 C1-C3 compare against it.
 SELECT r.rolname,
        pg_has_role(current_user, r.oid, 'MEMBER') AS is_member,
        pg_has_role(current_user, r.oid, 'USAGE')  AS inherits_privileges,
@@ -368,7 +496,8 @@ WHERE r.rolname <> current_user
   AND pg_has_role(current_user, r.oid, 'MEMBER')
 ORDER BY 1;
 
--- R1-S5 server-file capability: predefined file roles and server-side file functions
+-- R1-S5 cross-check: server-file capability OF THE LOGIN ROLE ITSELF. Not authoritative for other actors; R1-S3
+-- evaluates the same roles and functions for every actor.
 SELECT 'pg_read_server_files' AS capability,
        pg_has_role(current_user, 'pg_read_server_files', 'USAGE') AS inherited,
        pg_has_role(current_user, 'pg_read_server_files', 'SET')   AS via_set_role
@@ -393,20 +522,51 @@ ORDER BY f.kind, f.fn;
 ROLLBACK;
 ```
 
-**Mapping to the classes:**
+**Reading the result:**
 
-| Query | Finding | Class |
-|---|---|---|
-| R1-S1 | `is_superuser = on` | E1 |
-| R1-S2 | `rolsuper` or `rolbypassrls` | E1 |
-| R1-S2 | `rolcreaterole`, `rolcreatedb` or `rolreplication` | H1 |
-| R1-S4 | `can_set_role = t` on a `rolsuper`/`rolbypassrls` role | E2 |
-| R1-S4 | `can_set_role = t` on a role with `rolcreaterole`, `rolcreatedb` or `rolreplication` | H2 |
-| R1-S4 | `is_member = t` on a `rolsuper`/`rolbypassrls` role, with `can_set_role = f` and no `ADMIN` | H6 |
-| R1-S4 / R1-S5 | `inherits_privileges` or `can_set_role` = t on `pg_execute_server_program` or `pg_write_server_files`; `lo_export` executable | E3 |
-| R1-S4 / R1-S5 | `inherits_privileges` or `can_set_role` = t on `pg_read_server_files`; a read function executable | H3 |
-| R1-S4 | the same, on another predefined role | H4 |
-| R1-S3 | `has_admin_option = t` on a `rolsuper`/`rolbypassrls` role | E2 |
-| R1-S3 | `has_admin_option = t` on any other role | H5 |
+| R1-S3 output | Meaning |
+|---|---|
+| `verdict` = `BLOCKED` | A check failed. No conclusion; investigate and run again |
+| `verdict` = `CRITICAL` | At least one `finding` with an E code |
+| `verdict` = `HIGH` | Only H findings |
+| `verdict` = `PASS` | No finding, and every check is `ok` |
+| `finding` codes | E1–E3 and H1–H6 as in §3 R-1; the detail names the actor and how it is reached (`self`, `set_role`, `admin_self_grant`) |
+| `check` C1–C3 | The recursive membership, `SET` and `INHERIT` closures equal `pg_has_role` `MEMBER`, `SET` and `USAGE`. For a `SUPERUSER` login role they do not apply, because E1 already makes it CRITICAL |
+| `check` C4 | The login role was resolved |
+| no `verdict` row, or a psql error | BLOCKED |
 
-If every query is complete and none of these findings appears, R-1 is PASS.
+**Validation (local, isolated; never production):** a throwaway PostgreSQL 16.15 cluster (loopback only), with one
+login role per fixture scenario. Every scenario was run read-only (`BEGIN READ ONLY … ROLLBACK`).
+
+| Fixture | Expected | R1-S3 | Pack before this revision |
+|---|---|---|---|
+| clean baseline | PASS | PASS | PASS |
+| `SET` chain, depth 13, to a SUPERUSER role | CRITICAL | CRITICAL | CRITICAL |
+| `INHERIT` chain, depth 13, to `pg_execute_server_program` | CRITICAL | CRITICAL | CRITICAL |
+| `SET` false, then a SUPERUSER role | HIGH | HIGH (H6) | HIGH |
+| `SET` true chain to a SUPERUSER role | CRITICAL | CRITICAL | CRITICAL |
+| `SET` true, then `SET` false, to a BYPASSRLS role | HIGH | HIGH (H6) | HIGH |
+| `ADMIN` via `INHERIT` on a role holding `pg_write_server_files` | CRITICAL | CRITICAL (E3, H5) | HIGH (under-classified) |
+| `ADMIN` via `SET` on a BYPASSRLS role | CRITICAL | CRITICAL (E2, H5) | CRITICAL |
+| `ADMIN` with neither `INHERIT` nor `SET`, on a BYPASSRLS role | HIGH | HIGH (H6) | CRITICAL (over-classified) |
+| `ADMIN` via `INHERIT` on a SUPERUSER role (not grantable) | HIGH | HIGH (H5, H6) | CRITICAL (over-classified) |
+| `ADMIN` at depth 13 on a BYPASSRLS role | CRITICAL | CRITICAL (E2, H5) | HIGH (under-classified) |
+| two paths to one BYPASSRLS role, one with `SET` | CRITICAL | CRITICAL (E2) | CRITICAL |
+| two paths to one BYPASSRLS role, none usable | HIGH | HIGH (H6) | HIGH |
+| SUPERUSER login role | CRITICAL | CRITICAL (E1) | CRITICAL |
+| BYPASSRLS login role | CRITICAL | CRITICAL (E1) | CRITICAL |
+| `SET` then `INHERIT` to `pg_write_server_files` | CRITICAL | CRITICAL (E3) | **PASS (false PASS)** |
+| `pg_read_file` `EXECUTE` on a `SET`-only actor | HIGH | HIGH (H3) | **PASS (false PASS)** |
+| `lo_export` `EXECUTE` inherited | CRITICAL | CRITICAL (E3) | CRITICAL |
+| depth 13, `SET` then `INHERIT`, to `pg_read_server_files` | HIGH | HIGH (H3) | **PASS (false PASS)** |
+| `ADMIN` via `INHERIT` on a CREATEROLE role | HIGH | HIGH (H2, H5) | HIGH |
+| `ADMIN` at depth 13 on a role holding `pg_write_server_files` | CRITICAL | CRITICAL (E3, H5) | **PASS (false PASS)** |
+| `SET` chain, depth 41, to a BYPASSRLS role | CRITICAL | CRITICAL (E2) | CRITICAL |
+| depth 41, `SET` then `INHERIT`, to `pg_execute_server_program` | CRITICAL | CRITICAL (E3) | **PASS (false PASS)** |
+
+**Result:**
+- R1-S3 matched the expected class in **23 of 23** fixtures, with every check `ok` and **no false PASS**. The deepest
+  fixtures (depth 41) ran in about 35 ms.
+- The pack before this revision was wrong in 9 of 23: 5 false PASS, 2 under-classified, 2 over-classified.
+- Fail-closed was also shown: a forced failing check gives `verdict` = BLOCKED, and an unknown predefined role makes
+  the query error out, so no verdict row appears and the result is BLOCKED.
