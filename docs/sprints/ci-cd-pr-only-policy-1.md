@@ -19,7 +19,7 @@
 | DEPLOYED | **yes** — 2026-11-21, deploy `20261121-095125` of `f31b554be922d1c147d23e7e00523b2d23e4a413` (release id `ci-cd-pr-only-policy-1-phase-b`, approval contract 3, push run 44862172974), `DEPLOY RUNNER OK` |
 | RELEASED GO | **yes** — annotated tag `ci-cd-pr-only-policy-1-phase-b-go` (object `6c391e1cc7b8fdf33a33ba37bfd941e7d52ab367`) on `f31b554b…` |
 | VERIFIED IN PRODUCTION | **yes** — 2026-11-21 (phase B4, decision 13): the installed guard answered `check-approval` GO with `PASS: required CI — workflow_dispatch run 44898680653` for `ca86734e80846744ea2cdecc6f4aa9c5acb172d2`; test approval `49b95a0323c6effb9477423d86057b13` withdrawn, then DENIED; no deploy. See "Phase B4 result" |
-| PHASE B5 (CI trigger removal) | **IMPLEMENTED IN BRANCH, not merged** — path P2 (decisions 17–20): closed without a deploy and with no GO tag of its own, under the CG-16 CI trigger removal class. Governance contract PR-G merged as `35591fc5` (#682). Implementation PR-B5 (branch `ci/ci-cd-pr-only-policy-1-b5-trigger-removal`) is open; merging it and the post-merge dispatch need separate owner decisions. B5 is never reported as deployed. See "Phase B5 governance contract" and "Phase B5 implementation" |
+| PHASE B5 (CI trigger removal) | **MERGED — EFFECT VERIFIED — NOT DEPLOYED — NO GO TAG** (decisions 17–21). PR-B5 #683 squash-merged as `4a270273515a7cea031f28b3bc8152569fbbef3e` on 2026-11-22. The merge commit got no `push` run. The one authorised `workflow_dispatch` (run 44986536577) succeeded with the critical tests run, and the installed guard's replay passes. CG-16 CI trigger removal: no deploy, no GO tag; the workflow file reaches the host only inertly with a later release of another sprint. `B5-RESIDUAL-1` stays OPEN. See "Phase B5 result" |
 
 Gate 1 (RME-LAB-FEE-APPROVAL-1) stays **NO-GO**. BK-2 not invoked. Production changes in this phase: the one
 authorised deploy (decision 10); see "Release and GO tag (phase B)". Phase B4 added only the test approval's
@@ -343,6 +343,35 @@ service, timer or database change.
       authorised yet.
     - Not authorised: merging PR-B5, a manual dispatch, deploy or VPS mutation, database or migration, GO tag,
       rollback, BK-2, merging PR #672, any change outside the B5 change list. The base freeze stays.
+21. 2026-11-22 — **Merge of PR-B5 #683 and one proof dispatch: APPROVED.**
+    - Squash merge of head `2cc5a640608f314a3630833ff0588c7b5d692746` with `--match-head-commit`, after
+      re-verifying:
+      - the head, the base tip and CI;
+      - a diff that only deletes the five approved lines;
+      - the contract SHA-256;
+      - critical tests that really ran.
+    - After the merge, verify:
+      - the squash SHA;
+      - the triggers, now only `pull_request` and `workflow_dispatch`;
+      - that no `push` run exists for the merge commit and that `schedule` is gone;
+      - that jobs, permissions, secrets, the classifier and the CI safeguards match the contract.
+    - **One normal `workflow_dispatch`**, only on the full merge SHA of B5, with the base frozen until verification
+      ends:
+      - default inputs, no CI-PERF-04 evaluation;
+      - wait for completion, then require `success` with the critical tests run;
+      - replay the release guard read-only under the approved contract;
+      - a failure, cancellation or base move stops the work for an owner decision before any rerun.
+
+      The authorisation does not cover `submit-approval`, `check-approval` on the VPS, `start`, deploy or any
+      production change.
+    - Closure:
+      - report the 14 acceptance criteria;
+      - record that B5 was not deployed and has no new GO tag;
+      - prepare a CG-22 closure docs pull request and stop before its merge;
+      - keep `B5-RESIDUAL-1` OPEN.
+    - Not authorised: deploy, VPS or database changes, migration, rollback, a new or changed GO tag, BK-2, merging PR
+      #672, disabling historical workflows, worktree cleanup.
+    - The base freeze holds until the B5 proof ends.
 
 ## Phase B4 result (production verification, 2026-11-21)
 
@@ -528,8 +557,8 @@ Until then, `B5-RESIDUAL-1` is reported as open.
 
 ## Phase B5 implementation (PR-B5, 2026-11-22)
 
-Decision 20. Base `35591fc5`; branch `ci/ci-cd-pr-only-policy-1-b5-trigger-removal`. **State: IMPLEMENTED IN BRANCH,
-not merged, not deployed, no GO tag.**
+Decision 20. Base `35591fc5`; branch `ci/ci-cd-pr-only-policy-1-b5-trigger-removal`. State when this section was
+written: IMPLEMENTED IN BRANCH, not merged, not deployed, no GO tag. The current state is in "Phase B5 result".
 
 ### Workflow
 
@@ -589,6 +618,50 @@ No test is deleted, no new test file is added, and the `B5-RESIDUAL-1` pin is un
 
 The PR description and the CI run carry the validation evidence. The post-merge proof (no `push` run on the merge
 commit; one authorised dispatch; installed-guard replay) is recorded after the merge.
+
+## Phase B5 result (2026-11-22)
+
+Decision 21. Times in UTC (WITA = UTC+8).
+
+| Step | Time | Result |
+|---|---|---|
+| Pre-merge checks | 04:39 | PR head `2cc5a640…` = the approved head; base tip `35591fc5`. The workflow diff deletes exactly the five approved lines and adds none. SHA-256 is `978e90c0…` → `4cd0c3db…`, the contract values. PR CI 44978315671 is `success`, with `Run critical regression tests` 11828 passed (61276 assertions) |
+| Squash merge | 04:39:51 | **`4a270273515a7cea031f28b3bc8152569fbbef3e`** (#683). Parent `35591fc5`; tree `91965e7c` identical to the reviewed head; 10 files |
+| Workflow at the merge | 04:40 | SHA-256 `4cd0c3db…`. `on` is exactly `pull_request` and `workflow_dispatch`; no `push`, no `schedule`. Compared with `35591fc5`, these are identical: `pull_request`, `workflow_dispatch` (4 inputs), jobs, concurrency, permissions (none at workflow or job level), secrets (`CI_DB_PASSWORD`), no `pull_request_target`, and the classifier step. Manifests unchanged |
+| No automatic run | 04:39–04:46, again at 06:23 | Runs for the merge commit: 0 for 6.5 minutes after the merge (no `push`, no `schedule`). At 06:23, the only base-branch run since the merge is the authorised dispatch; `push` runs since the merge: 0; `schedule` runs today: 0 |
+| Pre-dispatch | 04:46 | Base tip `4a270273…`, nothing queued. A default dispatch resolves to 1 worker, sequential, `critical_parallel_evaluation=false`. The repository variable `CI_CRITICAL_TEST_WORKERS` is unset |
+| `workflow_dispatch` (one) | 04:46:44–06:22:11 | Run **44986536577**, attempt 1, `completed`/`success`, on the base branch at head `4a270273…`, through the official workflow path in this repository. Classifier `unknown_high_risk` (no event base) with `run_critical_tests=true`. **`Run critical regression tests` ran: 11828 passed (61276 assertions)**, 5379 s. Evaluation step skipped; docs-only skip skipped. NSF-R011 Critical (hosted), NSF-R012 Quality, CICD-CTRL Classifier and Selective Module, NSF-9, NSF-10 and Android succeeded. The self-hosted twin skipped; the Full Suite skipped (DEFERRED, CG-18). This is the only run of the commit |
+| Installed-guard replay (read-only) | 06:23 | The guard and authority of `f31b554b` (all three files hash-identical to git) were run against the GitHub API: `PASS: required CI — workflow_dispatch run 44986536577 … 'Run critical regression tests' ran`, `rc=0`. Nothing was sent to the host |
+| After | 06:23 | Base tip still `4a270273…`. GO tag `ci-cd-pr-only-policy-1-phase-b-go` unchanged on `f31b554b`; no other tag of this sprint and no DMS-RME-COMPREHENSIVE-CLOSURE-1 tag. Public smoke `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; `/storage/` 403. No VPS access in this phase |
+
+**Acceptance of the B5 contract (14 criteria):**
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | SHA-256 `978e90c0…` → `4cd0c3db…` | **PASS** |
+| 2 | Deletion-only diff confined to the `on:` block | **PASS** (5 deletions, 0 additions) |
+| 3 | The pinned invariants hold | **PASS** (identical to the base; `CiTriggerRemovalGovernanceTest` passes in PR CI and in the dispatch) |
+| 4 | No file outside the class | **PASS** (workflow, tests, rules, docs only) |
+| 5 | Focused tests pass locally and are selected in both critical variants | **PASS** (42 suites locally, 0 open failures; selected through `Cicd` and `DeployHarden`) |
+| 6 | `foundation:ci-runtime-control-check` and `foundation:cicd-enterprise-gate-check` GO | **PASS** (local, before the PR) |
+| 7 | DEVFLOW GO | **PASS** |
+| 8 | PR CI green with the critical tests run | **PASS** (run 44978315671) |
+| 9 | No `push` run for the merge commit | **PASS** |
+| 10 | One authorised dispatch green, installed-guard replay PASS | **PASS** (run 44986536577) |
+| 11 | No `schedule` run after the next Sunday 02:00 UTC | **OPEN — observation.** The trigger is gone from the workflow and no `schedule` run exists today up to 06:23. Earlier Sunday runs fired late (07:00–10:00), so today's window and 2026-11-29 are still to be observed. This is not a blocker under the contract |
+| 12 | Production unchanged (read-only posture and drift) | **PARTIAL.** Public smoke PASS. No deploy and no VPS action happened in B5. Posture and drift on the host were **not run**, because decision 21 authorises no VPS access |
+| 13 | Both manifest blobs unchanged | **PASS** (`d1c4af5e`, `d3e8e039`) |
+| 14 | This record holds the evidence | **PASS** (this record) |
+
+**B5 is not deployed and has no GO tag of its own.** The workflow file reaches the production host only inertly
+with the next release of another sprint, which keeps its own `go_tag`. `B5-RESIDUAL-1` stays **OPEN**: it is not
+fixed, it stays pinned by `CiTriggerRemovalGovernanceTest`, and it is closed by the next released CI governance
+sprint. Each of these needs its own owner decision:
+
+- lifting the base freeze;
+- rebasing and re-checking PR #672;
+- removing the `workflow` scope from the workstation's GitHub CLI token;
+- cleaning up worktrees.
 
 ## Release and GO tag (phase B)
 
