@@ -1,0 +1,74 @@
+---
+description: RME-LAB-FEE-APPROVAL-1 (rule 246) — LAB fees enter an RME invoice only at issuance, as positive classified LAB_FEE lines backed by a pre-issuance approval consumed once (independent, branch-designated checker who is not the issuing cashier); never through free text or any invoice correction; items snapshot their classification; invariants L/NN/G are database CHECKs; Inv1 has no exception; HAS_LAB with NN = 0 only as REVERSED or under a single-use Owner LAB issuance exception whose route stays disabled until the Rp0 LAB invoice flow exists; no supplementary or replacement invoice. Supersedes in part rule 238 §4 (LAB-fee clause only). DESIGN LOCKED 2026-11-20, NOT IMPLEMENTED.
+globs: app/Modules/RmeInvoice/**, app/Modules/LabOrder/Services/RmeLabIntegrationService.php, database/migrations/**
+alwaysApply: false
+---
+
+# RME LAB fee approval and billing integrity (rule 246)
+
+Owner decisions 2026-11-20: DL-LAB, DL-SNAP, A-01/REV-02, A-02/REV-03, A-04, A-08, A-22, A-23, A-24, A-25, A-29,
+REV-01, REV-04. Spec: `docs/architecture/rme-lab-financial-state-machine.md`. Decision record:
+`docs/decisions/rme-lab-fee-approval-1-owner-design-lock.md`. Findings: FIN-01, FIN-02, FIN-03, FIN-04, FIN-05, FIN-06.
+
+## Current state (verified 2026-11-20)
+
+No LAB-fee classification exists; a free-text line may carry any price; HAS_LAB is read live from
+`mst_treatments.requires_lab`; no CHECK guards item money or invoice totals beyond the NO_CHARGE trio. This is
+implementation drift against this rule until it is implemented.
+
+## Locked target — the only LAB fee route
+
+1. A LAB fee is an item with `line_kind = 'LAB_FEE'` and a positive subtotal (A-24), linked by `lab_for_item_id` to a
+   line on the same invoice whose `requires_lab_snapshot` is true, and referencing exactly one LAB-fee approval
+   (`lab_fee_approval_id`, unique).
+2. Before issuance a maker requests the approval for the visit (branch, patient, visit, LAB line, exact amount); a
+   designated branch checker who is neither the maker nor the issuing cashier approves (rule 247). Issuance consumes one
+   APPROVED, unexpired, unrevoked approval whose fingerprint matches the priced LAB line, once, inside the issuance
+   transaction.
+3. No other route: never a free-text line; never an invoice correction, even with an approval (REV-01); never a
+   supplementary or replacement invoice (REV-04); never a lab-domain (`trx_invoices`) charge.
+4. A correction refuses to add, change or remove a LAB_FEE line and refuses to switch a line's treatment to or from a
+   LAB-requiring treatment (A-29).
+
+## Snapshots
+
+5. Items snapshot `line_kind`, `requires_lab_snapshot`, treatment code and name at issue and at correction apply;
+   candidate generation and backfill read the snapshot; a master edit never changes an issued invoice.
+
+## Money and invariants
+
+6. Integer cents; `item.subtotal` is NET; `trx_rme_invoices.subtotal` is GROSS; `grand_total = Σ item.subtotal`;
+   no tax. L = Σ NET of LAB_FEE items; NN = Σ NET of other items; G = grand_total.
+7. Inv1, no exception (A-22): L > 0 → NN > 0. An invoice with a positive LAB fee and NN = 0 is never issued.
+8. Inv2, normal rule: HAS_LAB ∧ NN = 0 → L = 0 ∧ status REVERSED.
+   Inv2, owner amendment A-02: an invoice with HAS_LAB ∧ NN = 0 ∧ L = 0 may be issued only by consuming one GRANTED,
+   unexpired, unrevoked Owner LAB issuance exception bound to that visit and to the exact priced lines (fingerprint),
+   approved in-system by an identity on the source-controlled owner allowlist (never by role or permission, so never by
+   Super Admin as such), expiring at most 7 days after approval, citing a reason code from the owner's closed list
+   (A-25), single-use, with immutable evidence. The amendment never relaxes Inv1.
+   The route stays disabled (fail-closed, `LAB_EXCEPTION_ROUTE_DISABLED`) until the operational Rp0 LAB invoice flow —
+   visit closure and lab-candidate generation for a G = 0 invoice, which S6-Q2 keeps out of NO_CHARGE — is designed,
+   approved and implemented (A-23, DES-LAB-RP0).
+9. Inv3 (A-04): G = 0 ∧ correction_version > 0 → status REVERSED; an unclassified historical row may instead cite an
+   approved historical exception.
+10. Legitimate initial Rp0 invoices without LAB are never rejected. Unclassified historical invoices are exempt from
+    Inv1/Inv2 by an explicit predicate; `historical_exception_id` is allowed only on unclassified rows.
+11. Database part: CHECKs verify single-row facts only (presence of an approval or exception reference, totals
+    arithmetic, positive LAB_FEE subtotal). Approval and exception validity, single use and cross-row totals are
+    verified by the service under the lock and by deferred constraint triggers owned by the object owner (rule 245).
+    CHECKs are added NOT VALID and validated after an owner-run data audit.
+
+## Acceptance criteria
+
+- Every row of the invariant matrix and of the test matrix in the spec passes on PostgreSQL 16; while the route is
+  disabled every exception attempt is refused with `LAB_EXCEPTION_ROUTE_DISABLED`.
+- A LAB_FEE line without a consumed approval, a zero LAB_FEE line, a free-text LAB fee, a correction touching a LAB_FEE
+  line and a correction switching to or from a LAB-requiring treatment are each refused with a stable code and audited
+  after rollback.
+- Flipping `requires_lab` after issue leaves HAS_LAB, candidates and totals of issued invoices unchanged.
+- Direct SQL violating Inv1, Inv2, Inv3 or the positive LAB_FEE rule fails with SQLSTATE 23514; every CHECK shows
+  `convalidated = true` after the data audit.
+
+## Unchanged
+
+Rule 194 manual pricing (free-text non-LAB lines stay allowed), D21c pending, rule 217 NO_CHARGE (S6-Q2), D23/PP-8, D28.

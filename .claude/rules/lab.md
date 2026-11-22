@@ -20,9 +20,9 @@ paths:
 
 # Lab workflow — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
-code, then the canonical rule, and report the drift.
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here. Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of
+current behaviour. A mismatch is implementation drift: report it.
 
 ## Invariants
 
@@ -188,6 +188,13 @@ code, then the canonical rule, and report the drift.
 - **AIR-LAB-34** `lab-case-candidates.{show,convert}` constrain `{candidate}` with `DatabaseRouteKey::PATTERN` (bigint
   `trx_lab_case_candidates.id`), so a non-key segment is a 404, never a 22P02 500, and an alias never converts a real
   candidate. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
+- **AIR-LAB-35** Candidate generation and backfill read the item's `requires_lab_snapshot`, never the live master flag;
+  candidate list, show and convert use `RmeWorkingBranchScope` and answer 404 when no branch resolves. Design locked,
+  not implemented. Source: rules 246, 247.
+- **AIR-LAB-36** `RmeLabObligationGate` is the only way RME reads LAB completion: read-only, FOR SHARE in id order,
+  fail-closed, evidence-based (V2 terminal DELIVERED/CANCELLED plus status-log evidence; lab invoices settled from
+  payments); it never cancels a lab order or writes a lab-domain record. Design locked, not implemented. Source: rule
+  249 (A-05).
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -216,6 +223,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/80-lab-operational-analytics-kpi.mdc` | KPI contract, SLA deadline, analytics authorization tiers |
 | `.cursor/rules/81-lab-technician-capacity-planning.mdc` | Capacity planning as read-only decision support |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Lab case candidate route key constrained (404, never 500) |
+| `.cursor/rules/249-rme-billing-reversal-and-icfr.mdc` | LAB obligation gate (A-05), candidate snapshot reads |
 
 ## History
 

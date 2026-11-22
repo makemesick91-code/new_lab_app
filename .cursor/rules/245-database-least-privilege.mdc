@@ -1,0 +1,52 @@
+---
+description: RME-LAB-FEE-APPROVAL-1 (rule 245) — PostgreSQL least privilege (R6). Four roles; the runtime role owns nothing; migrations run as the migration role acting as the object owner through an explicit SET ROLE; every table declares its runtime class; role changes are owner-approved provisioning, never a migration. DESIGN LOCKED 2026-11-20, enforcement NOT IMPLEMENTED; production privileges NOT VERIFIED.
+globs: database/migrations/**, config/database.php, scripts/deploy-vps.sh
+alwaysApply: false
+---
+
+# Database least privilege (rule 245)
+
+Owner design lock 2026-11-20: DL-R6 (planning baseline only, no permission to change roles), A-14, A-15, A-17, A-18,
+A-21. Sprint record: `docs/sprints/rme-lab-fee-approval-1.md`. Architecture:
+`docs/architecture/database-least-privilege-r6.md`. Findings: Gate 1 R6-01, R6-02, R6-03, R6-04.
+
+## Current state (verified 2026-11-20, repository only)
+
+One database identity migrates (`scripts/deploy-vps.sh` runs `migrate --force` as the runtime user) and serves web,
+queue and scheduler, so it owns the objects it created. Production role attributes are NOT VERIFIED. This is
+implementation drift against this rule: report it, never restate the rule to match the code. Until the rule is
+implemented, a database guard (CHECK, trigger) protects against application bugs, not against a compromised runtime.
+
+## Locked target
+
+1. `dms_owner` NOLOGIN owns schema `public` and every application object.
+2. `dms_migrator` LOGIN, member of `dms_owner` WITH INHERIT FALSE, SET TRUE. The migration connection runs an explicit
+   `SET ROLE dms_owner` when it connects, so every new object is owned by `dms_owner` (A-17, proven by CI before use).
+   Migrations connect to PostgreSQL directly, never through PgBouncer.
+3. `dms_runtime` (the application login role, web, queue and scheduler) is never a member of `dms_owner`; it has no
+   CREATE on any schema, no TRUNCATE, no TRIGGER and no ownership.
+4. `dms_readonly` LOGIN, SELECT only. Changing a backup identity is deferred (A-18); any future change happens only
+   after a rehearsal restore proves the new identity's dump.
+5. No role holds SUPERUSER, CREATEDB, CREATEROLE, BYPASSRLS or REPLICATION.
+6. Every new table declares its runtime class in its migration: FULL_DML, APPEND_ONLY (SELECT, INSERT),
+   APPEND_ONLY_WITH_COLUMNS (plus UPDATE on named columns) or READ_ONLY_RUNTIME. A table the runtime row-locks keeps
+   UPDATE on at least one column (PostgreSQL row-lock privilege), trigger-guarded when its class is append-only.
+
+## Never
+
+- Change roles, memberships or ownership in a Laravel migration (CG-09): that is owner-approved provisioning, in a
+  maintenance window, after a verified dump, with a rehearsed rollback.
+- Add SECURITY DEFINER without owner `dms_owner`, `SET search_path = pg_catalog, pg_temp`, schema-qualified names,
+  EXECUTE revoked from PUBLIC and granted to `dms_runtime` only, and a negative test.
+- Claim production privileges from repository evidence: only the owner-run read-only query pack proves them.
+- Run, schedule or alter BK-2 as part of this work (rule 232); the pre-deploy dump stays mandatory.
+
+## Acceptance criteria
+
+- CI role-separation job on PostgreSQL 16: migrations run as `dms_migrator`; every new object is owned by `dms_owner`;
+  as `dms_runtime`, ALTER, DISABLE TRIGGER, TRUNCATE, CREATE, SET ROLE dms_owner and UPDATE/DELETE on APPEND_ONLY
+  tables each fail with SQLSTATE 42501; every runtime row lock still succeeds; the runtime smoke suite passes. The
+  suites are selected by NSF-R011 tokens in both runner variants (CG-19).
+- `foundation:db-privilege-check` (read-only) exits 0 in CI and, after provisioning, in production.
+- Production, by the owner-run query pack: runtime attributes all false; no membership in `dms_owner`; objects owned by
+  the runtime = 0; UPDATE, DELETE and TRUNCATE on APPEND_ONLY tables = 0; guard triggers enabled.

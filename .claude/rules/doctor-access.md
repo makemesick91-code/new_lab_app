@@ -12,9 +12,9 @@ paths:
 
 # Doctor access: account link, single session, branch lock, fleet readiness & activation — domain rules
 
-Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and
-are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
-code, then the canonical rule, and report the drift. Device registry, Android Keystore enrolment, WebAuthn
+Loaded automatically when you open a file under the paths above. Global rules CG-01…CG-24 live in `CLAUDE.md` and are
+not repeated here. Authority: owner decisions > canonical `.cursor/rules/` > this file > archive; code is evidence of
+current behaviour. A mismatch is implementation drift: report it. Device registry, Android Keystore enrolment, WebAuthn
 ceremonies and the login gate's proof mechanics belong to the sibling `.claude/rules/doctor-device-android.md`.
 
 ## Invariants

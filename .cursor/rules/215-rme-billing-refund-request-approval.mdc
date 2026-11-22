@@ -100,3 +100,21 @@ decisions: `docs/decisions/rme-refund-request-approval-owner-decision-package.md
 * Edit or delete a refund row or event to undo a decision; correct by withdraw/revoke and a new request.
 * Activate `rme.billing_refund_request` before Sprint 2 GO, post-payment correction activation, a real OPEN
   obligation, staffed maker + reviewer, and the Owner's activation approval (RF-3 order).
+
+## Amendment — reversal-sourced obligations (RME-LAB-FEE-APPROVAL-1, A-13, A-19; DESIGN LOCKED, NOT IMPLEMENTED)
+
+Owner decision 2026-11-20. Spec: `docs/architecture/rme-billing-reversal-icfr.md` §8. Until this amendment is
+implemented and verified, the text above is the enforced behaviour and a reversal of an invoice with money received
+stays blocked (rule 249, T5).
+
+1. An obligation has exactly one source, a correction (`source_correction_id`) or a billing reversal
+   (`source_billing_reversal_id`), enforced by a database CHECK.
+2. A refund request for a correction-sourced obligation is eligible only on a PAID invoice (unchanged); for a
+   reversal-sourced obligation only on a REVERSED invoice. Any other pair is refused
+   (`OBLIGATION_SOURCE_STATUS_MISMATCH`).
+3. overpaid(grand_total, net received) equals the obligation amount for both sources (a REVERSED invoice has grand
+   total 0).
+4. The request snapshot format and hash stay unchanged for correction-sourced obligations; reversal-sourced ones use
+   a versioned format that adds the source, so no existing request becomes stale.
+5. Unchanged: Front Office maker, designated reviewer, allowlists, flags, no automatic request, no payment row
+   written.

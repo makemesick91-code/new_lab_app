@@ -1,0 +1,42 @@
+---
+description: RME-LAB-FEE-APPROVAL-1 (rule 247) — maker-checker independence for every financial approval: per account, per case, branch-designated checker who is neither the maker nor the issuing cashier, enforced in the service under the row lock for every role including Super Admin, and by a database CHECK; owner approvals by source-controlled owner identity, never by role. DESIGN LOCKED 2026-11-20, NOT IMPLEMENTED.
+globs: app/Modules/RmeInvoice/**, database/migrations/**, database/seeders/RoleSeeder.php, database/seeders/PermissionSeeder.php
+alwaysApply: false
+---
+
+# Maker-checker independence (rule 247)
+
+Spec: `docs/architecture/maker-checker-authorization.md`. Owner decisions 2026-11-20: DL-LAB, T9, A-02, A-07, A-08,
+A-25. Findings: MC-02, MC-03, BR-02.
+
+## Current state (verified 2026-11-20)
+
+Corrections, refunds and disputes refuse self-decision under the lock; refunds and settlements also have a database
+CHECK; corrections do not. Front Office holds both correction request and approve; Supervisor RME holds
+`manage_rme_billing` and is exempt from the branch context. This is implementation drift against this rule for the
+approvals it governs until it is implemented.
+
+## Locked target
+
+1. Checker ≠ maker per account, decided in the service after the row lock, for every role including Super Admin.
+2. Checker ≠ the issuing cashier of the invoice (A-08), holds an active per-(account, branch) designation created by
+   another account, and passes `RmeWorkingBranchScope::allows()` for the invoice branch; a role or permission alone is
+   never sufficient.
+3. Owner approvals — A-02 LAB issuance exceptions, and every billing reversal until the owner sets risk thresholds
+   (A-07) — are decided in-system by an identity on a source-controlled owner allowlist (no `env()`, empty list =
+   nobody), never by `can()`; owner ≠ requester; each cites a single-use owner reference (rule 214) and records
+   `owner_approved_at`; an exception expires at most 7 days after approval and cites a reason code from the owner's
+   closed list (A-25).
+4. Every approval table has `CHECK (decided_by IS NULL OR decided_by <> requested_by)` (or the owner equivalent), a
+   partial unique index for one active request per object, a unique idempotency key and an append-only event table.
+   Corrections are retrofitted with the same CHECK for `decided_by` and `applied_by` after a data audit (MC-03).
+5. Refusals use stable codes and are audited after rollback with ids and codes only. Human separation is never
+   claimed from account separation.
+
+## Acceptance criteria
+
+- Self-approval refused for every role including Super Admin; an undesignated checker, a checker who issued the invoice
+  and an out-of-branch checker are refused (404 when out of scope); Super Admin outside the owner allowlist cannot
+  approve an owner-level decision.
+- Direct SQL with decided_by = requested_by fails with SQLSTATE 23514; concurrent checkers: one wins, one
+  `ALREADY_DECIDED`; a replay is a no-op.

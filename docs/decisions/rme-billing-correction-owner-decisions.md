@@ -58,6 +58,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-11-02 | **DPT-Q2 … DPT-Q10 ratified** — Q2 detective in the pilot, blocking later (STAGED); Q3 declaration mandatory as target, optional in the pilot (STAGED); Q4 controlled auditable amendment (direction; not built); Q5 Konsultasi/Kontrol stay out of the picker; Q6 operational Kontrol ≠ registration Kontrol, no restatement; Q7 controlled D28 recovery needed (direction; no operation authorized); Q8 one pilot branch, optional, detective, independent of NO_CHARGE; Q9 officially assigned treating doctor only; Q10 SATUSEHAT Procedure source unchanged | `OWNER_POLICY_APPROVED` (Q2, Q3 `…_STAGED`; Q4, Q7 direction only), `REPOSITORY_POLICY_RECORDED` — **not** `PRODUCTION_ACTIVATED` at ratification | Owner statement in the brief of `RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1` (received 2026-11-01 ≈ 23:50 WITA; no signed artefact, none fabricated); package `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` |
 | 2026-11-02 | **DPT-Q8 designation** — pilot branch **SPN4 (Cabang Sunu)**; cohort = every officially assigned treating doctor at SPN4 (no extra identity allowlist); training `OWNER_ATTESTED`; activation immediately after the activation deploy is verified | `OWNER_DESIGNATION_RECORDED`, `REPOSITORY_POLICY_RECORDED` — activation is recorded in rule 219 §15, never here by inference | in-session answers of the Owner, 2026-11-02 ≈ 05:05 WITA (answer arrival time); no signed artefact, none fabricated |
 | 2026-11-02 | **DPT-Q8 pilot activation** — `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`: fail-closed SPN4 allowlist deployed (runtime `89711151`, 06:13 UTC), flag armed 06:24 UTC (14:24 WITA) | `TECHNICAL_ENFORCEMENT_DEPLOYED`, `PRODUCTION_ACTIVATED` (SPN4 only); `OPERATIONAL_ACCEPTANCE_VERIFIED` **not reached** | rule 219 §14; probe `rme:performed-treatment-readiness --expect=on` = `ARMED`, other branches `DENIED`; sprint record §9 |
+| 2026-11-20 | **RME-LAB-FEE-APPROVAL-1 — Owner Design Lock**: LAB fee as a positive, classified RME invoice line approved before issuance by an independent, branch-designated checker (never through free text or a correction; no supplementary or replacement invoice); immutable classification snapshots; Inv1 without exception, Inv2 with the Owner exception A-02 (route disabled until the Rp0 LAB invoice flow exists), Inv3 → REVERSED; FULL_REVERSAL as the cancellation of the billing obligation (model M1 pending reconciliation proof); ICFR option 2 (derived); T1–T10; R6 four-role model as a planning baseline only. **D6, D23, D26 and D28 unchanged; rule 238 §4 superseded in part (LAB-fee clause only)** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` — `TECHNICAL_ENFORCEMENT: NOT IMPLEMENTED`; Gate 1 NO-GO | owner instructions in the DEVFLOW sessions of 2026-11-20 (no signed artefact, none fabricated); section "RME-LAB-FEE-APPROVAL-1 — Owner Design Lock" below |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -1164,3 +1165,36 @@ changed by the implementation; D21c, D21g, D22 stay PENDING.
 
 **Result: `OWNER_DECISION_RATIFICATION = GO`** — all ten decisions map unambiguously
 and consistently; no blocker in the ratification itself.
+
+## RME-LAB-FEE-APPROVAL-1 — Owner Design Lock (2026-11-20)
+
+`OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`; `TECHNICAL_ENFORCEMENT: NOT IMPLEMENTED`; Gate 1 NO-GO. Full
+record (Indonesian): [rme-lab-fee-approval-1-owner-design-lock](rme-lab-fee-approval-1-owner-design-lock.md). Rules
+245–249 are design locked and not implemented. Source: owner instructions in the DEVFLOW sessions of 2026-11-20; no
+signed artefact, none fabricated.
+
+Relationship to this register: D6, D23, D26 and D28 are unchanged. ODR-02 defines FULL_REVERSAL as the cancellation of
+the billing obligation, distinct from a payment reversal (D26) and never creating patient credit (D6); a reversal is not
+a correction, so D28 stands. Rule 238 §4 is superseded in part (the additional-lab-fee clause only).
+
+| Id | Decision | Label |
+|---|---|---|
+| ODR-01 | Legacy imports have no daily numerical limit; rule 166 preserved | `OWNER_POLICY_APPROVED` (reaffirmation) |
+| ODR-02 | FULL_REVERSAL cancels the billing obligation; it never modifies historical payments, creates patient credit, refunds automatically, or changes clinical records or a completed visit | `OWNER_POLICY_APPROVED` |
+| ODR-03 | BK-2 governance unchanged; agents never run, trigger or alter BK-2; production timer state not verified | `OWNER_TASK_INSTRUCTION` |
+| DL-LAB, A-01, REV-01, REV-02, REV-04 | LAB fee only at issuance, approved before issuance; never through free text or any correction; no supplementary or replacement invoice | `OWNER_POLICY_APPROVED` |
+| A-08, A-24, A-29 | Checker ≠ maker and ≠ issuing cashier; LAB_FEE subtotal positive; a correction never switches a treatment to or from a LAB-requiring treatment | `OWNER_POLICY_APPROVED` |
+| DL-SNAP | Immutable classification snapshots; master edits never change issued invoices | `OWNER_POLICY_APPROVED` |
+| A-02, A-22, A-23, A-25 | Inv1 has no exception; HAS_LAB with NN = 0 only through a single-use Owner exception (in-system owner identity, at most 7 days, closed reason list); that route stays disabled until the Rp0 LAB invoice flow is implemented | `OWNER_POLICY_APPROVED` |
+| A-04 | Inv3 resolves to REVERSED | `OWNER_POLICY_APPROVED` |
+| DL-REV, DL-TRANS, A-10, A-11 | Dedicated reversal; REVERSED and NO_CHARGE terminal; zero-total invoices cannot be reversed; rule 207 transitions remain valid | `OWNER_POLICY_APPROVED` |
+| DL-ICFR | ICFR option 2: REVERSED + OPEN reversal-sourced obligation, never a status | `OWNER_POLICY_APPROVED` |
+| T1–T10 | Reversal guards | `OWNER_POLICY_APPROVED` |
+| A-05, A-30 | Reversal only after LAB work and LAB obligations are complete or lawfully cancelled, with verifiable evidence; a HAS_LAB invoice without candidate links needs a maker and designated-checker declaration | `OWNER_POLICY_APPROVED` |
+| A-06, A-07, A-09, A-20 | Five T5 activation conditions; owner approval for every reversal until thresholds exist; "Dibatalkan" read-only in the cashier queue; no reversal while a billing dispute is active | `OWNER_POLICY_APPROVED` |
+| A-13, A-19 | Exactly one source per obligation; rules 215/216 amended for reversal-sourced obligations (P0 dependency until implemented) | `OWNER_POLICY_APPROVED` (technical direction) |
+| M1 | Preferred reversal model, final only after reconciliation proof | `OWNER_POLICY_APPROVED` (conditional) |
+| DL-R6, A-17, A-18 | Four-role model as a planning baseline (no permission to change roles); explicit SET ROLE subject to CI; backup identity change deferred | `OWNER_POLICY_APPROVED` (design baseline) |
+| A-14, A-15, A-16, A-21 | Classification FOUNDATION + SECURITY FIX; rule placement; English rule text; owner decisions and canonical rules are normative, code is evidence, a mismatch is drift | `OWNER_POLICY_APPROVED` |
+| Open | Reason-code list (A-25); Rp0 LAB invoice flow (DES-LAB-RP0); A-26, A-27, A-28; M1 proof | `REQUIRES_OWNER_DECISION` / design |
+| RA-LAB-1 | Risk acceptance | `PENDING_OWNER_APPROVAL` — no risk accepted |

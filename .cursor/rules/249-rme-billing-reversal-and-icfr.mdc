@@ -1,0 +1,67 @@
+---
+description: RME-LAB-FEE-APPROVAL-1 (rule 249) — FULL_REVERSAL cancels the billing obligation through a dedicated maker-checker mechanism with an owner approval for every reversal (model M1, pending reconciliation proof); terminal status REVERSED; payments, receipts, clinical records, visit state and lab-domain records never change; refused for a zero-total invoice and while LAB work or LAB obligations are unresolved, an obligation is OPEN or a billing dispute is active; money received becomes one reversal-sourced OPEN obligation settled only through rules 215/216 as amended; ICFR is derived. DESIGN LOCKED 2026-11-20, NOT IMPLEMENTED.
+globs: app/Modules/RmeInvoice/**, app/Modules/ClinicOversight/**, app/Modules/LabOrder/**, database/migrations/**
+alwaysApply: false
+---
+
+# RME billing reversal and ICFR (rule 249)
+
+Spec: `docs/architecture/rme-billing-reversal-icfr.md`. Owner decisions 2026-11-20: ODR-02, DL-REV, DL-ICFR, DL-TRANS,
+T1–T10, A-05, A-06, A-07, A-09, A-10, A-11, A-13, A-19, A-20, A-30, REV-04. Model M1 is the preferred design pending
+reconciliation proof (identities R1–R11 of the spec).
+
+## Current state (verified 2026-11-20)
+
+No reversal exists; `RmeInvoice::STATUS_VOID` has no writer; an obligation can only come from a correction; refund
+request and settlement accept only PAID invoices. This is implementation drift against this rule until it is
+implemented.
+
+## Locked target
+
+1. Only the billing reversal service writes REVERSED; it is the second sanctioned writer of an issued invoice beside the
+   correction engine (amends rule 194 §9 and rule 188 §2 by addition). VOID and DRAFT stay unwritten.
+2. Transitions: UNPAID/PARTIAL/PAID → REVERSED; REVERSED and NO_CHARGE are terminal; the rule 207 post-payment
+   correction transitions stay valid (A-11); nothing recomputes the status of a terminal invoice and the payment path
+   refuses a REVERSED invoice before any insert.
+3. Model M1: freeze ORIGINAL (v0) when absent and a REVERSAL document version; record an immutable reversal snapshot
+   (pre-reversal G, L, NN, net received, correction_version, fingerprints, LAB assessment or A-30 declaration); set
+   grand_total, lab_fee_total and non_lab_total to 0; never change items or payments; never increment
+   correction_version.
+4. Never: write, delete or reallocate `trx_rme_payments` (D26, T10); create patient credit (D6); start a refund or a
+   settlement; change clinical records or the visit state (T3); reverse part of an invoice (T2); issue a replacement
+   invoice (T7, REV-04); reverse an invoice whose grand total is 0 (T8, A-10); cancel a lab order or write any
+   lab-domain record; treat a reversal as a dispute resolution.
+5. Guards, fail-closed, under the lock order invoice → reversal → dispute → candidates → lab orders → lab invoices →
+   obligation:
+   a. flag `rme.billing_reversal`; usable actor; branch scope (404 out of scope); status UNPAID, PARTIAL or PAID; G > 0;
+   b. T5 (A-06): money received blocks until a tested reversal-obligation writer exists, rules 215/216 are amended and
+      verified (A-19), refund request and settlement are enabled for the branch, a reviewer and a settler are
+      designated, and an owner activation decision is recorded (flag `rme.billing_reversal_paid`);
+   c. T4: no OPEN obligation; no active correction or LAB-fee approval;
+   d. A-20: no OPEN, UNDER_REVIEW or ESCALATED billing dispute, re-checked at approval (a later dispute makes the
+      request STALE);
+   e. A-05/T1: `RmeLabObligationGate` resolved (read-only, FOR SHARE in id order, evidence-based, fail-closed); for a
+      HAS_LAB invoice without candidate links, an immutable declaration by the maker and a designated checker that no
+      lab work exists (A-30);
+   f. maker ≠ checker ≠ issuing cashier, with branch designation (rule 247);
+   g. A-07: every reversal cites a single-use owner approval decided by an owner-allowlist identity until the owner
+      sets risk thresholds.
+6. When net received > 0, apply creates one OPEN obligation with `source_billing_reversal_id`; every obligation has
+   exactly one source (A-13); it is settled only through rules 215/216 as amended (A-19).
+7. ICFR = REVERSED + OPEN obligation sourced from that reversal; after SETTLED the invoice stays REVERSED.
+8. A-09: the cashier queue shows a visit whose invoice is REVERSED as "Dibatalkan", read-only; the visit state is
+   unchanged.
+9. D28 is unchanged: a correction never produces Rp0.
+
+Open (owner): legacy V1 lab terminal semantics (A-26), evidence for a missing or VOID lab invoice (A-27), definition of
+a lawful cancellation (A-28). Until answered the gate blocks those cases.
+
+## Acceptance criteria
+
+- Reconciliation identities R1–R11 hold in tests and in an owner-run read-only check; proof is required before M1 is
+  final.
+- Every guard has a passing refusal test; the LAB-gate state matrix (S1–S16) and concurrency matrix (C1–C8) pass on
+  PostgreSQL 16; the dispute tests pass; an A-30 declaration by the maker alone is refused; a zero-total invoice is
+  refused.
+- After a reversal: payment rows and amounts, clinical records, visit state, lab orders, lab status logs and lab invoices
+  are unchanged; REVERSED survives every payment, refund and settlement path.
