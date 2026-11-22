@@ -9,6 +9,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\PatientMerge\Interfaces\PatientMergeOwnershipRepositoryInterface;
 use App\Modules\PatientMerge\Support\PatientOwnedRecordRegistry;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Support\Database\ForeignKeyCatalog;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,18 @@ class PatientMergeOwnershipRepository implements PatientMergeOwnershipRepository
         ClinicVisit::STATUS_IN_PROGRESS,
         ClinicVisit::STATUS_CASHIER_PENDING,
     ];
+
+    /**
+     * Reported (and therefore blocking) when the live catalog shows NO foreign key
+     * to mst_patients at all. A migrated schema always has them (every REASSIGN
+     * table references the patient), so an empty answer means the catalog could
+     * not be read as expected — never "there is nothing to move" (fail closed).
+     */
+    public const FOREIGN_KEY_CATALOG_EMPTY = 'mst_patients:foreign-key-catalog-empty';
+
+    public function __construct(
+        private readonly ForeignKeyCatalog $foreignKeys = new ForeignKeyCatalog,
+    ) {}
 
     public function lockPatients(array $patientIds): Collection
     {
@@ -225,8 +238,13 @@ class PatientMergeOwnershipRepository implements PatientMergeOwnershipRepository
     {
         $known = PatientOwnedRecordRegistry::knownReferences();
         $unknown = [];
+        $references = $this->patientForeignKeys();
 
-        foreach ($this->patientForeignKeys() as $reference) {
+        if ($references === [] && Schema::hasTable('mst_patients')) {
+            return [self::FOREIGN_KEY_CATALOG_EMPTY];
+        }
+
+        foreach ($references as $reference) {
             if (! in_array($reference, $known, true)) {
                 $unknown[] = $reference;
             }
@@ -355,6 +373,12 @@ class PatientMergeOwnershipRepository implements PatientMergeOwnershipRepository
     /**
      * Every "table.column" in the live schema that references mst_patients.
      *
+     * PostgreSQL reads pg_catalog ({@see ForeignKeyCatalog}), never the
+     * ownership-filtered information_schema views: once the runtime role stops
+     * owning the tables (rule 245), those views return nothing and this guard
+     * would fail open. A referencing table in another schema is reported
+     * schema-qualified, so it can never match the registry and always blocks.
+     *
      * @return array<int, string>
      */
     private function patientForeignKeys(): array
@@ -362,17 +386,11 @@ class PatientMergeOwnershipRepository implements PatientMergeOwnershipRepository
         $connection = DB::connection();
 
         if ($connection->getDriverName() === 'pgsql') {
-            return collect($connection->select(
-                "SELECT kcu.table_name, kcu.column_name
-                   FROM information_schema.table_constraints tc
-                   JOIN information_schema.key_column_usage kcu
-                     ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
-                   JOIN information_schema.constraint_column_usage ccu
-                     ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-                  WHERE tc.constraint_type = 'FOREIGN KEY'
-                    AND ccu.table_name = 'mst_patients'
-                    AND tc.table_schema = current_schema()"
-            ))->map(fn ($row): string => $row->table_name.'.'.$row->column_name)->all();
+            return collect($this->foreignKeys->referencesTo('mst_patients', $connection))
+                ->map(fn (array $fk): string => ($fk['in_current_schema'] ? '' : $fk['schema'].'.').$fk['table'].'.'.$fk['column'])
+                ->unique()
+                ->values()
+                ->all();
         }
 
         $references = [];

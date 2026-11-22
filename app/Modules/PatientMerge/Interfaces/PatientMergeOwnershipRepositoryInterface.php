@@ -67,7 +67,9 @@ interface PatientMergeOwnershipRepositoryInterface
 
     /**
      * Foreign keys to mst_patients in the LIVE schema that the registry does
-     * not know about. Non-empty means the merge must refuse.
+     * not know about. Non-empty means the merge must refuse. The answer must not
+     * depend on which role owns the tables, and a catalog that shows no patient
+     * foreign key at all is itself reported (fail closed).
      *
      * @return array<int, string> "table.column"
      */
