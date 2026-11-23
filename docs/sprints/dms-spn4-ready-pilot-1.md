@@ -339,12 +339,13 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 | G6-DQ6 | 2026-11-23 | Same approval. **D-Q6:** the owner of a restored database is the authorised superuser, never the runtime. Open details: §13.10 |
 | G6-DQ7 | 2026-11-23 | Same approval. **D-Q7:** the restore drill runs through the privileged operator, and the runtime is never given CREATEDB |
 | G6-RV1 | 2026-11-23 | Owner review follow-up (directive "G6 — FINAL REVIEW FOLLOW-UP"). **#693: CONDITIONAL GO.** The conditions are: label the §13.3 finding as historical; state REM-1 as MERGED, NOT DEPLOYED with #696 and CI run `45131035559` as evidence; keep the header, §9, §9.1 and §13.9 consistent; keep D-Q1 to D-Q7; change no manifest field and nothing in the parked CC1 manifest; add commits without amend or force-push; run DEVFLOW and CI on the latest head; stop before the merge. The merge still needs the owner's explicit order. **#695:** the security correction is accepted as the code-review baseline. Its merge is deferred until the release order is settled. No restore drill runs on the production VPS |
-| G6-DQ3a | 2026-11-23 | Owner answers of 2026-11-23 to the assistant's decision request (rows G6-DQ3a to G6-DQ6b). The directive of G6-RV1 states that these details had the owner's design direction from an earlier review; that text was not on record, so the owner was asked. **D-Q3-a:** the existing tables are declared through a generated inventory registry, checked against the live schema in CI; a table without a class fails CI. Implementation: OPEN (R6-B2) |
-| G6-DQ3b | 2026-11-23 | **D-Q3-b:** a declaration records the class only. Grants are applied by provisioning (`db-privilege-apply`, R6-B3; AIR-DBS-04), never at migrate time. Implementation: OPEN (R6-B2, R6-B3) |
-| G6-DQ4a | 2026-11-23 | **D-Q4-a:** R6-B5 also adds a column guard trigger on `trx_inventory_movements`, for its append-only-with-columns class, beyond rule 248's list. Implementation: OPEN (R6-B5) |
-| G6-DQ4b | 2026-11-23 | **D-Q4-b:** R6-B5 is released through a separate manifest pull request that sets `schema_change: true`, decided by the owner at that time. The first SPN4 release stays free of schema changes |
-| G6-DQ6a | 2026-11-23 | **D-Q6-a:** when a dump names an owner role that does not exist on the target, the restore stops, fail closed, and reports the role. It never creates the role. Implementation: OPEN |
-| G6-DQ6b | 2026-11-23 | **D-Q6-b:** no exception to D-Q6. There is no `--legacy-pre-r6-owner` flag: the owner of a restored database is always the superuser, for pre-R6 dumps too |
+| G6-DQ3a | 2026-11-23 | Owner decisions of 2026-11-23 (rows G6-DQ3a to G6-DQ6b). The directive of G6-RV1 states that these details had the owner's design direction from an earlier review. That text was not on record, so the owner was asked in session, then confirmed each answer in two written decisions: "Keputusan desain Owner untuk empat pertanyaan CG-22" (D-Q3-a, D-Q3-b, D-Q4-a, D-Q6-a) and "Keputusan Owner CG-22 — D-Q4-b dan D-Q6-b". **D-Q3-a:** the 186 historical tables get an explicit registry of their runtime privilege class; their migrations are not edited (CG-09). CI compares the registry with the PostgreSQL 16 schema and fails on an unclassified table or on any mismatch. Implementation: OPEN (R6-B2) |
+| G6-DQ3b | 2026-11-23 | **D-Q3-b:** every new migration declares its runtime privilege class explicitly. A migration never executes GRANT. GRANT is applied only by the authorised R6-B3 provisioning, with a dry run, verification and rollback. Implementation: OPEN (R6-B2, R6-B3) |
+| G6-DQ4a | 2026-11-23 | **D-Q4-a:** R6-B5 adds a column guard trigger on `trx_inventory_movements`. The ledger stays immutable: UPDATE is allowed only on the approved columns `inventory_batch_id` and `updated_at`, and only for a validated legitimate operation. An UPDATE of any other column, DELETE and TRUNCATE are refused. Tested on PostgreSQL 16 with positive and negative scenarios. Implementation: OPEN (R6-B5) |
+| G6-DQ4b | 2026-11-23 | **D-Q4-b:** R6-B5 brings additive migrations (triggers, foreign keys changed to RESTRICT). The first SPN4 release keeps `schema_change: false` as long as it carries no schema change. Before R6-B5 is released, a separate manifest pull request sets `schema_change: true`. CI, the additive migration, compatibility, backup and rollback are verified before a release permission is requested. The manifest change is not a permission to run a production migration |
+| G6-DQ6a | 2026-11-23 | **D-Q6-a:** when a role that owns objects in a dump does not exist on the target, the restore stops, fail closed, and reports the missing role. It never creates the role, never ignores ownership and never gives ownership to the runtime. An authorised operator repairs the role separately before the restore is repeated. Implementation: OPEN |
+| G6-DQ6b | 2026-11-23 | **D-Q6-b:** no exception: D-Q6 applies to every restore, pre-R6 dumps included. No `--legacy-pre-r6-owner` flag is created or enabled. A restored database is owned by the authorised PostgreSQL superuser, and application object ownership follows the R6 design. A missing required role stops the restore, fail closed. Legacy dump compatibility goes through a separate procedure controlled by an authorised operator, which validates the final ownership and privileges. The runtime is never given CREATEDB, CREATE on a schema or ownership to work around a restore problem |
+| G6-AUTH | 2026-11-23 | Both written decisions of G6-DQ3a. The PostgreSQL 16 validation of §13.11 (33/33) is test evidence, not a production authorisation. Local implementation and tests of R6-B5 and R6-B6 continue by dependency, with positive, negative and PostgreSQL 16 regression tests. Not authorised: deploy, production migration, production privilege change, R6-D, GO tag, BK-2, SPN4 pilot activation; each needs its own approval gate |
 | G6-CG11 | 2026-11-23 | Directive of G6-RV1. **CG-11 design direction:** identity numbers are masked by default, with a controlled reveal. Implementing it on the consent page needs its own contract and tests. Until then the consent page is unchanged and CG-11 stays OPEN |
 | G6-OD5 | 2026-11-23 | Directive of G6-RV1. **OD-5 stays PENDING** until the private register can be reconciled |
 
@@ -428,20 +429,22 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
   Merge tetap menunggu perintah eksplisit Owner.
 - **#695:** koreksi keamanan diterima sebagai baseline code review. Merge ditunda sampai urutan rilis selesai. Restore
   drill tidak dijalankan di VPS produksi.
-- **Detail D-Q** (jawaban Owner atas permintaan keputusan, 2026-11-23):
+- **Detail D-Q** (jawaban Owner di sesi, dikukuhkan dengan dua keputusan tertulis Owner, 2026-11-23):
 
   | Butir | Keputusan | Implementasi |
   |---|---|---|
-  | D-Q3-a | Registry inventaris yang di-generate, dicek terhadap skema live di CI | OPEN (R6-B2) |
-  | D-Q3-b | Deklarasi hanya mencatat kelas; grant lewat provisioning (R6-B3), bukan saat migrate | OPEN (R6-B2, R6-B3) |
-  | D-Q4-a | R6-B5 juga memasang trigger penjaga kolom pada `trx_inventory_movements` | OPEN (R6-B5) |
-  | D-Q4-b | Rilis R6-B5 lewat PR manifest terpisah dengan `schema_change: true`; rilis pertama SPN4 tanpa perubahan skema | Saat rilis R6-B5 |
-  | D-Q6-a | Bila role pemilik di dump tidak ada di target, restore berhenti (fail-closed) dan tidak membuat role | OPEN |
-  | D-Q6-b | Tanpa pengecualian: tidak ada flag `--legacy-pre-r6-owner`; pemilik DB hasil restore selalu superuser | — |
+  | D-Q3-a | Registry eksplisit kelas privilege runtime untuk 186 tabel historis tanpa mengubah migrasi lama; CI membandingkannya dengan skema PostgreSQL 16 dan gagal bila ada tabel tak terklasifikasi atau tidak cocok | OPEN (R6-B2) |
+  | D-Q3-b | Migrasi baru wajib mendeklarasikan kelasnya; migrasi tidak menjalankan GRANT; GRANT hanya lewat provisioning R6-B3 yang terotorisasi (dry-run, verifikasi, rollback) | OPEN (R6-B2, R6-B3) |
+  | D-Q4-a | R6-B5 memasang trigger penjaga kolom `trx_inventory_movements`: hanya UPDATE `inventory_batch_id` dan `updated_at` untuk operasi sah; UPDATE kolom lain, DELETE dan TRUNCATE ditolak; uji PostgreSQL 16 positif dan negatif | OPEN (R6-B5) |
+  | D-Q4-b | Rilis pertama SPN4 tetap `schema_change: false`; sebelum R6-B5 dirilis, PR manifest terpisah menetapkan `schema_change: true`; CI, migrasi aditif, kompatibilitas, backup dan rollback diverifikasi dulu; perubahan manifest bukan izin migrasi produksi | Saat rilis R6-B5 |
+  | D-Q6-a | Role pemilik objek dump tidak ada → restore berhenti (fail-closed) dan melaporkan role yang hilang; tidak membuat role, tidak mengabaikan ownership, tidak memberi ownership ke runtime; role diperbaiki operator berwenang sebelum restore diulang | OPEN |
+  | D-Q6-b | Tanpa pengecualian, termasuk dump pra-R6; tidak ada flag `--legacy-pre-r6-owner`; DB hasil restore milik superuser berwenang; dump legacy lewat prosedur terpisah operator dengan validasi ownership dan privilege akhir; runtime tidak pernah diberi CREATEDB, CREATE schema atau ownership | — |
 
 - **CG-11:** arah desain = disamarkan secara default dengan reveal terkendali. Implementasi di halaman consent butuh
   kontrak dan tes tersendiri. Sampai saat itu CG-11 OPEN.
 - **OD-5:** tetap PENDING sampai register privat dapat direkonsiliasi.
+- **Batas (G6-AUTH):** validasi PostgreSQL 16 33/33 adalah bukti pengujian, bukan izin produksi. Tidak ada izin deploy,
+  migrasi produksi, perubahan privilege produksi, R6-D, GO tag, BK-2 atau aktivasi pilot SPN4.
 
 ---
 
@@ -1040,9 +1043,9 @@ assistant's. Where the design proposed something more specific than the approved
 | D-Q1 | Matches the recommended option. Local evidence: every artisan check the deploy runs gives the same result as an owner login and as a non-owner runtime holding only these two roles | — |
 | D-Q2 | Matches | — |
 | D-Q3 | Matches the principle of the recommended option: explicit, per table, fail closed | **D-Q3-a (decided, §10 G6-DQ3a):** the 186 existing tables, whose migrations cannot be edited (CG-09), are declared through a generated inventory registry checked against the live schema in CI. **D-Q3-b (decided, G6-DQ3b):** a declaration records the class only; grants come from provisioning (AIR-DBS-04). Implementation evidence: OPEN (R6-B2, R6-B3) |
-| D-Q4 | Matches rule 248 layer 1: triggers refusing UPDATE, DELETE and TRUNCATE on `sys_audit_logs`, the financial and approval `*_events` tables and `trx_lab_order_status_logs`; model guards; foreign keys that restrict on delete | **D-Q4-a (decided, G6-DQ4a):** R6-B5 also adds the column guard trigger on `trx_inventory_movements`. **D-Q4-b (decided, G6-DQ4b):** R6-B5 is released through a separate manifest pull request that sets `schema_change: true`. Implementation evidence: OPEN (R6-B5) |
+| D-Q4 | Matches rule 248 layer 1: triggers refusing UPDATE, DELETE and TRUNCATE on `sys_audit_logs`, the financial and approval `*_events` tables and `trx_lab_order_status_logs`; model guards; foreign keys that restrict on delete | **D-Q4-a (decided, G6-DQ4a):** R6-B5 also adds the column guard trigger on `trx_inventory_movements`: only `inventory_batch_id` and `updated_at` may change, for a validated legitimate operation. **D-Q4-b (decided, G6-DQ4b):** R6-B5 is released through a separate manifest pull request that sets `schema_change: true`. Implementation evidence: OPEN (R6-B5) |
 | D-Q5 | The design said "after the pilot"; the decision says "until a risk review" | — (the decision's wording applies) |
-| D-Q6 | Matches: the restored database is owned by the superuser | **D-Q6-a (decided, G6-DQ6a):** a missing owner role stops the restore; it is never created. **D-Q6-b (decided, G6-DQ6b):** no pre-R6 exception flag. Implementation evidence for D-Q6-a: OPEN |
+| D-Q6 | Matches: the restored database is owned by the superuser | **D-Q6-a (decided, G6-DQ6a):** a missing owner role stops the restore and is reported; it is never created, and ownership is never ignored or given to the runtime. **D-Q6-b (decided, G6-DQ6b):** no pre-R6 exception flag; legacy dumps go through a separate operator-controlled procedure. Implementation evidence for D-Q6-a: OPEN |
 | D-Q7 | Matches: privileged operator; all database operations through the superuser path; the drill refuses to run when the runtime holds CREATEDB | — |
 
 CG-11 now has a design direction (§10 G6-CG11): masked by default, with a controlled reveal. Its consent-page
@@ -1058,6 +1061,7 @@ PENDING (G6-OD5).
   run.
 - Validated on a local, isolated PostgreSQL 16 cluster (socket only, synthetic data, removed afterwards; never the
   VPS): 33 of 33 checks pass.
+- This validation is test evidence, not a production authorisation (§10 G6-AUTH).
 - The previous script fails 17 of the 33 checks. It dropped a colliding database, and dropped the database of a
   concurrent run with the same name. It passed a failed drop with GO evidence.
 
