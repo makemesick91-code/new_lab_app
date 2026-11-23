@@ -18,6 +18,7 @@
 | `fgrpr`.
 */
 
+use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Support\Database\RuntimePrivilegeClass;
 use App\Support\Database\RuntimePrivilegeRegistry;
 use Illuminate\Database\Schema\Blueprint;
@@ -106,7 +107,7 @@ it('records the evidence-based classes of the append-only, column-limited and re
 it('lets an amendment change only its decision columns, never what was requested', function () {
     [, $columns] = config('runtime_privilege_classes.tables.trx_rme_amendments');
 
-    expect(array_intersect($columns, App\Modules\RmeAmendment\Models\RmeAmendment::REQUEST_COLUMNS))->toBe([])
+    expect(array_intersect($columns, RmeAmendment::REQUEST_COLUMNS))->toBe([])
         ->and($columns)->not->toContain('id');
 });
 
