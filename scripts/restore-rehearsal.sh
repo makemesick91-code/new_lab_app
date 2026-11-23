@@ -197,6 +197,18 @@ dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256" || {
   exit 1
 }
 
+# Owner decision D-Q6-a: every role that owns an object in the dump must already
+# exist on this cluster, checked before the scratch database is created. A
+# missing role stops the rehearsal. It is never created here, and ownership is
+# never stripped, rewritten or given to the runtime.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: the dump makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created or restored. An authorised operator provisions the role(s) separately, then repeats the rehearsal (D-Q6-a)."; exit 1 ;;
+  *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created or restored."; exit 1 ;;
+esac
+
 echo "== Verify backup (NSF-10) =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
 

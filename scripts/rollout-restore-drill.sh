@@ -44,6 +44,10 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
+# The shared restore checks live beside this script (same tree, same owner).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/restore-integrity.sh
+. "${SCRIPT_DIR}/lib/restore-integrity.sh"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BACKUP_DIR="storage/app/backups/deploy"
@@ -144,6 +148,18 @@ fi
 DRILL_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
 case "$DRILL_OWNER" in
   ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the disposable database. Aborting."; exit 1 ;;
+esac
+
+# Owner decision D-Q6-a: every role that owns an object in the backup must
+# already exist on this cluster, checked before anything is created. A missing
+# role stops the drill. It is never created here, and ownership is never
+# stripped, rewritten or given to the runtime.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$BACKUP_FILE" as_superuser)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: the backup makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created. An authorised operator provisions the role(s) separately, then repeats the drill (D-Q6-a). Aborting."; exit 1 ;;
+  *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created. Aborting."; exit 1 ;;
 esac
 
 # --- Restore into disposable DB (never touches production) ----------------

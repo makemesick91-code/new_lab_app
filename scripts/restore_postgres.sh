@@ -357,6 +357,18 @@ STAGED_DUMP="$(dms_restore_stage_copy "$DUMP_FILE" "$STAGING_DIR")" || die "coul
 dms_restore_verify_copy "$STAGED_DUMP" "$EXPECTED_SHA256" || die "integrity check failed — nothing was restored"
 echo "  evidence    : ${EVIDENCE_SOURCE}"
 
+# Owner decision D-Q6-a: every role that owns an object in the dump must already
+# exist on this cluster, checked before anything is created or replayed. A
+# missing role stops the restore. It is never created here, ownership is never
+# stripped or rewritten, and the runtime is never made the owner instead.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_DUMP" as_superuser)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+    0) echo "  owner roles : every object owner in the dump exists on this cluster" ;;
+    1) die "the dump makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created or restored. An authorised operator provisions the role(s) separately, then repeats the restore (D-Q6-a)." ;;
+    *) die "could not read the roles of this cluster as the superuser; nothing was created or restored" ;;
+esac
+
 # Only the verified root-only copy is ever streamed to psql (the postgres OS
 # account cannot open it; it reads the pipe).
 read_dump() {

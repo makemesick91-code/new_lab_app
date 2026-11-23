@@ -2046,6 +2046,13 @@ return [
         // the `RestoreDrill` token in BOTH critical variants; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/RestoreDrillOwnershipPrivilegeTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B6 (owner decisions D-Q6-a, D-Q6-b): every
+        // restore path stops before it creates or replays anything when a role
+        // that owns objects in the dump is missing, and names it; no role is
+        // created, no ownership stripped or given to the runtime, and no pre-R6
+        // exception flag exists. Selected by the `RestoreDrill` token in BOTH
+        // critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillOwnerRolePreflightTest.php',
     ],
 
     /*

@@ -5,7 +5,8 @@
 #
 # Sourced (never executed) by the two superuser restore tools,
 # scripts/restore_postgres.sh and scripts/restore-rehearsal.sh, after
-# scripts/lib/trusted-path.sh.
+# scripts/lib/trusted-path.sh, and by scripts/rollout-restore-drill.sh from its own
+# directory (the owner-role preflight only, D-Q6-a).
 #
 # WHY: every dump is plain SQL, owned and writable by the runtime user, and the
 # restore streams it into psql as the local PostgreSQL superuser. A dump changed
@@ -108,4 +109,52 @@ dms_restore_verify_copy() {
     return 1
   fi
   echo "RESTORE_INTEGRITY=VERIFIED sha256=${actual}"
+}
+
+# dms_restore_owner_roles <plain-text dump>
+# Prints, once each, every role the dump makes an object owner of: the target of
+# `ALTER … OWNER TO <role>;` and of `SET SESSION AUTHORIZATION '<role>';`.
+# COPY data blocks are skipped, so table contents never count as statements. A
+# quoted name is unquoted ("" becomes ").
+dms_restore_owner_roles() {
+  awk '
+    function unquote(name) {
+      if (name ~ /^".*"$/) { name = substr(name, 2, length(name) - 2); gsub(/""/, "\"", name) }
+      return name
+    }
+    in_copy { if ($0 == "\\.") in_copy = 0; next }
+    /^COPY .* FROM stdin;$/ { in_copy = 1; next }
+    /^ALTER .* OWNER TO .+;$/ {
+      name = $0; sub(/^.* OWNER TO /, "", name); sub(/;$/, "", name)
+      print unquote(name); next
+    }
+    /^SET SESSION AUTHORIZATION .+;$/ {
+      name = $0; sub(/^SET SESSION AUTHORIZATION /, "", name); sub(/;$/, "", name)
+      if (name ~ /^'\''.*'\''$/) { name = substr(name, 2, length(name) - 2); gsub(/'\'''\''/, "'\''", name) }
+      print unquote(name)
+    }
+  ' < "${1:?dump}" | sort -u
+}
+
+# dms_restore_missing_owner_roles <plain-text dump> <command prefix…>
+# Owner decision D-Q6-a: every role that owns an object in the dump must already
+# exist on the target cluster before anything is created or replayed. The
+# command prefix runs psql as the superuser (e.g. as_superuser). Prints each
+# missing role, one per line. Returns 0 when none is missing, 1 when any is, and
+# 2 when the cluster cannot be asked. It never creates a role, never strips or
+# rewrites ownership, and never hands ownership to the runtime: an authorised
+# operator provisions the role separately, then repeats the restore.
+dms_restore_missing_owner_roles() {
+  local dump="${1:?dump}" owners existing missing
+  shift
+  owners="$(dms_restore_owner_roles "$dump")" || return 2
+  [ -n "$owners" ] || return 0
+  existing="$("$@" psql -X -Atqc 'SELECT rolname FROM pg_catalog.pg_roles' 2> /dev/null)" || return 2
+  [ -n "$existing" ] || return 2
+  missing="$(comm -23 <(printf '%s\n' "$owners") <(printf '%s\n' "$existing" | sort -u))"
+  if [ -n "$missing" ]; then
+    printf '%s\n' "$missing"
+    return 1
+  fi
+  return 0
 }
