@@ -364,6 +364,13 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G5-1 | 2026-11-22 | **OD-4 = Path B — remediation before production cutover.** Path A is not chosen. No R6-01 risk is accepted through A6, and approving the charter is not a risk acceptance. OD-2 does not apply. Database privilege separation is completed before G12/G13. R6-01 is not marked CLOSED before R6-D is verified. R-1 is run again after R6-D and must be PASS. UAT G10 on the TESTING database may be planned separately, and stays subject to its blockers and to the G10 authorisation |
 | G5-2 | 2026-11-22 | The Path B selection is approved. Formal G5 closure waits for OD-5 (PENDING OWNER CLASSIFICATION, §12.6) and for this record to be merged. OD-3 is not needed, because R-1 has no HIGH finding. No change to database privileges is authorised now |
 | G5-3 | 2026-11-22 | The owner authorises preparation only: this G4/G5 record as a local patch; the OD-5 reconciliation; the R6-B, R6-C and R6-D designs; the blocker inventory and remediation sequence; safe local checks and DEVFLOW; and a PR package for review. Each of the following needs a new authorisation: commit, push, PR, merge, G6 implementation, production change, deploy, cutover, pilot activation |
+| G6-DQ1 | 2026-11-23 | Owner approval of 2026-11-23 (directive "G6 Decision Reconciliation and REM-1 Publication"). **D-Q1:** the runtime gets the privileges of `pg_read_all_stats` and `pg_read_all_settings`, not membership in `pg_monitor`. Applied in R6-D; recorded as an explicit exception to R6 §2 |
+| G6-DQ2 | 2026-11-23 | Same approval. **D-Q2:** creating the read-only role is deferred until a real consumer needs it |
+| G6-DQ3 | 2026-11-23 | Same approval. **D-Q3:** every table's runtime privilege class is declared explicitly, per table, in its migration or a helper, fail closed (a table without a class fails). Open details: §13.10 |
+| G6-DQ4 | 2026-11-23 | Same approval. **D-Q4:** rule 248 layer 1 is mandatory before R6-D. Open details: §13.10 |
+| G6-DQ5 | 2026-11-23 | Same approval. **D-Q5:** revoking `TEMP` from `PUBLIC` is deferred until a risk review |
+| G6-DQ6 | 2026-11-23 | Same approval. **D-Q6:** the owner of a restored database is the authorised superuser, never the runtime. Open details: §13.10 |
+| G6-DQ7 | 2026-11-23 | Same approval. **D-Q7:** the restore drill runs through the privileged operator, and the runtime is never given CREATEDB |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -419,6 +426,20 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
   Commit, push, PR, merge, implementasi G6, perubahan produksi, deploy, cutover, dan aktivasi pilot masing-masing butuh
   izin baru.
 - **Pilot tetap NO-GO.**
+
+**Persetujuan Owner 2026-11-23 atas arah desain R6-B (§10 G6-DQ1…G6-DQ7):**
+
+| Butir | Keputusan |
+|---|---|
+| D-Q1 | Runtime memakai `pg_read_all_stats` dan `pg_read_all_settings`, bukan `pg_monitor` |
+| D-Q2 | Role read-only ditunda |
+| D-Q3 | Kelas privilege runtime dideklarasikan eksplisit per tabel (migrasi atau helper), fail-closed |
+| D-Q4 | Rule 248 lapis 1 wajib sebelum R6-D |
+| D-Q5 | Pencabutan `TEMP` dari `PUBLIC` ditunda sampai review risiko |
+| D-Q6 | Pemilik database hasil restore adalah superuser berwenang, bukan runtime |
+| D-Q7 | Restore drill lewat operator berprivilege, tanpa CREATEDB untuk runtime |
+
+Detail yang belum diputuskan tercatat sebagai OPEN di §13.10. CG-11 belum diputuskan.
 
 ---
 
@@ -1005,6 +1026,25 @@ R6-B1 must be released before R6-D.
 - its own release decision.
 
 R6-B1 must be released before R6-D. No production change has been made.
+
+### 13.10 Reconciliation of the D-Q decisions with the R6-B design (2026-11-23)
+
+The owner approved D-Q1 to D-Q7 on 2026-11-23 (§10 G6-DQ1 to G6-DQ7). These are the owner's decisions, not the
+assistant's. Where the design proposed something more specific than the approved direction, the extra detail is
+**OPEN**. It is not treated as approved.
+
+| Item | Consistency with the design | OPEN details (need an owner answer or are settled in the implementing PR's review) |
+|---|---|---|
+| D-Q1 | Matches the recommended option. Local evidence: every artisan check the deploy runs gives the same result as an owner login and as a non-owner runtime holding only these two roles | — |
+| D-Q2 | Matches | — |
+| D-Q3 | Matches the principle of the recommended option: explicit, per table, fail closed | **D-Q3-a:** how the 186 existing tables, whose migrations cannot be edited (CG-09), are declared. The design proposes a generated inventory registry checked against the live schema in CI. **D-Q3-b:** whether a declaration only records the class (grants applied by provisioning, AIR-DBS-04) or also grants at migrate time. The design proposes record only |
+| D-Q4 | Matches rule 248 layer 1: triggers refusing UPDATE, DELETE and TRUNCATE on `sys_audit_logs`, the financial and approval `*_events` tables and `trx_lab_order_status_logs`; model guards; foreign keys that restrict on delete | **D-Q4-a:** whether R6-B5 also adds a column guard trigger on `trx_inventory_movements`. That table is not in rule 248's list; the design proposed it for its append-only-with-columns class. **D-Q4-b:** a rule 248 migration is a schema change, so its release needs the manifest to declare `schema_change: true` |
+| D-Q5 | The design said "after the pilot"; the decision says "until a risk review" | — (the decision's wording applies) |
+| D-Q6 | Matches: the restored database is owned by the superuser | **D-Q6-a:** when a dump names an owner role that does not exist on the target, does the restore stop (proposed) or create the role? **D-Q6-b:** the proposed explicit flag for restoring a pre-R6 dump |
+| D-Q7 | Matches: privileged operator; all database operations through the superuser path; the drill refuses to run when the runtime holds CREATEDB | — |
+
+CG-11 is not decided by this record. The owner's direction and the questions it leaves are reported separately; the
+consent page is unchanged. OD-5 stays PENDING.
 
 ---
 
