@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 72bf7721
+kb_verified_against: 295b3d5e
 kb_updated: 2026-11-22
 ---
 
@@ -9,7 +9,7 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: LOCAL PREPARATION ONLY** (§13). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1 and REM-2 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -608,7 +608,7 @@ Local test runs without the environment file are recorded as WARN, not as a clea
 
 ## 13. G6 local preparation record (2026-11-22)
 
-**G6: LOCAL PREPARATION ONLY.** The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
+**G6: LOCAL PREPARATION ONLY** (as recorded on 2026-11-22; the status after the merges of #689 and #690 is in §13.9). The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
 §12: G4 AUDIT COMPLETE, G5 Path B selected with formal closure pending OD-5. No Design Lock decision (DL-1 to DL-7)
 is changed here.
 
@@ -629,7 +629,7 @@ not done:
 - KTP timer activation, a BK-2 run, a manifest switch, a GO tag, G12, G13 or LAB-fee;
 - a change to the consent page before the owner decides the CG-11 interpretation.
 
-### 13.1 R6-B1 — foreign-key introspection that does not depend on table ownership (implemented locally)
+### 13.1 R6-B1 — foreign-key introspection that does not depend on table ownership (merged in #689 as `1e985d8e`, not deployed)
 
 **Root cause.** PostgreSQL filters the `information_schema` constraint views by the current role:
 - `constraint_column_usage` shows a row only when `pg_has_role(<owner of the referenced table>, 'USAGE')`;
@@ -685,9 +685,16 @@ with it. A test identity that is neither a superuser nor CREATEROLE gets a visib
 
 All local results are WARN, not a clean PASS, because the worktree has no environment file.
 
-### 13.2 REM-2 — the NIK never reaches the session or the application log (implemented locally)
+### 13.2 REM-2 — the NIK never reaches the session or the application log (merged in #690 as `295b3d5e`, not deployed)
 
-**REM-2a, session flash.** The audit followed the input names from forms, requests, controllers and scripts:
+**REM-2a, session flash.** The audit followed the input names from forms, requests, controllers and scripts.
+
+**Correction (2026-11-23, R2-6).** The first pass searched for `ktp` and `nik` names and was therefore not
+exhaustive. It missed `consenter_identity_number`, the KTP/SIM number of a guardian on the consent form, which was
+refilled with `old()` and so flashed into the session on a refusal. The owner approved the fix on PR #690. A later
+input that carries an identity number must be added the same way; the list is the audited set, not a proof that no
+other path exists. R2-6 changes only the session flash: the REM-2b log redaction below is unchanged and keeps its safe
+diagnostic fields.
 
 | Input | Where | Handling |
 |---|---|---|
@@ -697,6 +704,7 @@ All local results are WARN, not a clean PASS, because the worktree has no enviro
 | `owner_approval_reference`, `patient_request_reference` | Refused exactly when they look like a NIK | Added to `dontFlash`. The refund-request controller re-flashes input explicitly, which bypasses `dontFlash`, so it now excludes both itself |
 | `ktp_scan_token`, `ktp_ocr_*` | Scan reference and OCR flags; no NIK | Still flashed, so an uploaded scan stays attached |
 | OCR `lines` and `fields` | The OCR endpoint answers JSON (no flash). Other forms refill these generic names | Not added: that would break other forms. Residual, recorded |
+| `consenter_identity_number` (R2-6) | Consent form, guardian's KTP/SIM | Added to `dontFlash`. Both refusal paths (request rules and the consent service) reach the exception handler; the consent controller re-flashes nothing itself |
 
 After a refusal the NIK field is empty (on edit it shows the stored value) and is typed again. Every other field is
 still flashed.
@@ -717,17 +725,23 @@ It never catches, rethrows or changes an exception, so HTTP answers and rollback
 its level, so the ERROR count the monitoring reads does not change. If redaction itself fails, the record is replaced
 by a fixed line rather than written raw (fail closed).
 
-**Not changed:** historic logs; the consent page (pending the CG-11 decision); exception text that a failed queued job
-would store (the queue worker is inactive). These are residuals, recorded.
+**Not changed:**
+- historic logs;
+- the consent page's display, layout, signature flow and clinical rules (pending the CG-11 decision). Only its session
+  flash changed, under R2-6;
+- exception text that a failed queued job would store (the queue worker is inactive).
 
-**Tests.** Three new suites:
+These are residuals, recorded.
+
+**Tests.** Four new suites (23 tests):
 - `tests/Feature/Patient/PatientKtpNeverFlashedTest.php` (7 tests);
 - `tests/Feature/Patient/PatientKtpDatabaseErrorLogRedactionTest.php` (10 tests; they read the log file Monolog
   actually wrote);
-- `tests/Feature/RmeRefundRequest/RmeRefundRequestNikNeverFlashedTest.php` (3 tests).
+- `tests/Feature/RmeRefundRequest/RmeRefundRequestNikNeverFlashedTest.php` (3 tests);
+- R2-6: `tests/Feature/RME/RmeVisitConsentGuardianIdentityNeverFlashedTest.php` (3 tests, the real consent route).
 
-They are selected by the existing `PatientKtp` and `RmeRefundRequest` tokens and declared in
-`critical_gate_mandatory_suites`. The NIK values are synthetic.
+They are selected by the existing `PatientKtp`, `RmeRefundRequest` and `RmeVisitConsent` tokens and declared in
+`critical_gate_mandatory_suites`. The identity numbers are synthetic.
 
 | Run | Result |
 |---|---|
@@ -735,6 +749,10 @@ They are selected by the existing `PatientKtp` and `RmeRefundRequest` tokens and
 | New suites, PostgreSQL 16 / SQLite | 20 passed / 19 passed and 1 skipped (PostgreSQL-only) |
 | Regression (Patient, visit registration, refund request, invoice correction, Observability, monitoring), PostgreSQL 16 | 1677 tests, 0 failed, 0 skipped |
 | Same regression, SQLite | 1 failed: `LegacyPatientStagedVerificationCancelTest` (500-row batch). It fails identically, twice, on a worktree without these changes, so it is pre-existing and SQLite-only (CG-21). It passes on PostgreSQL 16 |
+| R2-6 tests against the code before the fix | Three fail: RVGI-01 (refused by the request rules), RVGI-02 (refused by the consent service) and the updated KF-01 (`dontFlash` registration). The third new test, RVGI-03 (a valid guardian consent still stores the number), is a control and passes both before and after |
+| R2-6 tests after the fix | All pass: RVGI-01 to RVGI-03 and KF-01 to KF-07 |
+| R2-6, PostgreSQL 16 regression including every consent suite and the merged R6-B1 suites | 1990 tests, 0 failed, 0 skipped |
+| CI on the reviewed head `e3c05437`, run 45085855176 | Profile `runtime_app`; the critical tests ran: 11863 passed, 0 failed, 0 skipped. All 23 REM-2 tests and both R6-B1 suites passed. The Full Suite was DEFERRED |
 
 ### 13.3 REM-1 — CG-19 critical selection (prepared, NOT applied)
 
@@ -931,6 +949,29 @@ R6-B1 must be released before R6-D.
    - D-Q5: revoking TEMP from PUBLIC (recommended: after the pilot);
    - D-Q6: the N-9 remedy (owner of a restored database);
    - D-Q7: the restore-drill operator and path.
+
+### 13.9 Status after the merges of #689 and #690 (2026-11-23)
+
+| Item | Status |
+|---|---|
+| R6-B1 (§13.1) | **MERGED, NOT DEPLOYED** (#689, `1e985d8e`) |
+| REM-2 and R2-6 (§13.2) | **MERGED, NOT DEPLOYED** (#690, `295b3d5e`) |
+| REM-1 (§13.3) | Prepared, NOT applied; needs a governance decision |
+| R6-01 | REMEDIATION OPEN |
+| G5 | PATH B SELECTED, OD-5 PENDING |
+| R6-D | NOT AUTHORIZED |
+| D-2 | BLOCKED |
+| G12 / G13 | NOT AUTHORIZED |
+| Pilot | NO-GO |
+| Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
+| BK-2 | SKIPPED |
+
+**A merge is not a release.** Releasing R6-B1 and REM-2 needs:
+- the manifest-switch decision of §9 (the parked SPN4 manifest still declares `runtime_change: false` and
+  `deploy_required: false`);
+- its own release decision.
+
+R6-B1 must be released before R6-D. No production change has been made.
 
 ---
 
