@@ -814,28 +814,44 @@ They are selected by the existing `PatientKtp`, `RmeRefundRequest` and `RmeVisit
 
 ### 13.3 REM-1 — CG-19 critical selection (merged in #696 as `d628e0cb`, not deployed)
 
-**Evidence.** No token of either critical variant matches these suites:
+**Current state: MERGED, NOT DEPLOYED.**
+- REM-1 merged in #696 as `d628e0cb`. Its governance amendment of `CiTriggerRemovalGovernanceTest` merged first, in
+  #692 as `13cc32e5`.
+- On the base, the workflow file is in the pinned state `82150b8b…` (table below).
+- CI run `45131035559` (event `pull_request`, head `35dffabbf76aa308c7b181260a19510bc77d4619`) concluded success:
+  - classifier profile `ci_workflow`, critical tests required;
+  - the critical regression step ran: 11930 passed, 0 failed;
+  - its filter contained the new tokens, and the five newly selected suites passed in it.
+- The Full Suite was DEFERRED by the active policy (`authorised: false`). It is not a pass.
+- The change reaches the host with the first SPN4 release (§9.1) and closes with the sprint.
+
+The rest of this section is the **historical record of the finding and the proposal, before the REM-1 merge** (G6
+local preparation, 2026-11-22). It no longer describes the base.
+
+**Historical finding (before the REM-1 merge).** At that time, no token of either critical variant matched these
+suites:
 - `BranchContextTest`;
 - `BranchContextFallbackTest`;
 - `FixClinicOpsWorkingBranchContextTest`;
 - `PatientDataCompletenessAuditTest`.
 
-`LabIntegrationTest` runs only in the selective `Lab` job, which runs only when lab paths change. That suite carries
+`LabIntegrationTest` ran only in the selective `Lab` job, which runs only when lab paths change. That suite carries
 the branch onto lab case candidates.
 
-**Proposed change** (two lines of `.github/workflows/foundation-evidence-gates.yml`, plus `config/ci_runner.php`):
+**Change as proposed then, and applied by #696** (two lines of `.github/workflows/foundation-evidence-gates.yml`,
+plus `config/ci_runner.php`):
 - Insert `BranchContext|PatientDataCompleteness|LabIntegration` before the last token of BOTH critical filters, so
   the filter keeps ending in `InventoryClinicCalendarBoundary`, as the parallelism contract requires.
 - Declare the five suites as mandatory.
-- Five files (53 tests) are newly selected; the other `BranchContext` suites already run through existing tokens.
+- Five files (53 tests) are newly selected; the other `BranchContext` suites already ran through existing tokens.
 - No trigger, job, permission, secret, concurrency or classifier change.
 
 **Governance.** The change edits the critical-gate filter, so it is **not** one of the CG-16 CI trigger classes. It
 closes as a normal change released with this sprint: merge, deploy, verification and the sprint GO tag. It never
 closes on its own.
 
-`CiTriggerRemovalGovernanceTest` pins the workflow to two SHA-256 states and rejects every other edit. Before the
-change can merge, an owner-approved amendment of that test must:
+Before the amendment, `CiTriggerRemovalGovernanceTest` pinned the workflow to two SHA-256 states and rejected every
+other edit. The owner-approved amendment (#692) had to:
 - pin two further states;
 - define the exact token insertion;
 - keep the B5 rollback available on the selected file;
@@ -844,14 +860,14 @@ change can merge, an owner-approved amendment of that test must:
 | State | SHA-256 |
 |---|---|
 | B5 pre-removal (pinned) | `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4` |
-| B5 post-removal, current (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
-| **REM-1 selected** (proposed) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
-| **REM-1 selected, B5 rollback target** (proposed) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
+| B5 post-removal (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
+| **REM-1 selected** (pinned since #692; the base state since #696) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
+| **REM-1 selected, B5 rollback target** (pinned since #692) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
 
-With the proposed change applied, every CI suite passes except the 17 CTRG tests, which fail by design until the
-amendment lands. Pushing a workflow file needs the GitHub `workflow` scope, which is revoked. The owner pushes the
-branch, or re-grants the scope temporarily; the assistant never widens a token. The R6-B role-separation CI job will
-need a later amendment of the same kind.
+At preparation time, every CI suite passed with the change applied, except the 17 CTRG tests, which failed by design
+until the amendment landed. Pushing a workflow file needs the GitHub `workflow` scope, which was revoked then. The
+owner granted it temporarily to publish #696; the assistant never widens a token. The R6-B role-separation CI job
+(R6-B7) will need a later amendment of the same kind.
 
 ### 13.4 R6-B, R6-C and R6-D — design changes found during G6
 
@@ -944,6 +960,8 @@ manifest-switch decision of §9 (OD-B3-1 precedent).
 
 ### 13.6 Status after G6 local preparation
 
+*Historical (G6 local preparation, 2026-11-22). The current status is §13.9.*
+
 | Item | Status |
 |---|---|
 | G4 | AUDIT COMPLETE |
@@ -974,6 +992,8 @@ manifest-switch decision of §9 (OD-B3-1 precedent).
 | OD-6 to OD-10 | OPEN | Owner |
 
 ### 13.7 Pull request plan
+
+*Historical (G6 local preparation, 2026-11-22). The current status is §13.9.*
 
 Each pull request needs its own owner decision to publish and to merge.
 
