@@ -6,9 +6,13 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use LogicException;
 
 /**
  * Polymorphic, immutable audit trail (sys_audit_logs). Only created_at managed.
+ *
+ * Append-only at the model layer (rule 248 layer 1); PostgreSQL also refuses
+ * UPDATE, DELETE and TRUNCATE by trigger, including query-builder writes.
  */
 class AuditLog extends Model
 {
@@ -107,6 +111,17 @@ class AuditLog extends Model
             'new_values' => 'array',
             'performed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (AuditLog $log): void {
+            throw new LogicException(sprintf('Audit log #%d is append-only (rule 248).', (int) $log->getKey()));
+        });
+
+        static::deleting(function (AuditLog $log): void {
+            throw new LogicException(sprintf('Audit log #%d can never be deleted (rule 248).', (int) $log->getKey()));
+        });
     }
 
     public function entity(): MorphTo

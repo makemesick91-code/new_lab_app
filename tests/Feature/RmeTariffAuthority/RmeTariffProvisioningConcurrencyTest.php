@@ -46,6 +46,7 @@ use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 const RTPC_WRITER = 'rtpc_concurrency_writer';
 
@@ -91,7 +92,7 @@ afterEach(function () {
         $writer->table($pivot)->where('model_type', User::class)->where('model_id', '>', $this->watermarks['users'])->delete();
     }
     foreach (RTPC_TABLES as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 
     DB::purge(RTPC_WRITER);

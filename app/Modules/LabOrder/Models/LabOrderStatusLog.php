@@ -5,9 +5,14 @@ namespace App\Modules\LabOrder\Models;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use LogicException;
 
 /**
  * Immutable status timeline record. Only created_at is managed (no updated_at).
+ *
+ * Append-only at the model layer (rule 248 layer 1); PostgreSQL also refuses
+ * UPDATE, DELETE and TRUNCATE by trigger, and a lab order with status logs
+ * cannot be deleted (the foreign key restricts).
  */
 class LabOrderStatusLog extends Model
 {
@@ -29,6 +34,17 @@ class LabOrderStatusLog extends Model
         return [
             'changed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (LabOrderStatusLog $log): void {
+            throw new LogicException(sprintf('Lab order status log #%d is append-only (rule 248).', (int) $log->getKey()));
+        });
+
+        static::deleting(function (LabOrderStatusLog $log): void {
+            throw new LogicException(sprintf('Lab order status log #%d can never be deleted (rule 248).', (int) $log->getKey()));
+        });
     }
 
     public function labOrder(): BelongsTo

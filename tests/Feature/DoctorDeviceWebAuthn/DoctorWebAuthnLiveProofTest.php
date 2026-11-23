@@ -116,6 +116,7 @@ function lpWebAuthnProof(
     DoctorDeviceWebAuthnCredential $credential,
     DoctorDevice $device,
     string $at,
+    ?array $newValues = null,
 ): AuditLog {
     $log = new AuditLog;
 
@@ -123,7 +124,7 @@ function lpWebAuthnProof(
         'entity_type' => 'trx_doctor_device_webauthn_credentials',
         'entity_id' => $credential->id,
         'action' => DoctorWebAuthnLiveProofRepositoryInterface::WEBAUTHN_PROOF_ACTION,
-        'new_values' => [
+        'new_values' => $newValues ?? [
             'doctor_device_id' => $device->id,
             'doctor_id' => 21,
             'authorization_id' => 1,
@@ -564,10 +565,10 @@ it('ignores an assertion row that does not say which device it happened on', fun
     $device = lpDevice();
     $credential = lpCredential($device);
 
-    $proof = lpWebAuthnProof($credential, $device, lpNow()->subMinutes(5)->toDateTimeString());
     // A payload with no device cannot prove any device, and must not be folded
-    // into a neighbour's timestamp or invent a key of its own.
-    $proof->forceFill(['new_values' => ['doctor_id' => 21]])->save();
+    // into a neighbour's timestamp or invent a key of its own. Written so at
+    // creation: audit rows are append-only (rule 248).
+    lpWebAuthnProof($credential, $device, lpNow()->subMinutes(5)->toDateTimeString(), ['doctor_id' => 21]);
 
     $report = lpReport();
 
