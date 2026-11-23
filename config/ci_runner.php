@@ -664,6 +664,20 @@ return [
         // the quality gate). Selected by the existing `PatientKtp` token in
         // BOTH critical variants.
         'tests/Feature/RME/PatientKtpPlaceOfBirthSuggestionTest.php',
+        /*
+         * DMS-SPN4-READY-PILOT-1 G6 / REM-2 (CG-11) — the audited identity-number
+         * inputs never reach the session (dontFlash, including the guardian's
+         * number on the consent form, R2-6, and the refund request's explicit
+         * withInput()) and a database error never writes a query value into the
+         * log (the RedactDatabaseErrors tap on every writing channel).
+         * A regression is silent: the page still answers 302 or 500 as before.
+         * Selected by the `PatientKtp` and `RmeRefundRequest` tokens in BOTH
+         * critical variants; declared so a rename cannot drop them.
+         */
+        'tests/Feature/Patient/PatientKtpNeverFlashedTest.php',
+        'tests/Feature/Patient/PatientKtpDatabaseErrorLogRedactionTest.php',
+        'tests/Feature/RmeRefundRequest/RmeRefundRequestNikNeverFlashedTest.php',
+        'tests/Feature/RME/RmeVisitConsentGuardianIdentityNeverFlashedTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
