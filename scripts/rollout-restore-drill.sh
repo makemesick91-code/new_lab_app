@@ -15,8 +15,19 @@
 #   - Drops ONLY the disposable database. Never calls scripts/restore_postgres.sh.
 #   - Never runs migrate:fresh / db:wipe / schema:drop / migrate:reset.
 #   - The evidence file contains NO password / secret / .env / KTP / NIK / raw
-#     rows — only sanitized counts and metadata. The psql password is passed via
-#     PGPASSWORD in the environment, never echoed into the evidence.
+#     rows — only sanitized counts and metadata.
+#
+# PRIVILEGE (DMS-SPN4-READY-PILOT-1 D-Q6 and D-Q7, findings N-5 and N-9):
+#   - Runs as the privileged operator (root on the host): every database
+#     operation — createdb, the replay, the counts, dropdb — goes through the
+#     local PostgreSQL superuser OS account, as scripts/restore-rehearsal.sh does.
+#     The application login role is never used for them and never needs
+#     CREATEDB (rule 245 #5).
+#   - Refuses to run when the application login role holds CREATEDB, CREATEROLE
+#     or SUPERUSER.
+#   - The disposable database is owned by the superuser, never by the
+#     application role (a database owner can create schemas and alter or drop
+#     the database). artisan runs as the runtime user, never as root.
 #
 # Usage:
 #   bash scripts/rollout-restore-drill.sh [backup_file.sql]
@@ -39,6 +50,34 @@ set -a
 # shellcheck disable=SC1091
 source .env
 set +a
+
+# artisan must not run as root: it would leave root-owned files in the
+# runtime-owned cache and log directories (INFRA-SEC-RUNTIME-1).
+RUNTIME_USER="daengtisiams"
+if [ -r deploy/runtime-identity.conf ]; then
+  RUNTIME_USER="$(sed -n 's/^[[:space:]]*DMS_RUNTIME_USER=//p' deploy/runtime-identity.conf | head -n 1 | sed 's/^"//; s/"$//')"
+  RUNTIME_USER="${RUNTIME_USER:-daengtisiams}"
+fi
+as_runtime() {
+  if [ "$(id -un)" = "$RUNTIME_USER" ]; then
+    "$@"
+  else
+    sudo -n -u "$RUNTIME_USER" -- "$@"
+  fi
+}
+
+PG_SUPERUSER_ACCOUNT="${PG_SUPERUSER_ACCOUNT:-postgres}"
+as_superuser() {
+  if [ "$(id -un)" = "$PG_SUPERUSER_ACCOUNT" ]; then
+    "$@"
+  else
+    sudo -n -u "$PG_SUPERUSER_ACCOUNT" -- "$@"
+  fi
+}
+
+case "${DB_USERNAME:-}" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: DB_USERNAME is missing or not a plain role name. Aborting."; exit 1 ;;
+esac
 
 DRILL_ENV="${ROLLOUT_DRILL_ENVIRONMENT:-staging}"
 OPERATOR="${ROLLOUT_DRILL_OPERATOR:-ops}"
@@ -74,45 +113,65 @@ fi
 echo "Source backup : ${BACKUP_FILE}"
 BACKUP_SIZE="$(wc -c < "$BACKUP_FILE" | tr -d ' ')"
 
-php artisan foundation:backup-verify --path="$BACKUP_FILE"
+as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
+
+# --- Privilege preflight (D-Q7: privileged operator, no runtime CREATEDB) ----
+if ! SUPER_CHECK="$(as_superuser psql -X -Atqc "SELECT usesuper FROM pg_user WHERE usename = current_user" 2>/dev/null)"; then
+  echo "FATAL: cannot reach PostgreSQL as OS account '${PG_SUPERUSER_ACCOUNT}'. Run this drill as the privileged operator (root). Aborting."
+  exit 1
+fi
+if [ "$SUPER_CHECK" != "t" ]; then
+  echo "FATAL: the role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser. Aborting."
+  exit 1
+fi
+RUNTIME_ELEVATED="$(as_superuser psql -X -Atqc "SELECT rolcreatedb OR rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = '${DB_USERNAME}'")"
+if [ "$RUNTIME_ELEVATED" != "f" ]; then
+  echo "FATAL: the application login role '${DB_USERNAME}' holds CREATEDB, CREATEROLE or SUPERUSER, or was not found; the drill never relies on it (rule 245 #5, D-Q7). Aborting."
+  exit 1
+fi
+DRILL_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+case "$DRILL_OWNER" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the disposable database. Aborting."; exit 1 ;;
+esac
 
 # --- Restore into disposable DB (never touches production) ----------------
 DB_CONNECTIVITY="FAIL"; MIGRATION_CONSISTENCY="UNKNOWN"; APP_BOOT="UNKNOWN"
-HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0
+HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0; DATABASE_OWNER="UNKNOWN"
 RESTORE_START="$(date +%s)"
 
 cleanup() {
   echo "== Drop disposable database: ${DRILL_DB} =="
-  PGPASSWORD="${DB_PASSWORD}" dropdb -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-    -U "${DB_USERNAME}" --if-exists "$DRILL_DB" || true
+  as_superuser dropdb --if-exists -- "$DRILL_DB" || true
 }
 trap cleanup EXIT
 
-echo "== Create disposable database =="
-PGPASSWORD="${DB_PASSWORD}" createdb -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" "$DRILL_DB"
+echo "== Create disposable database (owned by the superuser '${DRILL_OWNER}') =="
+as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"
 
 echo "== Restore backup into disposable database =="
-PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -v ON_ERROR_STOP=1 -f "$BACKUP_FILE" > /dev/null
+# The dump is streamed on stdin: the superuser OS account need not be able to
+# open the runtime-owned file.
+as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - < "$BACKUP_FILE" > /dev/null
 DB_CONNECTIVITY="GO"
 
 echo "== Verify restored data (read-only counts, NO patient rows) =="
-TABLE_COUNT="$(PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -tAc \
+TABLE_COUNT="$(as_superuser psql -X -d "$DRILL_DB" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d ' ')"
 [ "${TABLE_COUNT:-0}" -ge 1 ] && SAMPLE_QUERIES="GO" || SAMPLE_QUERIES="FAIL"
 
 # Migration table present => migration consistency verifiable.
-MIG_COUNT="$(PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -tAc \
+MIG_COUNT="$(as_superuser psql -X -d "$DRILL_DB" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='migrations';" | tr -d ' ')"
 [ "${MIG_COUNT:-0}" -ge 1 ] && MIGRATION_CONSISTENCY="GO" || MIGRATION_CONSISTENCY="WATCH"
 
+# D-Q6 / N-9: the restored database is owned by the superuser, never the runtime.
+RESTORED_OWNER="$(as_superuser psql -X -Atqc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '${DRILL_DB}'")"
+if [ "$RESTORED_OWNER" = "$DRILL_OWNER" ] && [ "$RESTORED_OWNER" != "${DB_USERNAME}" ]; then DATABASE_OWNER="GO"; else DATABASE_OWNER="FAIL"; fi
+
 # App boot + health routes (do not point the app at the disposable DB — just
 # confirm the app/artisan boots and health endpoints resolve on this host).
-if php artisan --version > /dev/null 2>&1; then APP_BOOT="GO"; else APP_BOOT="FAIL"; fi
-if php artisan route:list --json 2>/dev/null | grep -q 'health/ready'; then HEALTH_ROUTES="GO"; else HEALTH_ROUTES="WATCH"; fi
+if as_runtime php artisan --version > /dev/null 2>&1; then APP_BOOT="GO"; else APP_BOOT="FAIL"; fi
+if as_runtime php artisan route:list --json 2>/dev/null | grep -q 'health/ready'; then HEALTH_ROUTES="GO"; else HEALTH_ROUTES="WATCH"; fi
 
 RESTORE_END="$(date +%s)"
 DURATION=$(( RESTORE_END - RESTORE_START ))
@@ -120,10 +179,11 @@ COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 DECISION="GO"
 [ "$SAMPLE_QUERIES" = "FAIL" ] && DECISION="FAIL"
+[ "$DATABASE_OWNER" = "FAIL" ] && DECISION="FAIL"
 
 echo "== Write ROLL-5-1A evidence =="
-mkdir -p "$EVIDENCE_DIR"
-cat > "$EVIDENCE_FILE" <<JSON
+as_runtime mkdir -p "$EVIDENCE_DIR"
+as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
 {
   "schema_version": 1,
   "drill_id": "roll-5-1a-${STAMP}",
@@ -137,10 +197,10 @@ cat > "$EVIDENCE_FILE" <<JSON
   "duration_seconds": ${DURATION},
   "operator": "${OPERATOR}",
   "commands_summary": [
-    "createdb <disposable_target>",
-    "psql -d <disposable_target> -f <backup> (password hidden)",
+    "createdb -O <superuser> <disposable_target> (as the superuser OS account)",
+    "psql -d <disposable_target> -f - < <backup> (as the superuser OS account)",
     "read-only count verification (no patient rows)",
-    "dropdb <disposable_target>"
+    "dropdb <disposable_target> (as the superuser OS account)"
   ],
   "verification": {
     "db_connectivity": "${DB_CONNECTIVITY}",
@@ -148,6 +208,7 @@ cat > "$EVIDENCE_FILE" <<JSON
     "app_boot": "${APP_BOOT}",
     "health_routes": "${HEALTH_ROUTES}",
     "sample_readonly_queries": "${SAMPLE_QUERIES}",
+    "database_owner_superuser": "${DATABASE_OWNER}",
     "pii_redaction_confirmed": true
   },
   "decision": "${DECISION}",
@@ -159,4 +220,4 @@ cat > "$EVIDENCE_FILE" <<JSON
 JSON
 
 echo "Evidence written: ${EVIDENCE_FILE} (decision=${DECISION})"
-php artisan rollout:restore-drill-evidence --path="$EVIDENCE_FILE" || true
+as_runtime php artisan rollout:restore-drill-evidence --path="$EVIDENCE_FILE" || true

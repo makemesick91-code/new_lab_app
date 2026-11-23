@@ -114,8 +114,13 @@
 #     --target <db>        Database to restore INTO. Default: DB_DATABASE from
 #                          the application environment file (i.e. production),
 #                          which then requires --force-production.
-#     --owner <role>       Owner for a database created with --create.
-#                          Default: DB_USERNAME from the environment file.
+#     --owner <role>       Owner for a database created with --create. It must be
+#                          a superuser role, never the application login role
+#                          (DMS-SPN4-READY-PILOT-1 D-Q6, finding N-9: a database
+#                          owner can create schemas and alter or drop the
+#                          database, which would undo rule 245 at the database
+#                          level). Default: the superuser this restore runs as,
+#                          which is also the production database's owner.
 #     --create             Create the target database first (fails if it exists).
 #     --force-production   Permit the target to be the production database.
 #     --yes                Skip the interactive typed confirmation.
@@ -249,10 +254,15 @@ TARGET_DB="${TARGET_DB:-$PRODUCTION_DB}"
 case "$TARGET_DB" in
     *[!A-Za-z0-9_]*) die "invalid --target '${TARGET_DB}': use only letters, digits and underscore" 2 ;;
 esac
-if [ -z "$TARGET_OWNER" ]; then
-    TARGET_OWNER="$(env_value DB_USERNAME || true)"
-fi
-[ -n "$TARGET_OWNER" ] || die "could not read DB_USERNAME from ${ENV_FILE}" 2
+# D-Q6 / N-9: the application login role never owns a restored database. Read
+# it here only to refuse it; the owner itself is resolved after the superuser
+# preflight below.
+APP_ROLE="$(env_value DB_USERNAME || true)"
+[ -n "$APP_ROLE" ] || die "could not read DB_USERNAME from ${ENV_FILE}" 2
+case "$TARGET_OWNER" in
+    *[!A-Za-z0-9_]*) die "invalid --owner '${TARGET_OWNER}': use only letters, digits and underscore" 2 ;;
+esac
+[ "$TARGET_OWNER" != "$APP_ROLE" ] || die "refusing --owner '${TARGET_OWNER}': the application login role never owns a restored database (D-Q6, N-9); omit --owner to use the superuser" 2
 
 # ---------------------------------------------------------------------------
 # Production guard
@@ -297,6 +307,17 @@ if ! SUPER_CHECK="$(as_superuser psql -X -Atqc "SELECT usesuper FROM pg_user WHE
     die "cannot reach PostgreSQL as OS account '${PG_SUPERUSER_ACCOUNT}'. Run this script as root (or as ${PG_SUPERUSER_ACCOUNT}), or pass --superuser-account." 2
 fi
 [ "$SUPER_CHECK" = "t" ] || die "role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser; the dump's CREATE EXTENSION / COMMENT ON EXTENSION statements would fail" 2
+
+# D-Q6 / N-9: a database created here is owned by a superuser role — by default
+# the one reached above, which also owns the production database.
+if [ -z "$TARGET_OWNER" ]; then
+    TARGET_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+fi
+case "$TARGET_OWNER" in
+    ''|*[!A-Za-z0-9_]*) die "could not resolve a valid owner role for the restored database" 2 ;;
+esac
+OWNER_IS_SUPERUSER="$(as_superuser psql -X -Atqc "SELECT rolsuper FROM pg_roles WHERE rolname = '${TARGET_OWNER}'")"
+[ "$OWNER_IS_SUPERUSER" = "t" ] || die "refusing owner '${TARGET_OWNER}': a restored database is owned by a superuser role only (D-Q6, N-9)" 2
 
 # ---------------------------------------------------------------------------
 # Integrity (rule 235): trusted digest, root-only staging copy, verify the copy.

@@ -2024,6 +2024,13 @@ return [
         // Selected by the `DeployHarden` token in BOTH critical variants;
         // declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenDirectApprovalTest.php',
+        // DMS-SPN4-READY-PILOT-1 G6 / R6-B6 (owner decisions D-Q6, D-Q7; findings
+        // N-5, N-9): a restore never makes the application login role a database
+        // owner, and the restore drill runs every database operation through the
+        // superuser and never relies on the runtime holding CREATEDB. Selected by
+        // the `RestoreDrill` token in BOTH critical variants; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillOwnershipPrivilegeTest.php',
     ],
 
     /*

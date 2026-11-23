@@ -208,9 +208,20 @@ if [ "$REHEARSAL_DB" = "${DB_DATABASE}" ]; then
 fi
 
 echo "== Create scratch database: ${REHEARSAL_DB} =="
-# Created by the superuser (the application role has no CREATEDB privilege) but
-# OWNED by the application role, so restored object ownership matches production.
-as_superuser createdb -O "${DB_USERNAME}" -T template0 -- "$REHEARSAL_DB"
+# Created AND owned by the superuser, as the production database is
+# (DMS-SPN4-READY-PILOT-1 D-Q6, finding N-9). Object ownership comes from the
+# dump's own OWNER TO statements, never from the database owner; a database
+# owned by the application role would let it create schemas and alter or drop
+# the database, undoing rule 245 at the database level.
+REHEARSAL_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+case "$REHEARSAL_OWNER" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the scratch database."; exit 1 ;;
+esac
+if [ "$REHEARSAL_OWNER" = "${DB_USERNAME}" ]; then
+  echo "FATAL: the scratch database would be owned by the application login role (D-Q6, N-9)."
+  exit 1
+fi
+as_superuser createdb -O "$REHEARSAL_OWNER" -T template0 -- "$REHEARSAL_DB"
 
 cleanup() {
   echo "== Drop scratch database: ${REHEARSAL_DB} =="
