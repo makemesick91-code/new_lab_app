@@ -161,13 +161,14 @@ it('installs a row and a TRUNCATE guard on every append-only table and on the in
 
 it('restricts deleting a lab order with status logs and a user who performed an audited action', function () {
     $keys = collect(DB::select(<<<'SQL'
-        SELECT conname, confdeltype FROM pg_constraint
+        SELECT conname, confdeltype::text || CASE WHEN convalidated THEN '/validated' ELSE '/NOT VALID' END AS state FROM pg_constraint
         WHERE conname IN ('sys_audit_logs_performed_by_foreign', 'trx_lab_order_status_logs_lab_order_id_foreign')
-        SQL))->pluck('confdeltype', 'conname');
+        SQL))->pluck('state', 'conname');
 
+    // Swapped NOT VALID, then validated in its own step: never left unvalidated.
     expect($keys->sortKeys()->all())->toBe([
-        'sys_audit_logs_performed_by_foreign' => 'r',
-        'trx_lab_order_status_logs_lab_order_id_foreign' => 'r',
+        'sys_audit_logs_performed_by_foreign' => 'r/validated',
+        'trx_lab_order_status_logs_lab_order_id_foreign' => 'r/validated',
     ]);
 
     $order = LabOrder::factory()->create();
@@ -186,6 +187,25 @@ it('restricts deleting a lab order with status logs and a user who performed an 
         ->and($userRefusal[1] ?? '')->toContain('sys_audit_logs_performed_by_foreign')
         ->and(DB::table('trx_lab_order_status_logs')->where('lab_order_id', $order->id)->count())->toBe(1);
 })->skip(fn () => ! fgaaoPg(), 'PostgreSQL foreign keys');
+
+it('migrates in short steps, runs again as a no-op, and reverses cleanly', function () {
+    $path = database_path('migrations/2026_11_23_100001_enforce_rule_248_append_only_layer_one.php');
+    $guards = fn (): int => (int) DB::scalar("SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid WHERE NOT t.tgisinternal AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')");
+    $keys = fn (): array => collect(DB::select("SELECT conname, confdeltype FROM pg_constraint WHERE conname IN ('sys_audit_logs_performed_by_foreign', 'trx_lab_order_status_logs_lab_order_id_foreign') ORDER BY conname"))
+        ->pluck('confdeltype')->all();
+
+    // No transaction around the whole migration: no lock is held across a validation scan.
+    expect((require $path)->withinTransaction)->toBeFalse();
+
+    (require $path)->up();
+    expect($guards())->toBe(16)->and($keys())->toBe(['r', 'r']);
+
+    (require $path)->down();
+    expect($guards())->toBe(0)->and($keys())->toBe(['n', 'c']);
+
+    (require $path)->up();
+    expect($guards())->toBe(16)->and($keys())->toBe(['r', 'r']);
+})->skip(fn () => ! fgaaoPg(), 'PostgreSQL triggers and foreign keys');
 
 // --- Append-only tables -----------------------------------------------------------
 

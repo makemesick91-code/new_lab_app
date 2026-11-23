@@ -24,9 +24,28 @@ use Illuminate\Support\Facades\DB;
 | The functions are owned by the migrating role (the schema owner after R6-D),
 | pin search_path and are not SECURITY DEFINER. Only the table owner can
 | disable these triggers; the runtime never owns a table after R6-D (rule 245).
+|
+| Locks. The deploy migrates while the application serves requests, and
+| dropping a foreign key takes ACCESS EXCLUSIVE on BOTH tables, users included.
+| Measured on PostgreSQL 16 with 2,000,000 audit rows, one transaction held
+| that lock for the whole validation scan, and every read of users waited. So
+| each step commits on its own, under a lock_timeout:
+| 1. the guards;
+| 2. per key, a swap to RESTRICT ... NOT VALID (no scan; milliseconds);
+| 3. VALIDATE CONSTRAINT, which scans under SHARE UPDATE EXCLUSIVE and never
+|    blocks reads or writes.
+| A lock that cannot be taken in time fails the migration, so a long-running
+| transaction never queues every request behind it. Each step is idempotent,
+| so the migration can simply run again. Old rows already satisfy the keys:
+| the previous keys enforced them.
 */
 return new class extends Migration
 {
+    /** Each step commits on its own (see Locks above). */
+    public $withinTransaction = false;
+
+    private const LOCK_TIMEOUT = '5s';
+
     /** @var list<string> */
     private const APPEND_ONLY = [
         'sys_audit_logs',
@@ -52,6 +71,24 @@ return new class extends Migration
             return;
         }
 
+        $this->step(function (): void {
+            $this->installGuards();
+        });
+
+        foreach (self::RESTRICTED_FOREIGN_KEYS as $table => [$constraint, $column, $referenced]) {
+            $this->step(function () use ($table, $constraint, $column, $referenced): void {
+                if ($this->deleteAction($table, $constraint) !== 'r') {
+                    $this->replaceForeignKey($table, $constraint, $column, $referenced, 'RESTRICT');
+                }
+            });
+            $this->step(function () use ($table, $constraint): void {
+                DB::statement("ALTER TABLE {$table} VALIDATE CONSTRAINT {$constraint}");
+            });
+        }
+    }
+
+    private function installGuards(): void
+    {
         DB::statement(<<<'SQL'
             CREATE OR REPLACE FUNCTION dms_append_only_guard() RETURNS trigger
             LANGUAGE plpgsql
@@ -103,17 +140,13 @@ return new class extends Migration
             SQL);
 
         foreach (self::APPEND_ONLY as $table) {
-            DB::statement("CREATE TRIGGER {$table}_append_only BEFORE UPDATE OR DELETE ON {$table} FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()");
-            DB::statement("CREATE TRIGGER {$table}_append_only_trunc BEFORE TRUNCATE ON {$table} FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()");
+            DB::statement("CREATE OR REPLACE TRIGGER {$table}_append_only BEFORE UPDATE OR DELETE ON {$table} FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()");
+            DB::statement("CREATE OR REPLACE TRIGGER {$table}_append_only_trunc BEFORE TRUNCATE ON {$table} FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()");
         }
 
         $ledger = self::LEDGER;
-        DB::statement("CREATE TRIGGER {$ledger}_ledger_guard BEFORE UPDATE OR DELETE ON {$ledger} FOR EACH ROW EXECUTE FUNCTION dms_inventory_ledger_guard()");
-        DB::statement("CREATE TRIGGER {$ledger}_ledger_guard_trunc BEFORE TRUNCATE ON {$ledger} FOR EACH STATEMENT EXECUTE FUNCTION dms_inventory_ledger_guard()");
-
-        foreach (self::RESTRICTED_FOREIGN_KEYS as $table => [$constraint, $column, $referenced]) {
-            $this->replaceForeignKey($table, $constraint, $column, $referenced, 'RESTRICT');
-        }
+        DB::statement("CREATE OR REPLACE TRIGGER {$ledger}_ledger_guard BEFORE UPDATE OR DELETE ON {$ledger} FOR EACH ROW EXECUTE FUNCTION dms_inventory_ledger_guard()");
+        DB::statement("CREATE OR REPLACE TRIGGER {$ledger}_ledger_guard_trunc BEFORE TRUNCATE ON {$ledger} FOR EACH STATEMENT EXECUTE FUNCTION dms_inventory_ledger_guard()");
     }
 
     public function down(): void
@@ -123,25 +156,49 @@ return new class extends Migration
         }
 
         foreach (self::RESTRICTED_FOREIGN_KEYS as $table => [$constraint, $column, $referenced, $previous]) {
-            $this->replaceForeignKey($table, $constraint, $column, $referenced, $previous);
+            $this->step(function () use ($table, $constraint, $column, $referenced, $previous): void {
+                $this->replaceForeignKey($table, $constraint, $column, $referenced, $previous);
+            });
+            $this->step(function () use ($table, $constraint): void {
+                DB::statement("ALTER TABLE {$table} VALIDATE CONSTRAINT {$constraint}");
+            });
         }
 
-        $ledger = self::LEDGER;
-        DB::statement("DROP TRIGGER IF EXISTS {$ledger}_ledger_guard_trunc ON {$ledger}");
-        DB::statement("DROP TRIGGER IF EXISTS {$ledger}_ledger_guard ON {$ledger}");
+        $this->step(function (): void {
+            $ledger = self::LEDGER;
+            DB::statement("DROP TRIGGER IF EXISTS {$ledger}_ledger_guard_trunc ON {$ledger}");
+            DB::statement("DROP TRIGGER IF EXISTS {$ledger}_ledger_guard ON {$ledger}");
 
-        foreach (self::APPEND_ONLY as $table) {
-            DB::statement("DROP TRIGGER IF EXISTS {$table}_append_only_trunc ON {$table}");
-            DB::statement("DROP TRIGGER IF EXISTS {$table}_append_only ON {$table}");
-        }
+            foreach (self::APPEND_ONLY as $table) {
+                DB::statement("DROP TRIGGER IF EXISTS {$table}_append_only_trunc ON {$table}");
+                DB::statement("DROP TRIGGER IF EXISTS {$table}_append_only ON {$table}");
+            }
 
-        DB::statement('DROP FUNCTION IF EXISTS dms_inventory_ledger_guard()');
-        DB::statement('DROP FUNCTION IF EXISTS dms_append_only_guard()');
+            DB::statement('DROP FUNCTION IF EXISTS dms_inventory_ledger_guard()');
+            DB::statement('DROP FUNCTION IF EXISTS dms_append_only_guard()');
+        });
     }
 
+    /** One short transaction under a lock timeout; a savepoint when already inside one (tests). */
+    private function step(Closure $work): void
+    {
+        DB::transaction(function () use ($work): void {
+            DB::statement("SET LOCAL lock_timeout = '".self::LOCK_TIMEOUT."'");
+            $work();
+        });
+    }
+
+    private function deleteAction(string $table, string $constraint): ?string
+    {
+        $action = DB::scalar('SELECT confdeltype FROM pg_constraint WHERE conname = ? AND conrelid = ?::regclass', [$constraint, $table]);
+
+        return $action === null ? null : (string) $action;
+    }
+
+    /** Swaps the key without scanning (NOT VALID); the caller validates in its own step. */
     private function replaceForeignKey(string $table, string $constraint, string $column, string $referenced, string $onDelete): void
     {
         DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$constraint}");
-        DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$constraint} FOREIGN KEY ({$column}) REFERENCES {$referenced} (id) ON UPDATE CASCADE ON DELETE {$onDelete}");
+        DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$constraint} FOREIGN KEY ({$column}) REFERENCES {$referenced} (id) ON UPDATE CASCADE ON DELETE {$onDelete} NOT VALID");
     }
 };
