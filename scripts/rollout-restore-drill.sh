@@ -12,7 +12,13 @@
 #   - NEVER restores over the production database. The target is a disposable DB
 #     whose name is guarded to (a) differ from the production DB and (b) contain
 #     a safe marker (restore_drill / staging / test). If either check fails, abort.
-#   - Drops ONLY the disposable database. Never calls scripts/restore_postgres.sh.
+#   - Drops ONLY the disposable database, and only when this run proved it
+#     created it: createdb succeeded in this run, and the database still has
+#     the oid recorded right after creation. A name that already exists, a
+#     createdb that fails, or an oid that changed means the database is not
+#     this run's: it is never dropped, and the run fails. A drop that fails
+#     also fails the run (decision FAIL); it is never ignored.
+#     Never calls scripts/restore_postgres.sh.
 #   - Never runs migrate:fresh / db:wipe / schema:drop / migrate:reset.
 #   - The evidence file contains NO password / secret / .env / KTP / NIK / raw
 #     rows — only sanitized counts and metadata.
@@ -97,6 +103,12 @@ case "$DRILL_DB" in
   *restore_drill*|*staging*|*test*) : ;;
   *) echo "FATAL: drill target name must contain a safe marker (restore_drill/staging/test). Aborting."; exit 1 ;;
 esac
+# PostgreSQL silently truncates a longer identifier, so the name looked up
+# later would not be the database created.
+if [ "${#DRILL_DB}" -gt 63 ]; then
+  echo "FATAL: drill target name is longer than 63 bytes and would be truncated by PostgreSQL. Aborting."
+  exit 1
+fi
 case "$(printf '%s' "$DRILL_ENV" | tr '[:upper:]' '[:lower:]')" in
   production|pilot|live|prod) echo "FATAL: drill environment must be staging/test, not production/pilot/live. Aborting."; exit 1 ;;
 esac
@@ -139,14 +151,61 @@ DB_CONNECTIVITY="FAIL"; MIGRATION_CONSISTENCY="UNKNOWN"; APP_BOOT="UNKNOWN"
 HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0; DATABASE_OWNER="UNKNOWN"
 RESTORE_START="$(date +%s)"
 
-cleanup() {
-  echo "== Drop disposable database: ${DRILL_DB} =="
-  as_superuser dropdb --if-exists -- "$DRILL_DB" || true
+# Proof of creation. Only a database this run created, still holding the oid
+# read right after its creation, is ever dropped.
+DRILL_DB_CREATED=0; DRILL_DB_OID=""; DROP_ATTEMPTED=0; DISPOSABLE_DROPPED="FAIL"
+
+drill_db_oid() {
+  as_superuser psql -X -Atqc "SELECT oid FROM pg_database WHERE datname = '${DRILL_DB}'"
 }
-trap cleanup EXIT
+
+drop_drill_db() {
+  DROP_ATTEMPTED=1
+  echo "== Drop disposable database: ${DRILL_DB} =="
+  local current_oid
+  if ! current_oid="$(drill_db_oid)"; then
+    echo "FATAL: cannot read the oid of '${DRILL_DB}'; it is NOT dropped. Check it and drop it by hand as the superuser."
+    return 1
+  fi
+  if [ -z "$DRILL_DB_OID" ] || [ "$current_oid" != "$DRILL_DB_OID" ]; then
+    echo "FATAL: '${DRILL_DB}' is not the database this run created (created oid '${DRILL_DB_OID:-unknown}', now '${current_oid:-absent}'); it is NOT dropped."
+    return 1
+  fi
+  if ! as_superuser dropdb -- "$DRILL_DB"; then
+    echo "FATAL: could not drop '${DRILL_DB}', created by this run. Drop it by hand as the superuser."
+    return 1
+  fi
+  DISPOSABLE_DROPPED="GO"
+}
+
+on_exit() {
+  local status=$?
+  if [ "$DRILL_DB_CREATED" = "1" ] && [ "$DROP_ATTEMPTED" = "0" ]; then
+    drop_drill_db || status=1
+  elif [ "$DRILL_DB_CREATED" = "0" ]; then
+    echo "No disposable database was created by this run; nothing is dropped."
+  fi
+  exit "$status"
+}
+trap on_exit EXIT
 
 echo "== Create disposable database (owned by the superuser '${DRILL_OWNER}') =="
-as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"
+EXISTING_OID="$(drill_db_oid)"
+if [ -n "$EXISTING_OID" ]; then
+  echo "FATAL: a database named '${DRILL_DB}' already exists. This run did not create it and does not touch it. Aborting."
+  exit 1
+fi
+# createdb fails when the name exists, so a database created in between by
+# anyone else is never marked as this run's.
+if ! as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"; then
+  echo "FATAL: createdb failed for '${DRILL_DB}'. This run created no database and drops none. Aborting."
+  exit 1
+fi
+DRILL_DB_CREATED=1
+DRILL_DB_OID="$(drill_db_oid)"
+case "$DRILL_DB_OID" in
+  ''|*[!0-9]*) echo "FATAL: cannot read the oid of '${DRILL_DB}' right after creating it; it is not dropped automatically. Aborting."; exit 1 ;;
+esac
 
 echo "== Restore backup into disposable database =="
 # The dump is streamed on stdin: the superuser OS account need not be able to
@@ -173,6 +232,14 @@ if [ "$RESTORED_OWNER" = "$DRILL_OWNER" ] && [ "$RESTORED_OWNER" != "${DB_USERNA
 if as_runtime php artisan --version > /dev/null 2>&1; then APP_BOOT="GO"; else APP_BOOT="FAIL"; fi
 if as_runtime php artisan route:list --json 2>/dev/null | grep -q 'health/ready'; then HEALTH_ROUTES="GO"; else HEALTH_ROUTES="WATCH"; fi
 
+# Dropped before the evidence is written, so the evidence records the result.
+drop_drill_db || true
+if [ "$DISPOSABLE_DROPPED" = "GO" ]; then
+  CLEANUP_NOTE="disposable DB dropped after verification; production never touched"
+else
+  CLEANUP_NOTE="disposable DB NOT dropped: manual cleanup required; production never touched"
+fi
+
 RESTORE_END="$(date +%s)"
 DURATION=$(( RESTORE_END - RESTORE_START ))
 COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -180,6 +247,7 @@ COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 DECISION="GO"
 [ "$SAMPLE_QUERIES" = "FAIL" ] && DECISION="FAIL"
 [ "$DATABASE_OWNER" = "FAIL" ] && DECISION="FAIL"
+[ "$DISPOSABLE_DROPPED" = "FAIL" ] && DECISION="FAIL"
 
 echo "== Write ROLL-5-1A evidence =="
 as_runtime mkdir -p "$EVIDENCE_DIR"
@@ -200,7 +268,7 @@ as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
     "createdb -O <superuser> <disposable_target> (as the superuser OS account)",
     "psql -d <disposable_target> -f - < <backup> (as the superuser OS account)",
     "read-only count verification (no patient rows)",
-    "dropdb <disposable_target> (as the superuser OS account)"
+    "dropdb <disposable_target>, only when created by this run with an unchanged oid (as the superuser OS account)"
   ],
   "verification": {
     "db_connectivity": "${DB_CONNECTIVITY}",
@@ -209,11 +277,12 @@ as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
     "health_routes": "${HEALTH_ROUTES}",
     "sample_readonly_queries": "${SAMPLE_QUERIES}",
     "database_owner_superuser": "${DATABASE_OWNER}",
+    "disposable_database_dropped": "${DISPOSABLE_DROPPED}",
     "pii_redaction_confirmed": true
   },
   "decision": "${DECISION}",
   "notes": [
-    "disposable DB dropped after evidence captured; production never touched",
+    "${CLEANUP_NOTE}",
     "restored public table count: ${TABLE_COUNT}"
   ]
 }
@@ -221,3 +290,6 @@ JSON
 
 echo "Evidence written: ${EVIDENCE_FILE} (decision=${DECISION})"
 as_runtime php artisan rollout:restore-drill-evidence --path="$EVIDENCE_FILE" || true
+if [ "$DISPOSABLE_DROPPED" != "GO" ]; then
+  exit 1
+fi
