@@ -338,6 +338,15 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 | G6-DQ5 | 2026-11-23 | Same approval. **D-Q5:** revoking `TEMP` from `PUBLIC` is deferred until a risk review |
 | G6-DQ6 | 2026-11-23 | Same approval. **D-Q6:** the owner of a restored database is the authorised superuser, never the runtime. Open details: §13.10 |
 | G6-DQ7 | 2026-11-23 | Same approval. **D-Q7:** the restore drill runs through the privileged operator, and the runtime is never given CREATEDB |
+| G6-RV1 | 2026-11-23 | Owner review follow-up (directive "G6 — FINAL REVIEW FOLLOW-UP"). **#693: CONDITIONAL GO.** The conditions are: label the §13.3 finding as historical; state REM-1 as MERGED, NOT DEPLOYED with #696 and CI run `45131035559` as evidence; keep the header, §9, §9.1 and §13.9 consistent; keep D-Q1 to D-Q7; change no manifest field and nothing in the parked CC1 manifest; add commits without amend or force-push; run DEVFLOW and CI on the latest head; stop before the merge. The merge still needs the owner's explicit order. **#695:** the security correction is accepted as the code-review baseline. Its merge is deferred until the release order is settled. No restore drill runs on the production VPS |
+| G6-DQ3a | 2026-11-23 | Owner answers of 2026-11-23 to the assistant's decision request (rows G6-DQ3a to G6-DQ6b). The directive of G6-RV1 states that these details had the owner's design direction from an earlier review; that text was not on record, so the owner was asked. **D-Q3-a:** the existing tables are declared through a generated inventory registry, checked against the live schema in CI; a table without a class fails CI. Implementation: OPEN (R6-B2) |
+| G6-DQ3b | 2026-11-23 | **D-Q3-b:** a declaration records the class only. Grants are applied by provisioning (`db-privilege-apply`, R6-B3; AIR-DBS-04), never at migrate time. Implementation: OPEN (R6-B2, R6-B3) |
+| G6-DQ4a | 2026-11-23 | **D-Q4-a:** R6-B5 also adds a column guard trigger on `trx_inventory_movements`, for its append-only-with-columns class, beyond rule 248's list. Implementation: OPEN (R6-B5) |
+| G6-DQ4b | 2026-11-23 | **D-Q4-b:** R6-B5 is released through a separate manifest pull request that sets `schema_change: true`, decided by the owner at that time. The first SPN4 release stays free of schema changes |
+| G6-DQ6a | 2026-11-23 | **D-Q6-a:** when a dump names an owner role that does not exist on the target, the restore stops, fail closed, and reports the role. It never creates the role. Implementation: OPEN |
+| G6-DQ6b | 2026-11-23 | **D-Q6-b:** no exception to D-Q6. There is no `--legacy-pre-r6-owner` flag: the owner of a restored database is always the superuser, for pre-R6 dumps too |
+| G6-CG11 | 2026-11-23 | Directive of G6-RV1. **CG-11 design direction:** identity numbers are masked by default, with a controlled reveal. Implementing it on the consent page needs its own contract and tests. Until then the consent page is unchanged and CG-11 stays OPEN |
+| G6-OD5 | 2026-11-23 | Directive of G6-RV1. **OD-5 stays PENDING** until the private register can be reconciled |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -406,7 +415,33 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 | D-Q6 | Pemilik database hasil restore adalah superuser berwenang, bukan runtime |
 | D-Q7 | Restore drill lewat operator berprivilege, tanpa CREATEDB untuk runtime |
 
-Detail yang belum diputuskan tercatat sebagai OPEN di §13.10. CG-11 belum diputuskan.
+**Tindak lanjut review Owner 2026-11-23 (§10 G6-RV1 sampai G6-OD5):**
+- **#693: CONDITIONAL GO.** Syaratnya:
+  - temuan §13.3 diberi label historis;
+  - REM-1 dinyatakan MERGED, NOT DEPLOYED dengan bukti #696 dan CI `45131035559`;
+  - header, §9, §9.1 dan §13.9 konsisten;
+  - D-Q1 sampai D-Q7 tetap;
+  - tanpa perubahan field manifest atau CC1 yang diparkir;
+  - commit tambahan tanpa amend atau force-push;
+  - DEVFLOW dan CI pada head terbaru.
+
+  Merge tetap menunggu perintah eksplisit Owner.
+- **#695:** koreksi keamanan diterima sebagai baseline code review. Merge ditunda sampai urutan rilis selesai. Restore
+  drill tidak dijalankan di VPS produksi.
+- **Detail D-Q** (jawaban Owner atas permintaan keputusan, 2026-11-23):
+
+  | Butir | Keputusan | Implementasi |
+  |---|---|---|
+  | D-Q3-a | Registry inventaris yang di-generate, dicek terhadap skema live di CI | OPEN (R6-B2) |
+  | D-Q3-b | Deklarasi hanya mencatat kelas; grant lewat provisioning (R6-B3), bukan saat migrate | OPEN (R6-B2, R6-B3) |
+  | D-Q4-a | R6-B5 juga memasang trigger penjaga kolom pada `trx_inventory_movements` | OPEN (R6-B5) |
+  | D-Q4-b | Rilis R6-B5 lewat PR manifest terpisah dengan `schema_change: true`; rilis pertama SPN4 tanpa perubahan skema | Saat rilis R6-B5 |
+  | D-Q6-a | Bila role pemilik di dump tidak ada di target, restore berhenti (fail-closed) dan tidak membuat role | OPEN |
+  | D-Q6-b | Tanpa pengecualian: tidak ada flag `--legacy-pre-r6-owner`; pemilik DB hasil restore selalu superuser | — |
+
+- **CG-11:** arah desain = disamarkan secara default dengan reveal terkendali. Implementasi di halaman consent butuh
+  kontrak dan tes tersendiri. Sampai saat itu CG-11 OPEN.
+- **OD-5:** tetap PENDING sampai register privat dapat direkonsiliasi.
 
 ---
 
@@ -1004,14 +1039,52 @@ assistant's. Where the design proposed something more specific than the approved
 |---|---|---|
 | D-Q1 | Matches the recommended option. Local evidence: every artisan check the deploy runs gives the same result as an owner login and as a non-owner runtime holding only these two roles | — |
 | D-Q2 | Matches | — |
-| D-Q3 | Matches the principle of the recommended option: explicit, per table, fail closed | **D-Q3-a:** how the 186 existing tables, whose migrations cannot be edited (CG-09), are declared. The design proposes a generated inventory registry checked against the live schema in CI. **D-Q3-b:** whether a declaration only records the class (grants applied by provisioning, AIR-DBS-04) or also grants at migrate time. The design proposes record only |
-| D-Q4 | Matches rule 248 layer 1: triggers refusing UPDATE, DELETE and TRUNCATE on `sys_audit_logs`, the financial and approval `*_events` tables and `trx_lab_order_status_logs`; model guards; foreign keys that restrict on delete | **D-Q4-a:** whether R6-B5 also adds a column guard trigger on `trx_inventory_movements`. That table is not in rule 248's list; the design proposed it for its append-only-with-columns class. **D-Q4-b:** a rule 248 migration is a schema change, so its release needs the manifest to declare `schema_change: true` |
+| D-Q3 | Matches the principle of the recommended option: explicit, per table, fail closed | **D-Q3-a (decided, §10 G6-DQ3a):** the 186 existing tables, whose migrations cannot be edited (CG-09), are declared through a generated inventory registry checked against the live schema in CI. **D-Q3-b (decided, G6-DQ3b):** a declaration records the class only; grants come from provisioning (AIR-DBS-04). Implementation evidence: OPEN (R6-B2, R6-B3) |
+| D-Q4 | Matches rule 248 layer 1: triggers refusing UPDATE, DELETE and TRUNCATE on `sys_audit_logs`, the financial and approval `*_events` tables and `trx_lab_order_status_logs`; model guards; foreign keys that restrict on delete | **D-Q4-a (decided, G6-DQ4a):** R6-B5 also adds the column guard trigger on `trx_inventory_movements`. **D-Q4-b (decided, G6-DQ4b):** R6-B5 is released through a separate manifest pull request that sets `schema_change: true`. Implementation evidence: OPEN (R6-B5) |
 | D-Q5 | The design said "after the pilot"; the decision says "until a risk review" | — (the decision's wording applies) |
-| D-Q6 | Matches: the restored database is owned by the superuser | **D-Q6-a:** when a dump names an owner role that does not exist on the target, does the restore stop (proposed) or create the role? **D-Q6-b:** the proposed explicit flag for restoring a pre-R6 dump |
+| D-Q6 | Matches: the restored database is owned by the superuser | **D-Q6-a (decided, G6-DQ6a):** a missing owner role stops the restore; it is never created. **D-Q6-b (decided, G6-DQ6b):** no pre-R6 exception flag. Implementation evidence for D-Q6-a: OPEN |
 | D-Q7 | Matches: privileged operator; all database operations through the superuser path; the drill refuses to run when the runtime holds CREATEDB | — |
 
-CG-11 is not decided by this record. The owner's direction and the questions it leaves are reported separately; the
-consent page is unchanged. OD-5 stays PENDING.
+CG-11 now has a design direction (§10 G6-CG11): masked by default, with a controlled reveal. Its consent-page
+implementation needs its own contract and tests, so CG-11 stays OPEN and the consent page is unchanged. OD-5 stays
+PENDING (G6-OD5).
+
+### 13.11 Review follow-up of 2026-11-23: restore drill evaluation and separate work
+
+**#695 restore drill cleanup** (accepted as the code-review baseline, merge deferred; G6-RV1).
+- The drill drops only a database this run proved it created: `createdb` succeeded in this run, and the database
+  still has the oid read right after creation.
+- A name collision, a failed `createdb`, a changed oid or a failed drop never drops another database, and fails the
+  run.
+- Validated on a local, isolated PostgreSQL 16 cluster (socket only, synthetic data, removed afterwards; never the
+  VPS): 33 of 33 checks pass.
+- The previous script fails 17 of the 33 checks. It dropped a colliding database, and dropped the database of a
+  concurrent run with the same name. It passed a failed drop with GO evidence.
+
+**TOCTOU between the oid check and `dropdb`: residual risk LOW.**
+- PostgreSQL cannot make the check and the drop atomic: `DROP DATABASE` cannot run inside a transaction block or a
+  function.
+- Swapping the database inside the millisecond window needs two things:
+  - dropping the drill database, which the superuser owns;
+  - creating a database with the same name.
+
+  The runtime can do neither (verified: `must be owner of database`, `permission denied to create database`), and the
+  drill refuses to run when the runtime holds CREATEDB. Only a superuser can do both, and a superuser can drop any
+  database directly.
+- Concurrent drills with the same name stamp: one proceeds, the other fails on the name without dropping anything.
+- Optional hardening, each a separate owner decision:
+  - H-1: a host `flock` mutex that serialises drills;
+  - H-2: the oid check and `DROP DATABASE` in one psql session;
+  - H-3: a random per-run name suffix, subject to the 63-byte limit.
+
+**Separate work item R6-B6-F1 (OPEN, not in #695):** `scripts/restore-rehearsal.sh`.
+- Its cleanup runs `dropdb --if-exists … || true`. A failed drop is swallowed, so a rehearsal can pass while its
+  scratch database is left behind.
+- It drops by name with no oid check.
+- Collision and a failed `createdb` are safe there, because its EXIT trap is installed only after `createdb`
+  succeeds.
+- Proposed fix: the same proof-of-creation and fail-on-drop pattern as the drill, with stub and PostgreSQL 16 tests.
+- It waits for the release order and its own owner decision.
 
 ---
 
