@@ -1,7 +1,7 @@
 ---
 kb_status: current
-kb_verified_against: 295b3d5e
-kb_updated: 2026-11-22
+kb_verified_against: d628e0cb
+kb_updated: 2026-11-23
 ---
 
 # DMS-SPN4-READY-PILOT-1 — Fast-Track Ready Pilot SPN4: Design Lock
@@ -9,12 +9,12 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1 and REM-2 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
-| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`) |
-| Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2 and REM-1 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
+| Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | **NO-GO**. The seven Gate 1 blockers stay open, and LAB-fee stays disabled |
-| `.sprint/current.yml` | Stays **DMS-RME-COMPREHENSIVE-CLOSURE-1** and is not changed |
+| `.sprint/current.yml` | **DMS-SPN4-READY-PILOT-1** from the merge of the manifest switch (§9.1), which is the owner's switch decision. Before it, DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1). CC1 is parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml` and stays OPEN |
 | BK-2 | **SKIPPED** (rule 232; never a gate) |
 | Canonical language | English. An Indonesian summary of the owner's decisions follows the owner decision record |
 
@@ -307,12 +307,49 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 
 ## 9. Manifest and GO tag
 
-- `.sprint/current.yml` stays CC1.
-- The SPN4 manifest is **parked** at `.sprint/dms-spn4-ready-pilot-1.yml` (separate draft, PR-C2), and DEVFLOW runs
-  with `--manifest`.
+- `.sprint/current.yml` declares this sprint from the merge of the manifest switch of §9.1. Before that merge it
+  declared CC1, and the SPN4 manifest was **parked** at `.sprint/dms-spn4-ready-pilot-1.yml` (PR-C2, #686), with
+  DEVFLOW run through `--manifest`.
+- After the switch, CC1 is the parked manifest, at `.sprint/dms-rme-comprehensive-closure-1.yml`, and its DEVFLOW
+  checks run through `--manifest`.
 - Docs, rules and tests close without a deploy and without a tag (CG-16).
 - A runtime release needs its own manifest-switch decision (OD-B3-1 precedent) and the `go_tag`
   `dms-spn4-ready-pilot-1-go`. No multi-sprint exception is used.
+
+### 9.1 Manifest switch for the first SPN4 runtime release (proposed 2026-11-23)
+
+The owner's directive of 2026-11-23 asked for this switch as a pull request and authorised neither its merge nor a
+deploy. **The owner's merge of that pull request is the switch decision (CG-22).** Until then `.sprint/current.yml`
+stays CC1.
+
+**Why the switch is needed.** The release guard (rule 229, rule 236), the signing helper and
+`scripts/sprint-release.sh` read the GO tag from the release commit's own `.sprint/current.yml`. A release of the
+merged SPN4 runtime changes must therefore be a commit whose `current.yml` declares `dms-spn4-ready-pilot-1-go`.
+
+**What the switch does:**
+- `.sprint/current.yml` becomes the SPN4 manifest, with `runtime_change: true` and `deploy_required: true`. Every
+  other field is unchanged.
+- The CC1 manifest is parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml`. CC1 stays OPEN with its
+  `go_tag` unchanged.
+- The parked copy `.sprint/dms-spn4-ready-pilot-1.yml` is removed, so that no two manifests declare one `go_tag`.
+
+**Release scope.**
+- In scope: R6-B1 (#689, `1e985d8e`) and REM-2/R2-6 (#690, `295b3d5e`), both MERGED, NOT DEPLOYED.
+- Also in scope: REM-1 (#696, `d628e0cb`; its governance amendment #692, `13cc32e5`), MERGED, NOT DEPLOYED. It
+  changes only the CI workflow and `config/ci_runner.php`. It reaches the host with the release, changes no runtime
+  behaviour there, and closes with the sprint.
+- Not in scope: schema, migration, permission, role, flag, timer or package changes, and any production role or
+  privilege change (R6-D is separately authorised).
+
+**What the switch does not authorise.**
+- It does not authorise a deploy. The release follows `docs/runbooks/production-host-identity.md` §6g: one
+  `workflow_dispatch` CI run on the exact release SHA, the owner's written approval and signature, `submit-approval`,
+  `check-approval`, then `start` and `verify`.
+- It does not create the GO tag. The tag comes only after a release, its production verification and the owner's
+  explicit decision (CG-16). Whether the first SPN4 release creates it is an owner decision; the sprint stays open
+  after that release.
+
+The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9.
 
 ## 10. Owner decision record (CG-22)
 
@@ -629,7 +666,7 @@ Local test runs without the environment file are recorded as WARN, not as a clea
 
 ## 13. G6 local preparation record (2026-11-22)
 
-**G6: LOCAL PREPARATION ONLY** (as recorded on 2026-11-22; the status after the merges of #689 and #690 is in §13.9). The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
+**G6: LOCAL PREPARATION ONLY** (as recorded on 2026-11-22; the status after the merges of #689, #690 and #696 is in §13.9). The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
 §12: G4 AUDIT COMPLETE, G5 Path B selected with formal closure pending OD-5. No Design Lock decision (DL-1 to DL-7)
 is changed here.
 
@@ -775,30 +812,46 @@ They are selected by the existing `PatientKtp`, `RmeRefundRequest` and `RmeVisit
 | R2-6, PostgreSQL 16 regression including every consent suite and the merged R6-B1 suites | 1990 tests, 0 failed, 0 skipped |
 | CI on the reviewed head `e3c05437`, run 45085855176 | Profile `runtime_app`; the critical tests ran: 11863 passed, 0 failed, 0 skipped. All 23 REM-2 tests and both R6-B1 suites passed. The Full Suite was DEFERRED |
 
-### 13.3 REM-1 — CG-19 critical selection (prepared, NOT applied)
+### 13.3 REM-1 — CG-19 critical selection (merged in #696 as `d628e0cb`, not deployed)
 
-**Evidence.** No token of either critical variant matches these suites:
+**Current state: MERGED, NOT DEPLOYED.**
+- REM-1 merged in #696 as `d628e0cb`. Its governance amendment of `CiTriggerRemovalGovernanceTest` merged first, in
+  #692 as `13cc32e5`.
+- On the base, the workflow file is in the pinned state `82150b8b…` (table below).
+- CI run `45131035559` (event `pull_request`, head `35dffabbf76aa308c7b181260a19510bc77d4619`) concluded success:
+  - classifier profile `ci_workflow`, critical tests required;
+  - the critical regression step ran: 11930 passed, 0 failed;
+  - its filter contained the new tokens, and the five newly selected suites passed in it.
+- The Full Suite was DEFERRED by the active policy (`authorised: false`). It is not a pass.
+- The change reaches the host with the first SPN4 release (§9.1) and closes with the sprint.
+
+The rest of this section is the **historical record of the finding and the proposal, before the REM-1 merge** (G6
+local preparation, 2026-11-22). It no longer describes the base.
+
+**Historical finding (before the REM-1 merge).** At that time, no token of either critical variant matched these
+suites:
 - `BranchContextTest`;
 - `BranchContextFallbackTest`;
 - `FixClinicOpsWorkingBranchContextTest`;
 - `PatientDataCompletenessAuditTest`.
 
-`LabIntegrationTest` runs only in the selective `Lab` job, which runs only when lab paths change. That suite carries
+`LabIntegrationTest` ran only in the selective `Lab` job, which runs only when lab paths change. That suite carries
 the branch onto lab case candidates.
 
-**Proposed change** (two lines of `.github/workflows/foundation-evidence-gates.yml`, plus `config/ci_runner.php`):
+**Change as proposed then, and applied by #696** (two lines of `.github/workflows/foundation-evidence-gates.yml`,
+plus `config/ci_runner.php`):
 - Insert `BranchContext|PatientDataCompleteness|LabIntegration` before the last token of BOTH critical filters, so
   the filter keeps ending in `InventoryClinicCalendarBoundary`, as the parallelism contract requires.
 - Declare the five suites as mandatory.
-- Five files (53 tests) are newly selected; the other `BranchContext` suites already run through existing tokens.
+- Five files (53 tests) are newly selected; the other `BranchContext` suites already ran through existing tokens.
 - No trigger, job, permission, secret, concurrency or classifier change.
 
 **Governance.** The change edits the critical-gate filter, so it is **not** one of the CG-16 CI trigger classes. It
 closes as a normal change released with this sprint: merge, deploy, verification and the sprint GO tag. It never
 closes on its own.
 
-`CiTriggerRemovalGovernanceTest` pins the workflow to two SHA-256 states and rejects every other edit. Before the
-change can merge, an owner-approved amendment of that test must:
+Before the amendment, `CiTriggerRemovalGovernanceTest` pinned the workflow to two SHA-256 states and rejected every
+other edit. The owner-approved amendment (#692) had to:
 - pin two further states;
 - define the exact token insertion;
 - keep the B5 rollback available on the selected file;
@@ -807,14 +860,14 @@ change can merge, an owner-approved amendment of that test must:
 | State | SHA-256 |
 |---|---|
 | B5 pre-removal (pinned) | `978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4` |
-| B5 post-removal, current (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
-| **REM-1 selected** (proposed) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
-| **REM-1 selected, B5 rollback target** (proposed) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
+| B5 post-removal (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
+| **REM-1 selected** (pinned since #692; the base state since #696) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
+| **REM-1 selected, B5 rollback target** (pinned since #692) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
 
-With the proposed change applied, every CI suite passes except the 17 CTRG tests, which fail by design until the
-amendment lands. Pushing a workflow file needs the GitHub `workflow` scope, which is revoked. The owner pushes the
-branch, or re-grants the scope temporarily; the assistant never widens a token. The R6-B role-separation CI job will
-need a later amendment of the same kind.
+At preparation time, every CI suite passed with the change applied, except the 17 CTRG tests, which failed by design
+until the amendment landed. Pushing a workflow file needs the GitHub `workflow` scope, which was revoked then. The
+owner granted it temporarily to publish #696; the assistant never widens a token. The R6-B role-separation CI job
+(R6-B7) will need a later amendment of the same kind.
 
 ### 13.4 R6-B, R6-C and R6-D — design changes found during G6
 
@@ -907,6 +960,8 @@ manifest-switch decision of §9 (OD-B3-1 precedent).
 
 ### 13.6 Status after G6 local preparation
 
+*Historical (G6 local preparation, 2026-11-22). The current status is §13.9.*
+
 | Item | Status |
 |---|---|
 | G4 | AUDIT COMPLETE |
@@ -937,6 +992,8 @@ manifest-switch decision of §9 (OD-B3-1 precedent).
 | OD-6 to OD-10 | OPEN | Owner |
 
 ### 13.7 Pull request plan
+
+*Historical (G6 local preparation, 2026-11-22). The current status is §13.9.*
 
 Each pull request needs its own owner decision to publish and to merge.
 
@@ -971,13 +1028,13 @@ R6-B1 must be released before R6-D.
    - D-Q6: the N-9 remedy (owner of a restored database);
    - D-Q7: the restore-drill operator and path.
 
-### 13.9 Status after the merges of #689 and #690 (2026-11-23)
+### 13.9 Status after the merges of #689, #690 and #696 (2026-11-23)
 
 | Item | Status |
 |---|---|
 | R6-B1 (§13.1) | **MERGED, NOT DEPLOYED** (#689, `1e985d8e`) |
 | REM-2 and R2-6 (§13.2) | **MERGED, NOT DEPLOYED** (#690, `295b3d5e`) |
-| REM-1 (§13.3) | Prepared, NOT applied; needs a governance decision |
+| REM-1 (§13.3) | **MERGED, NOT DEPLOYED** (#696, `d628e0cb`; governance amendment #692, `13cc32e5`). CI run `45131035559`: the five suites now selected passed in the critical gate. The Full Suite is DEFERRED by the active policy, not passed |
 | R6-01 | REMEDIATION OPEN |
 | G5 | PATH B SELECTED, OD-5 PENDING |
 | R6-D | NOT AUTHORIZED |
@@ -987,8 +1044,8 @@ R6-B1 must be released before R6-D.
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
 | BK-2 | SKIPPED |
 
-**A merge is not a release.** Releasing R6-B1 and REM-2 needs:
-- the manifest-switch decision of §9 (the parked SPN4 manifest still declares `runtime_change: false` and
+**A merge is not a release.** Releasing R6-B1, REM-2 and REM-1 needs:
+- the manifest switch of §9.1 (before it, the parked SPN4 manifest declared `runtime_change: false` and
   `deploy_required: false`);
 - its own release decision.
 
