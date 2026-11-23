@@ -9,7 +9,7 @@ kb_updated: 2026-11-23
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2 and REM-1 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2 and REM-1 MERGED, NOT DEPLOYED** (§13, §13.9). **Release-1: approved as an interim runtime release without a GO tag, pending formal release authorisation** (§13.12). **Pilot: NO-GO.** No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -346,8 +346,9 @@ merged SPN4 runtime changes must therefore be a commit whose `current.yml` decla
   `workflow_dispatch` CI run on the exact release SHA, the owner's written approval and signature, `submit-approval`,
   `check-approval`, then `start` and `verify`.
 - It does not create the GO tag. The tag comes only after a release, its production verification and the owner's
-  explicit decision (CG-16). Whether the first SPN4 release creates it is an owner decision; the sprint stays open
-  after that release.
+  explicit decision (CG-16). The owner decided (§10 G6-R1, §13.12) that the first SPN4 release is an **interim
+  runtime release that creates no GO tag**. The sprint stays OPEN after it, and the manifest keeps declaring
+  `go_tag: dms-spn4-ready-pilot-1-go` for the sprint's final closure.
 
 The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9.
 
@@ -383,6 +384,7 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G6-DQ6a | 2026-11-23 | **D-Q6-a:** when a role that owns objects in a dump does not exist on the target, the restore stops, fail closed, and reports the missing role. It never creates the role, never ignores ownership and never gives ownership to the runtime. An authorised operator repairs the role separately before the restore is repeated. Implementation: OPEN |
 | G6-DQ6b | 2026-11-23 | **D-Q6-b:** no exception: D-Q6 applies to every restore, pre-R6 dumps included. No `--legacy-pre-r6-owner` flag is created or enabled. A restored database is owned by the authorised PostgreSQL superuser, and application object ownership follows the R6 design. A missing required role stops the restore, fail closed. Legacy dump compatibility goes through a separate procedure controlled by an authorised operator, which validates the final ownership and privileges. The runtime is never given CREATEDB, CREATE on a schema or ownership to work around a restore problem |
 | G6-AUTH | 2026-11-23 | Both written decisions of G6-DQ3a. The PostgreSQL 16 validation of §13.11 (33/33) is test evidence, not a production authorisation. Local implementation and tests of R6-B5 and R6-B6 continue by dependency, with positive, negative and PostgreSQL 16 regression tests. Not authorised: deploy, production migration, production privilege change, R6-D, GO tag, BK-2, SPN4 pilot activation; each needs its own approval gate |
+| G6-R1 | 2026-11-23 | Owner directive "OWNER DIRECTIVE — G6 RELEASE-1 AND R6 CONTINUATION". The owner approves the first SPN4 deployment as an **interim runtime release without creating a GO tag**, subject to formal release authorisation (runbook §6g). Release ID `dms-spn4-runtime-r1-20261123`. Scope: R6-B1 (#689), REM-2/R2-6 (#690), REM-1 (#696) and the SPN4 manifest switch (#693). B5 CI-CD-PR-ONLY reaches the host inertly; it is not a separate sprint deployment. The release is not the R6-B5 schema migration. The sprint stays OPEN; no sprint GO is declared; the manifest `go_tag` is kept. Detail and gates: §13.12 |
 | G6-CG11 | 2026-11-23 | Directive of G6-RV1. **CG-11 design direction:** identity numbers are masked by default, with a controlled reveal. Implementing it on the consent page needs its own contract and tests. Until then the consent page is unchanged and CG-11 stays OPEN |
 | G6-OD5 | 2026-11-23 | Directive of G6-RV1. **OD-5 stays PENDING** until the private register can be reconciled |
 
@@ -482,6 +484,10 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 - **OD-5:** tetap PENDING sampai register privat dapat direkonsiliasi.
 - **Batas (G6-AUTH):** validasi PostgreSQL 16 33/33 adalah bukti pengujian, bukan izin produksi. Tidak ada izin deploy,
   migrasi produksi, perubahan privilege produksi, R6-D, GO tag, BK-2 atau aktivasi pilot SPN4.
+- **Rilis-1 (G6-R1):** Owner menyetujui deploy SPN4 pertama sebagai **rilis runtime antara tanpa GO tag**, dengan syarat
+  otorisasi rilis formal. ID rilis `dms-spn4-runtime-r1-20261123`; cakupan R6-B1, REM-2/R2-6, REM-1 dan manifest switch.
+  B5 tiba tanpa efek dan bukan deploy sprint tersendiri. Bukan migrasi R6-B5. Sprint tetap OPEN, `go_tag` manifest
+  dipertahankan (§13.12).
 
 ---
 
@@ -1046,6 +1052,10 @@ Each pull request needs its own owner decision to publish and to merge.
 R6-B1, REM-2 and REM-1 are released together with the SPN4 manifest switch, in one deploy, under the sprint GO tag.
 R6-B1 must be released before R6-D.
 
+*Superseded on the GO tag (2026-11-23, §10 G6-R1):* that one deploy is the interim runtime release of §13.12, and it
+creates **no** GO tag. The sprint GO tag comes only with the sprint's final closure (CG-16, §9.1). The rest of this
+plan is historical.
+
 ### 13.8 Owner decisions requested
 
 1. Publication of PR-G6-GOV, then of PR-R6-B1 and PR-REM2 (each separately; merge separately).
@@ -1072,7 +1082,9 @@ R6-B1 must be released before R6-D.
 |---|---|
 | R6-B1 (§13.1) | **MERGED, NOT DEPLOYED** (#689, `1e985d8e`) |
 | REM-2 and R2-6 (§13.2) | **MERGED, NOT DEPLOYED** (#690, `295b3d5e`) |
-| REM-1 (§13.3) | **MERGED, NOT DEPLOYED** (#696, `d628e0cb`; governance amendment #692, `13cc32e5`). CI run `45131035559`: the five suites now selected passed in the critical gate. The Full Suite is DEFERRED by the active policy, not passed |
+| REM-1 (§13.3) | **MERGED, NOT DEPLOYED** (#696, `d628e0cb`; governance amendment #692, `13cc32e5`). CI run `45131035559`: the five suites now selected passed in the critical gate. The Full Suite is DEFERRED by the active policy, not passed. REM-1 is **not** recorded as released until release-1 is deployed and verified and its closure evidence is recorded (§13.12) |
+| Release-1 `dms-spn4-runtime-r1-20261123` (§13.12) | Approved as an interim runtime release, **no GO tag**; pending formal release authorisation. Not dispatched, not signed, not deployed |
+| SPN4 sprint | **OPEN**. No sprint GO is declared; `go_tag: dms-spn4-ready-pilot-1-go` stays declared for the final closure |
 | R6-01 | REMEDIATION OPEN |
 | G5 | PATH B SELECTED, OD-5 PENDING |
 | R6-D | NOT AUTHORIZED |
@@ -1146,6 +1158,51 @@ PENDING (G6-OD5).
   succeeds.
 - Proposed fix: the same proof-of-creation and fail-on-drop pattern as the drill, with stub and PostgreSQL 16 tests.
 - It waits for the release order and its own owner decision.
+
+### 13.12 Release-1: interim runtime release without a GO tag (owner decision G6-R1, 2026-11-23)
+
+**Decision.**
+- The owner approves the first SPN4 deployment as an interim runtime release that creates **no GO tag** (§10 G6-R1).
+- The approval is subject to the formal release authorisation of runbook §6g: the owner's written approval of the
+  full SHA and the owner's signature.
+- This record authorises no dispatch, no signature, no submission and no deploy.
+
+| Item | Record |
+|---|---|
+| Release ID | `dms-spn4-runtime-r1-20261123`. Confirmed unused before the signature (gate 2) |
+| Release type | Interim runtime release of an OPEN sprint. No sprint GO is declared |
+| Scope | R6-B1 (#689, `1e985d8e`); REM-2/R2-6 (#690, `295b3d5e`); REM-1 (#696, `d628e0cb`; governance #692, `13cc32e5`); the SPN4 manifest switch (#693, `27d342cb`); and the documentation commits merged since the last production release, this record included |
+| Reaches the host inertly | B5 CI-CD-PR-ONLY (#682, #683): CI workflow and its governance test only. B5 was closed without a deploy or a tag (#684). It is not a separate sprint deployment, and this is not a multi-sprint release |
+| Schema | None. The active manifest declares `schema_change: false`, and no migration is in the range |
+| Excluded | R6-B5 (rule 248 migration; released later with its own `schema_change: true` manifest PR, G6-DQ4b); R6-B2; #695 (R6-B6 and D-Q6-a); R6-B3, R6-B4, R6-B7, R6-B8; R6-C; R6-D; every production role, ownership or privilege change; Gate 1 RME-LAB-FEE-APPROVAL-1; G12, G13; pilot activation; BK-2 |
+| GO tag | Not created. `.sprint/current.yml` keeps `go_tag: dms-spn4-ready-pilot-1-go`, which the signing helper and the release guard read as the sprint's declared tag. Naming it there creates nothing (CG-16) |
+| Code, manifest, scripts, rules | Unchanged by this record |
+
+**Dependency gates, in order.** Each gate after the first needs its own authorisation.
+
+1. This record is merged.
+2. **Final SHA.**
+   - Fetch the base. The release candidate is its new tip: the merge of this record, not `330861de`, which must not be
+     dispatched.
+   - Prove on that SHA that the manifest is unchanged, the range carries no migration, and the scope is as above.
+   - Confirm that the release ID is unused.
+3. **Base freeze.** From the dispatch until `verify`, nothing merges into the base.
+4. **Dispatch.** One `workflow_dispatch` with default inputs while the base tip is the SHA. The run must be
+   `completed`/`success` with `headSha` equal to it, and the critical tests must actually run. A DEFERRED Full Suite is
+   recorded as DEFERRED.
+5. **Owner approval.** The owner's written approval of the full SHA, then the owner's signature with
+   `--release-id dms-spn4-runtime-r1-20261123 --go-tag dms-spn4-ready-pilot-1-go` (owner only).
+6. **Target and trust.** `production-target-check --operator --remote` → `VERIFIED`; `trust-check` → `READY`.
+7. **Approval.** `submit-approval`, then `check-approval` → `GO`.
+8. **Deploy.** `start`, `follow`, `verify <deploy-id>` → `DEPLOY RUNNER OK`, outside 02:25–02:40 WITA. The runner's
+   pre-deploy dump is mandatory; BK-2 is not a gate.
+9. **Post-deploy verification** (read-only):
+   - smoke on the canonical URL;
+   - no new ERROR lines with query values (REM-2b);
+   - the DQ1 check and the merge guard behave as before (R6-B1);
+   - no NIK in a session flash (REM-2/R2-6).
+10. **Closure record (CG-22).** Release ID, approval ID, record and signature digests, the CI run ID and the deploy ID.
+    Only then are R6-B1, REM-2/R2-6 and REM-1 recorded as released. REM-1 is not marked fully released before this.
 
 ---
 
