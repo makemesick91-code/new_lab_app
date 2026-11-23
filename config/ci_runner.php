@@ -1430,6 +1430,21 @@ return [
         // forbids it. The suite also carries the branch × date matrix proving a
         // historical filter cannot widen the authorised branch scope.
         'tests/Feature/RME/RmeReportTodayDefaultTest.php',
+        /*
+         * DMS-SPN4-READY-PILOT-1 G6 / REM-1 (CG-19) — the branch authority and the
+         * patient data completeness audit. G4 found these suites matched by no
+         * critical token in either variant, so a change to BranchContext, the
+         * working-branch scope or the completeness audit could merge without them
+         * running; LabIntegrationTest (branch carried onto lab case candidates) ran
+         * only in the selective `Lab` job. Selected by the `BranchContext`,
+         * `PatientDataCompleteness` and `LabIntegration` tokens added to BOTH
+         * critical variants; declared so a rename cannot drop them.
+         */
+        'tests/Feature/Branch/BranchContextTest.php',
+        'tests/Feature/Branch/BranchContextFallbackTest.php',
+        'tests/Feature/RME/FixClinicOpsWorkingBranchContextTest.php',
+        'tests/Feature/RME/PatientDataCompletenessAuditTest.php',
+        'tests/Feature/RME/LabIntegrationTest.php',
 
         // BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the clinical UI capability
         // must mirror the server capability for the same act.
