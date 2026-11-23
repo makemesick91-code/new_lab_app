@@ -171,4 +171,3 @@ it('refuses to load a restore library that another identity could have written, 
         ->and($run['out'])->toContain('refusing to load it')
         ->and($run['out'])->not->toContain('== ROLL-5-1A restore drill ==');
 })->with(['writable', 'symlink']);
-
