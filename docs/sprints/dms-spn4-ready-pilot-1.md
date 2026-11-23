@@ -14,7 +14,7 @@ kb_updated: 2026-11-22
 | Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | **NO-GO**. The seven Gate 1 blockers stay open, and LAB-fee stays disabled |
-| `.sprint/current.yml` | Stays **DMS-RME-COMPREHENSIVE-CLOSURE-1** and is not changed |
+| `.sprint/current.yml` | **DMS-RME-COMPREHENSIVE-CLOSURE-1** until the owner merges the SPN4 manifest switch (§9.1); CC1 is then parked verbatim and stays OPEN |
 | BK-2 | **SKIPPED** (rule 232; never a gate) |
 | Canonical language | English. An Indonesian summary of the owner's decisions follows the owner decision record |
 
@@ -307,12 +307,45 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 
 ## 9. Manifest and GO tag
 
-- `.sprint/current.yml` stays CC1.
+- `.sprint/current.yml` stays CC1 until the manifest switch of §9.1 is merged.
 - The SPN4 manifest is **parked** at `.sprint/dms-spn4-ready-pilot-1.yml` (separate draft, PR-C2), and DEVFLOW runs
   with `--manifest`.
 - Docs, rules and tests close without a deploy and without a tag (CG-16).
 - A runtime release needs its own manifest-switch decision (OD-B3-1 precedent) and the `go_tag`
   `dms-spn4-ready-pilot-1-go`. No multi-sprint exception is used.
+
+### 9.1 Manifest switch for the first SPN4 runtime release (proposed 2026-11-23)
+
+The owner's directive of 2026-11-23 asked for this switch as a pull request and authorised neither its merge nor a
+deploy. **The owner's merge of that pull request is the switch decision (CG-22).** Until then `.sprint/current.yml`
+stays CC1.
+
+**Why the switch is needed.** The release guard (rule 229, rule 236), the signing helper and
+`scripts/sprint-release.sh` read the GO tag from the release commit's own `.sprint/current.yml`. A release of the
+merged SPN4 runtime changes must therefore be a commit whose `current.yml` declares `dms-spn4-ready-pilot-1-go`.
+
+**What the switch does:**
+- `.sprint/current.yml` becomes the SPN4 manifest, with `runtime_change: true` and `deploy_required: true`. Every
+  other field is unchanged.
+- The CC1 manifest is parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml`. CC1 stays OPEN with its
+  `go_tag` unchanged.
+- The parked copy `.sprint/dms-spn4-ready-pilot-1.yml` is removed, so that no two manifests declare one `go_tag`.
+
+**Release scope.**
+- In scope: R6-B1 (#689, `1e985d8e`) and REM-2/R2-6 (#690, `295b3d5e`), both MERGED, NOT DEPLOYED.
+- Not in scope: schema, migration, permission, role, flag, timer or package changes, and any production role or
+  privilege change (R6-D is separately authorised).
+- If REM-1 is merged first, its workflow change arrives inertly with the release and closes with the sprint.
+
+**What the switch does not authorise.**
+- It does not authorise a deploy. The release follows `docs/runbooks/production-host-identity.md` §6g: one
+  `workflow_dispatch` CI run on the exact release SHA, the owner's written approval and signature, `submit-approval`,
+  `check-approval`, then `start` and `verify`.
+- It does not create the GO tag. The tag comes only after a release, its production verification and the owner's
+  explicit decision (CG-16). Whether the first SPN4 release creates it is an owner decision; the sprint stays open
+  after that release.
+
+The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9.
 
 ## 10. Owner decision record (CG-22)
 
