@@ -173,6 +173,18 @@ case "$OWNER_ROLE_STATUS" in
   *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created. Aborting."; exit 1 ;;
 esac
 
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$BACKUP_FILE" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: ${RUNTIME_GATE} Nothing was created. Aborting."; exit 1 ;;
+  *) echo "FATAL: could not decide the runtime ownership gate as the superuser; nothing was created. Aborting."; exit 1 ;;
+esac
+
 # --- Restore into disposable DB (never touches production) ----------------
 DB_CONNECTIVITY="FAIL"; MIGRATION_CONSISTENCY="UNKNOWN"; APP_BOOT="UNKNOWN"
 HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0; DATABASE_OWNER="UNKNOWN"

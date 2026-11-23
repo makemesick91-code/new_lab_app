@@ -369,6 +369,18 @@ case "$OWNER_ROLE_STATUS" in
     *) die "could not read the roles of this cluster as the superuser; nothing was created or restored" ;;
 esac
 
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_DUMP" "$APP_ROLE" as_superuser)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+    0) echo "  runtime own : no runtime-owned object after R6 (gate passed)" ;;
+    1) die "${RUNTIME_GATE} Nothing was created or restored." ;;
+    *) die "could not decide the runtime ownership gate as the superuser; nothing was created or restored" ;;
+esac
+
 # Only the verified root-only copy is ever streamed to psql (the postgres OS
 # account cannot open it; it reads the pipe).
 read_dump() {
@@ -451,5 +463,19 @@ count_table() {
 }
 
 ROW_SUMMARY="patients=$(count_table mst_patients) visits=$(count_table trx_clinic_visits) payments=$(count_table trx_rme_payments)"
+
+# The final state, checked again after the replay: after R6, a database whose
+# objects the runtime owns is restored but NOT usable, and the run fails.
+RUNTIME_OWNED="$(dms_restore_runtime_owned_objects "$TARGET_DB" "$APP_ROLE" as_superuser)" \
+    || die "could not count the objects the runtime owns in '${TARGET_DB}'" 3
+R6_ACTIVE=0
+dms_restore_r6_active as_superuser || R6_ACTIVE=$?
+if [ "$R6_ACTIVE" -eq 0 ] && [ "${RUNTIME_OWNED:-1}" != "0" ]; then
+    die "RESTORED BUT NOT A FINAL STATE: the runtime '${APP_ROLE}' owns ${RUNTIME_OWNED} objects in '${TARGET_DB}' after R6. Do not use this database; the legacy procedure moves the ownership first." 3
+fi
+[ "$R6_ACTIVE" -ne 2 ] || die "could not tell whether this cluster has the R6 owner role" 3
+if [ "$R6_ACTIVE" -eq 1 ]; then
+    echo "  runtime own : ${RUNTIME_OWNED} objects owned by the runtime (pre-R6 cluster: the current design until R6-D)"
+fi
 
 echo "RESTORE OK: ${TABLE_COUNT} tables into '${TARGET_DB}' in ${RESTORE_SECONDS}s (${ROW_SUMMARY}) from ${DUMP_FILE}"

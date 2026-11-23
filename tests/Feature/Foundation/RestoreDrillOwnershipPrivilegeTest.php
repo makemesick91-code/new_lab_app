@@ -50,7 +50,7 @@ function rdopCode(string $path): string
  *
  * @return array{exit: int, output: string, log: list<string>, evidence: ?array, state: ?string}
  */
-function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string $database = 'dmsapp', ?string $dump = null): array
+function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string $database = 'dmsapp', ?string $dump = null, bool $r6 = false): array
 {
     $root = sys_get_temp_dir().'/rdop-'.bin2hex(random_bytes(6));
     $app = $root.'/app';
@@ -80,7 +80,8 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
               *"usesuper FROM pg_user"*) echo t ;;
               *"rolcreatedb OR rolcreaterole OR rolsuper"*) echo "$RDOP_RUNTIME_ELEVATED" ;;
               *"SELECT oid FROM pg_database"*) if [ -f "$RDOP_STATE" ]; then cat "$RDOP_STATE"; fi ;;
-              *"SELECT rolname FROM pg_catalog.pg_roles"*) printf 'postgres\npg_superuser\napp_runtime\npg_database_owner\n' ;;
+              *"pg_roles WHERE rolname = 'dms_owner'"*) echo "$RDOP_R6" ;;
+              *"SELECT rolname FROM pg_catalog.pg_roles"*) printf 'postgres\npg_superuser\napp_runtime\npg_database_owner\n'; if [ "$RDOP_R6" = 1 ]; then echo dms_owner; fi ;;
               *"SELECT current_user"*) echo pg_superuser ;;
               *"datdba"*) echo pg_superuser ;;
               *"table_name='migrations'"*) echo 1 ;;
@@ -125,6 +126,7 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
         'RDOP_RUNTIME_ELEVATED' => $runtimeElevated,
         'RDOP_STATE' => $state,
         'RDOP_SCENARIO' => $scenario,
+        'RDOP_R6' => $r6 ? '1' : '0',
         'ROLLOUT_DRILL_ENVIRONMENT' => 'staging',
         'PG_SUPERUSER_ACCOUNT' => 'postgres',
     ]);
@@ -320,5 +322,23 @@ it('runs the drill when every role that owns objects in the backup exists', func
     expect($run['exit'])->toBe(0, $run['output'])
         ->and(rdopCalls($run, 'createdb'))->toBe(1)
         ->and(rdopCalls($run, 'dropdb'))->toBe(1)
+        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+});
+
+it('refuses a pre-R6 backup before anything is created once the cluster has the R6 owner role (P5)', function () {
+    $run = rdopRunDrill('f', 'none', 'dmsapp', "-- PostgreSQL database dump\nCREATE TABLE public.t (id int);\nALTER TABLE public.t OWNER TO app_runtime;\n", r6: true);
+
+    expect($run['exit'])->not->toBe(0)
+        ->and($run['output'])->toContain("makes the application login role 'app_runtime' an object owner (a pre-R6 dump)")
+        ->and($run['output'])->toContain('separate operator-controlled legacy procedure')
+        ->and(rdopCalls($run, 'createdb'))->toBe(0)
+        ->and($run['evidence'])->toBeNull();
+});
+
+it('drills a post-R6 backup whose objects the owner role owns', function () {
+    $run = rdopRunDrill('f', 'none', 'dmsapp', "-- PostgreSQL database dump\nCREATE TABLE public.t (id int);\nALTER TABLE public.t OWNER TO dms_owner;\n", r6: true);
+
+    expect($run['exit'])->toBe(0, $run['output'])
+        ->and(rdopCalls($run, 'createdb'))->toBe(1)
         ->and($run['evidence']['decision'] ?? null)->toBe('GO');
 });

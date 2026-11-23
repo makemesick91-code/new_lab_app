@@ -158,3 +158,69 @@ dms_restore_missing_owner_roles() {
   fi
   return 0
 }
+
+# dms_restore_r6_owner_role
+# The schema owner role of the R6 design (rule 245). Its presence on a cluster
+# means the privilege split has been provisioned there. Override with
+# DMS_R6_OWNER_ROLE; the name must be a plain role name.
+dms_restore_r6_owner_role() {
+  local role="${DMS_R6_OWNER_ROLE:-dms_owner}"
+  case "$role" in
+    ''|*[!A-Za-z0-9_]*) _dms_restore_err "DMS_R6_OWNER_ROLE is not a plain role name"; return 2 ;;
+  esac
+  printf '%s\n' "$role"
+}
+
+# dms_restore_r6_active <command prefix…>
+# Returns 0 when the cluster has the R6 owner role (the privilege split is
+# provisioned), 1 when it has not, 2 when the cluster cannot be asked.
+dms_restore_r6_active() {
+  local owner_role present
+  owner_role="$(dms_restore_r6_owner_role)" || return 2
+  present="$("$@" psql -X -Atqc "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname = '${owner_role}'" 2> /dev/null)" || return 2
+  case "$present" in
+    0) return 1 ;;
+    1) return 0 ;;
+    *) return 2 ;;
+  esac
+}
+
+# dms_restore_runtime_ownership_gate <plain-text dump> <runtime role> <command prefix…>
+# Owner directive "G6 RELEASE-1 AND R6 CONTINUATION" P5: after the R6 split,
+# objects owned by the runtime are never an acceptable final state. A dump that
+# makes the runtime an object owner is a pre-R6 dump: the standard restore
+# refuses it before anything is created, and points to the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b). On a
+# cluster without the owner role (before R6-D), runtime ownership is still the
+# current design and the gate passes.
+# Returns 0 to proceed, 1 to refuse (reason on stdout), 2 when it cannot decide.
+dms_restore_runtime_ownership_gate() {
+  local dump="${1:?dump}" runtime="${2:?runtime}" active=0
+  shift 2
+  case "$runtime" in
+    *[!A-Za-z0-9_]*) _dms_restore_err "the runtime role is not a plain role name"; return 2 ;;
+  esac
+  dms_restore_r6_active "$@" || active=$?
+  case "$active" in
+    1) return 0 ;;
+    0) : ;;
+    *) return 2 ;;
+  esac
+  if dms_restore_owner_roles "$dump" | grep -qxF -- "$runtime"; then
+    printf '%s\n' "this cluster has the R6 owner role '$(dms_restore_r6_owner_role)', and the dump makes the application login role '${runtime}' an object owner (a pre-R6 dump). Runtime ownership is not an acceptable final state after R6, so the standard restore refuses it. Restore it into a new database with the separate operator-controlled legacy procedure."
+    return 1
+  fi
+  return 0
+}
+
+# dms_restore_runtime_owned_objects <database> <runtime role> <command prefix…>
+# Prints how many tables, views, sequences, functions, types and schemas in the
+# database the runtime owns (catalog only; no row is read).
+dms_restore_runtime_owned_objects() {
+  local db="${1:?database}" runtime="${2:?runtime}"
+  shift 2
+  case "$runtime" in
+    *[!A-Za-z0-9_]*) _dms_restore_err "the runtime role is not a plain role name"; return 2 ;;
+  esac
+  "$@" psql -X -Atq -d "$db" -c "SELECT (SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE pg_catalog.pg_get_userbyid(c.relowner) = '${runtime}' AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%') + (SELECT count(*) FROM pg_catalog.pg_proc p WHERE pg_catalog.pg_get_userbyid(p.proowner) = '${runtime}') + (SELECT count(*) FROM pg_catalog.pg_type t WHERE pg_catalog.pg_get_userbyid(t.typowner) = '${runtime}') + (SELECT count(*) FROM pg_catalog.pg_namespace s WHERE pg_catalog.pg_get_userbyid(s.nspowner) = '${runtime}')"
+}

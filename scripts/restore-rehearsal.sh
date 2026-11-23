@@ -209,6 +209,18 @@ case "$OWNER_ROLE_STATUS" in
   *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created or restored."; exit 1 ;;
 esac
 
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: ${RUNTIME_GATE} Nothing was created."; exit 1 ;;
+  *) echo "FATAL: could not decide the runtime ownership gate as the superuser; nothing was created."; exit 1 ;;
+esac
+
 echo "== Verify backup (NSF-10) =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
 

@@ -36,7 +36,7 @@ function rorpCode(string $path): string
  * @param  list<string>|null  $roles
  * @return array{exit: int, out: string}
  */
-function rorpLib(string $call, string $dump, ?array $roles = ['postgres']): array
+function rorpLib(string $call, string $dump, ?array $roles = ['postgres'], string $runtime = 'app_runtime'): array
 {
     $dir = sys_get_temp_dir().'/rorp-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700, true);
@@ -49,11 +49,17 @@ function rorpLib(string $call, string $dump, ?array $roles = ['postgres']): arra
         rorp_su() {
           [ "$1" = psql ] || return 9
           [ "$RORP_ROLES_OK" = 1 ] || return 3
-          cat "$RORP_DIR/roles"
+          case "$*" in
+            *"rolname = 'dms_owner'"*) grep -cx dms_owner "$RORP_DIR/roles" || true ;;
+            *"pg_get_userbyid"*) echo 7 ;;
+            *) cat "$RORP_DIR/roles" ;;
+          esac
         }
         case "$RORP_CALL" in
           owners) dms_restore_owner_roles "$RORP_DIR/dump.sql" ;;
           missing) dms_restore_missing_owner_roles "$RORP_DIR/dump.sql" rorp_su ;;
+          gate) dms_restore_runtime_ownership_gate "$RORP_DIR/dump.sql" "$RORP_RUNTIME" rorp_su ;;
+          owned) dms_restore_runtime_owned_objects synthetic_db "$RORP_RUNTIME" rorp_su ;;
         esac
         SH;
 
@@ -62,6 +68,7 @@ function rorpLib(string $call, string $dump, ?array $roles = ['postgres']): arra
         'RORP_DIR' => $dir,
         'RORP_CALL' => $call,
         'RORP_ROLES_OK' => $roles === null ? '0' : '1',
+        'RORP_RUNTIME' => $runtime,
         'PATH' => getenv('PATH'),
     ]);
     $process->run();
@@ -171,3 +178,51 @@ it('refuses to load a restore library that another identity could have written, 
         ->and($run['out'])->toContain('refusing to load it')
         ->and($run['out'])->not->toContain('== ROLL-5-1A restore drill ==');
 })->with(['writable', 'symlink']);
+
+it('passes runtime-owned dumps on a cluster without the R6 owner role (the current design until R6-D)', function () {
+    expect(rorpLib('gate', RORP_DUMP, ['postgres', 'app_runtime']))->toBe(['exit' => 0, 'out' => '']);
+});
+
+it('refuses a dump that makes the runtime an owner once the R6 owner role exists, and never with a way around it (P5, D-Q6-b)', function () {
+    $run = rorpLib('gate', RORP_DUMP, ['postgres', 'app_runtime', 'dms_owner']);
+
+    expect($run['exit'])->toBe(1)
+        ->and($run['out'])->toContain("this cluster has the R6 owner role 'dms_owner', and the dump makes the application login role 'app_runtime' an object owner (a pre-R6 dump)")
+        ->and($run['out'])->toContain('separate operator-controlled legacy procedure');
+});
+
+it('passes a post-R6 dump whose objects the owner role owns, and fails closed when it cannot decide', function () {
+    $postR6 = "-- PostgreSQL database dump\nALTER TABLE public.t OWNER TO dms_owner;\n";
+
+    expect(rorpLib('gate', $postR6, ['postgres', 'app_runtime', 'dms_owner'])['exit'])->toBe(0)
+        ->and(rorpLib('gate', RORP_DUMP, null)['exit'])->toBe(2)
+        ->and(rorpLib('gate', RORP_DUMP, ['postgres', 'dms_owner'], "app'runtime")['exit'])->toBe(2);
+});
+
+it('counts the objects the runtime owns from the catalog only', function () {
+    expect(rorpLib('owned', RORP_DUMP))->toBe(['exit' => 0, 'out' => "7\n"])
+        ->and(rorpLib('owned', RORP_DUMP, ['postgres'], 'bad name')['exit'])->toBe(2);
+});
+
+it('runs the runtime ownership gate in every restore tool after the role preflight and before anything is created', function (string $path, string $source, string $create) {
+    $code = rorpCode($path);
+    $preflight = strpos($code, 'dms_restore_missing_owner_roles');
+    $gate = strpos($code, "dms_restore_runtime_ownership_gate \"{$source}\"");
+
+    expect($gate)->not->toBeFalse("{$path} has no runtime ownership gate")
+        ->and($gate)->toBeGreaterThan($preflight)
+        ->and($gate)->toBeLessThan(strpos($code, $create));
+})->with([
+    'restore_postgres.sh' => ['scripts/restore_postgres.sh', '$STAGED_DUMP', 'as_superuser createdb -O'],
+    'restore-rehearsal.sh' => ['scripts/restore-rehearsal.sh', '$STAGED_BACKUP', 'as_superuser createdb -O'],
+    'rollout-restore-drill.sh' => ['scripts/rollout-restore-drill.sh', '$BACKUP_FILE', 'as_superuser createdb -O'],
+]);
+
+it('never reports RESTORE OK for a runtime-owned database after R6', function () {
+    $code = rorpCode('scripts/restore_postgres.sh');
+    $check = strpos($code, 'RESTORED BUT NOT A FINAL STATE');
+
+    expect($check)->not->toBeFalse()
+        ->and($check)->toBeGreaterThan(strpos($code, 'read_dump | as_superuser psql'))
+        ->and($check)->toBeLessThan(strrpos($code, 'echo "RESTORE OK:'));
+});
