@@ -68,6 +68,13 @@ Nothing else is an exception. In particular:
   `go_tag`. The two classes cover no other GitHub Actions change: adding or editing a trigger, job or workflow, a
   partial restoration, or a restoration to any other content is outside them.
 
+  The REM-1 critical-gate selection of DMS-SPN4-READY-PILOT-1 (`docs/sprints/dms-spn4-ready-pilot-1.md` §13.3) is
+  **not** one of these classes: it edits the critical-gate filter and is released with its sprint (merge, deploy,
+  verification, the sprint GO tag). Once it is applied, the two classes apply to the selected file: the removal takes
+  it from `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` to
+  `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a`, and the restoration takes it back. A change
+  that removes the selection again is outside them and weakens a gate (CG-17).
+
 ## Registry
 
 ### `dms-biznet-first-production-deploy-infra-1-go`

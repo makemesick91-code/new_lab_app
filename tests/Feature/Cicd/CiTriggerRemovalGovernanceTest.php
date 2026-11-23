@@ -27,6 +27,16 @@ uses()->group('Cicd', 'Ci', 'CiTriggerRemoval', 'FoundationGovernance');
 |     the removed triggers. They stay OPEN, pinned here so that they can
 |     neither be "fixed" nor grow silently, with the proof that nothing on the
 |     runtime, deploy, release-guard or security path reads them.
+|
+| DMS-SPN4-READY-PILOT-1 G6 / REM-1 (CG-19; proposed with both SHA-256 values in
+| docs/sprints/dms-spn4-ready-pilot-1.md §13.3; the owner's merge of this
+| amendment is the decision, recorded under CG-22) adds two pinned states. REM-1 is NOT
+| one of the CG-16 CI trigger classes: it edits the critical-gate filter, so it is
+| released with its sprint (merge, deploy, verification, GO tag). It inserts
+| exactly three tokens before the last token of BOTH critical filters
+| (`ctrgSelect`). The B5 rollback stays available on the selected file: its
+| target is the same insertion applied to the pre-removal file. Removing the
+| tokens again would weaken the gate (CG-17) and is rejected.
 */
 
 const CTRG_WORKFLOW = '.github/workflows/foundation-evidence-gates.yml';
@@ -35,6 +45,13 @@ const CTRG_BASE_BRANCH = 'feature/sprint-26-phase-26-8-stabilization-closure-go-
 // The two approved states of the workflow (decision 19). Also pinned in the register and the sprint record.
 const CTRG_PRE_REMOVAL_SHA256 = '978e90c028fe6530b6f4eaf422760e1a1f913ab9400dfb24a70a9310c215d3d4';
 const CTRG_POST_REMOVAL_SHA256 = '4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0';
+
+// REM-1 (CG-19): the post-removal file with the selection applied, and its B5 rollback target. Also pinned in the
+// SPN4 sprint record.
+const CTRG_CG19_SHA256 = '82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a';
+const CTRG_CG19_PRE_REMOVAL_SHA256 = '4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb';
+const CTRG_CG19_TOKENS = ['BranchContext', 'PatientDataCompleteness', 'LabIntegration'];
+const CTRG_CG19_ANCHOR = "|LabClinicCalendarBoundary|InventoryClinicCalendarBoundary'";
 
 // The exact lines the removal deletes: pre-removal lines 7–9 and 55–56.
 const CTRG_PUSH_LINES = [
@@ -125,23 +142,53 @@ function ctrgRestore(string $post): string
     ));
 }
 
-/** The approved pre-removal and post-removal contents, derived from the checked-in file in either state. */
+/** REM-1: $content with exactly the CG-19 tokens inserted before the last token of BOTH critical filters. */
+function ctrgSelect(string $content): string
+{
+    expect(substr_count($content, CTRG_CG19_ANCHOR))->toBe(2);
+
+    return str_replace(CTRG_CG19_ANCHOR, '|LabClinicCalendarBoundary|'.implode('|', CTRG_CG19_TOKENS)."|InventoryClinicCalendarBoundary'", $content);
+}
+
+/** The inverse of ctrgSelect(), used only to derive the approved states from the checked-in file. */
+function ctrgDeselect(string $content): string
+{
+    $selected = '|LabClinicCalendarBoundary|'.implode('|', CTRG_CG19_TOKENS)."|InventoryClinicCalendarBoundary'";
+    expect(substr_count($content, $selected))->toBe(2);
+
+    return str_replace($selected, CTRG_CG19_ANCHOR, $content);
+}
+
+/** The four approved contents, derived from the checked-in file in any of its approved states. */
 function ctrgStates(): array
 {
     $current = ctrgWorkflowRaw();
     $sha = hash('sha256', $current);
+    $approved = [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256, CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256];
     // (`toContain` is variadic, so the reason lives in `toBeTrue`.)
-    expect(in_array($sha, [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256], true))
-        ->toBeTrue("the workflow ({$sha}) must be in one of the two approved states; any other change is outside the CG-16 CI trigger classes");
+    expect(in_array($sha, $approved, true))
+        ->toBeTrue("the workflow ({$sha}) must be in one of the four approved states; any other change needs its own owner-approved re-pin");
 
-    return $sha === CTRG_PRE_REMOVAL_SHA256
-        ? ['pre' => $current, 'post' => ctrgRemove($current)]
-        : ['pre' => ctrgRestore($current), 'post' => $current];
+    $post = match ($sha) {
+        CTRG_PRE_REMOVAL_SHA256 => ctrgRemove($current),
+        CTRG_POST_REMOVAL_SHA256 => $current,
+        CTRG_CG19_SHA256 => ctrgDeselect($current),
+        CTRG_CG19_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove($current)),
+    };
+
+    return [
+        'pre' => ctrgRestore($post),
+        'post' => $post,
+        'cg19' => ctrgSelect($post),
+        'cg19pre' => ctrgSelect(ctrgRestore($post)),
+    ];
 }
 
 /**
  * Classifies a change to the workflow under the CG-16 CI trigger classes:
- * `removal`, `restoration`, `unchanged`, or `rejected` for everything else.
+ * `removal`, `restoration`, `unchanged`, or `rejected` for everything else; plus
+ * REM-1's `cg19-selection`, which is not a CG-16 class (it is released with its
+ * sprint). Removing the selection weakens the gate and is `rejected`.
  */
 function ctrgClassify(string $before, string $after): string
 {
@@ -156,6 +203,17 @@ function ctrgClassify(string $before, string $after): string
     }
     if ($from === CTRG_POST_REMOVAL_SHA256 && $to === CTRG_PRE_REMOVAL_SHA256 && ctrgRestore($before) === $after) {
         return 'restoration';
+    }
+    if ($from === CTRG_CG19_PRE_REMOVAL_SHA256 && $to === CTRG_CG19_SHA256 && ctrgRemove($before) === $after) {
+        return 'removal';
+    }
+    if ($from === CTRG_CG19_SHA256 && $to === CTRG_CG19_PRE_REMOVAL_SHA256 && ctrgRestore($before) === $after) {
+        return 'restoration';
+    }
+    if ((($from === CTRG_POST_REMOVAL_SHA256 && $to === CTRG_CG19_SHA256)
+        || ($from === CTRG_PRE_REMOVAL_SHA256 && $to === CTRG_CG19_PRE_REMOVAL_SHA256))
+        && ctrgSelect($before) === $after) {
+        return 'cg19-selection';
     }
 
     return 'rejected';
@@ -296,13 +354,27 @@ it('keeps the classes narrow: one workflow file, two triggers, no general GitHub
 |--------------------------------------------------------------------------
 */
 
-it('keeps the checked-in workflow in one of the two pinned states, which differ by exactly the trigger lines', function () {
+it('keeps the checked-in workflow in one of the pinned states, which differ by exactly the trigger lines or the CG-19 tokens', function () {
     $states = ctrgStates();
 
     expect(hash('sha256', $states['pre']))->toBe(CTRG_PRE_REMOVAL_SHA256)
         ->and(hash('sha256', $states['post']))->toBe(CTRG_POST_REMOVAL_SHA256)
+        ->and(hash('sha256', $states['cg19']))->toBe(CTRG_CG19_SHA256)
+        ->and(hash('sha256', $states['cg19pre']))->toBe(CTRG_CG19_PRE_REMOVAL_SHA256)
         ->and(ctrgRemove($states['pre']))->toBe($states['post'])
-        ->and(ctrgRestore($states['post']))->toBe($states['pre']);
+        ->and(ctrgRestore($states['post']))->toBe($states['pre'])
+        ->and(ctrgRemove($states['cg19pre']))->toBe($states['cg19'])
+        ->and(ctrgRestore($states['cg19']))->toBe($states['cg19pre']);
+
+    // REM-1 changes exactly the two critical filter lines, and only by the three tokens.
+    $post = explode("\n", $states['post']);
+    $cg19 = explode("\n", $states['cg19']);
+    $changed = array_keys(array_diff_assoc($cg19, $post));
+    expect(count($cg19))->toBe(count($post))
+        ->and($changed)->toHaveCount(2);
+    foreach ($changed as $line) {
+        expect(str_replace('|'.implode('|', CTRG_CG19_TOKENS), '', $cg19[$line]))->toBe($post[$line]);
+    }
 
     $pre = Yaml::parse($states['pre']);
     $post = Yaml::parse($states['post']);
@@ -319,7 +391,17 @@ it('accepts only the exact removal and the exact restoration', function () {
 
     expect(ctrgClassify($states['pre'], $states['post']))->toBe('removal')
         ->and(ctrgClassify($states['post'], $states['pre']))->toBe('restoration')
-        ->and(ctrgClassify($states['pre'], $states['pre']))->toBe('unchanged');
+        ->and(ctrgClassify($states['pre'], $states['pre']))->toBe('unchanged')
+        // REM-1: the selection, and the B5 classes on the selected file.
+        ->and(ctrgClassify($states['post'], $states['cg19']))->toBe('cg19-selection')
+        ->and(ctrgClassify($states['pre'], $states['cg19pre']))->toBe('cg19-selection')
+        ->and(ctrgClassify($states['cg19pre'], $states['cg19']))->toBe('removal')
+        ->and(ctrgClassify($states['cg19'], $states['cg19pre']))->toBe('restoration')
+        // Removing the selection again weakens the gate (CG-17).
+        ->and(ctrgClassify($states['cg19'], $states['post']))->toBe('rejected')
+        ->and(ctrgClassify($states['cg19pre'], $states['pre']))->toBe('rejected')
+        // A restoration onto the selected file must keep the selection.
+        ->and(ctrgClassify($states['cg19'], $states['pre']))->toBe('rejected');
 });
 
 it('rejects every workflow change other than the exact removal or restoration', function (Closure $mutate, string $from) {
@@ -346,6 +428,11 @@ it('rejects every workflow change other than the exact removal or restoration', 
     'removal plus a job edit' => [fn (string $pre, string $post) => [$pre, preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', $post, 1)], 'pre'],
     'removal that also drops pull_request' => [fn (string $pre, string $post) => [$pre, str_replace("  pull_request:\n    branches:\n      - ".CTRG_BASE_BRANCH."\n", '', $post)], 'pre'],
     'an unrelated edit of the approved file' => [fn (string $pre, string $post) => [$pre, str_replace('name: Foundation Evidence Gates', 'name: Foundation Evidence Gates (edited)', $pre)], 'pre'],
+    'REM-1 selection in one variant only' => [fn (string $pre, string $post) => [$post, preg_replace('/'.preg_quote(CTRG_CG19_ANCHOR, '/').'/', '|LabClinicCalendarBoundary|'.implode('|', CTRG_CG19_TOKENS)."|InventoryClinicCalendarBoundary'", $post, 1)], 'post'],
+    'REM-1 selection with a fourth token' => [fn (string $pre, string $post) => [$post, str_replace('|LabIntegration|', '|LabIntegration|Extra|', ctrgSelect($post))], 'post'],
+    'REM-1 selection with a different token' => [fn (string $pre, string $post) => [$post, str_replace('|PatientDataCompleteness|', '|PatientData|', ctrgSelect($post))], 'post'],
+    'REM-1 selection plus a job edit' => [fn (string $pre, string $post) => [$post, preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', ctrgSelect($post), 1)], 'post'],
+    'REM-1 selection removed again (gate weakened)' => [fn (string $pre, string $post) => [ctrgSelect($post), $post], 'post'],
 ]);
 
 /*
@@ -390,6 +477,34 @@ it('pins the workflow invariants a CI trigger removal or restoration must keep',
     $critical = array_values(array_filter($filters[1], fn (string $f): bool => substr_count($f, '|') > 50));
     expect($critical)->toHaveCount(2)
         ->and($critical[0])->toBe($critical[1]);
+});
+
+it('selects the CG-19 suites in both critical variants once REM-1 is applied, and declares them', function () {
+    $raw = ctrgWorkflowRaw();
+    $sha = hash('sha256', $raw);
+    preg_match_all("/--filter='([^']+)'/", $raw, $filters);
+    $critical = array_values(array_filter($filters[1], fn (string $f): bool => substr_count($f, '|') > 50));
+    $selected = in_array($sha, [CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256], true);
+
+    foreach ($critical as $filter) {
+        foreach (CTRG_CG19_TOKENS as $token) {
+            expect(in_array($token, explode('|', $filter), true))->toBe($selected, "token {$token} in a critical filter");
+        }
+    }
+
+    if ($selected) {
+        expect(config('ci_runner.critical_gate_mandatory_suites'))->toContain(
+            'tests/Feature/Branch/BranchContextTest.php',
+            'tests/Feature/Branch/BranchContextFallbackTest.php',
+            'tests/Feature/RME/FixClinicOpsWorkingBranchContextTest.php',
+            'tests/Feature/RME/PatientDataCompletenessAuditTest.php',
+            'tests/Feature/RME/LabIntegrationTest.php',
+        );
+    }
+
+    // The SPN4 sprint record pins the two REM-1 states.
+    expect((string) file_get_contents(base_path('docs/sprints/dms-spn4-ready-pilot-1.md')))
+        ->toContain(CTRG_CG19_SHA256)->toContain(CTRG_CG19_PRE_REMOVAL_SHA256);
 });
 
 /*
