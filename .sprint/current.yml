@@ -6,10 +6,11 @@
 # signing helper and scripts/sprint-release.sh read the GO tag from the release commit's own .sprint/current.yml, so
 # a release of the merged SPN4 runtime changes must be a commit whose current.yml declares this sprint's go_tag.
 #
-# Release scope of the first SPN4 runtime release: R6-B1 (#689, 1e985d8e) and REM-2/R2-6 (#690, 295b3d5e), both
-# MERGED, NOT DEPLOYED. No schema, migration, permission, role, flag, timer or package change; no production role or
-# privilege change (R6-D is separately authorised). A merge or this switch is never a deploy authorisation: the
-# release follows docs/runbooks/production-host-identity.md §6g (owner signature, dispatch CI on the exact SHA).
+# Release scope of the first SPN4 runtime release: R6-B1 (#689, 1e985d8e), REM-2/R2-6 (#690, 295b3d5e) and REM-1
+# (#696, d628e0cb; CI workflow and config/ci_runner.php only), all MERGED, NOT DEPLOYED. No schema, migration,
+# permission, role, flag, timer or package change; no production role or privilege change (R6-D is separately
+# authorised). A merge or this switch is never a deploy authorisation: the release follows
+# docs/runbooks/production-host-identity.md §6g (owner signature, dispatch CI on the exact SHA).
 # The GO tag is created only after a release, its production verification and the owner's explicit decision (CG-16);
 # whether the first SPN4 release creates it is an owner decision (the sprint stays open after it).
 # Gate 1 RME-LAB-FEE-APPROVAL-1 NO-GO; pilot NO-GO; BK-2 skipped (rule 232); Full Suite deferred (CG-18).

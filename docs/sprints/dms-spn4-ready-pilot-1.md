@@ -1,7 +1,7 @@
 ---
 kb_status: current
-kb_verified_against: 295b3d5e
-kb_updated: 2026-11-22
+kb_verified_against: d628e0cb
+kb_updated: 2026-11-23
 ---
 
 # DMS-SPN4-READY-PILOT-1 — Fast-Track Ready Pilot SPN4: Design Lock
@@ -9,12 +9,12 @@ kb_updated: 2026-11-22
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1 and REM-2 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
-| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`) |
-| Type, module | `SECURITY_FIX`, `Rme`. Parked manifest `.sprint/dms-spn4-ready-pilot-1.yml` (§9), merged through PR-C2 (#686) |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2 and REM-1 MERGED, NOT DEPLOYED** (§13, §13.9). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
+| Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | **NO-GO**. The seven Gate 1 blockers stay open, and LAB-fee stays disabled |
-| `.sprint/current.yml` | **DMS-RME-COMPREHENSIVE-CLOSURE-1** until the owner merges the SPN4 manifest switch (§9.1); CC1 is then parked verbatim and stays OPEN |
+| `.sprint/current.yml` | **DMS-SPN4-READY-PILOT-1** from the merge of the manifest switch (§9.1), which is the owner's switch decision. Before it, DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1). CC1 is parked verbatim at `.sprint/dms-rme-comprehensive-closure-1.yml` and stays OPEN |
 | BK-2 | **SKIPPED** (rule 232; never a gate) |
 | Canonical language | English. An Indonesian summary of the owner's decisions follows the owner decision record |
 
@@ -307,9 +307,11 @@ OD-1 (approval of charter v4 and of this final text) was decided by the owner on
 
 ## 9. Manifest and GO tag
 
-- `.sprint/current.yml` stays CC1 until the manifest switch of §9.1 is merged.
-- The SPN4 manifest is **parked** at `.sprint/dms-spn4-ready-pilot-1.yml` (separate draft, PR-C2), and DEVFLOW runs
-  with `--manifest`.
+- `.sprint/current.yml` declares this sprint from the merge of the manifest switch of §9.1. Before that merge it
+  declared CC1, and the SPN4 manifest was **parked** at `.sprint/dms-spn4-ready-pilot-1.yml` (PR-C2, #686), with
+  DEVFLOW run through `--manifest`.
+- After the switch, CC1 is the parked manifest, at `.sprint/dms-rme-comprehensive-closure-1.yml`, and its DEVFLOW
+  checks run through `--manifest`.
 - Docs, rules and tests close without a deploy and without a tag (CG-16).
 - A runtime release needs its own manifest-switch decision (OD-B3-1 precedent) and the `go_tag`
   `dms-spn4-ready-pilot-1-go`. No multi-sprint exception is used.
@@ -333,9 +335,11 @@ merged SPN4 runtime changes must therefore be a commit whose `current.yml` decla
 
 **Release scope.**
 - In scope: R6-B1 (#689, `1e985d8e`) and REM-2/R2-6 (#690, `295b3d5e`), both MERGED, NOT DEPLOYED.
+- Also in scope: REM-1 (#696, `d628e0cb`; its governance amendment #692, `13cc32e5`), MERGED, NOT DEPLOYED. It
+  changes only the CI workflow and `config/ci_runner.php`. It reaches the host with the release, changes no runtime
+  behaviour there, and closes with the sprint.
 - Not in scope: schema, migration, permission, role, flag, timer or package changes, and any production role or
   privilege change (R6-D is separately authorised).
-- If REM-1 is merged first, its workflow change arrives inertly with the release and closes with the sprint.
 
 **What the switch does not authorise.**
 - It does not authorise a deploy. The release follows `docs/runbooks/production-host-identity.md` §6g: one
@@ -662,7 +666,7 @@ Local test runs without the environment file are recorded as WARN, not as a clea
 
 ## 13. G6 local preparation record (2026-11-22)
 
-**G6: LOCAL PREPARATION ONLY** (as recorded on 2026-11-22; the status after the merges of #689 and #690 is in §13.9). The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
+**G6: LOCAL PREPARATION ONLY** (as recorded on 2026-11-22; the status after the merges of #689, #690 and #696 is in §13.9). The G4 and G5 decisions stand as recorded in §10 (G4-1, G4-2, G5-1 to G5-3) and
 §12: G4 AUDIT COMPLETE, G5 Path B selected with formal closure pending OD-5. No Design Lock decision (DL-1 to DL-7)
 is changed here.
 
@@ -808,7 +812,7 @@ They are selected by the existing `PatientKtp`, `RmeRefundRequest` and `RmeVisit
 | R2-6, PostgreSQL 16 regression including every consent suite and the merged R6-B1 suites | 1990 tests, 0 failed, 0 skipped |
 | CI on the reviewed head `e3c05437`, run 45085855176 | Profile `runtime_app`; the critical tests ran: 11863 passed, 0 failed, 0 skipped. All 23 REM-2 tests and both R6-B1 suites passed. The Full Suite was DEFERRED |
 
-### 13.3 REM-1 — CG-19 critical selection (prepared, NOT applied)
+### 13.3 REM-1 — CG-19 critical selection (merged in #696 as `d628e0cb`, not deployed)
 
 **Evidence.** No token of either critical variant matches these suites:
 - `BranchContextTest`;
@@ -1004,13 +1008,13 @@ R6-B1 must be released before R6-D.
    - D-Q6: the N-9 remedy (owner of a restored database);
    - D-Q7: the restore-drill operator and path.
 
-### 13.9 Status after the merges of #689 and #690 (2026-11-23)
+### 13.9 Status after the merges of #689, #690 and #696 (2026-11-23)
 
 | Item | Status |
 |---|---|
 | R6-B1 (§13.1) | **MERGED, NOT DEPLOYED** (#689, `1e985d8e`) |
 | REM-2 and R2-6 (§13.2) | **MERGED, NOT DEPLOYED** (#690, `295b3d5e`) |
-| REM-1 (§13.3) | Prepared, NOT applied; needs a governance decision |
+| REM-1 (§13.3) | **MERGED, NOT DEPLOYED** (#696, `d628e0cb`; governance amendment #692, `13cc32e5`). CI run `45131035559`: the five suites now selected passed in the critical gate. The Full Suite is DEFERRED by the active policy, not passed |
 | R6-01 | REMEDIATION OPEN |
 | G5 | PATH B SELECTED, OD-5 PENDING |
 | R6-D | NOT AUTHORIZED |
@@ -1020,8 +1024,8 @@ R6-B1 must be released before R6-D.
 | Gate 1 RME-LAB-FEE-APPROVAL-1 | NO-GO |
 | BK-2 | SKIPPED |
 
-**A merge is not a release.** Releasing R6-B1 and REM-2 needs:
-- the manifest-switch decision of §9 (the parked SPN4 manifest still declares `runtime_change: false` and
+**A merge is not a release.** Releasing R6-B1, REM-2 and REM-1 needs:
+- the manifest switch of §9.1 (before it, the parked SPN4 manifest declared `runtime_change: false` and
   `deploy_required: false`);
 - its own release decision.
 
