@@ -44,10 +44,21 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
-# The shared restore checks live beside this script (same tree, same owner).
+# The shared restore checks live beside this script. Like the two restore tools,
+# the drill loads them only when no other identity could have written them: not a
+# symlink, owned by the identity running the drill (root on the host), and not
+# group- or other-writable, for the file and its directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESTORE_LIB="${SCRIPT_DIR}/lib/restore-integrity.sh"
+for node in "$RESTORE_LIB" "${SCRIPT_DIR}/lib"; do
+  if [ -L "$node" ] || [ ! -e "$node" ] || [ "$(stat -c '%u' -- "$node")" != "$(id -u)" ] \
+    || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
+    echo "FATAL: ${node} is missing, a symlink, not owned by $(id -un), or writable by another identity; refusing to load it. Aborting."
+    exit 1
+  fi
+done
 # shellcheck source=lib/restore-integrity.sh
-. "${SCRIPT_DIR}/lib/restore-integrity.sh"
+. "$RESTORE_LIB"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BACKUP_DIR="storage/app/backups/deploy"

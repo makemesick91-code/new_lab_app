@@ -136,3 +136,39 @@ it('never creates a role, strips ownership, or lets the runtime own a restored d
         ->and($code)->not->toMatch('/createdb[^\n]*-O "?\$\{?DB_USERNAME/')
         ->and($code)->not->toMatch('/OWNER TO[^\n]*DB_USERNAME/');
 })->with(['scripts/restore_postgres.sh', 'scripts/restore-rehearsal.sh', 'scripts/rollout-restore-drill.sh', 'scripts/lib/restore-integrity.sh']);
+
+/**
+ * Runs a copy of the drill whose library is $tamper-ed: 'writable' (mode 0666) or
+ * 'symlink' (the library is a link to a file elsewhere).
+ */
+function rorpTamperedDrill(string $tamper): array
+{
+    $root = sys_get_temp_dir().'/rorp-tree-'.bin2hex(random_bytes(6));
+    mkdir($root.'/scripts/lib', 0755, true);
+    copy(base_path('scripts/rollout-restore-drill.sh'), $root.'/scripts/rollout-restore-drill.sh');
+    if ($tamper === 'symlink') {
+        copy(base_path('scripts/lib/restore-integrity.sh'), $root.'/elsewhere.sh');
+        symlink($root.'/elsewhere.sh', $root.'/scripts/lib/restore-integrity.sh');
+    } else {
+        copy(base_path('scripts/lib/restore-integrity.sh'), $root.'/scripts/lib/restore-integrity.sh');
+        chmod($root.'/scripts/lib/restore-integrity.sh', 0666);
+    }
+
+    $process = new Process(['bash', $root.'/scripts/rollout-restore-drill.sh'], $root, [
+        'APP_DIR' => $root.'/no-app',
+        'PATH' => getenv('PATH'),
+    ]);
+    $process->run();
+    (new Process(['rm', '-rf', '--', $root]))->run();
+
+    return ['exit' => (int) $process->getExitCode(), 'out' => $process->getOutput().$process->getErrorOutput()];
+}
+
+it('refuses to load a restore library that another identity could have written, before doing anything', function (string $tamper) {
+    $run = rorpTamperedDrill($tamper);
+
+    expect($run['exit'])->not->toBe(0)
+        ->and($run['out'])->toContain('refusing to load it')
+        ->and($run['out'])->not->toContain('== ROLL-5-1A restore drill ==');
+})->with(['writable', 'symlink']);
+
