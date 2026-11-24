@@ -77,7 +77,9 @@ file at `storage/app/readiness/restore-drills/latest.json`.
 Run the fail-fast disposable-DB drill on a **staging/test** host only:
 
 ```bash
-bash scripts/rollout-restore-drill.sh                 # uses latest deploy backup
+# As the privileged operator. Trusted digest evidence is required (rule 235, finding A-1); there is no default backup.
+bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>              # the backup that deploy recorded
+bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>  # digest from an independent record
 php artisan rollout:restore-drill-evidence --strict   # validate the written evidence
 ```
 

@@ -109,8 +109,18 @@ GO is recorded in the sprint doc, not here.
   them for later builds. Bounded by the sandbox: it reaches vendor code the runtime runs anyway, never root.
 - Composer and npm still resolve dependencies on the host (lockfiles authoritative); CI-built, digest-verified
   artifacts would remove host-side resolution but change the delivery model — a separate owner decision.
-- `scripts/rollout-restore-drill.sh` (staging only, refuses production) restores as the application role without the
-  digest check.
+- `scripts/rollout-restore-drill.sh` (staging only, refuses production) replays as the PostgreSQL superuser since R6-B6
+  (D-Q7). Finding A-1 (2026-11-25, owner directive: remediate, never risk-accept) closed the gap that opened: the drill
+  now takes this rule's restore path. It reads the expected digest from the deploy's root-only log (`--deploy-id`) or an
+  administrator's independent record (`--expected-sha256`); there is no default backup. It refuses a symlinked,
+  foreign-owned or group/other-writable backup and an environment file another identity could write. The owner-role
+  preflight, the runtime ownership gate and the replay read one root-only staged copy. The replay runs in psql
+  restricted mode (psql 16.10 or later) under a fresh key, so no backslash meta-command in a dump runs. What remains:
+  - a dump whose trusted digest itself covers malicious SQL (a wrong independent record, or a compromise before the
+    deploy hashed it) still runs that SQL as the superuser;
+  - `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh` verify the digest but do not yet use restricted
+    mode;
+  - `scripts/restore-rehearsal.sh` still ignores a failed drop of its scratch database (R6-B6-F1, OPEN).
 - The CI scanner is a regression guard for reviewed code: it judges each `;`/`&&`/`||`/`|` segment, but deliberate
   obfuscation (`n\pm`, a variable holding the tool name) is out of its reach — review covers that.
 - `follow` streams the deploy's output, build output included, to the operator's terminal as it is.

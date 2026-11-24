@@ -40,12 +40,15 @@ backup into the staging database only, verify app boot + health/read-only routes
 
 **Option 2 — disposable local/staging PostgreSQL DB (preferred):** run the
 fail-fast drill helper — it creates a disposable DB named
-`<db>_restore_drill_YYYYMMDD-HHMMSS`, restores the latest verified backup there,
+`<db>_restore_drill_YYYYMMDD-HHMMSS`, restores there a backup whose SHA-256 matches trusted
+evidence (from a root-only staged copy, in psql restricted mode),
 runs read-only verification (table count + bounded COUNTs — **no patient rows**),
 drops **only** the disposable DB, and writes the canonical evidence:
 
 ```bash
-bash scripts/rollout-restore-drill.sh                 # uses latest deploy backup
+# As the privileged operator. Trusted digest evidence is required (rule 235, finding A-1); there is no default backup.
+bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>              # the backup that deploy recorded
+bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>  # digest from an independent record
 php artisan rollout:restore-drill-evidence --strict   # validate the written evidence
 ```
 
