@@ -115,11 +115,17 @@ GO is recorded in the sprint doc, not here.
   administrator's independent record (`--expected-sha256`); there is no default backup. It refuses a symlinked,
   foreign-owned or group/other-writable backup and an environment file another identity could write. The owner-role
   preflight, the runtime ownership gate and the replay read one root-only staged copy. The replay runs in psql
-  restricted mode (psql 16.10 or later) under a fresh key, so no backslash meta-command in a dump runs. What remains:
-  - a dump whose trusted digest itself covers malicious SQL (a wrong independent record, or a compromise before the
-    deploy hashed it) still runs that SQL as the superuser;
-  - `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh` verify the digest but do not yet use restricted
-    mode;
+  restricted mode (psql 16.10 or later) under a fresh key, so no backslash meta-command in a dump runs.
+  A digest proves only that the bytes are pg_dump's. Before R6-D the runtime owns the schema, and COPY evaluates
+  CHECK and domain constraints, generated columns and partition keys as the superuser. So before the first row is
+  loaded, a session-local load guard refuses such an expression when it calls a user-defined function or operator or a
+  builtin that is not IMMUTABLE (for example `query_to_xml`). It also refuses user-defined operators, operator classes
+  and operator families. What remains:
+  - a dump whose trusted digest itself covers malicious top-level SQL (a wrong independent record, or a compromise of
+    root before the deploy hashed it) still runs that SQL as the superuser;
+  - `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh` verify the digest but use neither restricted
+    mode nor the load guard. A superuser replay through them can still run schema code the runtime planted, until R6-D
+    takes ownership away from the runtime; applying the same stream to them is a separate owner decision;
   - `scripts/restore-rehearsal.sh` still ignores a failed drop of its scratch database (R6-B6-F1, OPEN).
 - The CI scanner is a regression guard for reviewed code: it judges each `;`/`&&`/`||`/`|` segment, but deliberate
   obfuscation (`n\pm`, a variable holding the tool name) is out of its reach — review covers that.
