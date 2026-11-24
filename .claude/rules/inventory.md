@@ -121,6 +121,13 @@ current behaviour. A mismatch is implementation drift: report it.
   keep semantic stock-status colours, and remember status tokens only expose shades `50/100/700/DEFAULT`. A view
   change never alters movement order, quantity signs or the running balance. Source: archive `UIX-6`, `UIX-9`.
 
+### Ledger immutability
+
+- **AIR-INV-23** A movement row is never changed or deleted. The only change is the governed batch backfill: a first
+  `inventory_batch_id` link to a batch of the movement's own product and branch, plus `updated_at`. The model and a
+  PostgreSQL trigger refuse everything else, including DELETE and TRUNCATE (owner decision D-Q4-a). Source:
+  `.cursor/rules/248-audit-trail-append-only.mdc`.
+
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
 - Procurement audit `inventory:procurement-workflow-audit --strict` was GO on the production pilot at

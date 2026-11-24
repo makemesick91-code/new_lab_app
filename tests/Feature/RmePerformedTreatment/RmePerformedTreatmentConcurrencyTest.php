@@ -58,6 +58,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 const DPTC_WRITER = 'dptc_race_writer';
 
@@ -125,7 +126,7 @@ afterEach(function () {
     $writer->table('notifications')->where('notifiable_type', User::class)->where('notifiable_id', '>', $this->watermarks['users'])->delete();
 
     foreach (DPTC_TABLES as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 
     DB::purge(DPTC_WRITER);

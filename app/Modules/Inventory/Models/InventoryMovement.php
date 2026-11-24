@@ -8,6 +8,7 @@ use Database\Factories\InventoryMovementFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use LogicException;
 
 class InventoryMovement extends Model
 {
@@ -33,6 +34,15 @@ class InventoryMovement extends Model
         self::TYPE_TRANSFER_IN,
         self::TYPE_TRANSFER_OUT,
     ];
+
+    /**
+     * The only columns a movement may change after it is written (owner decision
+     * D-Q4-a): a batch is linked once to a movement that has none, through the
+     * governed batch backfill, and updated_at follows. Stock is the ledger
+     * (CG-10), so nothing else changes and no movement is deleted. PostgreSQL
+     * enforces the same by trigger, and also checks the batch's product and branch.
+     */
+    public const MUTABLE_COLUMNS = ['inventory_batch_id', 'updated_at'];
 
     protected $table = 'trx_inventory_movements';
 
@@ -61,6 +71,34 @@ class InventoryMovement extends Model
             'quantity_out' => 'decimal:4',
             'unit_cost' => 'decimal:2',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (InventoryMovement $movement): void {
+            $changed = array_keys($movement->getDirty());
+            $outside = array_values(array_diff($changed, self::MUTABLE_COLUMNS));
+
+            if ($outside !== []) {
+                throw new LogicException(sprintf(
+                    'Inventory movement #%d is a ledger entry: %s may not change (CG-10).',
+                    (int) $movement->getKey(),
+                    implode(', ', $outside),
+                ));
+            }
+
+            if (in_array('inventory_batch_id', $changed, true)
+                && ($movement->getOriginal('inventory_batch_id') !== null || $movement->inventory_batch_id === null)) {
+                throw new LogicException(sprintf(
+                    'Inventory movement #%d: a linked batch is never changed or removed (CG-10).',
+                    (int) $movement->getKey(),
+                ));
+            }
+        });
+
+        static::deleting(function (InventoryMovement $movement): void {
+            throw new LogicException(sprintf('Inventory movement #%d is a ledger entry and can never be deleted (CG-10).', (int) $movement->getKey()));
+        });
     }
 
     public function branch(): BelongsTo

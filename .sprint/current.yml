@@ -6,13 +6,17 @@
 # signing helper and scripts/sprint-release.sh read the GO tag from the release commit's own .sprint/current.yml, so
 # a release of the merged SPN4 runtime changes must be a commit whose current.yml declares this sprint's go_tag.
 #
-# Release scope of the first SPN4 runtime release: R6-B1 (#689, 1e985d8e), REM-2/R2-6 (#690, 295b3d5e) and REM-1
-# (#696, d628e0cb; CI workflow and config/ci_runner.php only), all MERGED, NOT DEPLOYED. No schema, migration,
-# permission, role, flag, timer or package change; no production role or privilege change (R6-D is separately
-# authorised). A merge or this switch is never a deploy authorisation: the release follows
-# docs/runbooks/production-host-identity.md §6g (owner signature, dispatch CI on the exact SHA).
-# The GO tag is created only after a release, its production verification and the owner's explicit decision (CG-16);
-# whether the first SPN4 release creates it is an owner decision (the sprint stays open after it).
+# First SPN4 runtime release: R6-B1 (#689), REM-2/R2-6 (#690) and REM-1 (#696), released with schema_change: false.
+# Merge THIS change only after that release is deployed and verified (`verify` -> DEPLOY RUNNER OK).
+#
+# Second SPN4 release: R6-B5, rule 248 layer 1 with owner decision D-Q4-a (migration 2026_11_23_100001: guard triggers
+# on the audit trail, the RME event tables, the lab status log and the inventory ledger; two foreign keys to RESTRICT,
+# swapped NOT VALID and validated in short, lock-timed steps). Owner decision D-Q4-b: this separate manifest change sets
+# schema_change: true before R6-B5 is released. CI, the additive migration, compatibility, backup and rollback are
+# verified before the release permission is requested. Merging this change is NOT a permission to run a production
+# migration, and no production role or privilege changes (R6-D is separately authorised). ledger_impact: true because
+# R6-B5 guards the inventory ledger (CG-10). The release follows docs/runbooks/production-host-identity.md §6g.
+# The GO tag is created only after a release, its production verification and the owner's explicit decision (CG-16).
 # Gate 1 RME-LAB-FEE-APPROVAL-1 NO-GO; pilot NO-GO; BK-2 skipped (rule 232); Full Suite deferred (CG-18).
 #
 # PARKED, verbatim: DMS-RME-COMPREHENSIVE-CLOSURE-1 stays OPEN with its go_tag unchanged; its manifest lives at
@@ -25,11 +29,11 @@ module: Rme
 title: "Fast-Track Ready Pilot: one-branch readiness of SPN4 Sunu (P0 security, data transition, operations)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: false
 security_impact: true
 branch_isolation_impact: true
-ledger_impact: false
+ledger_impact: true
 deploy_required: true
 browser_required: true
 test_profiles: [focused, security_regression]

@@ -1548,6 +1548,14 @@ return [
         // Selected by the `FoundationGovernance` token; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B5 (rule 248 layer 1; owner decision D-Q4-a):
+        // the audit, status-log and financial event tables refuse UPDATE, DELETE
+        // and TRUNCATE (model and PostgreSQL trigger); a lab order with status logs
+        // and a user with audited actions cannot be deleted; the inventory ledger
+        // only takes a first batch link of its own product and branch; the guards
+        // hold for a non-owner runtime. Selected by the `FoundationGovernance`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceAuditAppendOnlyTest.php',
 
         // CICD-COMPOSER-CACHE-RELEASE-GATES-1 — every GitHub-hosted job that
         // runs `composer install` restores Composer's download cache first, keyed
