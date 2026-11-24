@@ -58,6 +58,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 require_once __DIR__.'/helpers.php';
 
@@ -151,7 +152,7 @@ afterEach(function () {
         ->delete();
 
     foreach (RZVC_TABLES as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 
     DB::purge(RZVC_WRITER);

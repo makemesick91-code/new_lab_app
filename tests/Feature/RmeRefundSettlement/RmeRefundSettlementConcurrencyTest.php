@@ -49,6 +49,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 require_once __DIR__.'/helpers.php';
 
@@ -128,7 +129,7 @@ afterEach(function () {
     // binds status, settled_at and the pointer together), then delete in order.
     $writer->table('trx_rme_overpayment_obligations')->where('id', '>', $this->watermarks['trx_rme_overpayment_obligations'])
         ->update(['status' => 'OPEN', 'settled_at' => null, 'rme_refund_settlement_id' => null]);
-    $writer->table('trx_rme_refund_settlement_events')->where('id', '>', $this->watermarks['trx_rme_refund_settlement_events'])->delete();
+    AppendOnlyOwnerWrite::delete($writer, 'trx_rme_refund_settlement_events', fn ($query) => $query->where('id', '>', $this->watermarks['trx_rme_refund_settlement_events']));
     $writer->table('trx_rme_refund_settlements')->where('id', '>', $this->watermarks['trx_rme_refund_settlements'])->delete();
 
     $newDoctorIds = $writer->table('mst_doctors')->where('id', '>', $this->watermarks['mst_doctors'])->pluck('id');
@@ -149,7 +150,7 @@ afterEach(function () {
         'mst_treatment_categories', 'mst_branches', 'users',
     ];
     foreach ($ordered as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 
     DB::purge(RSCC_WRITER);

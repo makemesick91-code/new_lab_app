@@ -49,6 +49,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 const RF0_WRITER = 'rf0_concurrency_writer';
 const RF0_PROBE = 'rf0_concurrency_probe';
@@ -109,7 +110,7 @@ afterEach(function () {
         ->delete();
 
     foreach (RF0_TABLES as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 });
 

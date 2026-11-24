@@ -62,6 +62,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 require_once __DIR__.'/../RmeBillingDispute/helpers.php';
 
@@ -148,7 +149,7 @@ afterEach(function () {
         ->delete();
 
     foreach (RPSC_TABLES as $table) {
-        $writer->table($table)->where('id', '>', $this->watermarks[$table])->delete();
+        AppendOnlyOwnerWrite::delete($writer, $table, fn ($query) => $query->where('id', '>', $this->watermarks[$table]));
     }
 
     DB::purge(RPSC_WRITER);

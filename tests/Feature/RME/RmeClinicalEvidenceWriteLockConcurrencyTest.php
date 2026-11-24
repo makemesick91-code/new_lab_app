@@ -40,6 +40,7 @@ use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 const P6L_WRITER = 'p6_evidence_lock_writer';
 const P6L_PROBE = 'p6_evidence_lock_probe';
@@ -130,6 +131,9 @@ afterEach(function (): void {
     $w->table('trx_clinic_visits')->where('id', $this->visitId ?? 0)->delete();
     $w->table('mst_patients')->where('id', $this->patientId ?? 0)->delete();
     $w->table('mst_doctors')->where('id', $this->doctorId ?? 0)->delete();
+    // Rule 248 / R6-B5: the audit rows this test's own user performed are
+    // append-only and keep the user (RESTRICT), so they go first, as the owner.
+    AppendOnlyOwnerWrite::delete($w, 'sys_audit_logs', fn ($query) => $query->where('performed_by', $this->userId ?? 0));
     $w->table('users')->where('id', $this->userId ?? 0)->delete();
     $w->table('mst_branches')->where('id', $this->branchId ?? 0)->delete();
 

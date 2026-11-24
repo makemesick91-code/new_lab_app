@@ -45,6 +45,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 const CVRS_WRITER = 'cvrs_sequence_writer';
 const CVRS_PROBE = 'cvrs_sequence_probe';
@@ -88,7 +89,7 @@ afterEach(function (): void {
     $w = DB::connection(CVRS_WRITER);
     // The review-F6 case commits a staged legacy batch and its audit trail.
     if (($this->cvrsBatchId ?? null) !== null) {
-        $w->table('sys_audit_logs')->where('entity_type', LegacyPatientImportService::AUDIT_ENTITY)->where('entity_id', $this->cvrsBatchId)->delete();
+        AppendOnlyOwnerWrite::delete($w, 'sys_audit_logs', fn ($query) => $query->where('entity_type', LegacyPatientImportService::AUDIT_ENTITY)->where('entity_id', $this->cvrsBatchId));
         $w->table('mst_patients')->where('import_batch_id', $this->cvrsBatchId)->delete();
         $w->table('stg_legacy_patient_imports')->where('batch_id', $this->cvrsBatchId)->delete();
         $w->table('stg_legacy_patient_import_batches')->where('id', $this->cvrsBatchId)->delete();
