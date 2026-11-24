@@ -1445,6 +1445,13 @@ return [
         'tests/Feature/RME/FixClinicOpsWorkingBranchContextTest.php',
         'tests/Feature/RME/PatientDataCompletenessAuditTest.php',
         'tests/Feature/RME/LabIntegrationTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B2 (rule 245 #6; owner decisions D-Q3-a, D-Q3-b):
+        // every table has exactly one runtime privilege class (the historical
+        // registry, or #[RuntimePrivilegeClass] on a later migration); the check
+        // against the PostgreSQL 16 schema fails closed; no migration grants,
+        // revokes or changes a role. Selected by the `FoundationGovernance` token
+        // in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceRuntimePrivilegeRegistryTest.php',
 
         // BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the clinical UI capability
         // must mirror the server capability for the same act.

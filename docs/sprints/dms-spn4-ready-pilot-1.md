@@ -986,7 +986,7 @@ owner granted it temporarily to publish #696; the assistant never widens a token
 
 | PR | Content | Depends on |
 |---|---|---|
-| R6-B2 | Migration connection `pgsql_migrate` with an explicit `SET ROLE` to the owner role; class-declaration helper; runtime class inventory of every table (including the column grants above) | D-Q3; R6-B1 released |
+| R6-B2 | Migration connection `pgsql_migrate` with an explicit `SET ROLE` to the owner role; class-declaration helper; runtime class inventory of every table (including the column grants above). **Status: PARTIAL** (owner directive "DMS G6 — POST RELEASE-2 SECURITY REMEDIATION AND PR PREPARATION", 2026-11-25). #699 delivers the class-declaration helper (`#[RuntimePrivilegeClass]`) and the inventory: 186 tables (171 FULL_DML, 11 APPEND_ONLY, 3 APPEND_ONLY_WITH_COLUMNS, 1 READ_ONLY_RUNTIME), checked against the PostgreSQL 16 schema with the R6-B5 guards. It also refuses privilege, role and ownership SQL in a migration. **OPEN (R6-B2b):** the `pgsql_migrate` connection and its explicit `SET ROLE` to the owner role; #699 contains neither. R6-B2 is never reported as complete until R6-B2b is merged | D-Q3; R6-B1 released |
 | R6-B3 | `foundation:db-privilege-apply` (dry run by default, `--print-sql`) and the read-only `foundation:db-privilege-check`, plus a new check that the database owner is the superuser and the runtime has no CREATE on the database (N-9); guard for the `pg_stat_statements` reset | R6-B2 |
 | R6-B4 | Deploy runner: host switch for the migrator; apply, then check; a failed check stops the deploy before smoke | R6-B3; a runtime release (manifest switch, §9) |
 | R6-B5 | Rule 248 layer 1 (trigger and model guards), including a guard trigger for `trx_inventory_movements` | D-Q4 |
