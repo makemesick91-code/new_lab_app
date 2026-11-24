@@ -1373,7 +1373,7 @@ Further detail of run `45352209945`:
 | Regression over every class touching the guarded tables or models | 7290 passed, 0 failed |
 | Every test file that writes over a separate committed connection | 31 files, 389 passed, 0 failed |
 | Old base code against a database with the R6-B5 triggers | 0 refusals from an application path (detail below) |
-| Recovery matrix and R2-3 pack, as a non-superuser role that owns the tables | 15/15 (detail below) |
+| Recovery matrix and R2-3 pack, as a non-superuser role that owns the tables | First pack: 15/15. Hardened pack (Annex B): **25/25** (detail below) |
 
 Migration harness:
 - **Fail-fast:** under a 20 s reader of `users`, the run fails after 5.26 s. It is not recorded and changes no row.
@@ -1389,8 +1389,24 @@ Old base code against a database with the triggers:
 - **2** depend on an unmigrated database. They pass on the migrated one.
 
 Recovery matrix and R2-3 pack: run as a non-superuser role that owns every table, as production does while R6-01 is
-open. That role migrates R6-B5. The pack prints no role name. Each partial state F0–F5 is recognised, and its retry
-converges.
+open. That role migrates R6-B5. The pack prints no role name and carries no write or DDL statement. Each partial
+state F0–F6 is recognised, and its retry (or no-op) ends at the released state.
+
+Hardening of the pack (before merge): every catalog check is limited to this database and to `current_schema()`. Each
+of the sixteen guards is checked individually (R2Q10t), and the expected distribution is counted per table. The
+hardened pack was tested against the first pack:
+
+| Test | First pack | Hardened pack |
+|---|---|---|
+| Same-named guards and functions in another schema; target not yet released | False PASS (16 guards counted) | Exact pre-release state |
+| Same-named keys and migration row in another schema too | Stopped with an error | Exact pre-release state |
+| Target released, other schema still present | — | Exact released state |
+| One guard missing and one extra elsewhere, total still 16 | False PASS (16) | 7 tables, 15 guards, 1 unexpected |
+| A guard calling the other guard function | False PASS (16) | Caught (15 guards) |
+| A disabled guard | — | Caught (15 guards) |
+| An AFTER trigger in place of BEFORE | False PASS (16) | Caught (15 guards) |
+| A guard calling a same-named function of another schema | False PASS (16) | Caught (15 guards) |
+| A lock on a same-named table in another schema or database | Counted | Not counted; only the target lock shows |
 
 **Risks.**
 
@@ -1425,7 +1441,9 @@ The deploy script runs migrate **after** the backup, checkout, composer and npm 
 rebuild and the service restart. A failed migrate aborts the deploy with the new code on disk and the services not
 restarted.
 
-State signature: guards (R2Q10) | audit FK `on_delete/validated` | status-log FK | migration recorded.
+State signature: `guard_triggers_ok` (R2Q10, second field) | audit FK `on_delete/validated` | status-log FK |
+migration recorded. All four come from `current_schema()` only. A state with 16 guards also shows
+`guard_tables_ok = 8` and `unexpected_guard_triggers = 0`.
 
 | State | Failed at | Signature | Code compatibility |
 |---|---|---|---|
@@ -1438,7 +1456,7 @@ State signature: guards (R2Q10) | audit FK `on_delete/validated` | status-log FK
 | F6 | a later deploy step | `16` \| `r/true` \| `r/true` \| `1` | Fine; the deploy is still NOT GO |
 
 What to do in any failed state:
-1. **Read the state** with R2-3 (R2Q4, R2Q5, R2Q6, R2Q10), read-only.
+1. **Read the state** with R2-3 (R2Q4, R2Q5, R2Q6, R2Q10t, R2Q10), read-only.
    - If it does not match one row above exactly, **STOP and escalate**. Retry nothing and roll back nothing.
 2. **Retry is never automatic.** It needs a separate owner decision, based on the evidence of the failed run, and
    only when all of the following hold:
@@ -1468,7 +1486,8 @@ What to do in any failed state:
     S1 fails (F0);
   - R2Q4 pre-release keys `n/t` and `c/t`;
   - R2Q5 no guard and no function;
-  - R2Q6 `r6b5_recorded = 0`.
+  - R2Q6 `r6b5_recorded = 0` with `migrations_in_schema = t`;
+  - R2Q10 `0|0|0|0|n/true|c/true|0|t`.
 - **Recorded for the decision:**
   - R2Q1 timeouts;
   - R2Q3 sizes;
@@ -1477,8 +1496,13 @@ What to do in any failed state:
 
 **Post-deploy verification (gate R2-8).**
 - `verify <deploy-id>` → `DEPLOY_APPROVED_TARGET_MATCH=YES` and `DEPLOY RUNNER OK`.
-- R2Q10 → `16|16|2|0|2|r/true|r/true|1`: 16 guards enabled, two functions, none SECURITY DEFINER, both pinned, both
-  keys RESTRICT and validated, migration recorded.
+- R2Q10 → `8|16|0|2|r/true|r/true|1|t`, and all sixteen R2Q10t rows `t|t|t|t`. In `current_schema()`:
+  - each of the eight tables has both of its guards;
+  - each guard calls the expected function of that schema, is enabled and has the expected type;
+  - no other trigger calls a guard function;
+  - both functions are plpgsql, not SECURITY DEFINER, with `search_path` pinned;
+  - both keys are RESTRICT and validated, with both ends in that schema;
+  - the migration is recorded.
 - `drift-check` → NONE; `sudo-policy-check` → LEAST_PRIVILEGE.
 - `posture` → HEAD = candidate, ERROR lines against the pre-deploy baseline.
 - Smoke on the canonical URL.
@@ -1733,14 +1757,21 @@ login role per fixture scenario. Every scenario was run read-only (`BEGIN READ O
 Run with `php artisan db` as the application login role, under the owner's read-only psql protocol (`\pset` on its
 own line; check that `BEGIN` and `ROLLBACK` are both shown). Section PRE runs before the release, section POST after
 `verify <deploy-id>`. Share only the `R2Q…` rows: they hold catalog facts, estimates, aggregates and booleans, and no
-row data, role name or query text. Validated locally on PostgreSQL 16 as a non-superuser role that owns the tables
-(§13.14).
+row data, role name or query text.
+
+Every catalog lookup is limited to this database and to `current_schema()`. A same-named object in another schema or
+database can therefore neither satisfy nor hide a check. R2Q10t checks each of the sixteen guards individually.
+
+Validated locally on PostgreSQL 16 as a non-superuser role that owns the tables: 25/25, including the two-schema,
+two-database and wrong-distribution tests and the F0–F6 matrix (§13.14).
 
 ```sql
 -- Release-2 (R6-B5) — R2-3 read-only production readiness pack.
 -- Owner-run only, as the application login role, through `php artisan db`, under the owner's psql protocol.
 -- Read-only: one READ ONLY transaction, short timeouts, ROLLBACK at the end. It prints catalog facts,
 -- estimates, aggregates and booleans only: no row data, no role or account name, no query text.
+-- Every catalog lookup is limited to this database and to current_schema(), so a same-named object in another
+-- schema or database can neither satisfy nor hide a check.
 -- Section PRE runs before the release; section POST runs after `verify <deploy-id>` (same protocol).
 \pset pager off
 \pset null '(null)'
@@ -1785,25 +1816,30 @@ SELECT 'R2Q3' AS q, c.relname,
                      'trx_inventory_movements', 'users', 'trx_lab_orders')
  ORDER BY c.relname;
 
--- R2Q4 foreign keys of the eight guarded tables: delete action and validation state
+-- R2Q4 foreign keys of the eight guarded tables (both ends in current_schema): delete action and validation state
 --      (before R6-B5: sys_audit_logs_performed_by_foreign = n/true, trx_lab_order_status_logs_lab_order_id_foreign = c/true)
 SELECT 'R2Q4' AS q, c.relname AS on_table, co.conname, rc.relname AS references_table,
+       rn.nspname = current_schema() AS references_same_schema,
        co.confdeltype::text AS on_delete, co.convalidated
   FROM pg_constraint co
   JOIN pg_class c ON c.oid = co.conrelid
-  JOIN pg_class rc ON rc.oid = co.confrelid
   JOIN pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_class rc ON rc.oid = co.confrelid
+  JOIN pg_namespace rn ON rn.oid = rc.relnamespace
  WHERE co.contype = 'f' AND n.nspname = current_schema()
    AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
                      'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
                      'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events', 'trx_inventory_movements')
  ORDER BY 2, 3;
 
--- R2Q5 user triggers on the eight tables and the two guard functions (before R6-B5: none)
-SELECT 'R2Q5' AS q, c.relname, t.tgname, t.tgenabled::text AS enabled
+-- R2Q5 user triggers on the eight tables in current_schema, with the function each calls (before R6-B5: none)
+SELECT 'R2Q5' AS q, c.relname, t.tgname, pn.nspname = current_schema() AS function_same_schema, p.proname,
+       t.tgenabled::text AS enabled, t.tgtype::int AS tgtype
   FROM pg_trigger t
   JOIN pg_class c ON c.oid = t.tgrelid
   JOIN pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_proc p ON p.oid = t.tgfoid
+  JOIN pg_namespace pn ON pn.oid = p.pronamespace
  WHERE NOT t.tgisinternal AND n.nspname = current_schema()
    AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
                      'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
@@ -1815,10 +1851,12 @@ SELECT 'R2Q5f' AS q, p.proname, p.prosecdef, coalesce(array_to_string(p.proconfi
  WHERE n.nspname = current_schema() AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
  ORDER BY 2;
 
--- R2Q6 migration record (before R6-B5: r6b5_recorded = 0)
+-- R2Q6 migration record (before R6-B5: r6b5_recorded = 0). migrations_in_schema = t proves the unqualified name
+--      resolves to current_schema() (the first schema of the search path that exists).
 SELECT 'R2Q6' AS q,
        count(*) FILTER (WHERE migration = '2026_11_23_100001_enforce_rule_248_append_only_layer_one') AS r6b5_recorded,
-       max(batch) AS max_batch, count(*) AS migrations_total
+       max(batch) AS max_batch, count(*) AS migrations_total,
+       to_regclass(quote_ident(current_schema()) || '.migrations') IS NOT NULL AS migrations_in_schema
   FROM migrations;
 
 -- R2Q7 sessions and long transactions in this database (aggregates; no user, address or query text).
@@ -1831,11 +1869,15 @@ SELECT 'R2Q7' AS q, coalesce(state, '(hidden)') AS state, count(*) AS sessions,
  WHERE datname = current_database() AND pid <> pg_backend_pid()
  GROUP BY 2 ORDER BY 2;
 
--- R2Q8 locks other sessions hold or wait for on the ten tables (aggregated)
+-- R2Q8 locks other sessions hold or wait for on the ten tables, in THIS database and current_schema only
+--      (pg_locks spans every database; a relation OID only means something inside its own database)
 SELECT 'R2Q8' AS q, c.relname, l.mode, l.granted, count(*) AS locks
   FROM pg_locks l
   JOIN pg_class c ON c.oid = l.relation
+  JOIN pg_namespace n ON n.oid = c.relnamespace
  WHERE l.pid <> pg_backend_pid()
+   AND l.database = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())
+   AND n.nspname = current_schema()
    AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
                      'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
                      'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events',
@@ -1849,22 +1891,109 @@ SELECT 'R2Q9' AS q, count(*) AS blocked_sessions
 
 -- ===== POST (after `verify <deploy-id>`; same file, same protocol) =====
 
--- R2Q10 the release-2 end state in one row. Expected: guards = 16, guards_enabled = 16, functions = 2,
---       functions_security_definer = 0, functions_search_path_pinned = 2, audit_fk = 'r/true',
---       status_log_fk = 'r/true', r6b5_recorded = 1.
+-- R2Q10t the sixteen expected guards, one row each, in current_schema. A guard is ok only when it exists on its
+--        own table, calls the expected function of current_schema(), is enabled (O) and has the expected type:
+--        27 = BEFORE UPDATE OR DELETE FOR EACH ROW, 34 = BEFORE TRUNCATE FOR EACH STATEMENT.
+WITH expected(tbl, trg, fn, ttype) AS (VALUES
+  ('sys_audit_logs', 'sys_audit_logs_append_only', 'dms_append_only_guard', 27),
+  ('sys_audit_logs', 'sys_audit_logs_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_lab_order_status_logs', 'trx_lab_order_status_logs_append_only', 'dms_append_only_guard', 27),
+  ('trx_lab_order_status_logs', 'trx_lab_order_status_logs_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_billing_dispute_events', 'trx_rme_billing_dispute_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_billing_dispute_events', 'trx_rme_billing_dispute_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_invoice_correction_events', 'trx_rme_invoice_correction_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_invoice_correction_events', 'trx_rme_invoice_correction_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_overpayment_obligation_events', 'trx_rme_overpayment_obligation_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_overpayment_obligation_events', 'trx_rme_overpayment_obligation_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_refund_request_events', 'trx_rme_refund_request_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_refund_request_events', 'trx_rme_refund_request_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_refund_settlement_events', 'trx_rme_refund_settlement_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_refund_settlement_events', 'trx_rme_refund_settlement_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_inventory_movements', 'trx_inventory_movements_ledger_guard', 'dms_inventory_ledger_guard', 27),
+  ('trx_inventory_movements', 'trx_inventory_movements_ledger_guard_trunc', 'dms_inventory_ledger_guard', 34)),
+actual AS (
+  SELECT c.relname AS tbl, t.tgname AS trg, p.proname AS fn, pn.nspname = current_schema() AS fn_same_schema,
+         t.tgenabled::text AS enabled, t.tgtype::int AS ttype
+    FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_proc p ON p.oid = t.tgfoid
+    JOIN pg_namespace pn ON pn.oid = p.pronamespace
+   WHERE NOT t.tgisinternal AND n.nspname = current_schema())
+SELECT 'R2Q10t' AS q, e.tbl, e.trg,
+       a.trg IS NOT NULL AS present,
+       coalesce(a.fn = e.fn AND a.fn_same_schema, false) AS function_ok,
+       coalesce(a.enabled = 'O', false) AS enabled_ok,
+       coalesce(a.ttype = e.ttype, false) AS type_ok
+  FROM expected e LEFT JOIN actual a ON a.tbl = e.tbl AND a.trg = e.trg
+ ORDER BY e.tbl, e.trg;
+
+-- R2Q10 the release-2 end state in one row, all in current_schema. Expected after the release:
+--      R2Q10|8|16|0|2|r/true|r/true|1|t
+--        guard_tables_ok = 8 (each of the eight tables has both of its guards ok),
+--        guard_triggers_ok = 16, unexpected_guard_triggers = 0 (no other trigger calls a guard function),
+--        functions_ok = 2 (plpgsql, RETURNS trigger, not SECURITY DEFINER, search_path pinned),
+--        both keys RESTRICT and validated with both ends in current_schema, migration recorded,
+--        migrations table in current_schema.
+--      Before the release: R2Q10|0|0|0|0|n/true|c/true|0|t
+WITH expected(tbl, trg, fn, ttype) AS (VALUES
+  ('sys_audit_logs', 'sys_audit_logs_append_only', 'dms_append_only_guard', 27),
+  ('sys_audit_logs', 'sys_audit_logs_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_lab_order_status_logs', 'trx_lab_order_status_logs_append_only', 'dms_append_only_guard', 27),
+  ('trx_lab_order_status_logs', 'trx_lab_order_status_logs_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_billing_dispute_events', 'trx_rme_billing_dispute_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_billing_dispute_events', 'trx_rme_billing_dispute_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_invoice_correction_events', 'trx_rme_invoice_correction_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_invoice_correction_events', 'trx_rme_invoice_correction_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_overpayment_obligation_events', 'trx_rme_overpayment_obligation_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_overpayment_obligation_events', 'trx_rme_overpayment_obligation_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_refund_request_events', 'trx_rme_refund_request_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_refund_request_events', 'trx_rme_refund_request_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_rme_refund_settlement_events', 'trx_rme_refund_settlement_events_append_only', 'dms_append_only_guard', 27),
+  ('trx_rme_refund_settlement_events', 'trx_rme_refund_settlement_events_append_only_trunc', 'dms_append_only_guard', 34),
+  ('trx_inventory_movements', 'trx_inventory_movements_ledger_guard', 'dms_inventory_ledger_guard', 27),
+  ('trx_inventory_movements', 'trx_inventory_movements_ledger_guard_trunc', 'dms_inventory_ledger_guard', 34)),
+actual AS (
+  SELECT c.relname AS tbl, t.tgname AS trg, p.proname AS fn, pn.nspname = current_schema() AS fn_same_schema,
+         t.tgenabled::text AS enabled, t.tgtype::int AS ttype
+    FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_proc p ON p.oid = t.tgfoid
+    JOIN pg_namespace pn ON pn.oid = p.pronamespace
+   WHERE NOT t.tgisinternal AND n.nspname = current_schema()),
+checked AS (
+  SELECT e.tbl, coalesce(a.fn = e.fn AND a.fn_same_schema AND a.enabled = 'O' AND a.ttype = e.ttype, false) AS ok
+    FROM expected e LEFT JOIN actual a ON a.tbl = e.tbl AND a.trg = e.trg),
+fk(conname, tbl, ref) AS (VALUES
+  ('sys_audit_logs_performed_by_foreign', 'sys_audit_logs', 'users'),
+  ('trx_lab_order_status_logs_lab_order_id_foreign', 'trx_lab_order_status_logs', 'trx_lab_orders')),
+fk_state AS (
+  SELECT f.conname, string_agg(co.confdeltype::text || '/' || co.convalidated::text, ',') AS state
+    FROM fk f
+    LEFT JOIN pg_namespace n ON n.nspname = current_schema()
+    LEFT JOIN pg_class c ON c.relname = f.tbl AND c.relnamespace = n.oid
+    LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND co.conname = f.conname AND co.contype = 'f'
+    LEFT JOIN pg_class rc ON rc.oid = co.confrelid
+   WHERE co.oid IS NULL OR (rc.relname = f.ref AND rc.relnamespace = n.oid)
+   GROUP BY f.conname)
 SELECT 'R2Q10' AS q,
-       (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-         WHERE NOT t.tgisinternal AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')) AS guards,
-       (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-         WHERE NOT t.tgisinternal AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
-           AND t.tgenabled = 'O') AS guards_enabled,
-       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')) AS functions,
-       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard') AND prosecdef) AS functions_security_definer,
-       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
-           AND 'search_path=pg_catalog, pg_temp' = ANY (proconfig)) AS functions_search_path_pinned,
-       (SELECT confdeltype::text || '/' || convalidated::text FROM pg_constraint WHERE conname = 'sys_audit_logs_performed_by_foreign') AS audit_fk,
-       (SELECT confdeltype::text || '/' || convalidated::text FROM pg_constraint WHERE conname = 'trx_lab_order_status_logs_lab_order_id_foreign') AS status_log_fk,
-       (SELECT count(*) FROM migrations WHERE migration = '2026_11_23_100001_enforce_rule_248_append_only_layer_one') AS r6b5_recorded;
+       (SELECT count(*) FROM (SELECT tbl FROM checked GROUP BY tbl HAVING count(*) = 2 AND bool_and(ok)) x) AS guard_tables_ok,
+       (SELECT count(*) FROM checked WHERE ok) AS guard_triggers_ok,
+       (SELECT count(*) FROM actual a
+         WHERE a.fn IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
+           AND NOT EXISTS (SELECT 1 FROM expected e WHERE e.tbl = a.tbl AND e.trg = a.trg)) AS unexpected_guard_triggers,
+       (SELECT count(*) FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          JOIN pg_language l ON l.oid = p.prolang
+         WHERE n.nspname = current_schema()
+           AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
+           AND l.lanname = 'plpgsql' AND p.prorettype = 'trigger'::regtype AND NOT p.prosecdef
+           AND 'search_path=pg_catalog, pg_temp' = ANY (p.proconfig)) AS functions_ok,
+       coalesce((SELECT state FROM fk_state WHERE conname = 'sys_audit_logs_performed_by_foreign'), '(missing)') AS audit_fk,
+       coalesce((SELECT state FROM fk_state WHERE conname = 'trx_lab_order_status_logs_lab_order_id_foreign'), '(missing)') AS status_log_fk,
+       (SELECT count(*) FROM migrations WHERE migration = '2026_11_23_100001_enforce_rule_248_append_only_layer_one') AS r6b5_recorded,
+       to_regclass(quote_ident(current_schema()) || '.migrations') IS NOT NULL AS migrations_in_schema;
 
 ROLLBACK;
 ```
