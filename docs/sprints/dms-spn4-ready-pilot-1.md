@@ -517,7 +517,8 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
   - Deploy tetap ditahan; setiap gerbang butuh keputusan Owner tersendiri.
 - **Rilis-2 (R6-B5) — DIDEPLOY, TERVERIFIKASI, CLOSED (§13.15):**
   - Deploy `20261124-164148` pada 25 Nov 2026 00:41 WITA; runtime produksi `7f58a3af`.
-  - R2-1 sampai R2-8 PASS. Full Suite DEFERRED, bukan PASS. WATCH governance tercatat.
+  - R2-1, R2-2, R2-3, R2-4, R2-6, R2-7 dan R2-8 PASS. R2-5 NOT EXERCISED, karena tidak terjadi kegagalan migrasi.
+  - Full Suite DEFERRED, bukan PASS. WATCH governance tercatat.
   - 16 guard aktif di 8 tabel, 2 fungsi guard, dan 2 FK RESTRICT tervalidasi; migrasi R6-B5 tercatat.
   - Tanpa GO tag; sprint tetap OPEN; R6-01 OPEN; R6-D tidak diotorisasi; pilot, G12 dan G13 tetap NO-GO.
 
@@ -1607,7 +1608,9 @@ The database row means:
   (`DIGEST_MATCH=YES`).
 - The file is present: 34,851,458 bytes, mode 640, owned by the runtime identity, modified 2026-11-24 16:41:55, after
   `start` and before the checkout.
-- The dump was not read and nothing was restored. **No restore test is claimed.**
+- To compute the SHA-256, the owner's check read the file's bytes. Its clinical content was neither displayed nor
+  inspected.
+- Nothing was restored. **No restore test was performed, and none is claimed.**
 
 **Not done in release-2:**
 - no GO tag; no second deploy; no other migration; no rollback or restore;
@@ -1631,7 +1634,8 @@ The database row means:
 - the deploy, follow, verify and post-deploy outputs;
 - the CI logs.
 
-They hold no password, private key, dump content or clinical data.
+These packs stay restricted to the owner's workstation, and their full contents are not audited by this record.
+This closure record itself contains no credential, private key, raw dump or clinical data.
 
 **After this record:**
 - Merging it ends the release-2 base freeze (owner decision).
