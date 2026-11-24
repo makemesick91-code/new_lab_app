@@ -264,14 +264,18 @@ dms_restore_check_source() {
 # psql, createdb and dropdb from ONE pinned directory by absolute path, never
 # through PATH, so another binary cannot be swapped in by changing PATH (or
 # through the version-switching wrapper on PATH). The directory must be canonical
-# (no symlink), outside the checkout's control, owned by root or the trusted uid,
-# not group- or other-writable, with a trusted chain above it (trusted-path.sh).
-# Each tool must be a regular, executable, non-symlink file with the same owner
-# and mode rules. Returns 1 with the reason on stderr.
+# (no symlink), outside the application checkout <app dir>, owned by root or the
+# trusted uid, not group- or other-writable, with a trusted chain above it
+# (trusted-path.sh). Each tool must be a regular, executable, non-symlink file
+# with the same owner and mode rules. Returns 1 with the reason on stderr.
 dms_restore_pg_client_check() {
-  local dir="${1:-}" uid="${2:-}" tool path stat_out owner mode why
+  local dir="${1:-}" uid="${2:-}" app="${3:-}" tool path stat_out owner mode why
   if [ -z "$dir" ] || [ "$dir" = "/" ] || ! dms_trusted_canonical "$dir" || [ -L "$dir" ] || [ ! -d "$dir" ]; then
     _dms_restore_err "PostgreSQL client directory '${dir}' is not a canonical, real directory (no symlink, no '..')"
+    return 1
+  fi
+  if ! dms_trusted_outside "$dir" "$app"; then
+    _dms_restore_err "PostgreSQL client directory ${dir} lies inside the application checkout ${app}"
     return 1
   fi
   stat_out="$(stat -c '%u %a' -- "$dir" 2>/dev/null)" || { _dms_restore_err "cannot inspect ${dir}"; return 1; }
@@ -305,13 +309,14 @@ dms_restore_pg_client_check() {
 # Another major version, an older minor or an unreadable answer fails closed.
 dms_restore_psql_version_check() {
   local line="${1:-}" major minor
-  if [[ "$line" =~ ^psql\ \(PostgreSQL\)\ ([0-9]+)\.([0-9]+)([^0-9.]|$) ]]; then
+  # At most 4 digits per part, so the comparison below can never overflow.
+  if [[ "$line" =~ ^psql\ \(PostgreSQL\)\ ([0-9]{1,4})\.([0-9]{1,4})([^0-9.]|$) ]]; then
     major="${BASH_REMATCH[1]}"; minor="${BASH_REMATCH[2]}"
   else
     _dms_restore_err "cannot verify the psql version (answer: '${line:0:80}')"
     return 1
   fi
-  if [ "$major" != 16 ] || [ "$minor" -lt 15 ]; then
+  if [ "$major" != 16 ] || (( 10#$minor < 15 )); then
     _dms_restore_err "psql ${major}.${minor} is not allowed: the drill needs PostgreSQL 16 psql 16.15 or later"
     return 1
   fi
@@ -329,20 +334,29 @@ dms_restore_restrict_key() {
 }
 
 # dms_restore_load_guard_sql <tag>
-# Finding A-1 review (F1): a digest-matching dump is pg_dump's faithful output,
-# but before R6-D the runtime owns the schema and can plant code in it. During
-# the data load COPY evaluates CHECK and domain constraints, generated columns
-# and partition keys as the session user, which in a replay is the superuser; so
-# can foreign-key checks and partition routing through user operators. Index
-# builds, materialized views and key validation run as the table owner, and
-# triggers are created after the data.
+# Finding A-1 reviews (F1, then H1-H4): a digest-matching dump is pg_dump's
+# faithful output, but before R6-D the runtime owns the schema and can plant code
+# in it, which the replay runs in the superuser session. Places found so far:
+# - COPY evaluates CHECK and domain constraints, generated columns and partition
+#   keys;
+# - in the schema section, an aggregate INITCOND and a partition bound are coerced
+#   through a domain CHECK;
+# - SQL/JSON constructors (JSON_OBJECT …) call a type's cast to json without a
+#   function id in the stored expression;
+# - foreign-key validation (RI_Initial_Check) runs as the session user and uses
+#   operators and implicit casts.
+# Index builds and REFRESH MATERIALIZED VIEW run as the table owner; triggers,
+# rules and policies do not fire during the replay.
 # This prints a session-local function (pg_temp: gone with the session, never part
-# of the restored database) that refuses, before any row is loaded, when such an
-# expression calls a user-defined function or operator or a builtin that is not
-# IMMUTABLE (lo_export, query_to_xml, pg_read_file and the like), or when the
-# database defines its own operators, operator classes or families. Objects that
-# belong to an extension come from trusted server files. <tag> is random per run,
-# so no dump text can close its dollar quote.
+# of the restored database). It refuses when any such expression calls a
+# user-defined function or operator or a builtin that is not IMMUTABLE (lo_export,
+# query_to_xml, pg_read_file and the like), and when the database defines its own
+# casts, operators, operator classes or families. Objects that belong to an
+# extension come from trusted server files. The stream calls it before every
+# object pg_dump writes and at the end (see dms_restore_restricted_stream). <tag>
+# is random per run, so no dump text can close its dollar quote. This is a
+# deny-list: it narrows a superuser replay of a runtime-owned schema, but it is
+# not a proof that no other path exists (rule 235 §5).
 dms_restore_load_guard_sql() {
   local tag="${1:-}"
   [[ "$tag" =~ ^g[0-9a-f]{16,}$ ]] || { _dms_restore_err "the load-guard tag is not g<hex>"; return 1; }
@@ -398,9 +412,13 @@ BEGIN
     SELECT 'user-defined operator family ' || quote_ident(f.opfname)
       FROM pg_opfamily f
      WHERE f.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_opfamily'::regclass AND ext.objid = f.oid)
+    UNION ALL
+    SELECT 'user-defined cast ' || format_type(c.castsource, NULL) || ' AS ' || format_type(c.casttarget, NULL)
+      FROM pg_cast c
+     WHERE c.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_cast'::regclass AND ext.objid = c.oid)
   ) r;
   IF problem IS NOT NULL THEN
-    RAISE EXCEPTION 'restore load guard (finding A-1): % would run as the superuser while the data is loaded; nothing is loaded', problem;
+    RAISE EXCEPTION 'restore load guard (finding A-1): % would run as the superuser during the replay; the replay stops here', problem;
   END IF;
 END
 \$${tag}\$;
@@ -417,10 +435,14 @@ SQL
 # data and SQL are unaffected. A dump whose envelope is incomplete keeps its own
 # `\restrict` line, which restricted mode refuses, so the replay fails closed.
 # With a tag, `SELECT pg_temp.dms_restore_guard_<tag>();` goes before EVERY line
-# that looks like a COPY statement, so the guard runs before the first real one
-# whatever text the dump holds. The call has no quote, dollar sign or comment
-# marker: inside a literal, an identifier or a function body it is inert text, and
-# inside COPY data it can only make the load fail.
+# that looks like a COPY statement or like pg_dump's one-line object header
+# (`-- Name: …` / `-- Data for Name: …`, names cleaned of newlines by pg_dump),
+# and once more at the end. So the guard runs before every object and every data
+# load, whatever text the dump holds; a COPY line split by a newline in a table
+# name still has its header before it. The call has no quote, dollar sign or
+# comment marker: inside a literal, an identifier or a function body it is inert
+# text. Inside COPY data it can break the load, or add one row to the disposable
+# copy; it never runs there.
 dms_restore_restricted_stream() {
   local staged="${1:-}" key="${2:-}" tag="${3:-}"
   [[ "$key" =~ ^[A-Za-z0-9]+$ ]] || { _dms_restore_err "the restricted-mode key is not alphanumeric"; return 1; }
@@ -444,7 +466,8 @@ dms_restore_restricted_stream() {
       tag = ENVIRON["DMS_GUARD_TAG"]
     }
     FNR == drop_first || FNR == drop_last { next }
-    tag != "" && /^COPY .* FROM stdin;$/ { print "SELECT pg_temp.dms_restore_guard_" tag "();" }
+    tag != "" && (/^COPY .* FROM stdin;$/ || /^-- (Data for )?Name: /) { print "SELECT pg_temp.dms_restore_guard_" tag "();" }
     { print }
+    END { if (tag != "") print "SELECT pg_temp.dms_restore_guard_" tag "();" }
   ' "$staged" "$staged"
 }

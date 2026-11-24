@@ -332,7 +332,7 @@ it('keeps every meta-command inside a digest-matching dump under the fresh key, 
         ->and(substr_count((string) $run['replayed'], '\\restrict '))->toBe(1);
 });
 
-it('defines the load guard first and calls it before every COPY line, under a fresh tag', function () {
+it('defines the load guard first and calls it before every object header, every COPY line and at the end, under a fresh tag', function () {
     $dump = str_replace('\\unrestrict AbC123synthetic', "COPY public.t (id) FROM stdin;\n2\n\\.\n\n\\unrestrict AbC123synthetic", RDTB_DUMP);
     $first = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
     $second = rdtbRun(['--expected-sha256', '{sha}', '{file}']);
@@ -347,7 +347,32 @@ it('defines the load guard first and calls it before every COPY line, under a fr
         ->and($tag[1])->not->toBe($other[1] ?? null)
         ->and(count($copies))->toBe(2)
         ->and(collect($copies)->every(fn (int $i): bool => $lines[$i - 1] === 'SELECT pg_temp.dms_restore_guard_'.$tag[1].'();'))->toBeTrue()
-        ->and(strpos((string) $first['replayed'], 'CREATE FUNCTION pg_temp'))->toBeLessThan(strpos((string) $first['replayed'], 'CREATE TABLE public.t'));
+        ->and(strpos((string) $first['replayed'], 'CREATE FUNCTION pg_temp'))->toBeLessThan(strpos((string) $first['replayed'], 'CREATE TABLE public.t'))
+        ->and(collect($lines)->filter(fn (string $l): bool => $l !== '')->last())->toBe('SELECT pg_temp.dms_restore_guard_'.$tag[1].'();');
+});
+
+it('calls the load guard before every pg_dump object header, so a COPY line split by a newline in a table name is still guarded', function () {
+    // pg_dump writes a one-line header before every object and every data block; a quoted table name with a newline
+    // splits the COPY line itself (second independent review, H4), so the header is the anchor.
+    $dump = str_replace(
+        'CREATE TABLE public.t (id integer);',
+        "--\n-- Name: t; Type: TABLE; Schema: public; Owner: app_runtime\n--\n\nCREATE TABLE public.t (id integer);",
+        str_replace(
+            'COPY public.t (id) FROM stdin;',
+            "--\n-- Data for Name: \" x\"; Type: TABLE DATA; Schema: public; Owner: app_runtime\n--\n\nCOPY public.\"\nx\" (id) FROM stdin;\n1\n\\.\n\nCOPY public.t (id) FROM stdin;",
+            RDTB_DUMP,
+        ),
+    );
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+    $lines = explode("\n", (string) $run['replayed']);
+    preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\)/m', (string) $run['replayed'], $tag);
+    $call = 'SELECT pg_temp.dms_restore_guard_'.($tag[1] ?? 'none').'();';
+    $headers = array_keys(array_filter($lines, fn (string $l): bool => preg_match('/^-- (Data for )?Name: /', $l) === 1));
+
+    expect($run['exit'])->toBe(0)
+        ->and(count($headers))->toBe(2)
+        ->and(collect($headers)->every(fn (int $i): bool => $lines[$i - 1] === $call))->toBeTrue()
+        ->and(array_search('COPY public."', $lines, true))->toBeGreaterThan($headers[1]);
 });
 
 it('refuses to load a writable or symlinked trusted-path library, before doing anything', function (string $tamper) {
@@ -474,6 +499,7 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'generated column calling a user function' => ['CREATE FUNCTION rdtb_imm(int) RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $f$ BEGIN RETURN true; END $f$; CREATE TABLE rdtb_g (id int, g boolean GENERATED ALWAYS AS (rdtb_imm(id)) STORED);', 'rdtb_imm(integer)'],
     'domain CHECK calling a user function' => ['CREATE FUNCTION rdtb_dom(int) RETURNS boolean LANGUAGE sql AS $f$ SELECT true $f$; CREATE DOMAIN rdtb_d AS int CONSTRAINT rdtb_dcheck CHECK (rdtb_dom(VALUE));', 'rdtb_dom(integer)'],
     'CHECK calling a builtin that runs SQL text' => ["CREATE TABLE rdtb_q (id int CONSTRAINT rdtb_qcheck CHECK (query_to_xml('SELECT 1', false, false, '') IS NOT NULL));", 'query_to_xml(text,boolean,boolean,text)'],
+    'a user-defined cast (JSON constructors and foreign-key checks use casts with no function id in the expression)' => ["CREATE TYPE rdtb_e AS ENUM ('a'); CREATE FUNCTION rdtb_cast(rdtb_e) RETURNS json LANGUAGE sql IMMUTABLE AS \$f\$ SELECT '1'::json \$f\$; CREATE CAST (rdtb_e AS json) WITH FUNCTION rdtb_cast(rdtb_e);", 'user-defined cast'],
     'a user-defined operator' => ['CREATE FUNCTION rdtb_eq(int, int) RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$ SELECT $1 = $2 $f$; CREATE OPERATOR ==== (FUNCTION = rdtb_eq, LEFTARG = int, RIGHTARG = int);', 'user-defined operator'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
@@ -538,14 +564,25 @@ it('refuses a pinned client directory or binary that another identity could have
             })(),
             'missing dropdb' => unlink($bin.'/dropdb'),
             'directory reached through a symlink' => symlink($bin, $root.'/bin-link'),
+            'directory inside the checkout' => (function () use ($app, $bin) {
+                mkdir($app.'/pgbin', 0700);
+                foreach (['psql', 'createdb', 'dropdb'] as $tool) {
+                    copy($bin.'/'.$tool, $app.'/pgbin/'.$tool);
+                    chmod($app.'/pgbin/'.$tool, 0700);
+                }
+            })(),
         };
-    }, env: $tamper === 'directory reached through a symlink' ? ['DMS_PG_BINDIR' => '{root}/bin-link'] : []);
+    }, env: match ($tamper) {
+        'directory reached through a symlink' => ['DMS_PG_BINDIR' => '{root}/bin-link'],
+        'directory inside the checkout' => ['DMS_PG_BINDIR' => '{root}/app/pgbin'],
+        default => [],
+    });
 
     expect($run['exit'])->toBe(1)
         ->and($run['output'])->toContain('the PostgreSQL client directory failed its checks')
         ->and(rdtbCalls($run, 'createdb'))->toBe(0)
         ->and($run['replayed'])->toBeNull();
-})->with(['group-writable directory', 'other-writable psql', 'symlinked psql', 'missing dropdb', 'directory reached through a symlink']);
+})->with(['group-writable directory', 'other-writable psql', 'symlinked psql', 'missing dropdb', 'directory reached through a symlink', 'directory inside the checkout']);
 
 it('pins every PostgreSQL client call to the verified directory, checked before any backup is read', function () {
     $code = implode("\n", array_filter(
@@ -574,6 +611,9 @@ it('reads the psql version strictly', function (string $line, int $exit) {
     ['psql (PostgreSQL) 16.15', 0],
     ['psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)', 0],
     ['psql (PostgreSQL) 16.100', 0],
+    ['psql (PostgreSQL) 16.9999', 0],
+    ['psql (PostgreSQL) 16.99999999999999999999', 1],
+    ['psql (PostgreSQL) 0016.15', 1],
     ['psql (PostgreSQL) 16.14', 1],
     ['psql (PostgreSQL) 16.1', 1],
     ['psql (PostgreSQL) 15.20', 1],

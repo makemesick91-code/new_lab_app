@@ -171,7 +171,7 @@ esac
 # superuser OS account that runs it. Anything else stops the drill before a backup
 # is read or a database created.
 PG_BINDIR="${DMS_PG_BINDIR:-/usr/lib/postgresql/16/bin}"
-dms_restore_pg_client_check "$PG_BINDIR" "$(id -u)" || {
+dms_restore_pg_client_check "$PG_BINDIR" "$(id -u)" "$APP_DIR" || {
   echo "FATAL: the PostgreSQL client directory failed its checks. Nothing was created. Aborting."
   exit 1
 }

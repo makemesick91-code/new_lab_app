@@ -120,11 +120,21 @@ GO is recorded in the sprint doc, not here.
   writable by others), by absolute path, including inside the shared library. They never run through PATH or the
   version-switching wrapper. psql must answer PostgreSQL 16 at 16.15 or later (owner floor; restricted mode arrived
   with the CVE-2025-8714 fix in 16.10). Otherwise the drill stops before it reads a backup.
-  A digest proves only that the bytes are pg_dump's. Before R6-D the runtime owns the schema, and COPY evaluates
-  CHECK and domain constraints, generated columns and partition keys as the superuser. So before the first row is
-  loaded, a session-local load guard refuses such an expression when it calls a user-defined function or operator or a
-  builtin that is not IMMUTABLE (for example `query_to_xml`). It also refuses user-defined operators, operator classes
-  and operator families. What remains:
+  A digest proves only that the bytes are pg_dump's. Before R6-D the runtime owns the schema, and the replay runs its
+  planted code as the superuser in several places:
+  - COPY evaluates CHECK and domain constraints, generated columns and partition keys;
+  - the schema section coerces an aggregate INITCOND or a partition bound through a domain CHECK;
+  - SQL/JSON constructors call a type's cast to json;
+  - foreign-key validation runs as the session user, through operators and implicit casts.
+  A session-local load guard therefore runs before every object pg_dump writes, before every COPY and at the end. It
+  refuses such an expression when it calls a user-defined function or operator or a builtin that is not IMMUTABLE (for
+  example `query_to_xml`). It also refuses user-defined casts, operators, operator classes and operator families. Two
+  independent reviews found these paths, and the drill's tests and the private PostgreSQL 16 harness prove each one
+  refused. What remains:
+  - the guard is a deny-list. It narrows, but does not prove away, a superuser replay of a runtime-owned schema. The
+    structural fixes are a non-superuser restore login that is a member of the owner roles (provisioning, R6-B3/R6-D),
+    or a throwaway cluster under an unprivileged OS account. Both are owner decisions, and until then the drill is not
+    run on the production host without one;
   - a dump whose trusted digest itself covers malicious top-level SQL (a wrong independent record, or a compromise of
     root before the deploy hashed it) still runs that SQL as the superuser;
   - `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh` verify the digest but use neither restricted
