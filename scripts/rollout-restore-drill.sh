@@ -266,6 +266,14 @@ INTEGRITY="$(dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256")" || {
   exit 1
 }
 echo "$INTEGRITY (expected digest from ${INTEGRITY_SOURCE})"
+# A CHECK that pg_dump splits out is validated after the data, in the superuser
+# session, before the load guard can see it (third review of A-1): refused here.
+SPLIT_CHECKS_STATUS=0
+SPLIT_CHECKS="$(dms_restore_split_check_entries "$STAGED_BACKUP")" || SPLIT_CHECKS_STATUS=$?
+if [ "$SPLIT_CHECKS_STATUS" != 0 ]; then
+  echo "FATAL: the backup holds ${SPLIT_CHECKS:-an unknown number of} CHECK constraint(s) that pg_dump split out to validate after the data; that validation would run their code as the superuser before the load guard can see it. Nothing was created. Aborting."
+  exit 1
+fi
 BACKUP_SIZE="$(wc -c < "$STAGED_BACKUP" | tr -d ' ')"
 
 # The runtime's own format check of its file: informational, never the trust anchor.

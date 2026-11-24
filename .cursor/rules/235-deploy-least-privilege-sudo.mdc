@@ -128,7 +128,9 @@ GO is recorded in the sprint doc, not here.
   - foreign-key validation runs as the session user, through operators and implicit casts.
   A session-local load guard therefore runs before every object pg_dump writes, before every COPY and at the end. It
   refuses such an expression when it calls a user-defined function or operator or a builtin that is not IMMUTABLE (for
-  example `query_to_xml`). It also refuses user-defined casts, operators, operator classes and operator families. Two
+  example `query_to_xml`). It also refuses user-defined casts, operators, operator classes and operator families.
+  Before anything is created, the drill also refuses a dump in which pg_dump split a CHECK constraint out to validate
+  after the data: such a constraint would run in the superuser session before any guard call could see it. Three
   independent reviews found these paths, and the drill's tests and the private PostgreSQL 16 harness prove each one
   refused. What remains:
   - the guard is a deny-list. It narrows, but does not prove away, a superuser replay of a runtime-owned schema. The

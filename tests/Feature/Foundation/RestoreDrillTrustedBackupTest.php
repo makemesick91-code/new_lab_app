@@ -623,3 +623,20 @@ it('reads the psql version strictly', function (string $line, int $exit) {
     ['PSQL (PostgreSQL) 16.15', 1],
     ['', 1],
 ]);
+
+it('refuses, before anything is created, a CHECK constraint that pg_dump split out to validate after the data', function (string $header) {
+    // Third independent review of A-1: such an ALTER ... ADD CONSTRAINT validates every row in the superuser session
+    // before any later guard call can see the constraint, so the dump is refused up front (proven on PostgreSQL 16).
+    $dump = str_replace('\\unrestrict AbC123synthetic', "--\n{$header}\n--\n\nALTER TABLE ONLY public.t\n    ADD CONSTRAINT t_check CHECK (public.f(t.*));\n\n\\unrestrict AbC123synthetic", RDTB_DUMP);
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+
+    expect($run['exit'])->toBe(1)
+        ->and($run['output'])->toContain('split out to validate after the data')
+        ->and(rdtbCalls($run, 'createdb'))->toBe(0)
+        ->and($run['replayed'])->toBeNull()
+        ->and($run['tmp_left'])->toBe(0);
+})->with([
+    'a table CHECK' => ['-- Name: t t_check; Type: CHECK CONSTRAINT; Schema: public; Owner: app_runtime'],
+    'a domain CHECK' => ['-- Name: d d_check; Type: CHECK CONSTRAINT; Schema: public; Owner: app_runtime'],
+    'a planted name that adds its own Type text' => ['-- Name: t x; Type: TABLE; Schema: y; Type: CHECK CONSTRAINT; Schema: public; Owner: app_runtime'],
+]);

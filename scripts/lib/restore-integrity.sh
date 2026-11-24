@@ -323,6 +323,24 @@ dms_restore_psql_version_check() {
   printf 'PSQL_CLIENT=VERIFIED %s.%s\n' "$major" "$minor"
 }
 
+# dms_restore_split_check_entries <staged copy>
+# Third independent review of finding A-1: when a CHECK constraint (on a table or
+# a domain) and its function depend on each other, for example through the
+# table's row type, pg_dump writes the constraint as its own entry (`Type: CHECK
+# CONSTRAINT`) after the data. That `ALTER … ADD CONSTRAINT` validates every
+# existing row in the replay's superuser session before any later guard call can
+# see the constraint. The load guard cannot run in between, so such a dump is
+# refused before anything is created. The match is anywhere in a header line: a
+# planted name can add text to a header but cannot remove pg_dump's own `Type:`.
+# Prints the number of such entries and returns 1 when there is any.
+dms_restore_split_check_entries() {
+  local staged="${1:-}" count
+  [ -f "$staged" ] && [ ! -L "$staged" ] || { _dms_restore_err "the staged copy is missing"; return 2; }
+  count="$(grep -cE '^-- (Data for )?Name: .*; Type: CHECK CONSTRAINT;' -- "$staged" || true)"
+  printf '%s\n' "${count:-0}"
+  [ "${count:-0}" = 0 ]
+}
+
 # dms_restore_restrict_key — prints a fresh random key for psql's restricted mode.
 # It is generated after the dump was written and is never stored, so no dump can
 # carry the matching \unrestrict.
