@@ -84,9 +84,13 @@ dms_restore_stage_copy() {
   staged="${staging}/dump.sql"
   ( umask 077 && set -C && : > "$staged" ) || { _dms_restore_err "could not create the staging copy"; return 1; }
   if [ "$owner" = "$(id -un)" ]; then
-    cat -- "$dump" > "$staged"
+    # Opened without following a symlink and without blocking on a FIFO: the path
+    # may have been swapped since the check above (finding A-1 review, F2).
+    dd if="$dump" iflag=nofollow,nonblock status=none > "$staged" \
+      || { _dms_restore_err "could not read ${dump} (changed into a symlink or a special file?)"; return 1; }
   else
-    runuser -u "$owner" -- cat -- "$dump" < /dev/null > "$staged"
+    runuser -u "$owner" -- cat -- "$dump" < /dev/null > "$staged" \
+      || { _dms_restore_err "could not read ${dump} as its owner ${owner}"; return 1; }
   fi
   [ -s "$staged" ] || { _dms_restore_err "the staging copy of ${dump} is empty"; return 1; }
   printf '%s\n' "$staged"
@@ -265,21 +269,108 @@ dms_restore_restrict_key() {
   printf '%s\n' "$key"
 }
 
-# dms_restore_restricted_stream <staged copy> <key>
-# Prints the replay stream: `\restrict <key>`, then the staged dump. The dump's
-# own envelope is removed, and only when it is complete: a first statement line
-# `\restrict K` together with a last non-blank line `\unrestrict K`, with the same
-# K. Everything else is passed through unchanged. psql (16.10 or later) then runs
+# dms_restore_load_guard_sql <tag>
+# Finding A-1 review (F1): a digest-matching dump is pg_dump's faithful output,
+# but before R6-D the runtime owns the schema and can plant code in it. During
+# the data load COPY evaluates CHECK and domain constraints, generated columns
+# and partition keys as the session user, which in a replay is the superuser; so
+# can foreign-key checks and partition routing through user operators. Index
+# builds, materialized views and key validation run as the table owner, and
+# triggers are created after the data.
+# This prints a session-local function (pg_temp: gone with the session, never part
+# of the restored database) that refuses, before any row is loaded, when such an
+# expression calls a user-defined function or operator or a builtin that is not
+# IMMUTABLE (lo_export, query_to_xml, pg_read_file and the like), or when the
+# database defines its own operators, operator classes or families. Objects that
+# belong to an extension come from trusted server files. <tag> is random per run,
+# so no dump text can close its dollar quote.
+dms_restore_load_guard_sql() {
+  local tag="${1:-}"
+  [[ "$tag" =~ ^g[0-9a-f]{16,}$ ]] || { _dms_restore_err "the load-guard tag is not g<hex>"; return 1; }
+  cat <<SQL
+CREATE FUNCTION pg_temp.dms_restore_guard_${tag}() RETURNS void
+LANGUAGE plpgsql SET search_path = pg_catalog AS \$${tag}\$
+DECLARE
+  problem text;
+BEGIN
+  WITH ext AS (
+    SELECT classid, objid FROM pg_depend WHERE deptype = 'e'
+  ), expr AS (
+    SELECT format('check constraint %I', c.conname) AS what, c.conbin::text AS tree
+      FROM pg_constraint c WHERE c.contype = 'c' AND c.conbin IS NOT NULL
+    UNION ALL
+    SELECT format('generated column %s.%I', d.adrelid::regclass, a.attname), d.adbin::text
+      FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+     WHERE a.attgenerated <> ''
+    UNION ALL
+    SELECT format('partition key of %s', p.partrelid::regclass), p.partexprs::text
+      FROM pg_partitioned_table p WHERE p.partexprs IS NOT NULL
+  ), ops AS (
+    SELECT e.what, m[1]::oid AS op
+      FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':opno ([0-9]+)', 'g') AS m
+    UNION ALL
+    SELECT e.what, x::oid
+      FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':opnos \(o ([0-9 ]+)\)', 'g') AS m
+      CROSS JOIN LATERAL unnest(string_to_array(m[1], ' ')) AS x
+  ), fns AS (
+    SELECT e.what, m[1]::oid AS fn
+      FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':[a-z]*funcid ([0-9]+)', 'g') AS m
+    UNION ALL
+    SELECT o.what, p.oprcode::oid FROM ops o JOIN pg_operator p ON p.oid = o.op
+  )
+  SELECT string_agg(DISTINCT reason, '; ') INTO problem FROM (
+    SELECT f.what || ' calls ' || p.oid::regprocedure::text AS reason
+      FROM fns f JOIN pg_proc p ON p.oid = f.fn
+     WHERE p.provolatile <> 'i'
+        OR (p.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_proc'::regclass AND ext.objid = p.oid))
+    UNION ALL
+    SELECT o.what || ' uses operator ' || o.op::regoperator::text
+      FROM ops o
+     WHERE o.op >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_operator'::regclass AND ext.objid = o.op)
+    UNION ALL
+    SELECT 'user-defined operator ' || p.oid::regoperator::text
+      FROM pg_operator p
+     WHERE p.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_operator'::regclass AND ext.objid = p.oid)
+    UNION ALL
+    SELECT 'user-defined operator class ' || quote_ident(c.opcname)
+      FROM pg_opclass c
+     WHERE c.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_opclass'::regclass AND ext.objid = c.oid)
+    UNION ALL
+    SELECT 'user-defined operator family ' || quote_ident(f.opfname)
+      FROM pg_opfamily f
+     WHERE f.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_opfamily'::regclass AND ext.objid = f.oid)
+  ) r;
+  IF problem IS NOT NULL THEN
+    RAISE EXCEPTION 'restore load guard (finding A-1): % would run as the superuser while the data is loaded; nothing is loaded', problem;
+  END IF;
+END
+\$${tag}\$;
+SQL
+}
+
+# dms_restore_restricted_stream <staged copy> <key> [<load-guard tag>]
+# Prints the replay stream: `\restrict <key>`, then (with a tag) the load guard
+# function, then the staged dump. The dump's own envelope is removed, and only
+# when it is complete: a first statement line `\restrict K` together with a last
+# non-blank line `\unrestrict K`, with the same K. psql (16.10 or later) then runs
 # the whole dump in restricted mode: every backslash meta-command, at the start of
 # a line or inside one, is refused, and with ON_ERROR_STOP the replay stops. COPY
 # data and SQL are unaffected. A dump whose envelope is incomplete keeps its own
 # `\restrict` line, which restricted mode refuses, so the replay fails closed.
+# With a tag, `SELECT pg_temp.dms_restore_guard_<tag>();` goes before EVERY line
+# that looks like a COPY statement, so the guard runs before the first real one
+# whatever text the dump holds. The call has no quote, dollar sign or comment
+# marker: inside a literal, an identifier or a function body it is inert text, and
+# inside COPY data it can only make the load fail.
 dms_restore_restricted_stream() {
-  local staged="${1:-}" key="${2:-}"
+  local staged="${1:-}" key="${2:-}" tag="${3:-}"
   [[ "$key" =~ ^[A-Za-z0-9]+$ ]] || { _dms_restore_err "the restricted-mode key is not alphanumeric"; return 1; }
   [ -f "$staged" ] && [ ! -L "$staged" ] || { _dms_restore_err "the staged copy is missing"; return 1; }
   printf '\\restrict %s\n' "$key"
-  awk '
+  if [ -n "$tag" ]; then
+    dms_restore_load_guard_sql "$tag" || return 1
+  fi
+  DMS_GUARD_TAG="$tag" awk '
     NR == FNR {
       if (!first && $0 !~ /^[[:space:]]*$/ && $0 !~ /^--/) { first = FNR; firstline = $0 }
       if ($0 !~ /^[[:space:]]*$/) { last = FNR; lastline = $0 }
@@ -291,8 +382,10 @@ dms_restore_restricted_stream() {
         k = substr(firstline, 11)
         if (last != first && lastline == "\\unrestrict " k) { drop_first = first; drop_last = last }
       }
+      tag = ENVIRON["DMS_GUARD_TAG"]
     }
     FNR == drop_first || FNR == drop_last { next }
+    tag != "" && /^COPY .* FROM stdin;$/ { print "SELECT pg_temp.dms_restore_guard_" tag "();" }
     { print }
   ' "$staged" "$staged"
 }

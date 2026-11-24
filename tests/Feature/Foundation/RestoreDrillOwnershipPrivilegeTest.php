@@ -187,7 +187,7 @@ it('runs every drill database operation through the superuser and artisan as the
         ->and($code)->not->toMatch('/dropdb[^\n]*\|\| true/')
         ->and($code)->toContain('as_superuser dropdb -- "$DRILL_DB"')
         ->and($code)->toContain('as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"')
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
+        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
         ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and(preg_match('/^\s*(?!as_runtime )php artisan/m', $code))->toBe(0)
         ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'as_superuser createdb -O'));

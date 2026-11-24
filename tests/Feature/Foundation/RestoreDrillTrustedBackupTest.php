@@ -23,6 +23,8 @@
 | Helper prefix `rdtb`.
 */
 
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
 
 const RDTB_DEPLOY_ID = '20261125-100000';
@@ -128,9 +130,12 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
         chmod($bin.'/'.$name, 0700);
     }
 
+    // The drill's root-only staged copy goes under this private TMPDIR, so every run can prove it was removed (CG-11).
+    mkdir($root.'/tmp', 0700);
     $argv = array_map(fn (string $a): string => strtr($a, ['{sha}' => hash('sha256', $dump), '{file}' => RDTB_BACKUP]), $args);
     $process = new Process(array_merge(['bash', base_path('scripts/rollout-restore-drill.sh')], $argv), $app, [
         'PATH' => $bin.':'.getenv('PATH'),
+        'TMPDIR' => $root.'/tmp',
         'APP_DIR' => $app,
         'RDTB_LOG' => $root.'/calls.log',
         'RDTB_STATE' => $root.'/drill-db.oid',
@@ -154,6 +159,7 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
         'evidence' => is_file($evidence) ? json_decode((string) file_get_contents($evidence), true) : null,
         'replayed' => is_file($replayed) ? (string) file_get_contents($replayed) : null,
         'root' => $root,
+        'tmp_left' => count(array_diff((array) scandir($root.'/tmp'), ['.', '..'])),
     ];
     (new Process(['rm', '-rf', '--', $root]))->run();
 
@@ -204,6 +210,8 @@ it('refuses to run without trusted digest evidence, before anything is created',
     'a file but no evidence' => [['{file}'], 'needs trusted digest evidence'],
     'both kinds of evidence' => [['--deploy-id', RDTB_DEPLOY_ID, '--expected-sha256', '{sha}', '{file}'], 'not both'],
     'a digest without its file' => [['--expected-sha256', '{sha}'], 'needs the backup file it describes'],
+    'an uppercase digest' => [['--expected-sha256', str_repeat('A', 64), '{file}'], 'must be 64 lowercase hex digits'],
+    'a short digest' => [['--expected-sha256', 'abc123', '{file}'], 'must be 64 lowercase hex digits'],
     'an unknown option' => [['--latest'], 'usage: bash scripts/rollout-restore-drill.sh'],
 ]);
 
@@ -285,6 +293,7 @@ it('replays the verified staged copy even when the backup is replaced after the 
         ->and($run['replayed'])->not->toContain('ghost_role')
         ->and($run['replayed'])->not->toContain('intruder')
         ->and($run['replayed'])->not->toContain('\\!')
+        ->and($run['tmp_left'])->toBe(0)
         ->and(collect($run['log'])->contains(fn (string $l): bool => str_contains($l, 'foundation:backup-verify')))->toBeTrue();
 });
 
@@ -294,6 +303,7 @@ it('runs the whole replay in psql restricted mode under a fresh key and drops on
     $lines = explode("\n", (string) $first['replayed']);
 
     expect($first['exit'])->toBe(0)
+        ->and($first['tmp_left'])->toBe(0)
         ->and($lines[0])->toMatch('/^\\\\restrict [0-9a-f]{64}$/')
         ->and(explode("\n", (string) $second['replayed'])[0])->not->toBe($lines[0])
         ->and($first['replayed'])->not->toContain('restrict AbC123synthetic')
@@ -302,6 +312,63 @@ it('runs the whole replay in psql restricted mode under a fresh key and drops on
         ->and(substr_count((string) $first['replayed'], '\\unrestrict'))->toBe(0)
         ->and(collect($first['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_') && str_ends_with($l, ' -f -')))->toBeTrue();
 });
+
+it('keeps every meta-command inside a digest-matching dump under the fresh key, so real psql refuses it', function () {
+    // The digest covers this dump, so only restricted mode stands between these lines and the superuser's OS
+    // account. The drill must pass them on unchanged after its own fresh \restrict, and never add an \unrestrict.
+    // The private PostgreSQL 16 harness proves that psql 16 then refuses them (owner evidence pack, cases C and C2).
+    $dump = str_replace('COPY public.t (id) FROM stdin;', "\\unrestrict AbC123synthetic\n\\! id\nSELECT 1; \\! id\nCOPY public.t (id) FROM stdin;", RDTB_DUMP);
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+    $lines = explode("\n", (string) $run['replayed']);
+
+    expect($run['exit'])->toBe(0)
+        ->and($lines[0])->toMatch('/^\\\\restrict [0-9a-f]{64}$/')
+        ->and($run['replayed'])->toContain("\\unrestrict AbC123synthetic\n\\! id\nSELECT 1; \\! id\n")
+        ->and(collect($lines)->filter(fn (string $l): bool => str_starts_with($l, '\\unrestrict '))->values()->all())->toBe(['\\unrestrict AbC123synthetic'])
+        ->and(substr_count((string) $run['replayed'], '\\restrict '))->toBe(1);
+});
+
+it('defines the load guard first and calls it before every COPY line, under a fresh tag', function () {
+    $dump = str_replace('\\unrestrict AbC123synthetic', "COPY public.t (id) FROM stdin;\n2\n\\.\n\n\\unrestrict AbC123synthetic", RDTB_DUMP);
+    $first = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+    $second = rdtbRun(['--expected-sha256', '{sha}', '{file}']);
+    preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\) RETURNS void$/m', (string) $first['replayed'], $tag);
+    preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\)/m', (string) $second['replayed'], $other);
+    $lines = explode("\n", (string) $first['replayed']);
+    $copies = array_keys(array_filter($lines, fn (string $l): bool => str_starts_with($l, 'COPY public.t (id) FROM stdin;')));
+
+    expect($first['exit'])->toBe(0)
+        ->and($tag[1] ?? null)->not->toBeNull()
+        ->and($lines[1])->toBe('CREATE FUNCTION pg_temp.dms_restore_guard_'.$tag[1].'() RETURNS void')
+        ->and($tag[1])->not->toBe($other[1] ?? null)
+        ->and(count($copies))->toBe(2)
+        ->and(collect($copies)->every(fn (int $i): bool => $lines[$i - 1] === 'SELECT pg_temp.dms_restore_guard_'.$tag[1].'();'))->toBeTrue()
+        ->and(strpos((string) $first['replayed'], 'CREATE FUNCTION pg_temp'))->toBeLessThan(strpos((string) $first['replayed'], 'CREATE TABLE public.t'));
+});
+
+it('refuses to load a writable or symlinked trusted-path library, before doing anything', function (string $tamper) {
+    $root = sys_get_temp_dir().'/rdtb-tree-'.bin2hex(random_bytes(6));
+    mkdir($root.'/scripts/lib', 0755, true);
+    copy(base_path('scripts/rollout-restore-drill.sh'), $root.'/scripts/rollout-restore-drill.sh');
+    copy(base_path('scripts/lib/restore-integrity.sh'), $root.'/scripts/lib/restore-integrity.sh');
+    if ($tamper === 'symlink') {
+        copy(base_path('scripts/lib/trusted-path.sh'), $root.'/elsewhere.sh');
+        symlink($root.'/elsewhere.sh', $root.'/scripts/lib/trusted-path.sh');
+    } else {
+        copy(base_path('scripts/lib/trusted-path.sh'), $root.'/scripts/lib/trusted-path.sh');
+        chmod($root.'/scripts/lib/trusted-path.sh', 0666);
+    }
+    $process = new Process(['bash', $root.'/scripts/rollout-restore-drill.sh', '--expected-sha256', str_repeat('a', 64), 'x.sql'], $root, [
+        'APP_DIR' => $root.'/no-app',
+        'PATH' => getenv('PATH'),
+    ]);
+    $process->run();
+    (new Process(['rm', '-rf', '--', $root]))->run();
+
+    expect($process->getExitCode())->not->toBe(0)
+        ->and($process->getOutput().$process->getErrorOutput())->toContain('trusted-path.sh is missing, a symlink, not owned by')
+        ->and($process->getOutput())->not->toContain('== ROLL-5-1A restore drill ==');
+})->with(['writable', 'symlink']);
 
 it('keeps an incomplete envelope so restricted mode refuses it, and wraps a dump that has none', function () {
     $appended = rdtbLib('dms_restore_restricted_stream "$F" Key1', ['F' => rdtbTemp(RDTB_DUMP."CREATE ROLE intruder SUPERUSER;\n")]);
@@ -357,10 +424,54 @@ it('reads only the staged copy after the integrity check, and never picks a defa
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_missing_owner_roles "$STAGED_BACKUP"'))
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_runtime_ownership_gate "$STAGED_BACKUP"'))
         ->and($verify)->toBeLessThan(strpos($code, 'as_superuser createdb -O'))
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" | as_superuser psql')
+        ->and($code)->toContain('dms_restore_check_source "$BACKUP_FILE" "$RUNTIME_USER" "$(id -un)"')
+        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql')
         ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and($code)->not->toContain('ls -1t');
 });
+
+it('leaves no staged copy behind when the drill refuses a backup', function () {
+    $run = rdtbRun(['--expected-sha256', str_repeat('b', 64), '{file}']);
+
+    expect($run['exit'])->toBe(1)
+        ->and($run['output'])->toContain('DIGEST MISMATCH')
+        ->and($run['tmp_left'])->toBe(0);
+});
+
+/**
+ * The load guard on real PostgreSQL. RefreshDatabase wraps the test in a transaction and each case runs in a
+ * savepoint, so the pg_temp function, the planted objects and the refusals are all rolled back.
+ */
+function rdtbGuard(): string
+{
+    $tag = 'g'.bin2hex(random_bytes(16));
+    $sql = rdtbLib('dms_restore_load_guard_sql '.$tag);
+    expect($sql['exit'])->toBe(0);
+    DB::unprepared($sql['out']);
+
+    return 'SELECT pg_temp.dms_restore_guard_'.$tag.'()';
+}
+
+it('lets the migrated application schema through the load guard, with no false refusal', function () {
+    $call = rdtbGuard();
+
+    expect(fn () => DB::select($call))->not->toThrow(Throwable::class);
+})->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
+
+it('refuses, before any row is loaded, schema code the runtime could plant that COPY would run as the superuser', function (string $plant, string $reason) {
+    $call = rdtbGuard();
+
+    expect(fn () => DB::transaction(function () use ($plant, $call) {
+        DB::unprepared($plant);
+        DB::select($call);
+    }))->toThrow(QueryException::class, $reason);
+})->with([
+    'CHECK calling a user function' => ['CREATE FUNCTION rdtb_planted() RETURNS boolean LANGUAGE plpgsql AS $f$ BEGIN RETURN true; END $f$; CREATE TABLE rdtb_t (id int CONSTRAINT rdtb_check CHECK (rdtb_planted()));', 'rdtb_planted()'],
+    'generated column calling a user function' => ['CREATE FUNCTION rdtb_imm(int) RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $f$ BEGIN RETURN true; END $f$; CREATE TABLE rdtb_g (id int, g boolean GENERATED ALWAYS AS (rdtb_imm(id)) STORED);', 'rdtb_imm(integer)'],
+    'domain CHECK calling a user function' => ['CREATE FUNCTION rdtb_dom(int) RETURNS boolean LANGUAGE sql AS $f$ SELECT true $f$; CREATE DOMAIN rdtb_d AS int CONSTRAINT rdtb_dcheck CHECK (rdtb_dom(VALUE));', 'rdtb_dom(integer)'],
+    'CHECK calling a builtin that runs SQL text' => ["CREATE TABLE rdtb_q (id int CONSTRAINT rdtb_qcheck CHECK (query_to_xml('SELECT 1', false, false, '') IS NOT NULL));", 'query_to_xml(text,boolean,boolean,text)'],
+    'a user-defined operator' => ['CREATE FUNCTION rdtb_eq(int, int) RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$ SELECT $1 = $2 $f$; CREATE OPERATOR ==== (FUNCTION = rdtb_eq, LEFTARG = int, RIGHTARG = int);', 'user-defined operator'],
+])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 function rdtbTemp(string $content): string
 {

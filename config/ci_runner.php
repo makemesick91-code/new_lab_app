@@ -2064,8 +2064,10 @@ return [
         // DMS-SPN4-READY-PILOT-1 R6-B6 finding A-1 (2026-11-25): the restore
         // drill replays only a root-only staged copy whose SHA-256 matches
         // trusted evidence (rule 235), refuses a symlinked, foreign-owned or
-        // writable backup, and runs the replay in psql restricted mode, so
-        // runtime-writable content never runs as the superuser. Selected by the
+        // writable backup, runs the replay in psql restricted mode (no
+        // meta-command), and refuses before the data load any CHECK, domain,
+        // generated-column or partition expression that would run user code or
+        // a non-IMMUTABLE builtin as the superuser. Selected by the
         // `RestoreDrill` token in BOTH critical variants; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/RestoreDrillTrustedBackupTest.php',

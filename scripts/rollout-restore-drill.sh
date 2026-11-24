@@ -108,6 +108,10 @@ if [ -n "$EXPECTED_SHA256" ] && [ -z "$BACKUP_FILE" ]; then
   echo "FATAL: --expected-sha256 needs the backup file it describes. Nothing was created. Aborting." >&2
   exit 2
 fi
+if [ -n "$EXPECTED_SHA256" ] && [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "FATAL: --expected-sha256 must be 64 lowercase hex digits. Nothing was created. Aborting." >&2
+  exit 2
+fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -196,7 +200,9 @@ if [ -n "$EVIDENCE_DEPLOY_ID" ]; then
   }
   if [ -z "$BACKUP_FILE" ]; then
     BACKUP_FILE="${EVIDENCE% *}"
-  elif [ "$(realpath -e -- "$BACKUP_FILE" 2>/dev/null)" != "$(realpath -e -- "${APP_DIR}/${EVIDENCE% *}" 2>/dev/null)" ]; then
+  elif ! GIVEN_REAL="$(realpath -e -- "$BACKUP_FILE" 2>/dev/null)" \
+    || ! RECORDED_REAL="$(realpath -e -- "${APP_DIR}/${EVIDENCE% *}" 2>/dev/null)" \
+    || [ -z "$GIVEN_REAL" ] || [ "$GIVEN_REAL" != "$RECORDED_REAL" ]; then
     echo "FATAL: deploy ${EVIDENCE_DEPLOY_ID} recorded ${EVIDENCE% *}, not ${BACKUP_FILE}. Nothing was created. Aborting."
     exit 1
   fi
@@ -336,10 +342,14 @@ echo "== Restore backup into disposable database =="
 # Only the verified root-only staging copy is replayed, streamed on stdin (the
 # superuser OS account cannot open it, but it can read a pipe). The stream puts
 # psql in restricted mode under a fresh random key, so no backslash meta-command
-# in the dump can run as the superuser's OS account (finding A-1).
+# in the dump can run as the superuser's OS account (finding A-1). Before the
+# first row is loaded, the load guard refuses schema code the runtime could have
+# planted that COPY would run as the superuser (CHECK, domain, generated column,
+# partition key; user operators).
 RESTRICT_KEY="$(dms_restore_restrict_key)" || { echo "FATAL: could not generate the restricted-mode key. Aborting."; exit 1; }
+GUARD_TAG="g$(dms_restore_restrict_key | cut -c1-32)" || { echo "FATAL: could not generate the load-guard tag. Aborting."; exit 1; }
 set +o errexit
-dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
+dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
 PIPE_STATUS=("${PIPESTATUS[@]}")
 set -o errexit
 # psql is reported first: when it stops on an error the reader dies of SIGPIPE.
