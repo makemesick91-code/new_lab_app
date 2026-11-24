@@ -9,7 +9,7 @@ kb_updated: 2026-11-23
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Release-2 (R6-B5, #701 and #702): MERGED, NOT DEPLOYED; record drafted under release ID `dms-spn4-r6b5-r2-20261124`, deployment on hold** (§13.14). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Release-2 (R6-B5, `dms-spn4-r6b5-r2-20261124`): DEPLOYED AND VERIFIED on 2026-11-24 UTC (deploy `20261124-164148`, runtime `7f58a3af`), CLOSED; no GO tag** (§13.14, §13.15). **Pilot: NO-GO.** No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -394,6 +394,12 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G6-R1-EXC-MG | 2026-11-24 | Directive "G6 RELEASE-1 CG-22 CLOSURE FINAL PREPARATION", option M-A, approved by the owner in writing. The owner accepts `PatientMergeForeignKeyCatalogRoleSeparationTest` 7/7 on the release SHA (CI `45277338107`) as limited substitute evidence for the R6-B1 merge-guard check of gate 9 (§13.12). **MERGE GUARD PRODUCTION TEST: NOT RUN. CI SUBSTITUTE EVIDENCE: PASS.** Reason: the guard runs only inside a patient-merge case, and creating one writes production data. Residual risk: the production behaviour is not observed directly; it rests on code identity and on CI of the same SHA. No merge case is created in production (§13.13) |
 | G6-R1-EXC-NIK | 2026-11-24 | Same directive, option N-A, approved by the owner in writing. The owner accepts `PatientKtpNeverFlashedTest` 7/7, `RmeVisitConsentGuardianIdentityNeverFlashedTest` 3/3, `RmeRefundRequestNikNeverFlashedTest` 3/3 and `PatientKtpDatabaseErrorLogRedactionTest` 10/10 on the release SHA as limited substitute evidence for the REM-2/R2-6 check of gate 9. **NIK SESSION FLASH PRODUCTION TEST: NOT RUN. CI SUBSTITUTE EVIDENCE: PASS.** Reason: the check needs an authenticated submission, which writes session and audit data. Residual risk as for G6-R1-EXC-MG. No login, POST or test session in production (§13.13) |
 | G6-R2-ID | 2026-11-24 | Directive "R6-B5 RELEASE-2 R2-1 DOCS PR PUBLICATION ONLY". The owner, in writing, sets the release-2 (R6-B5) release ID **`dms-spn4-r6b5-r2-20261124`** and approves publishing the R2-1 record (§13.14) for review. This authorises no merge, dispatch, signature, submission, deploy, production query or migration; each needs its own decision. Deployment stays on hold |
+| G6-R2-RO | 2026-11-24 | Gate R2-3, approved by the owner in writing. The owner runs the read-only Annex B pack on production through the application login role. Claude does not connect to the production database and evaluates the shared rows (§13.15) |
+| G6-R2-CI | 2026-11-24 | Gate R2-6, approved by the owner in writing: exactly one `workflow_dispatch` on the candidate, with default inputs → run `45415743102`. The base is frozen from the dispatch until the deploy is verified (§13.15) |
+| G6-R2-SIG | 2026-11-24 (2026-11-25 WITA) | Gate R2-7, the owner's written approval of the exact candidate `7f58a3afe11ac6beeaff26b0028646831f4b9793`. The owner accepts the Full Suite as DEFERRED, not passed; records the WATCH `RELEASE-SAFETY-EVIDENCE-CHAIN`; and approves signature only, with a 48 h window. The owner signed in the owner's own terminal (§13.15) |
+| G6-R2-SUB | 2026-11-24 (2026-11-25 WITA) | The owner's written authorisation of one `submit-approval` and one read-only `check-approval`. No deploy (§13.15) |
+| G6-R2-DEP | 2026-11-24 (2026-11-25 WITA) | The owner's written authorisation of **one production start** of `dms-spn4-r6b5-r2-20261124` at `7f58a3af`. Conditions: final preflight PASS with fresh R2Q7–R2Q9; no old psql session; outside 02:25–02:40 WITA; no automatic retry, rollback or restore; R2-8 verification afterwards. No merge, dispatch, R6-D, GO tag or pilot (§13.15) |
+| G6-R2-CLS | 2026-11-25 | Directive "CG-22 RELEASE-2 FORMAL CLOSURE". The owner approves the administrative closure record of release-2 (§13.15). It authorises no GO tag, deploy, migration or pilot activation |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -509,6 +515,11 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
   - Draft memuat ruang lingkup, bukti CI dan PostgreSQL 16, risiko, matriks pemulihan migrasi parsial F0–F6 dan
     query pack read-only R2-3 (Annex B).
   - Deploy tetap ditahan; setiap gerbang butuh keputusan Owner tersendiri.
+- **Rilis-2 (R6-B5) — DIDEPLOY, TERVERIFIKASI, CLOSED (§13.15):**
+  - Deploy `20261124-164148` pada 25 Nov 2026 00:41 WITA; runtime produksi `7f58a3af`.
+  - R2-1 sampai R2-8 PASS. Full Suite DEFERRED, bukan PASS. WATCH governance tercatat.
+  - 16 guard aktif di 8 tabel, 2 fungsi guard, dan 2 FK RESTRICT tervalidasi; migrasi R6-B5 tercatat.
+  - Tanpa GO tag; sprint tetap OPEN; R6-01 OPEN; R6-D tidak diotorisasi; pilot, G12 dan G13 tetap NO-GO.
 
 ---
 
@@ -1298,7 +1309,8 @@ NO-GO; **pilot NO-GO**.
 
 ### 13.14 Release-2 (R6-B5): interim schema-changing release — DRAFT record (CG-22, gate R2-1)
 
-**Status: DRAFT. MERGED, NOT DEPLOYED. DEPLOYMENT ON HOLD.**
+**Status: DRAFT. MERGED, NOT DEPLOYED. DEPLOYMENT ON HOLD.** This was the status when the section was written and
+reviewed (gate R2-1). It is kept as written. **Superseded on 2026-11-25 by §13.15: deployed, verified and closed.**
 - This record authorises nothing: no dispatch, signature, submission, deploy, production query or migration.
 - Each gate below needs its own owner decision.
 - Release-2 is not recorded as deployed, verified, closed or GO.
@@ -1525,6 +1537,106 @@ What to do in any failed state:
 - G12 and G13 NO-GO. Gate 1 LAB-fee NO-GO and LAB-fee disabled. Pilot NO-GO.
 - Full Suite DEFERRED. #695 and #699 stay open and outside release-2.
 - **No deploy from the base** until release-2 is authorised.
+
+### 13.15 Release-2 deployment and closure record (2026-11-25) — CLOSED
+
+**Status: CLOSED.**
+- Release-2 `dms-spn4-r6b5-r2-20261124` (R6-B5) is deployed and verified.
+- This closes release-2 only. **It is not the sprint GO decision.** The SPN4 sprint stays **OPEN**, and **no GO tag is
+  created**.
+- Times are UTC, with WITA (UTC+8) in brackets.
+
+| Item | Record |
+|---|---|
+| Release ID | `dms-spn4-r6b5-r2-20261124` |
+| **Deployed runtime SHA** | **`7f58a3afe11ac6beeaff26b0028646831f4b9793`** (tree `e7203723b608067e95d0d9f70da6fee7544b27a1`): the squash merge of #703. The commit that adds this closure record is documentation only, is not deployed, and does not change the runtime |
+| Production before / after | `4eec017c7cbbc74a30e29fa0bf1536ee9f7a795a` (release-1) → `7f58a3afe11ac6beeaff26b0028646831f4b9793` |
+| Scope | #700, #701, #702 and #703 (29 files; one additive migration, `2026_11_23_100001_enforce_rule_248_append_only_layer_one`) |
+| CI | `workflow_dispatch` run `45415743102` on the exact SHA, attempt 1, `completed`/`success`. Critical tests **11951 passed (62066 assertions), 0 failed**. Selective module gate (Inventory, Lab, UI/UIX) passed. NSF-9, NSF-10, Pint and Android succeeded. **Full Suite: DEFERRED** (skipped, not authorised); not a pass |
+| Governance | 39 GO, 1 WATCH (`RELEASE-SAFETY-EVIDENCE-CHAIN`, "local" profile, optional evidence; the same baseline WATCH as earlier runs), 0 error |
+| Approval | Contract 3, ID `619c2992064faf571cff4a9e19046950`. Approved by the owner 2026-11-24 16:22:12 (2026-11-25 00:22:12); valid until 2026-11-26 16:22:12 (2026-11-27 00:22:12). Spent by this deploy |
+| Record / signature SHA-256 | `f549b47ac51c39e235b12d57348c3e04e6883ee36d42e5c4748ddbc9e3d80b2f` / `733d1c2cda6b14bc6f19fbcc09187052922d10ffaad7c71d108651ac2862ccba` |
+| Submission and check | Submitted 2026-11-24 16:28:33 (00:28:33); `check-approval` → `GO` at 16:28:46, and again before `start` at 16:41 |
+| Deploy | ID **`20261124-164148`**: `start` 16:41:48, runner finished 16:43:24 (2026-11-25 00:41:48 → 00:43:24), outside 02:25–02:40 WITA. One start; no retry |
+| `verify 20261124-164148` | `DEPLOY_APPROVED_TARGET_MATCH=YES (7f58a3afe11ac6beeaff26b0028646831f4b9793)`, `DEPLOY RUNNER OK`, `final exit=0` |
+
+**Gates.**
+
+| Gate | Result | Evidence |
+|---|---|---|
+| R2-1 | PASS | The record (§13.14, Annex B), merged in #703 |
+| R2-2 | PASS | Exact-SHA audit, 48/48. Scope = #700–#703; the code tested by #702 CI equals the candidate's |
+| R2-3 | PASS | Owner-run Annex B pack before the release, run twice (the second shortly before `start`). See below |
+| R2-4 | PASS | Pre-deploy dump verified by digest. See below |
+| R2-5 | Not exercised | The procedure stood ready; no failure occurred, so no partial state F0–F6 arose |
+| R2-6 | PASS | CI `45415743102` |
+| R2-7 | PASS | Contract 3 approval, signed by the owner, submitted, `check-approval` GO |
+| R2-8 | PASS | Post-deploy verification. See below |
+
+**R2-3: production readiness, read-only, owner-run.**
+- Both runs had full session visibility (`sees_all_sessions = t`) and every hard check met.
+- R2Q10 was `0|0|0|0|n/true|c/true|0|t`: no guard, both keys in their old form, R6-B5 not recorded.
+- The login role owned all ten tables and could create in its schema.
+- 237 migrations were recorded, the same as the files of release-1.
+- Tables were small: about 1,670 audit rows, 56 movements, the rest empty or near empty.
+- R2Q7–R2Q9 showed no other session, no lock on the ten tables and no blocked session (2026-11-24 16:34, about seven
+  minutes before `start`).
+
+**R2-8: post-deploy verification, 2026-11-24 16:43–16:49 UTC.**
+
+| Check | Result |
+|---|---|
+| Production HEAD / tracked files | `7f58a3afe11ac6beeaff26b0028646831f4b9793` / `TRACKED_MODIFIED=0` |
+| Canonical URL smoke | **PASS**: `/login`, `/up`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` → 403; an unknown path → 404; `/rme/visits` and `/settings/patients` → 302 to login |
+| Application ERROR lines | 166 before and 166 after (+0) |
+| Privilege drift / sudo policy | `PRIVSEP_DRIFT=NONE` / `SUDO_POLICY=LEAST_PRIVILEGE`, 0 violations |
+| Units and timers | Unchanged: queue worker, KTP prune and pilot snapshot stay inactive as the owner set them; the backup timers stay active |
+| Database (owner-run Annex B POST, read-only) | **`R2Q10|8|16|0|2|r/true|r/true|1|t`**, with all sixteen R2Q10t rows `t|t|t|t` |
+| Migration | R6-B5 recorded (batch 96); 238 migrations in total |
+
+The database row means:
+- 8 guarded tables;
+- 16 guards, each enabled, calling its expected function in the same schema and of the expected type;
+- no unexpected guard trigger;
+- 2 guard functions: plpgsql, not SECURITY DEFINER, `search_path` pinned;
+- both keys RESTRICT and validated, with both ends in the same schema.
+
+**R2-4: pre-deploy dump, verified by digest.**
+- The owner ran a read-only check at 2026-11-24 16:49:07 UTC.
+- The digest in the deploy log equals the file's: `5a1770ecbbb92aea9a119f149a1fb52c8d53bb11204de1f514d188fe7cdb645c`
+  (`DIGEST_MATCH=YES`).
+- The file is present: 34,851,458 bytes, mode 640, owned by the runtime identity, modified 2026-11-24 16:41:55, after
+  `start` and before the checkout.
+- The dump was not read and nothing was restored. **No restore test is claimed.**
+
+**Not done in release-2:**
+- no GO tag; no second deploy; no other migration; no rollback or restore;
+- no role, ownership or privilege change (R6-D);
+- no merge of #695 or #699; no G12, G13, pilot or LAB-fee activation.
+
+**Residual risk and status (unchanged by release-2):**
+- R6-01 OPEN; R6-D NOT AUTHORIZED; CG-11 OPEN; D-2 BLOCKED; OD-5 PENDING.
+- G12 NO-GO; G13 NO-GO; Gate 1 LAB-fee NO-GO; **pilot NO-GO**.
+- Full Suite DEFERRED; the governance WATCH stays recorded.
+- New in production:
+  - the append-only and ledger guards refuse UPDATE, DELETE and TRUNCATE on the eight tables;
+  - a hard delete of a user, lab order, batch or supplier that has history is now refused. The application performs
+    none.
+- A code rollback would leave the guards and keys in place, by design; the release-1 code is compatible with them.
+
+**Evidence outside this repository.** The owner's local evidence packs 42 to 45 hold:
+- the R2-2 verifier output;
+- the R2-3 runs and their evaluations;
+- the signature and submission records;
+- the deploy, follow, verify and post-deploy outputs;
+- the CI logs.
+
+They hold no password, private key, dump content or clinical data.
+
+**After this record:**
+- Merging it ends the release-2 base freeze (owner decision).
+- The remaining SPN4 work follows its own decisions: #695, #699, R6-B2, R6-B3/B4/B7/B8, R6-C, R6-D, and the
+  conditions of G12, G13 and the pilot.
 
 ---
 
