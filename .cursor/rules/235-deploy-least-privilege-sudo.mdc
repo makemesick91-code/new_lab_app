@@ -133,8 +133,8 @@ GO is recorded in the sprint doc, not here.
   refused. What remains:
   - the guard is a deny-list. It narrows, but does not prove away, a superuser replay of a runtime-owned schema. The
     structural fixes are a non-superuser restore login that is a member of the owner roles (provisioning, R6-B3/R6-D),
-    or a throwaway cluster under an unprivileged OS account. Both are owner decisions, and until then the drill is not
-    run on the production host without one;
+    or a throwaway cluster under an unprivileged OS account. Both are owner decisions. The owner directives of
+    2026-11-25 forbid any production restore or restore drill in the meantime;
   - a dump whose trusted digest itself covers malicious top-level SQL (a wrong independent record, or a compromise of
     root before the deploy hashed it) still runs that SQL as the superuser;
   - `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh` verify the digest but use neither restricted
