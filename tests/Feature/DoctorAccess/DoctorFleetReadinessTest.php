@@ -132,9 +132,12 @@ function fleetLock(Doctor $doctor, Branch $branch): DoctorBranchLock
 }
 
 /** A durable, doctor-attributed record that a device login actually succeeded. */
-function fleetProof(User $user, DoctorDevice $device, ?Doctor $doctor = null, ?string $action = null): AuditLog
+function fleetProof(User $user, DoctorDevice $device, ?Doctor $doctor = null, ?string $action = null, ?DateTimeInterface $at = null): AuditLog
 {
-    return AuditLog::query()->create([
+    // Audit rows are append-only (rule 248): an old proof is written old, never backdated later.
+    $at ??= now();
+
+    return tap((new AuditLog)->forceFill([
         'entity_type' => 'trx_doctor_device_webauthn_credentials',
         'entity_id' => 1,
         'action' => $action ?? DoctorFleetReadinessRepositoryInterface::PROOF_ACTIONS[1],
@@ -143,8 +146,9 @@ function fleetProof(User $user, DoctorDevice $device, ?Doctor $doctor = null, ?s
             'doctor_id' => $doctor === null ? null : (int) $doctor->id,
         ],
         'performed_by' => $user->id,
-        'performed_at' => now(),
-    ]);
+        'performed_at' => $at,
+        'created_at' => $at,
+    ]))->save();
 }
 
 function fleetRowFor(array $report, User $user): array
@@ -424,8 +428,7 @@ it('keeps an old proof valid, because a walked path does not expire with time', 
     fleetAuthorize($doctor, $device);
     fleetLock($doctor, fleetBranch('SPN4'));
 
-    $proof = fleetProof($user, $device, $doctor);
-    $proof->forceFill(['performed_at' => now()->subYear(), 'created_at' => now()->subYear()])->save();
+    fleetProof($user, $device, $doctor, at: now()->subYear());
 
     $row = fleetRowFor(fleetReadiness(), $user);
 

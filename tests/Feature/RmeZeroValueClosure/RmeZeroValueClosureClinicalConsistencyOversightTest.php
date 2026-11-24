@@ -18,6 +18,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\Treatment\Models\Treatment;
 use App\Modules\TreatmentCategory\Models\TreatmentCategory;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Database\AppendOnlyOwnerWrite;
 
 require_once __DIR__.'/helpers.php';
 
@@ -104,7 +105,9 @@ it('shows a closure recorded before the cross-check existed as not evaluated —
         ->where('entity_id', test()->plainClosed->id)->sole();
     $values = $row->new_values;
     unset($values['clinical_billing_consistency']);
-    DB::table('sys_audit_logs')->where('id', $row->id)->update(['new_values' => json_encode($values)]);
+    // The shape older code wrote. sys_audit_logs is append-only (rule 248), so the
+    // fixture is written as the table owner, inside the rolled-back test transaction.
+    AppendOnlyOwnerWrite::update(DB::connection(), 'sys_audit_logs', fn ($query) => $query->where('id', $row->id), ['new_values' => json_encode($values)]);
 
     $html = rccoPage('Owner')->assertOk()->assertSee('data-zv-cbc-status="NOT_EVALUATED"', false)->getContent();
 

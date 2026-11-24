@@ -8,11 +8,24 @@ alwaysApply: false
 
 Owner design lock 2026-11-20 (evidence needs of A-02, A-05, A-30). Findings: AUD-01, AUD-02, AUD-03, AUD-04.
 
-## Current state (verified 2026-11-20)
+## Current state (verified 2026-11-20; layer 1 implemented 2026-11-23, not yet released)
 
-`sys_audit_logs` (every `RmeFinancialAuditEvent`) has no model guard and no trigger; its migration only describes it as
-immutable. Financial event tables are immutable at the model layer only. `trx_lab_order_status_logs` cascades on
-lab-order delete. This is implementation drift against this rule until it is implemented.
+Before DMS-SPN4-READY-PILOT-1 R6-B5, `sys_audit_logs` (every `RmeFinancialAuditEvent`) had no model guard and no
+trigger, financial event tables were immutable at the model layer only, and `trx_lab_order_status_logs` cascaded on
+lab-order delete.
+
+Layer 1 is implemented by migration `2026_11_23_100001_enforce_rule_248_append_only_layer_one`:
+- `dms_append_only_guard` triggers refuse UPDATE, DELETE and TRUNCATE on `sys_audit_logs`,
+  `trx_lab_order_status_logs` and the five RME `*_events` tables. The function pins `search_path` and is not
+  `SECURITY DEFINER`.
+- `AuditLog` and `LabOrderStatusLog` refuse update and delete.
+- `sys_audit_logs.performed_by` and `trx_lab_order_status_logs.lab_order_id` restrict on delete.
+- Owner decision D-Q4-a adds `dms_inventory_ledger_guard` on `trx_inventory_movements`: only a first batch link of the
+  movement's own product and branch, and `updated_at`, may change.
+- A test that must write such a row (cleanup of committed concurrency fixtures, or an old-shape fixture) uses
+  `Tests\Support\Database\AppendOnlyOwnerWrite`, as the table owner. Application code never does.
+
+Until that migration is released, production runs without the triggers. Layers 2 to 5 remain open.
 
 ## Locked target
 
