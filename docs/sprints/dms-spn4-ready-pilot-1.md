@@ -9,7 +9,7 @@ kb_updated: 2026-11-23
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Release-2 (R6-B5, #701 and #702): MERGED, NOT DEPLOYED; record drafted, release ID pending, deployment on hold** (§13.14). **Pilot: NO-GO.** No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -502,6 +502,12 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
     pengganti CI PASS).
   - R6-B1, REM-2/R2-6 dan REM-1 **RELEASED** (§13.13).
   - Tanpa GO tag; sprint tetap OPEN; Full Suite DEFERRED; pilot tetap NO-GO.
+- **Rilis-2 (R6-B5) — DRAFT (§13.14):**
+  - Manifest #701 dan implementasi #702 sudah di-merge, **belum dideploy**.
+  - ID rilis menunggu keputusan Owner.
+  - Draft memuat ruang lingkup, bukti CI dan PostgreSQL 16, risiko, matriks pemulihan migrasi parsial F0–F6 dan
+    query pack read-only R2-3 (Annex B).
+  - Deploy tetap ditahan; setiap gerbang butuh keputusan Owner tersendiri.
 
 ---
 
@@ -1289,6 +1295,209 @@ NO-GO; **pilot NO-GO**.
 - The next merges follow §13.12, each with its own authorisation: the `schema_change: true` manifest PR, then R6-B5,
   then #695, then #699.
 
+### 13.14 Release-2 (R6-B5): interim schema-changing release — DRAFT record (CG-22, gate R2-1)
+
+**Status: DRAFT. MERGED, NOT DEPLOYED. DEPLOYMENT ON HOLD.**
+- This record authorises nothing: no dispatch, signature, submission, deploy, production query or migration.
+- Each gate below needs its own owner decision.
+- Release-2 is not recorded as deployed, verified, closed or GO.
+
+| Item | Record |
+|---|---|
+| Release ID | **PENDING OWNER DECISION** |
+| Release type | Interim schema-changing runtime release of the OPEN sprint. No sprint GO; no GO tag |
+| Candidate SHA | **PENDING FINAL DOCS MERGE**: the base tip once this record is merged |
+| Production baseline | Release-1, CLOSED (§13.13): `4eec017c7cbbc74a30e29fa0bf1536ee9f7a795a`, deploy `20261124-021647` verified |
+| Manifest | `.sprint/current.yml` from #701: `schema_change: true`, `ledger_impact: true`, `go_tag: dms-spn4-ready-pilot-1-go` |
+
+**Scope: everything after the production baseline, none of it live yet.**
+
+| PR | Change | Runtime effect |
+|---|---|---|
+| #700 (`3d29de27`) | Release-1 closure record (this document) | None |
+| #701 (`03fc5ae9`) | Manifest: `schema_change` and `ledger_impact` set to `true` (owner decision G6-DQ4b) | None; DEVFLOW consistency only |
+| #702 (`24566919`) | R6-B5, rule 248 layer 1 (owner decision G6-DQ4a), 27 files | **Yes**: one additive migration, three model guards, test fixtures, CI selection, rules |
+| This record | CG-22 record of release-2 | None |
+
+Range totals from `4eec017c` to `24566919`: 29 files.
+- No dependency, script, deploy, route, workflow, bootstrap, public or resource change.
+- No role, privilege or ownership SQL.
+
+What #702 does:
+- **Migration `2026_11_23_100001_enforce_rule_248_append_only_layer_one`**, PostgreSQL only, no row changed:
+  - **Append-only guard.** `dms_append_only_guard` refuses UPDATE, DELETE and TRUNCATE on seven tables:
+    - `sys_audit_logs`, `trx_lab_order_status_logs`;
+    - `trx_rme_billing_dispute_events`, `trx_rme_invoice_correction_events`;
+    - `trx_rme_overpayment_obligation_events`, `trx_rme_refund_request_events`, `trx_rme_refund_settlement_events`.
+  - **Ledger guard.** `dms_inventory_ledger_guard` on `trx_inventory_movements` allows only the first batch link
+    (NULL → a batch of the same product and branch) and `updated_at`. It refuses DELETE and TRUNCATE.
+  - **Foreign keys.** `sys_audit_logs.performed_by` (was SET NULL) and `trx_lab_order_status_logs.lab_order_id` (was
+    CASCADE) become **RESTRICT**.
+  - Two functions with a pinned `search_path`, not SECURITY DEFINER. 16 triggers.
+- **Models:** `AuditLog` and `LabOrderStatusLog` refuse update and delete. `InventoryMovement` refuses delete and any
+  change beyond the first batch link.
+- **CI:** the new mandatory suite `FoundationGovernanceAuditAppendOnlyTest` is selected in both critical variants
+  (CG-19).
+- **Fixtures:** 18 existing test files are adapted, with no assertion weakened:
+  - 16 clean up through `Tests\Support\Database\AppendOnlyOwnerWrite`;
+  - 2 write the row in its final shape when they create it.
+- **Rules:** rule 248 "current state" and inventory AIR-INV-23.
+
+**Why the manifest flags are true:**
+- `schema_change: true`: the release carries one additive migration.
+- `ledger_impact: true`: the migration guards the inventory ledger (CG-10). Stock stays derived from movements only.
+
+**CI evidence (pull requests; the release CI is the later dispatch, gate R2-6).**
+
+| PR | Run | Result |
+|---|---|---|
+| #700 | `45316413887` | success, `docs_only` (critical skipped by design) |
+| #701 | `45319390161` | success; critical **11930 passed** |
+| #702 head `abe1896c` | `45336521129` | **failure**: 2 tests of `RmeClinicalEvidenceWriteLockConcurrencyTest`. A writer-connection cleanup deleted a user still referenced by `sys_audit_logs` (RESTRICT, 23503). Test fixture only |
+| #702 head `66da4994` (fixture fix) | `45352209945` | **success**; critical **11951 passed (62066 assertions), 0 failed** |
+
+Further detail of run `45352209945`:
+- Selective module gate: Inventory 728 passed, 1 skipped; Lab 1609 passed.
+- Governance audit: no error. One baseline WATCH, `RELEASE-SAFETY-EVIDENCE-CHAIN` for the "local" profile, also present
+  in the release-1 dispatch run.
+- **Full Suite: DEFERRED** by the active policy (CG-18). It is not a pass.
+
+**Local PostgreSQL 16 evidence** (private, socket-only clusters; synthetic data; removed after use):
+
+| Check | Result |
+|---|---|
+| R6-B5 suite | 21/21 |
+| Migration harness (1,000,000 audit rows, 200,000 status logs, 50,000 movements) | 16/16 (detail below) |
+| FK swap lock probes | `NOT VALID` swap 0.7 ms, then `VALIDATE` 109 ms under SHARE UPDATE EXCLUSIVE: 4/4 probes (SELECT and INSERT on `sys_audit_logs` and `users`, 500 ms) not blocked. The single-transaction variant blocked 4/4 |
+| Regression over every class touching the guarded tables or models | 7290 passed, 0 failed |
+| Every test file that writes over a separate committed connection | 31 files, 389 passed, 0 failed |
+| Old base code against a database with the R6-B5 triggers | 0 refusals from an application path (detail below) |
+| Recovery matrix and R2-3 pack, as a non-superuser role that owns the tables | 15/15 (detail below) |
+
+Migration harness:
+- **Fail-fast:** under a 20 s reader of `users`, the run fails after 5.26 s. It is not recorded and changes no row.
+- **Retry:** succeeds in 0.34 s.
+- **Data:** `up()` and `down()` change no row (count and md5 over 8 tables). A repeated `up()` is a no-op.
+- **Guards:** they refuse with SQLSTATE P0001; the two allowed ledger changes succeed.
+- **Foreign keys:** RESTRICT is enforced (23503).
+- **Privilege:** no GRANT, role, ownership or trigger-disable statement.
+
+Old base code against a database with the triggers:
+- **144** refusals come from old test fixtures. None passes through an `app/` frame.
+- **55** were an artefact of the local tree export: `/.github` is `export-ignore`. They pass once it is restored.
+- **2** depend on an unmigrated database. They pass on the migrated one.
+
+Recovery matrix and R2-3 pack: run as a non-superuser role that owns every table, as production does while R6-01 is
+open. That role migrates R6-B5. The pack prints no role name. Each partial state F0–F5 is recognised, and its retry
+converges.
+
+**Risks.**
+
+| Risk | Assessment | Mitigation |
+|---|---|---|
+| Lock contention during `migrate --force` (no maintenance mode) | Each step waits at most 5 s for its lock, then fails | Deploy when R2-3 shows no long transaction; a failure is fail-fast and leaves a safe partial state (below) |
+| `VALIDATE` duration on production volumes | Production sizes not yet measured | R2-3 measures them; VALIDATE does not block DML |
+| Foreign keys now RESTRICT | Hard delete of a user with audit rows, or of a lab order with status logs, is refused | The application deletes neither. `User` and `LabOrder` use soft deletes; maintenance scripts must account for it |
+| Ledger guard | A hard delete of a user, batch or supplier referenced by movements is refused, through SET NULL | No application path does it: suppliers are deactivated, and batches have no delete path |
+| Code rollback leaves the schema | Triggers and keys stay | Old code is compatible (0 application-path refusals) |
+
+**Backup and restore escalation.**
+- The deploy's own pre-deploy dump is mandatory and fail-closed: dump → non-empty → digest match → only then the
+  checkout.
+- After the deploy, the owner records its digest and metadata read-only, as in §13.13.
+- BK-2 is not a gate.
+- R6-B5 changes no row, so a failed migration never needs a data restore.
+- Any data restore is a separate, explicitly approved owner operation: never automatic, never over newer clinical data.
+
+**Partial migration recovery (gate R2-5).**
+
+`up()` runs these steps, each in its own transaction under `lock_timeout 5s`:
+1. S1: functions and 16 guards.
+2. S2: swap of the audit FK `NOT VALID`.
+3. S3: `VALIDATE` of the audit FK.
+4. S4: swap of the status-log FK `NOT VALID`.
+5. S5: `VALIDATE` of the status-log FK.
+6. Laravel records the migration.
+
+The deploy script runs migrate **after** the backup, checkout, composer and npm build, and **before** the cache
+rebuild and the service restart. A failed migrate aborts the deploy with the new code on disk and the services not
+restarted.
+
+State signature: guards (R2Q10) | audit FK `on_delete/validated` | status-log FK | migration recorded.
+
+| State | Failed at | Signature | Code compatibility |
+|---|---|---|---|
+| F0 | S1 | `0` \| `n/true` \| `c/true` \| `0` | Unchanged schema: old and new code fine |
+| F1 | S2 | `16` \| `n/true` \| `c/true` \| `0` | Old and new code fine (guards only) |
+| F2 | S3 | `16` \| `r/false` \| `c/true` \| `0` | Fine: `NOT VALID` RESTRICT is enforced for new operations; old rows were valid under the old key |
+| F3 | S4 | `16` \| `r/true` \| `c/true` \| `0` | Fine |
+| F4 | S5 | `16` \| `r/true` \| `r/false` \| `0` | Fine |
+| F5 | recording | `16` \| `r/true` \| `r/true` \| `0` | Fine |
+| F6 | a later deploy step | `16` \| `r/true` \| `r/true` \| `1` | Fine; the deploy is still NOT GO |
+
+What to do in any failed state:
+1. **Read the state** with R2-3 (R2Q4, R2Q5, R2Q6, R2Q10), read-only.
+   - If it does not match one row above exactly, **STOP and escalate**. Retry nothing and roll back nothing.
+2. **Retry** only with a separate owner decision, and only when all of the following hold:
+   - `verify <deploy-id>` reports the failure;
+   - the release guard still answers `check-approval` → `GO`. A failed run spends nothing, so the approval can be
+     retried inside its window;
+   - the base has not moved past the candidate;
+   - R2-3 shows the lock condition cleared.
+
+   Then run `start` again. `up()` resumes: it replaces the guards, skips a key already RESTRICT and re-validates.
+   Locally every state F0–F5 converged. **Idempotence alone is not a reason to retry.**
+3. **Code rollback** is `rollback-vps.sh` to `4eec017c`: the administrator's break-glass step, on an owner decision.
+   - It moves code only, and the schema state stays.
+   - The old code is compatible with every state above.
+4. **Schema rollback** (`down()`, through `migrate:rollback`) is **not authorised in production** without an explicit
+   owner decision. `migrate:reset`, `migrate:fresh` and destructive SQL stay forbidden (CG-09).
+   - `down()` restores SET NULL and CASCADE and drops the guards without changing a row. That was tested locally only.
+5. **A new approval** is needed after any **completed** deploy (the release is spent), for example a re-deploy after a
+   code rollback. It goes under a new release ID.
+
+**Gate R2-3: read-only production readiness (owner-run, separate authorisation).**
+- The pack is in Annex B. It runs through `php artisan db` as the application login role, in one `BEGIN READ ONLY` …
+  `ROLLBACK`, with short timeouts. It prints catalog facts, estimates, aggregates and booleans only.
+- **Required before the release:**
+  - R2Q2 `can_create_in_schema = t`;
+  - R2Q3 all ten tables `owned_by_login_role = t`. While R6-01 is open the runtime role owns the tables; without both,
+    S1 fails (F0);
+  - R2Q4 pre-release keys `n/t` and `c/t`;
+  - R2Q5 no guard and no function;
+  - R2Q6 `r6b5_recorded = 0`.
+- **Recorded for the decision:**
+  - R2Q1 timeouts;
+  - R2Q3 sizes;
+  - R2Q7–R2Q9 sessions, long transactions, locks and blocked sessions. If `sees_all_sessions = f`, R2Q7 is partial.
+- The deploy time is chosen when no long transaction or blocking is seen, outside 02:25–02:40 WITA.
+
+**Post-deploy verification (gate R2-8).**
+- `verify <deploy-id>` → `DEPLOY_APPROVED_TARGET_MATCH=YES` and `DEPLOY RUNNER OK`.
+- R2Q10 → `16|16|2|0|2|r/true|r/true|1`: 16 guards enabled, two functions, none SECURITY DEFINER, both pinned, both
+  keys RESTRICT and validated, migration recorded.
+- `drift-check` → NONE; `sudo-policy-check` → LEAST_PRIVILEGE.
+- `posture` → HEAD = candidate, ERROR lines against the pre-deploy baseline.
+- Smoke on the canonical URL.
+- Owner read-only dump digest and metadata.
+- Then the closure record.
+
+**Remaining gates, in order, each with its own owner decision:**
+1. R2-1: this record. The owner sets the release ID and approves the text; then publication and merge.
+2. R2-2: exact-SHA and scope audit of the merged candidate.
+3. R2-3: read-only production pack.
+4. R2-6: one `workflow_dispatch` on the candidate. The base freezes from the dispatch until `verify`.
+5. R2-7: the owner's written approval and signature (`--go-tag dms-spn4-ready-pilot-1-go` binds the manifest and
+   creates no tag), then `submit-approval` and `check-approval`, then the deploy authorisation.
+6. R2-8: post-deploy verification and the closure record.
+
+**Boundaries (unchanged):**
+- No GO tag.
+- R6-01 OPEN. R6-D NOT AUTHORIZED. CG-11 OPEN. D-2 BLOCKED. OD-5 PENDING.
+- G12 and G13 NO-GO. Gate 1 LAB-fee NO-GO and LAB-fee disabled. Pilot NO-GO.
+- Full Suite DEFERRED. #695 and #699 stay open and outside release-2.
+- **No deploy from the base** until release-2 is authorised.
+
 ---
 
 ## Annex A — Supplementary query pack R1-S (read-only; owner-run as the application login role)
@@ -1512,3 +1721,146 @@ login role per fixture scenario. Every scenario was run read-only (`BEGIN READ O
 - The pack before this revision was wrong in 9 of 23: 5 false PASS, 2 under-classified, 2 over-classified.
 - Fail-closed was also shown: a forced failing check gives `verdict` = BLOCKED, and an unknown predefined role makes
   the query error out, so no verdict row appears and the result is BLOCKED.
+
+---
+
+## Annex B — Release-2 readiness pack R2-3 (read-only; owner-run as the application login role)
+
+Run with `php artisan db` as the application login role, under the owner's read-only psql protocol (`\pset` on its
+own line; check that `BEGIN` and `ROLLBACK` are both shown). Section PRE runs before the release, section POST after
+`verify <deploy-id>`. Share only the `R2Q…` rows: they hold catalog facts, estimates, aggregates and booleans, and no
+row data, role name or query text. Validated locally on PostgreSQL 16 as a non-superuser role that owns the tables
+(§13.14).
+
+```sql
+-- Release-2 (R6-B5) — R2-3 read-only production readiness pack.
+-- Owner-run only, as the application login role, through `php artisan db`, under the owner's psql protocol.
+-- Read-only: one READ ONLY transaction, short timeouts, ROLLBACK at the end. It prints catalog facts,
+-- estimates, aggregates and booleans only: no row data, no role or account name, no query text.
+-- Section PRE runs before the release; section POST runs after `verify <deploy-id>` (same protocol).
+\pset pager off
+\pset null '(null)'
+BEGIN READ ONLY;
+SET LOCAL statement_timeout = '10s';
+SET LOCAL lock_timeout = '1s';
+
+-- ===== PRE =====
+
+-- R2Q1 server and default timeouts (the migration sets its own lock_timeout of 5s per step)
+SELECT 'R2Q1' AS q,
+       current_setting('server_version_num') AS server_version_num,
+       (SELECT reset_val FROM pg_settings WHERE name = 'lock_timeout') AS default_lock_timeout,
+       (SELECT reset_val FROM pg_settings WHERE name = 'statement_timeout') AS default_statement_timeout,
+       (SELECT reset_val FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout') AS default_idle_xact_timeout,
+       current_setting('max_locks_per_transaction') AS max_locks_per_transaction;
+
+-- R2Q2 posture of the login role (booleans and counts; no names)
+SELECT 'R2Q2' AS q,
+       r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolbypassrls, r.rolreplication,
+       has_schema_privilege(current_user, current_schema(), 'CREATE') AS can_create_in_schema,
+       (SELECT count(*) FROM pg_auth_members m WHERE m.member = r.oid) AS member_of_roles,
+       pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AS sees_all_sessions
+  FROM pg_roles r
+ WHERE r.rolname = current_user;
+
+-- R2Q3 the ten tables: owned by the login role, estimated rows, size (no count(*) scan)
+SELECT 'R2Q3' AS q, c.relname,
+       pg_get_userbyid(c.relowner) = current_user AS owned_by_login_role,
+       c.reltuples::bigint AS est_rows,
+       s.n_live_tup AS stat_live_rows,
+       pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+       pg_total_relation_size(c.oid) AS total_bytes,
+       greatest(s.last_analyze, s.last_autoanalyze) AS last_analyzed
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+ WHERE n.nspname = current_schema()
+   AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
+                     'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
+                     'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events',
+                     'trx_inventory_movements', 'users', 'trx_lab_orders')
+ ORDER BY c.relname;
+
+-- R2Q4 foreign keys of the eight guarded tables: delete action and validation state
+--      (before R6-B5: sys_audit_logs_performed_by_foreign = n/true, trx_lab_order_status_logs_lab_order_id_foreign = c/true)
+SELECT 'R2Q4' AS q, c.relname AS on_table, co.conname, rc.relname AS references_table,
+       co.confdeltype::text AS on_delete, co.convalidated
+  FROM pg_constraint co
+  JOIN pg_class c ON c.oid = co.conrelid
+  JOIN pg_class rc ON rc.oid = co.confrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE co.contype = 'f' AND n.nspname = current_schema()
+   AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
+                     'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
+                     'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events', 'trx_inventory_movements')
+ ORDER BY 2, 3;
+
+-- R2Q5 user triggers on the eight tables and the two guard functions (before R6-B5: none)
+SELECT 'R2Q5' AS q, c.relname, t.tgname, t.tgenabled::text AS enabled
+  FROM pg_trigger t
+  JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE NOT t.tgisinternal AND n.nspname = current_schema()
+   AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
+                     'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
+                     'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events', 'trx_inventory_movements')
+ ORDER BY 2, 3;
+SELECT 'R2Q5f' AS q, p.proname, p.prosecdef, coalesce(array_to_string(p.proconfig, ';'), '-') AS config,
+       pg_get_userbyid(p.proowner) = current_user AS owned_by_login_role
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = current_schema() AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
+ ORDER BY 2;
+
+-- R2Q6 migration record (before R6-B5: r6b5_recorded = 0)
+SELECT 'R2Q6' AS q,
+       count(*) FILTER (WHERE migration = '2026_11_23_100001_enforce_rule_248_append_only_layer_one') AS r6b5_recorded,
+       max(batch) AS max_batch, count(*) AS migrations_total
+  FROM migrations;
+
+-- R2Q7 sessions and long transactions in this database (aggregates; no user, address or query text).
+--      Without pg_read_all_stats (R2Q2 sees_all_sessions = false) other roles' sessions are under-reported.
+SELECT 'R2Q7' AS q, coalesce(state, '(hidden)') AS state, count(*) AS sessions,
+       count(*) FILTER (WHERE xact_start < now() - interval '5 seconds') AS xact_over_5s,
+       count(*) FILTER (WHERE xact_start < now() - interval '60 seconds') AS xact_over_60s,
+       coalesce(max(extract(epoch FROM now() - xact_start))::int, 0) AS oldest_xact_seconds
+  FROM pg_stat_activity
+ WHERE datname = current_database() AND pid <> pg_backend_pid()
+ GROUP BY 2 ORDER BY 2;
+
+-- R2Q8 locks other sessions hold or wait for on the ten tables (aggregated)
+SELECT 'R2Q8' AS q, c.relname, l.mode, l.granted, count(*) AS locks
+  FROM pg_locks l
+  JOIN pg_class c ON c.oid = l.relation
+ WHERE l.pid <> pg_backend_pid()
+   AND c.relname IN ('sys_audit_logs', 'trx_lab_order_status_logs', 'trx_rme_billing_dispute_events',
+                     'trx_rme_invoice_correction_events', 'trx_rme_overpayment_obligation_events',
+                     'trx_rme_refund_request_events', 'trx_rme_refund_settlement_events',
+                     'trx_inventory_movements', 'users', 'trx_lab_orders')
+ GROUP BY 2, 3, 4 ORDER BY 2, 3, 4;
+
+-- R2Q9 sessions blocked by another session right now
+SELECT 'R2Q9' AS q, count(*) AS blocked_sessions
+  FROM pg_stat_activity
+ WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0;
+
+-- ===== POST (after `verify <deploy-id>`; same file, same protocol) =====
+
+-- R2Q10 the release-2 end state in one row. Expected: guards = 16, guards_enabled = 16, functions = 2,
+--       functions_security_definer = 0, functions_search_path_pinned = 2, audit_fk = 'r/true',
+--       status_log_fk = 'r/true', r6b5_recorded = 1.
+SELECT 'R2Q10' AS q,
+       (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+         WHERE NOT t.tgisinternal AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')) AS guards,
+       (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+         WHERE NOT t.tgisinternal AND p.proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
+           AND t.tgenabled = 'O') AS guards_enabled,
+       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')) AS functions,
+       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard') AND prosecdef) AS functions_security_definer,
+       (SELECT count(*) FROM pg_proc WHERE proname IN ('dms_append_only_guard', 'dms_inventory_ledger_guard')
+           AND 'search_path=pg_catalog, pg_temp' = ANY (proconfig)) AS functions_search_path_pinned,
+       (SELECT confdeltype::text || '/' || convalidated::text FROM pg_constraint WHERE conname = 'sys_audit_logs_performed_by_foreign') AS audit_fk,
+       (SELECT confdeltype::text || '/' || convalidated::text FROM pg_constraint WHERE conname = 'trx_lab_order_status_logs_lab_order_id_foreign') AS status_log_fk,
+       (SELECT count(*) FROM migrations WHERE migration = '2026_11_23_100001_enforce_rule_248_append_only_layer_one') AS r6b5_recorded;
+
+ROLLBACK;
+```
