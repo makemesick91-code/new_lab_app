@@ -9,7 +9,7 @@ kb_updated: 2026-11-23
 | Field | Value |
 |---|---|
 | Sprint id | `DMS-SPN4-READY-PILOT-1` |
-| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Release-2 (R6-B5, #701 and #702): MERGED, NOT DEPLOYED; record drafted, release ID pending, deployment on hold** (§13.14). **Pilot: NO-GO.** No implementation is authorised by this document |
+| Status | **DESIGN LOCKED (G1).** The owner approved this text on 2026-11-22 (decisions DL-1 to DL-7 below). **G4: AUDIT COMPLETE — PILOT BLOCKERS REMAIN OPEN. G5: Path B selected; formal G5 closure pending OD-5** (§10, §12). **G6: R6-B1, REM-2/R2-6 and REM-1 RELEASED in release-1** (§13, §13.13). **Release-1: CLOSED on 2026-11-24 (deploy `20261124-021647` verified), interim release without a GO tag; two gate-9 production checks NOT RUN under owner exceptions** (§13.12, §13.13). **Release-2 (R6-B5, #701 and #702): MERGED, NOT DEPLOYED; record drafted under release ID `dms-spn4-r6b5-r2-20261124`, deployment on hold** (§13.14). **Pilot: NO-GO.** No implementation is authorised by this document |
 | Base at drafting | `6f790a7ed3f275ea32c14704464822864313e84a` (G4/G5 record drafted on `71cc096b5874ec7ffa73aa4fbc9db4271d41e4f5`; G6 record on `72bf77219f27a5221948336351179e0ee12ac25a`; manifest switch reconciled on `d628e0cb241bb82963a50cab125560175e0f1387`) |
 | Type, module | `SECURITY_FIX`, `Rme`. Manifest: `.sprint/current.yml` from the manifest switch (§9.1). It was first parked at `.sprint/dms-spn4-ready-pilot-1.yml` through PR-C2 (#686); the switch removes that copy |
 | Foundation-First categories | SECURITY FIX · DEPLOYMENT / OPERATIONS · BACKUP / RESTORE / MONITORING / CI-CD GATES · FOUNDATION DOCUMENTATION |
@@ -393,6 +393,7 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G6-R1-DEP | 2026-11-24 | Owner directive "RELEASE-1 PRODUCTION DEPLOYMENT", confirmed by the owner in writing before `start`: one deploy of the approved SHA, then `follow`, `verify` and read-only post-deploy checks. No GO tag, no rollback without an owner decision (§13.13) |
 | G6-R1-EXC-MG | 2026-11-24 | Directive "G6 RELEASE-1 CG-22 CLOSURE FINAL PREPARATION", option M-A, approved by the owner in writing. The owner accepts `PatientMergeForeignKeyCatalogRoleSeparationTest` 7/7 on the release SHA (CI `45277338107`) as limited substitute evidence for the R6-B1 merge-guard check of gate 9 (§13.12). **MERGE GUARD PRODUCTION TEST: NOT RUN. CI SUBSTITUTE EVIDENCE: PASS.** Reason: the guard runs only inside a patient-merge case, and creating one writes production data. Residual risk: the production behaviour is not observed directly; it rests on code identity and on CI of the same SHA. No merge case is created in production (§13.13) |
 | G6-R1-EXC-NIK | 2026-11-24 | Same directive, option N-A, approved by the owner in writing. The owner accepts `PatientKtpNeverFlashedTest` 7/7, `RmeVisitConsentGuardianIdentityNeverFlashedTest` 3/3, `RmeRefundRequestNikNeverFlashedTest` 3/3 and `PatientKtpDatabaseErrorLogRedactionTest` 10/10 on the release SHA as limited substitute evidence for the REM-2/R2-6 check of gate 9. **NIK SESSION FLASH PRODUCTION TEST: NOT RUN. CI SUBSTITUTE EVIDENCE: PASS.** Reason: the check needs an authenticated submission, which writes session and audit data. Residual risk as for G6-R1-EXC-MG. No login, POST or test session in production (§13.13) |
+| G6-R2-ID | 2026-11-24 | Directive "R6-B5 RELEASE-2 R2-1 DOCS PR PUBLICATION ONLY". The owner, in writing, sets the release-2 (R6-B5) release ID **`dms-spn4-r6b5-r2-20261124`** and approves publishing the R2-1 record (§13.14) for review. This authorises no merge, dispatch, signature, submission, deploy, production query or migration; each needs its own decision. Deployment stays on hold |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -504,7 +505,7 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
   - Tanpa GO tag; sprint tetap OPEN; Full Suite DEFERRED; pilot tetap NO-GO.
 - **Rilis-2 (R6-B5) — DRAFT (§13.14):**
   - Manifest #701 dan implementasi #702 sudah di-merge, **belum dideploy**.
-  - ID rilis menunggu keputusan Owner.
+  - ID rilis `dms-spn4-r6b5-r2-20261124` (keputusan Owner G6-R2-ID).
   - Draft memuat ruang lingkup, bukti CI dan PostgreSQL 16, risiko, matriks pemulihan migrasi parsial F0–F6 dan
     query pack read-only R2-3 (Annex B).
   - Deploy tetap ditahan; setiap gerbang butuh keputusan Owner tersendiri.
@@ -1304,7 +1305,7 @@ NO-GO; **pilot NO-GO**.
 
 | Item | Record |
 |---|---|
-| Release ID | **PENDING OWNER DECISION** |
+| Release ID | **`dms-spn4-r6b5-r2-20261124`** (owner decision G6-R2-ID, 2026-11-24). Not used in the repository, tags or GitHub releases when it was set; the host approval store is checked at submission |
 | Release type | Interim schema-changing runtime release of the OPEN sprint. No sprint GO; no GO tag |
 | Candidate SHA | **PENDING FINAL DOCS MERGE**: the base tip once this record is merged |
 | Production baseline | Release-1, CLOSED (§13.13): `4eec017c7cbbc74a30e29fa0bf1536ee9f7a795a`, deploy `20261124-021647` verified |
@@ -1406,7 +1407,8 @@ converges.
   checkout.
 - After the deploy, the owner records its digest and metadata read-only, as in §13.13.
 - BK-2 is not a gate.
-- R6-B5 changes no row, so a failed migration never needs a data restore.
+- R6-B5 changes no row, and none of the tested failure states F0–F6 below needs a data restore.
+- That does not rule one out: an unforeseen state could still call for a restore.
 - Any data restore is a separate, explicitly approved owner operation: never automatic, never over newer clinical data.
 
 **Partial migration recovery (gate R2-5).**
@@ -1438,7 +1440,8 @@ State signature: guards (R2Q10) | audit FK `on_delete/validated` | status-log FK
 What to do in any failed state:
 1. **Read the state** with R2-3 (R2Q4, R2Q5, R2Q6, R2Q10), read-only.
    - If it does not match one row above exactly, **STOP and escalate**. Retry nothing and roll back nothing.
-2. **Retry** only with a separate owner decision, and only when all of the following hold:
+2. **Retry is never automatic.** It needs a separate owner decision, based on the evidence of the failed run, and
+   only when all of the following hold:
    - `verify <deploy-id>` reports the failure;
    - the release guard still answers `check-approval` → `GO`. A failed run spends nothing, so the approval can be
      retried inside its window;
@@ -1483,7 +1486,8 @@ What to do in any failed state:
 - Then the closure record.
 
 **Remaining gates, in order, each with its own owner decision:**
-1. R2-1: this record. The owner sets the release ID and approves the text; then publication and merge.
+1. R2-1: this record. The release ID is set (G6-R2-ID) and publication for review is approved. The text approval and
+   the merge are still owner decisions.
 2. R2-2: exact-SHA and scope audit of the merged candidate.
 3. R2-3: read-only production pack.
 4. R2-6: one `workflow_dispatch` on the candidate. The base freezes from the dispatch until `verify`.
