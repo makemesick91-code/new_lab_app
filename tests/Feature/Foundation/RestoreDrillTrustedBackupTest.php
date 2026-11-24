@@ -58,11 +58,13 @@ SQL;
  * $args may hold '{sha}' (the SHA-256 of the dump as first written) and '{file}'
  * (the backup's path). $prepare($root, $app, $backup) changes the scene before the
  * run. Scenario 'swap': the runtime-side backup check replaces the backup file
- * (after the drill staged and verified it) with $swapTo.
+ * (after the drill staged and verified it) with $swapTo. $prepare runs after the stubs are
+ * written and also gets the stub directory, which is the pinned DMS_PG_BINDIR unless $env
+ * overrides it. A directory $root/shadow, when present, is put first on PATH.
  *
  * @return array{exit: int, output: string, log: list<string>, evidence: ?array, replayed: ?string, root: string}
  */
-function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, string $scenario = 'none', string $swapTo = ''): array
+function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, string $scenario = 'none', string $swapTo = '', array $env = []): array
 {
     $root = sys_get_temp_dir().'/rdtb-'.bin2hex(random_bytes(6));
     $app = $root.'/app';
@@ -76,9 +78,6 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
     file_put_contents($backup, $dump);
     chmod($backup, 0640);
     file_put_contents($root.'/swap.sql', $swapTo);
-    if ($prepare !== null) {
-        $prepare($root, $app, $backup);
-    }
 
     $stubs = [
         'sudo' => <<<'SH'
@@ -91,6 +90,7 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
             #!/usr/bin/env bash
             all="$*"
             case "$all" in
+              --version) if [ -n "${RDTB_PSQL_VERSION_FAIL:-}" ]; then exit 1; fi; echo "${RDTB_PSQL_VERSION:-psql (PostgreSQL) 16.15 (stub)}" ;;
               *"usesuper FROM pg_user"*) echo t ;;
               *"rolcreatedb OR rolcreaterole OR rolsuper"*) echo f ;;
               *"SELECT oid FROM pg_database"*) if [ -f "$RDTB_STATE" ]; then cat "$RDTB_STATE"; fi ;;
@@ -129,13 +129,17 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
         file_put_contents($bin.'/'.$name, $body);
         chmod($bin.'/'.$name, 0700);
     }
+    if ($prepare !== null) {
+        $prepare($root, $app, $backup, $bin);
+    }
 
     // The drill's root-only staged copy goes under this private TMPDIR, so every run can prove it was removed (CG-11).
     mkdir($root.'/tmp', 0700);
     $argv = array_map(fn (string $a): string => strtr($a, ['{sha}' => hash('sha256', $dump), '{file}' => RDTB_BACKUP]), $args);
-    $process = new Process(array_merge(['bash', base_path('scripts/rollout-restore-drill.sh')], $argv), $app, [
-        'PATH' => $bin.':'.getenv('PATH'),
+    $process = new Process(array_merge(['bash', base_path('scripts/rollout-restore-drill.sh')], $argv), $app, array_merge([
+        'PATH' => (is_dir($root.'/shadow') ? $root.'/shadow:' : '').$bin.':'.getenv('PATH'),
         'TMPDIR' => $root.'/tmp',
+        'DMS_PG_BINDIR' => $bin,
         'APP_DIR' => $app,
         'RDTB_LOG' => $root.'/calls.log',
         'RDTB_STATE' => $root.'/drill-db.oid',
@@ -145,7 +149,7 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
         'RDTB_BACKUP_ABS' => $backup,
         'ROLLOUT_DRILL_ENVIRONMENT' => 'staging',
         'PG_SUPERUSER_ACCOUNT' => 'postgres',
-    ]);
+    ], array_map(fn (string $v): string => strtr($v, ['{root}' => $root]), $env)));
     $process->setTimeout(60);
     $process->run();
 
@@ -155,7 +159,7 @@ function rdtbRun(array $args, ?string $dump = null, ?callable $prepare = null, s
     $result = [
         'exit' => (int) $process->getExitCode(),
         'output' => $process->getOutput().$process->getErrorOutput(),
-        'log' => is_file($log) ? array_values(array_filter(explode("\n", (string) file_get_contents($log)))) : [],
+        'log' => is_file($log) ? array_values(array_filter(explode("\n", str_replace($bin.'/', 'PGBIN/', (string) file_get_contents($log))))) : [],
         'evidence' => is_file($evidence) ? json_decode((string) file_get_contents($evidence), true) : null,
         'replayed' => is_file($replayed) ? (string) file_get_contents($replayed) : null,
         'root' => $root,
@@ -310,7 +314,7 @@ it('runs the whole replay in psql restricted mode under a fresh key and drops on
         ->and($first['replayed'])->toContain("COPY public.t (id) FROM stdin;\n1\n\\.\n")
         ->and(substr_count((string) $first['replayed'], '\\restrict '))->toBe(1)
         ->and(substr_count((string) $first['replayed'], '\\unrestrict'))->toBe(0)
-        ->and(collect($first['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_') && str_ends_with($l, ' -f -')))->toBeTrue();
+        ->and(collect($first['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] PGBIN/psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_') && str_ends_with($l, ' -f -')))->toBeTrue();
 });
 
 it('keeps every meta-command inside a digest-matching dump under the fresh key, so real psql refuses it', function () {
@@ -423,9 +427,9 @@ it('reads only the staged copy after the integrity check, and never picks a defa
         ->and(strpos($code, 'dms_restore_check_source "$BACKUP_FILE"'))->toBeLessThan($verify)
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_missing_owner_roles "$STAGED_BACKUP"'))
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_runtime_ownership_gate "$STAGED_BACKUP"'))
-        ->and($verify)->toBeLessThan(strpos($code, 'as_superuser createdb -O'))
+        ->and($verify)->toBeLessThan(strpos($code, 'as_superuser "$CREATEDB_BIN" -O'))
         ->and($code)->toContain('dms_restore_check_source "$BACKUP_FILE" "$RUNTIME_USER" "$(id -un)"')
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql')
+        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN"')
         ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and($code)->not->toContain('ls -1t');
 });
@@ -481,3 +485,101 @@ function rdtbTemp(string $content): string
 
     return $file;
 }
+
+it('refuses, before reading any backup, a psql that is not PostgreSQL 16.15 or later or cannot be verified', function (array $env, string $why) {
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], env: $env);
+
+    expect($run['exit'])->toBe(1)
+        ->and($run['output'])->toContain('could not be verified as PostgreSQL 16.15 or later')
+        ->and($run['output'])->toContain($why)
+        ->and(rdtbCalls($run, 'createdb'))->toBe(0)
+        ->and($run['replayed'])->toBeNull()
+        ->and(collect($run['log'])->contains(fn (string $l): bool => str_contains($l, 'foundation:backup-verify')))->toBeFalse()
+        ->and($run['tmp_left'])->toBe(0);
+})->with([
+    'an older 16 minor' => [['RDTB_PSQL_VERSION' => 'psql (PostgreSQL) 16.14 (Ubuntu 16.14-1)'], 'psql 16.14 is not allowed'],
+    'before restricted mode' => [['RDTB_PSQL_VERSION' => 'psql (PostgreSQL) 16.9'], 'psql 16.9 is not allowed'],
+    'another major' => [['RDTB_PSQL_VERSION' => 'psql (PostgreSQL) 17.2'], 'psql 17.2 is not allowed'],
+    'an unreadable answer' => [['RDTB_PSQL_VERSION' => 'not psql at all'], 'cannot verify the psql version'],
+    'a failing binary' => [['RDTB_PSQL_VERSION_FAIL' => '1'], 'cannot verify the psql version'],
+]);
+
+it('accepts psql 16.15 and later minors of PostgreSQL 16', function (string $version) {
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], env: ['RDTB_PSQL_VERSION' => $version]);
+
+    expect($run['exit'])->toBe(0)
+        ->and($run['output'])->toContain('PSQL_CLIENT=VERIFIED 16.')
+        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+})->with(['psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)', 'psql (PostgreSQL) 16.16', 'psql (PostgreSQL) 16.20']);
+
+it('never runs a psql, createdb or dropdb that PATH offers instead of the pinned, verified ones', function () {
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], prepare: function (string $root) {
+        mkdir($root.'/shadow', 0700);
+        foreach (['psql', 'createdb', 'dropdb'] as $tool) {
+            file_put_contents($root.'/shadow/'.$tool, "#!/usr/bin/env bash\necho \"SHADOW {$tool} \$*\" >> \"\$RDTB_LOG\"\necho 'psql (PostgreSQL) 16.9'\n");
+            chmod($root.'/shadow/'.$tool, 0700);
+        }
+    });
+
+    expect($run['exit'])->toBe(0)
+        ->and($run['evidence']['decision'] ?? null)->toBe('GO')
+        ->and(collect($run['log'])->contains(fn (string $l): bool => str_starts_with($l, 'SHADOW ')))->toBeFalse()
+        ->and(collect($run['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] PGBIN/psql --version')))->toBeTrue();
+});
+
+it('refuses a pinned client directory or binary that another identity could have swapped', function (string $tamper) {
+    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], prepare: function (string $root, string $app, string $backup, string $bin) use ($tamper) {
+        match ($tamper) {
+            'group-writable directory' => chmod($bin, 0770),
+            'other-writable psql' => chmod($bin.'/psql', 0702),
+            'symlinked psql' => (function () use ($root, $bin) {
+                rename($bin.'/psql', $root.'/real-psql');
+                symlink($root.'/real-psql', $bin.'/psql');
+            })(),
+            'missing dropdb' => unlink($bin.'/dropdb'),
+            'directory reached through a symlink' => symlink($bin, $root.'/bin-link'),
+        };
+    }, env: $tamper === 'directory reached through a symlink' ? ['DMS_PG_BINDIR' => '{root}/bin-link'] : []);
+
+    expect($run['exit'])->toBe(1)
+        ->and($run['output'])->toContain('the PostgreSQL client directory failed its checks')
+        ->and(rdtbCalls($run, 'createdb'))->toBe(0)
+        ->and($run['replayed'])->toBeNull();
+})->with(['group-writable directory', 'other-writable psql', 'symlinked psql', 'missing dropdb', 'directory reached through a symlink']);
+
+it('pins every PostgreSQL client call to the verified directory, checked before any backup is read', function () {
+    $code = implode("\n", array_filter(
+        explode("\n", (string) file_get_contents(base_path('scripts/rollout-restore-drill.sh'))),
+        fn (string $line): bool => ! str_starts_with(ltrim($line), '#'),
+    ));
+    $version = strpos($code, 'dms_restore_psql_version_check "$PSQL_VERSION_LINE"');
+
+    expect($code)->toContain('PG_BINDIR="${DMS_PG_BINDIR:-/usr/lib/postgresql/16/bin}"')
+        ->and($code)->toContain('PSQL_VERSION_LINE="$(as_superuser "$PSQL_BIN" --version')
+        ->and(preg_match('/as_superuser (psql|createdb|dropdb)\b/', $code))->toBe(0)
+        ->and(preg_match('/^\s*(psql|createdb|dropdb) /m', $code))->toBe(0)
+        ->and($version)->not->toBeFalse()
+        ->and(strpos($code, 'dms_restore_pg_client_check "$PG_BINDIR"'))->toBeLessThan($version)
+        ->and($version)->toBeLessThan(strpos($code, 'dms_restore_check_source "$BACKUP_FILE"'))
+        ->and($version)->toBeLessThan(strpos($code, 'as_superuser "$PSQL_BIN" -X'))
+        // The shared library runs `<prefix> psql`: the drill's prefix pins it too.
+        ->and($code)->toContain('dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser_pg)')
+        ->and($code)->toContain('dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser_pg)')
+        ->and($code)->toContain('psql) as_superuser "$PSQL_BIN" "$@" ;;');
+});
+
+it('reads the psql version strictly', function (string $line, int $exit) {
+    expect(rdtbLib('dms_restore_psql_version_check "$L"', ['L' => $line])['exit'])->toBe($exit);
+})->with([
+    ['psql (PostgreSQL) 16.15', 0],
+    ['psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)', 0],
+    ['psql (PostgreSQL) 16.100', 0],
+    ['psql (PostgreSQL) 16.14', 1],
+    ['psql (PostgreSQL) 16.1', 1],
+    ['psql (PostgreSQL) 15.20', 1],
+    ['psql (PostgreSQL) 17.6', 1],
+    ['psql (PostgreSQL) 16.15.1', 1],
+    ['psql (PostgreSQL) 16', 1],
+    ['PSQL (PostgreSQL) 16.15', 1],
+    ['', 1],
+]);

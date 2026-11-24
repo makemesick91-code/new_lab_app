@@ -80,6 +80,7 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
             #!/usr/bin/env bash
             all="$*"
             case "$all" in
+              --version) echo "psql (PostgreSQL) 16.15 (stub)" ;;
               *"usesuper FROM pg_user"*) echo t ;;
               *"rolcreatedb OR rolcreaterole OR rolsuper"*) echo "$RDOP_RUNTIME_ELEVATED" ;;
               *"SELECT oid FROM pg_database"*) if [ -f "$RDOP_STATE" ]; then cat "$RDOP_STATE"; fi ;;
@@ -133,6 +134,8 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
         'RDOP_R6' => $r6 ? '1' : '0',
         'ROLLOUT_DRILL_ENVIRONMENT' => 'staging',
         'PG_SUPERUSER_ACCOUNT' => 'postgres',
+        // The drill runs psql, createdb and dropdb only from this pinned, verified directory.
+        'DMS_PG_BINDIR' => $bin,
     ]);
     $process->setTimeout(60);
     $process->run();
@@ -141,7 +144,7 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
     $result = [
         'exit' => (int) $process->getExitCode(),
         'output' => $process->getOutput().$process->getErrorOutput(),
-        'log' => is_file($log) ? array_values(array_filter(explode("\n", (string) file_get_contents($log)))) : [],
+        'log' => is_file($log) ? array_values(array_filter(explode("\n", str_replace($bin.'/', 'PGBIN/', (string) file_get_contents($log))))) : [],
         'evidence' => is_file($evidencePath) ? json_decode((string) file_get_contents($evidencePath), true) : null,
         'state' => is_file($state) ? trim((string) file_get_contents($state)) : null,
     ];
@@ -185,12 +188,12 @@ it('runs every drill database operation through the superuser and artisan as the
         ->and($code)->not->toContain('PGPASSWORD')
         ->and($code)->not->toContain('dropdb --if-exists')
         ->and($code)->not->toMatch('/dropdb[^\n]*\|\| true/')
-        ->and($code)->toContain('as_superuser dropdb -- "$DRILL_DB"')
-        ->and($code)->toContain('as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"')
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
+        ->and($code)->toContain('as_superuser "$DROPDB_BIN" -- "$DRILL_DB"')
+        ->and($code)->toContain('as_superuser "$CREATEDB_BIN" -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"')
+        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN" -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
         ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and(preg_match('/^\s*(?!as_runtime )php artisan/m', $code))->toBe(0)
-        ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'as_superuser createdb -O'));
+        ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'as_superuser "$CREATEDB_BIN" -O'));
 });
 
 it('refuses the drill, creating nothing, when the application role holds CREATEDB, CREATEROLE or SUPERUSER', function () {
@@ -216,9 +219,9 @@ it('drills through the superuser, owns the disposable database by it, and drops 
 
     expect($run['exit'])->toBe(0, $run['output'])
         // Created, filled and dropped by the superuser OS account; owned by the superuser role.
-        ->and($startsWith('AS[postgres] createdb -O pg_superuser -T template0 -- dmsapp_restore_drill_'))->toBeTrue()
-        ->and($startsWith('AS[postgres] psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_'))->toBeTrue()
-        ->and($startsWith('AS[postgres] dropdb -- dmsapp_restore_drill_'))->toBeTrue()
+        ->and($startsWith('AS[postgres] PGBIN/createdb -O pg_superuser -T template0 -- dmsapp_restore_drill_'))->toBeTrue()
+        ->and($startsWith('AS[postgres] PGBIN/psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_'))->toBeTrue()
+        ->and($startsWith('AS[postgres] PGBIN/dropdb -- dmsapp_restore_drill_'))->toBeTrue()
         ->and(rdopCalls($run, 'createdb'))->toBe(1)
         ->and(rdopCalls($run, 'dropdb'))->toBe(1)
         ->and($run['state'])->toBeNull()

@@ -2067,7 +2067,8 @@ return [
         // writable backup, runs the replay in psql restricted mode (no
         // meta-command), and refuses before the data load any CHECK, domain,
         // generated-column or partition expression that would run user code or
-        // a non-IMMUTABLE builtin as the superuser. Selected by the
+        // a non-IMMUTABLE builtin as the superuser, all through one pinned,
+        // verified PostgreSQL 16.15+ client. Selected by the
         // `RestoreDrill` token in BOTH critical variants; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/RestoreDrillTrustedBackupTest.php',

@@ -259,6 +259,65 @@ dms_restore_check_source() {
   fi
 }
 
+# dms_restore_pg_client_check <bin dir> <trusted uid>
+# Owner directive "G6 PR #699 AND #695 PUBLICATION" (2026-11-25): the drill runs
+# psql, createdb and dropdb from ONE pinned directory by absolute path, never
+# through PATH, so another binary cannot be swapped in by changing PATH (or
+# through the version-switching wrapper on PATH). The directory must be canonical
+# (no symlink), outside the checkout's control, owned by root or the trusted uid,
+# not group- or other-writable, with a trusted chain above it (trusted-path.sh).
+# Each tool must be a regular, executable, non-symlink file with the same owner
+# and mode rules. Returns 1 with the reason on stderr.
+dms_restore_pg_client_check() {
+  local dir="${1:-}" uid="${2:-}" tool path stat_out owner mode why
+  if [ -z "$dir" ] || [ "$dir" = "/" ] || ! dms_trusted_canonical "$dir" || [ -L "$dir" ] || [ ! -d "$dir" ]; then
+    _dms_restore_err "PostgreSQL client directory '${dir}' is not a canonical, real directory (no symlink, no '..')"
+    return 1
+  fi
+  stat_out="$(stat -c '%u %a' -- "$dir" 2>/dev/null)" || { _dms_restore_err "cannot inspect ${dir}"; return 1; }
+  owner="${stat_out% *}"; mode="${stat_out#* }"
+  if ! dms_trusted_owner_ok "$owner" "$uid" || ! dms_trusted_mode_private "$mode"; then
+    _dms_restore_err "PostgreSQL client directory ${dir} is uid ${owner} mode ${mode}; it must be root's or uid ${uid}'s and not group- or other-writable"
+    return 1
+  fi
+  if ! why="$(dms_trusted_ancestors "$dir" "$uid")"; then
+    _dms_restore_err "PostgreSQL client directory ${dir}: ${why}"
+    return 1
+  fi
+  for tool in psql createdb dropdb; do
+    path="${dir}/${tool}"
+    if ! dms_trusted_canonical "$path" || [ -L "$path" ] || [ ! -f "$path" ] || [ ! -x "$path" ]; then
+      _dms_restore_err "${path} is missing, a symlink, not a regular file or not executable"
+      return 1
+    fi
+    stat_out="$(stat -c '%u %a' -- "$path" 2>/dev/null)" || { _dms_restore_err "cannot inspect ${path}"; return 1; }
+    owner="${stat_out% *}"; mode="${stat_out#* }"
+    if ! dms_trusted_owner_ok "$owner" "$uid" || ! dms_trusted_mode_private "$mode"; then
+      _dms_restore_err "${path} is uid ${owner} mode ${mode}; it must be root's or uid ${uid}'s and not group- or other-writable"
+      return 1
+    fi
+  done
+}
+
+# dms_restore_psql_version_check <first line of `psql --version`>
+# The drill needs psql from PostgreSQL 16, at 16.15 or later (owner directive:
+# restricted mode, CVE-2025-8714, arrived in 16.10; 16.15 is the required floor).
+# Another major version, an older minor or an unreadable answer fails closed.
+dms_restore_psql_version_check() {
+  local line="${1:-}" major minor
+  if [[ "$line" =~ ^psql\ \(PostgreSQL\)\ ([0-9]+)\.([0-9]+)([^0-9.]|$) ]]; then
+    major="${BASH_REMATCH[1]}"; minor="${BASH_REMATCH[2]}"
+  else
+    _dms_restore_err "cannot verify the psql version (answer: '${line:0:80}')"
+    return 1
+  fi
+  if [ "$major" != 16 ] || [ "$minor" -lt 15 ]; then
+    _dms_restore_err "psql ${major}.${minor} is not allowed: the drill needs PostgreSQL 16 psql 16.15 or later"
+    return 1
+  fi
+  printf 'PSQL_CLIENT=VERIFIED %s.%s\n' "$major" "$minor"
+}
+
 # dms_restore_restrict_key — prints a fresh random key for psql's restricted mode.
 # It is generated after the dump was written and is never stored, so no dump can
 # carry the matching \unrestrict.
@@ -352,7 +411,7 @@ SQL
 # Prints the replay stream: `\restrict <key>`, then (with a tag) the load guard
 # function, then the staged dump. The dump's own envelope is removed, and only
 # when it is complete: a first statement line `\restrict K` together with a last
-# non-blank line `\unrestrict K`, with the same K. psql (16.10 or later) then runs
+# non-blank line `\unrestrict K`, with the same K. psql (16.15 or later, checked by the drill) then runs
 # the whole dump in restricted mode: every backslash meta-command, at the start of
 # a line or inside one, is refused, and with ON_ERROR_STOP the replay stops. COPY
 # data and SQL are unaffected. A dump whose envelope is incomplete keeps its own

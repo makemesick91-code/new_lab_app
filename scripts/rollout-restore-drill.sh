@@ -55,8 +55,12 @@
 # Usage:
 #   bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS> [<backup_file.sql>]
 #   bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>
-# With --deploy-id and no file, the backup that deploy recorded is used. Needs
-# psql 16.10 or later (restricted mode).
+# With --deploy-id and no file, the backup that deploy recorded is used.
+# PostgreSQL client: psql, createdb and dropdb run only from DMS_PG_BINDIR (default
+# /usr/lib/postgresql/16/bin), a canonical directory owned by root (or the operator)
+# and not writable by others, by absolute path and never through PATH; psql there
+# must answer PostgreSQL 16 at 16.15 or later, or the drill stops before reading
+# any backup.
 #
 # This VALIDATES recoverability via a disposable restore. It is NOT a production
 # restore and NOT a full DR certification.
@@ -160,6 +164,40 @@ case "${DB_USERNAME:-}" in
   ''|*[!A-Za-z0-9_]*) echo "FATAL: DB_USERNAME is missing or not a plain role name. Aborting."; exit 1 ;;
 esac
 
+# --- PostgreSQL client: pinned and verified (owner directive, 2026-11-25) ----
+# psql, createdb and dropdb run from ONE pinned directory by absolute path, never
+# through PATH or the version-switching wrapper, and psql must be PostgreSQL 16 at
+# 16.15 or later. The version is asked of the very binary the replay uses, as the
+# superuser OS account that runs it. Anything else stops the drill before a backup
+# is read or a database created.
+PG_BINDIR="${DMS_PG_BINDIR:-/usr/lib/postgresql/16/bin}"
+dms_restore_pg_client_check "$PG_BINDIR" "$(id -u)" || {
+  echo "FATAL: the PostgreSQL client directory failed its checks. Nothing was created. Aborting."
+  exit 1
+}
+PSQL_BIN="${PG_BINDIR}/psql"
+CREATEDB_BIN="${PG_BINDIR}/createdb"
+DROPDB_BIN="${PG_BINDIR}/dropdb"
+PSQL_VERSION_LINE="$(as_superuser "$PSQL_BIN" --version 2>/dev/null | head -n 1)" || PSQL_VERSION_LINE=""
+PSQL_CLIENT="$(dms_restore_psql_version_check "$PSQL_VERSION_LINE")" || {
+  echo "FATAL: the psql client at ${PSQL_BIN} could not be verified as PostgreSQL 16.15 or later. Nothing was created. Aborting."
+  exit 1
+}
+echo "$PSQL_CLIENT (${PSQL_BIN})"
+# The shared restore library runs `<prefix> psql …`. The drill's prefix maps the
+# tool name to the pinned, verified binary, so no library call reaches a psql
+# through PATH either; any other command is refused.
+as_superuser_pg() {
+  local tool="${1:-}"
+  shift || true
+  case "$tool" in
+    psql) as_superuser "$PSQL_BIN" "$@" ;;
+    createdb) as_superuser "$CREATEDB_BIN" "$@" ;;
+    dropdb) as_superuser "$DROPDB_BIN" "$@" ;;
+    *) echo "FATAL: as_superuser_pg refuses '${tool}'." >&2; return 2 ;;
+  esac
+}
+
 DRILL_ENV="${ROLLOUT_DRILL_ENVIRONMENT:-staging}"
 OPERATOR="${ROLLOUT_DRILL_OPERATOR:-ops}"
 
@@ -234,7 +272,7 @@ BACKUP_SIZE="$(wc -c < "$STAGED_BACKUP" | tr -d ' ')"
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
 
 # --- Privilege preflight (D-Q7: privileged operator, no runtime CREATEDB) ----
-if ! SUPER_CHECK="$(as_superuser psql -X -Atqc "SELECT usesuper FROM pg_user WHERE usename = current_user" 2>/dev/null)"; then
+if ! SUPER_CHECK="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT usesuper FROM pg_user WHERE usename = current_user" 2>/dev/null)"; then
   echo "FATAL: cannot reach PostgreSQL as OS account '${PG_SUPERUSER_ACCOUNT}'. Run this drill as the privileged operator (root). Aborting."
   exit 1
 fi
@@ -242,12 +280,12 @@ if [ "$SUPER_CHECK" != "t" ]; then
   echo "FATAL: the role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser. Aborting."
   exit 1
 fi
-RUNTIME_ELEVATED="$(as_superuser psql -X -Atqc "SELECT rolcreatedb OR rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = '${DB_USERNAME}'")"
+RUNTIME_ELEVATED="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT rolcreatedb OR rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = '${DB_USERNAME}'")"
 if [ "$RUNTIME_ELEVATED" != "f" ]; then
   echo "FATAL: the application login role '${DB_USERNAME}' holds CREATEDB, CREATEROLE or SUPERUSER, or was not found; the drill never relies on it (rule 245 #5, D-Q7). Aborting."
   exit 1
 fi
-DRILL_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+DRILL_OWNER="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT current_user")"
 case "$DRILL_OWNER" in
   ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the disposable database. Aborting."; exit 1 ;;
 esac
@@ -257,7 +295,7 @@ esac
 # role stops the drill. It is never created here, and ownership is never
 # stripped, rewritten or given to the runtime.
 OWNER_ROLE_STATUS=0
-MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser)" || OWNER_ROLE_STATUS=$?
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser_pg)" || OWNER_ROLE_STATUS=$?
 case "$OWNER_ROLE_STATUS" in
   0) : ;;
   1) echo "FATAL: the backup makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created. An authorised operator provisions the role(s) separately, then repeats the drill (D-Q6-a). Aborting."; exit 1 ;;
@@ -269,7 +307,7 @@ esac
 # refused here, before anything is created, and goes through the separate
 # operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
 RUNTIME_GATE_STATUS=0
-RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser_pg)" || RUNTIME_GATE_STATUS=$?
 case "$RUNTIME_GATE_STATUS" in
   0) : ;;
   1) echo "FATAL: ${RUNTIME_GATE} Nothing was created. Aborting."; exit 1 ;;
@@ -286,7 +324,7 @@ RESTORE_START="$(date +%s)"
 DRILL_DB_CREATED=0; DRILL_DB_OID=""; DROP_ATTEMPTED=0; DISPOSABLE_DROPPED="FAIL"
 
 drill_db_oid() {
-  as_superuser psql -X -Atqc "SELECT oid FROM pg_database WHERE datname = '${DRILL_DB}'"
+  as_superuser "$PSQL_BIN" -X -Atqc "SELECT oid FROM pg_database WHERE datname = '${DRILL_DB}'"
 }
 
 drop_drill_db() {
@@ -301,7 +339,7 @@ drop_drill_db() {
     echo "FATAL: '${DRILL_DB}' is not the database this run created (created oid '${DRILL_DB_OID:-unknown}', now '${current_oid:-absent}'); it is NOT dropped."
     return 1
   fi
-  if ! as_superuser dropdb -- "$DRILL_DB"; then
+  if ! as_superuser "$DROPDB_BIN" -- "$DRILL_DB"; then
     echo "FATAL: could not drop '${DRILL_DB}', created by this run. Drop it by hand as the superuser."
     return 1
   fi
@@ -328,7 +366,7 @@ if [ -n "$EXISTING_OID" ]; then
 fi
 # createdb fails when the name exists, so a database created in between by
 # anyone else is never marked as this run's.
-if ! as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"; then
+if ! as_superuser "$CREATEDB_BIN" -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"; then
   echo "FATAL: createdb failed for '${DRILL_DB}'. This run created no database and drops none. Aborting."
   exit 1
 fi
@@ -349,7 +387,7 @@ echo "== Restore backup into disposable database =="
 RESTRICT_KEY="$(dms_restore_restrict_key)" || { echo "FATAL: could not generate the restricted-mode key. Aborting."; exit 1; }
 GUARD_TAG="g$(dms_restore_restrict_key | cut -c1-32)" || { echo "FATAL: could not generate the load-guard tag. Aborting."; exit 1; }
 set +o errexit
-dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
+dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN" -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
 PIPE_STATUS=("${PIPESTATUS[@]}")
 set -o errexit
 # psql is reported first: when it stops on an error the reader dies of SIGPIPE.
@@ -364,17 +402,17 @@ fi
 DB_CONNECTIVITY="GO"
 
 echo "== Verify restored data (read-only counts, NO patient rows) =="
-TABLE_COUNT="$(as_superuser psql -X -d "$DRILL_DB" -tAc \
+TABLE_COUNT="$(as_superuser "$PSQL_BIN" -X -d "$DRILL_DB" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d ' ')"
 [ "${TABLE_COUNT:-0}" -ge 1 ] && SAMPLE_QUERIES="GO" || SAMPLE_QUERIES="FAIL"
 
 # Migration table present => migration consistency verifiable.
-MIG_COUNT="$(as_superuser psql -X -d "$DRILL_DB" -tAc \
+MIG_COUNT="$(as_superuser "$PSQL_BIN" -X -d "$DRILL_DB" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='migrations';" | tr -d ' ')"
 [ "${MIG_COUNT:-0}" -ge 1 ] && MIGRATION_CONSISTENCY="GO" || MIGRATION_CONSISTENCY="WATCH"
 
 # D-Q6 / N-9: the restored database is owned by the superuser, never the runtime.
-RESTORED_OWNER="$(as_superuser psql -X -Atqc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '${DRILL_DB}'")"
+RESTORED_OWNER="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '${DRILL_DB}'")"
 if [ "$RESTORED_OWNER" = "$DRILL_OWNER" ] && [ "$RESTORED_OWNER" != "${DB_USERNAME}" ]; then DATABASE_OWNER="GO"; else DATABASE_OWNER="FAIL"; fi
 
 # App boot + health routes (do not point the app at the disposable DB — just

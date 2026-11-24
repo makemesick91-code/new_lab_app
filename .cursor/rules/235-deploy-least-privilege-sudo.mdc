@@ -115,7 +115,11 @@ GO is recorded in the sprint doc, not here.
   administrator's independent record (`--expected-sha256`); there is no default backup. It refuses a symlinked,
   foreign-owned or group/other-writable backup and an environment file another identity could write. The owner-role
   preflight, the runtime ownership gate and the replay read one root-only staged copy. The replay runs in psql
-  restricted mode (psql 16.10 or later) under a fresh key, so no backslash meta-command in a dump runs.
+  restricted mode under a fresh key, so no backslash meta-command in a dump runs. psql, createdb and dropdb run only
+  from a pinned directory (`DMS_PG_BINDIR`, default `/usr/lib/postgresql/16/bin`: canonical, owned by root, not
+  writable by others), by absolute path, including inside the shared library. They never run through PATH or the
+  version-switching wrapper. psql must answer PostgreSQL 16 at 16.15 or later (owner floor; restricted mode arrived
+  with the CVE-2025-8714 fix in 16.10). Otherwise the drill stops before it reads a backup.
   A digest proves only that the bytes are pg_dump's. Before R6-D the runtime owns the schema, and COPY evaluates
   CHECK and domain constraints, generated columns and partition keys as the superuser. So before the first row is
   loaded, a session-local load guard refuses such an expression when it calls a user-defined function or operator or a
