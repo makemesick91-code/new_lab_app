@@ -2061,6 +2061,14 @@ return [
         // exception flag exists. Selected by the `RestoreDrill` token in BOTH
         // critical variants; declared so a rename cannot drop it.
         'tests/Feature/Foundation/RestoreDrillOwnerRolePreflightTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B6 finding A-1 (2026-11-25): the restore
+        // drill replays only a root-only staged copy whose SHA-256 matches
+        // trusted evidence (rule 235), refuses a symlinked, foreign-owned or
+        // writable backup, and runs the replay in psql restricted mode, so
+        // runtime-writable content never runs as the superuser. Selected by the
+        // `RestoreDrill` token in BOTH critical variants; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillTrustedBackupTest.php',
     ],
 
     /*

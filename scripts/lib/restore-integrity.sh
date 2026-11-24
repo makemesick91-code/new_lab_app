@@ -3,10 +3,11 @@
 # DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235) — a dump is restored only when its bytes
 # match TRUSTED evidence (rule 233 §9 R4).
 #
-# Sourced (never executed) by the two superuser restore tools,
-# scripts/restore_postgres.sh and scripts/restore-rehearsal.sh, after
-# scripts/lib/trusted-path.sh, and by scripts/rollout-restore-drill.sh from its own
-# directory (the owner-role preflight only, D-Q6-a).
+# Sourced (never executed) by the three superuser restore tools,
+# scripts/restore_postgres.sh, scripts/restore-rehearsal.sh and
+# scripts/rollout-restore-drill.sh, after scripts/lib/trusted-path.sh. The drill
+# (finding A-1, 2026-11-25) uses the full path below, plus the source checks and
+# the restricted replay stream at the end of this file.
 #
 # WHY: every dump is plain SQL, owned and writable by the runtime user, and the
 # restore streams it into psql as the local PostgreSQL superuser. A dump changed
@@ -223,4 +224,75 @@ dms_restore_runtime_owned_objects() {
     *[!A-Za-z0-9_]*) _dms_restore_err "the runtime role is not a plain role name"; return 2 ;;
   esac
   "$@" psql -X -Atq -d "$db" -c "SELECT (SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE pg_catalog.pg_get_userbyid(c.relowner) = '${runtime}' AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%') + (SELECT count(*) FROM pg_catalog.pg_proc p WHERE pg_catalog.pg_get_userbyid(p.proowner) = '${runtime}') + (SELECT count(*) FROM pg_catalog.pg_type t WHERE pg_catalog.pg_get_userbyid(t.typowner) = '${runtime}') + (SELECT count(*) FROM pg_catalog.pg_namespace s WHERE pg_catalog.pg_get_userbyid(s.nspowner) = '${runtime}')"
+}
+
+# dms_restore_check_source <dump path> <allowed owner…>
+# Finding A-1 (2026-11-25): before a dump is staged for a superuser replay, the
+# file itself must look like a backup the expected identities wrote. Refused: a
+# missing path, a symlink, anything but a regular file, an owner other than the
+# listed accounts (the runtime that writes backups, or the operator running the
+# tool), and a file that is group- or other-writable. These checks narrow who
+# could have changed the file; the trusted digest decides whether it did.
+dms_restore_check_source() {
+  local dump="${1:-}" owner mode allowed ok=0
+  shift || true
+  if [ -z "$dump" ] || [ -L "$dump" ] || [ ! -f "$dump" ]; then
+    _dms_restore_err "${dump:-<none>} is missing, a symlink or not a regular file"
+    return 1
+  fi
+  owner="$(stat -c '%U' -- "$dump")" || { _dms_restore_err "cannot read the owner of ${dump}"; return 1; }
+  mode="$(stat -c '%a' -- "$dump")" || { _dms_restore_err "cannot read the mode of ${dump}"; return 1; }
+  for allowed in "$@"; do
+    [ -n "$allowed" ] && [ "$owner" = "$allowed" ] && ok=1
+  done
+  if [ "$ok" != 1 ]; then
+    _dms_restore_err "${dump} is owned by '${owner}', not by one of: $*"
+    return 1
+  fi
+  if [ $(( 8#${mode} & 8#022 )) -ne 0 ]; then
+    _dms_restore_err "${dump} is group- or other-writable (mode ${mode})"
+    return 1
+  fi
+}
+
+# dms_restore_restrict_key — prints a fresh random key for psql's restricted mode.
+# It is generated after the dump was written and is never stored, so no dump can
+# carry the matching \unrestrict.
+dms_restore_restrict_key() {
+  local key
+  key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [[ "$key" =~ ^[0-9a-f]{64}$ ]] || { _dms_restore_err "could not generate a restricted-mode key"; return 1; }
+  printf '%s\n' "$key"
+}
+
+# dms_restore_restricted_stream <staged copy> <key>
+# Prints the replay stream: `\restrict <key>`, then the staged dump. The dump's
+# own envelope is removed, and only when it is complete: a first statement line
+# `\restrict K` together with a last non-blank line `\unrestrict K`, with the same
+# K. Everything else is passed through unchanged. psql (16.10 or later) then runs
+# the whole dump in restricted mode: every backslash meta-command, at the start of
+# a line or inside one, is refused, and with ON_ERROR_STOP the replay stops. COPY
+# data and SQL are unaffected. A dump whose envelope is incomplete keeps its own
+# `\restrict` line, which restricted mode refuses, so the replay fails closed.
+dms_restore_restricted_stream() {
+  local staged="${1:-}" key="${2:-}"
+  [[ "$key" =~ ^[A-Za-z0-9]+$ ]] || { _dms_restore_err "the restricted-mode key is not alphanumeric"; return 1; }
+  [ -f "$staged" ] && [ ! -L "$staged" ] || { _dms_restore_err "the staged copy is missing"; return 1; }
+  printf '\\restrict %s\n' "$key"
+  awk '
+    NR == FNR {
+      if (!first && $0 !~ /^[[:space:]]*$/ && $0 !~ /^--/) { first = FNR; firstline = $0 }
+      if ($0 !~ /^[[:space:]]*$/) { last = FNR; lastline = $0 }
+      next
+    }
+    FNR == 1 {
+      drop_first = 0; drop_last = 0
+      if (firstline ~ /^\\restrict [A-Za-z0-9]+$/) {
+        k = substr(firstline, 11)
+        if (last != first && lastline == "\\unrestrict " k) { drop_first = first; drop_last = last }
+      }
+    }
+    FNR == drop_first || FNR == drop_last { next }
+    { print }
+  ' "$staged" "$staged"
 }

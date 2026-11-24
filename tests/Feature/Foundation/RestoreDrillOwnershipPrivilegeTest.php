@@ -58,7 +58,10 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
     mkdir($app.'/storage/app/backups/deploy', 0700, true);
     mkdir($bin, 0700, true);
     file_put_contents($app.'/.env', "DB_DATABASE={$database}\nDB_USERNAME=app_runtime\nDB_PASSWORD=not-a-real-secret\n");
-    file_put_contents($app.'/storage/app/backups/deploy/dump.sql', $dump ?? "-- synthetic dump\nSELECT 1;\n");
+    chmod($app.'/.env', 0600);
+    $dump ??= "-- PostgreSQL database dump\n-- synthetic dump\nSELECT 1;\n";
+    file_put_contents($app.'/storage/app/backups/deploy/dump.sql', $dump);
+    chmod($app.'/storage/app/backups/deploy/dump.sql', 0640);
     $log = $root.'/calls.log';
     $state = $root.'/drill-db.oid';
     if ($scenario === 'collision') {
@@ -119,7 +122,8 @@ function rdopRunDrill(string $runtimeElevated, string $scenario = 'none', string
         chmod($bin.'/'.$name, 0700);
     }
 
-    $process = new Process(['bash', base_path('scripts/rollout-restore-drill.sh'), 'storage/app/backups/deploy/dump.sql'], $app, [
+    // Finding A-1: the drill needs trusted digest evidence; here, an independent record of the synthetic dump.
+    $process = new Process(['bash', base_path('scripts/rollout-restore-drill.sh'), '--expected-sha256', hash('sha256', $dump), 'storage/app/backups/deploy/dump.sql'], $app, [
         'PATH' => $bin.':'.getenv('PATH'),
         'APP_DIR' => $app,
         'RDOP_LOG' => $log,
@@ -183,7 +187,8 @@ it('runs every drill database operation through the superuser and artisan as the
         ->and($code)->not->toMatch('/dropdb[^\n]*\|\| true/')
         ->and($code)->toContain('as_superuser dropdb -- "$DRILL_DB"')
         ->and($code)->toContain('as_superuser createdb -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"')
-        ->and($code)->toContain('as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - < "$BACKUP_FILE"')
+        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
+        ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and(preg_match('/^\s*(?!as_runtime )php artisan/m', $code))->toBe(0)
         ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'as_superuser createdb -O'));
 });

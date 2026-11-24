@@ -35,9 +35,28 @@
 #     application role (a database owner can create schemas and alter or drop
 #     the database). artisan runs as the runtime user, never as root.
 #
+# INTEGRITY (rule 235; finding A-1, 2026-11-25). The backup is a plain SQL file
+# the runtime user owns and can write, and the replay runs as the superuser, so
+# the drill never replays it unverified:
+#   - The expected SHA-256 comes from evidence the runtime cannot write: the
+#     root-only log of the deploy that wrote the backup (--deploy-id), or a digest
+#     the administrator passes from an independent record (--expected-sha256).
+#     There is no default "latest backup": without trusted evidence nothing runs.
+#   - The backup must be a regular file (no symlink), owned by the runtime user or
+#     the operator, and not group- or other-writable. It is read ONCE, by its
+#     owner, into a root-only staging copy; root hashes that copy. The owner-role
+#     preflight, the runtime ownership gate and the replay read only that copy,
+#     so replacing the file after the check changes nothing.
+#   - The replay runs in psql's restricted mode under a fresh random key: every
+#     backslash meta-command in the dump is refused and stops the replay.
+#   - The environment file and both libraries are loaded only when no other
+#     identity could have written them.
+#
 # Usage:
-#   bash scripts/rollout-restore-drill.sh [backup_file.sql]
-# With no argument, the latest .sql backup in storage/app/backups/deploy is used.
+#   bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS> [<backup_file.sql>]
+#   bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>
+# With --deploy-id and no file, the backup that deploy recorded is used. Needs
+# psql 16.10 or later (restricted mode).
 #
 # This VALIDATES recoverability via a disposable restore. It is NOT a production
 # restore and NOT a full DR certification.
@@ -50,23 +69,60 @@ APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
 # group- or other-writable, for the file and its directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESTORE_LIB="${SCRIPT_DIR}/lib/restore-integrity.sh"
-for node in "$RESTORE_LIB" "${SCRIPT_DIR}/lib"; do
+TRUSTED_LIB="${SCRIPT_DIR}/lib/trusted-path.sh"
+for node in "$RESTORE_LIB" "${SCRIPT_DIR}/lib" "$TRUSTED_LIB"; do
   if [ -L "$node" ] || [ ! -e "$node" ] || [ "$(stat -c '%u' -- "$node")" != "$(id -u)" ] \
     || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
     echo "FATAL: ${node} is missing, a symlink, not owned by $(id -un), or writable by another identity; refusing to load it. Aborting."
     exit 1
   fi
 done
+# shellcheck source=lib/trusted-path.sh
+. "$TRUSTED_LIB"
 # shellcheck source=lib/restore-integrity.sh
 . "$RESTORE_LIB"
+
+# --- Trusted digest evidence (rule 235, finding A-1) --------------------------
+DRILL_USAGE="usage: bash scripts/rollout-restore-drill.sh (--deploy-id <YYYYmmdd-HHMMSS> [<backup_file.sql>] | --expected-sha256 <hex> <backup_file.sql>)"
+BACKUP_FILE=""
+EVIDENCE_DEPLOY_ID=""
+EXPECTED_SHA256=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deploy-id) EVIDENCE_DEPLOY_ID="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+    --expected-sha256) EXPECTED_SHA256="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+    -*) echo "$DRILL_USAGE" >&2; exit 2 ;;
+    *) [ -z "$BACKUP_FILE" ] || { echo "FATAL: one backup file at most. Aborting." >&2; exit 2; }; BACKUP_FILE="$1"; shift ;;
+  esac
+done
+if [ -n "$EVIDENCE_DEPLOY_ID" ] && [ -n "$EXPECTED_SHA256" ]; then
+  echo "FATAL: pass --deploy-id OR --expected-sha256, not both. Nothing was created. Aborting." >&2
+  exit 2
+fi
+if [ -z "$EVIDENCE_DEPLOY_ID" ] && [ -z "$EXPECTED_SHA256" ]; then
+  echo "FATAL: the drill replays the backup as the PostgreSQL superuser, so it needs trusted digest evidence: --deploy-id <the deploy that wrote it> or --expected-sha256 <digest from an independent record> (rule 235, finding A-1). Nothing was created. Aborting." >&2
+  echo "$DRILL_USAGE" >&2
+  exit 2
+fi
+if [ -n "$EXPECTED_SHA256" ] && [ -z "$BACKUP_FILE" ]; then
+  echo "FATAL: --expected-sha256 needs the backup file it describes. Nothing was created. Aborting." >&2
+  exit 2
+fi
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-BACKUP_DIR="storage/app/backups/deploy"
 EVIDENCE_DIR="storage/app/readiness/restore-drills"
 EVIDENCE_FILE="${EVIDENCE_DIR}/latest.json"
 
 cd "$APP_DIR"
 
+# The environment file is sourced by the privileged operator: refuse one that
+# another identity could have written (as scripts/restore-rehearsal.sh does).
+if [ -L .env ] || [ ! -f .env ] || [ "$(stat -c '%u' -- .env)" != "$(id -u)" ] \
+  || [ $(( 8#$(stat -c '%a' -- .env) & 8#022 )) -ne 0 ]; then
+  echo "FATAL: the environment file is missing, a symlink, not owned by $(id -un), or writable by another identity; refusing to source it. Aborting."
+  exit 1
+fi
 set -a
 # shellcheck disable=SC1091
 source .env
@@ -128,18 +184,47 @@ case "$(printf '%s' "$DRILL_ENV" | tr '[:upper:]' '[:lower:]')" in
   production|pilot|live|prod) echo "FATAL: drill environment must be staging/test, not production/pilot/live. Aborting."; exit 1 ;;
 esac
 
-# --- Select + verify a source backup -------------------------------------
-BACKUP_FILE="${1:-}"
-if [ -z "$BACKUP_FILE" ]; then
-  BACKUP_FILE="$(ls -1t "${BACKUP_DIR}"/*.sql 2>/dev/null | head -n1 || true)"
-fi
-if [ -z "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
-  echo "FATAL: no non-empty source backup found under ${BACKUP_DIR}. Aborting."
-  exit 1
+# --- Select + verify a source backup (rule 235, finding A-1) ---------------
+if [ -n "$EVIDENCE_DEPLOY_ID" ]; then
+  EVIDENCE_DIR_TRUSTED=""
+  if [ -r deploy/production-host.conf ]; then
+    EVIDENCE_DIR_TRUSTED="$(sed -n 's/^[[:space:]]*DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR=//p' deploy/production-host.conf | head -n 1 | sed 's/^"//; s/"$//')"
+  fi
+  EVIDENCE="$(dms_restore_evidence_digest "$EVIDENCE_DIR_TRUSTED" "$EVIDENCE_DEPLOY_ID" "$(hostname)" "$APP_DIR" "$(id -u)")" || {
+    echo "FATAL: no trusted digest evidence for deploy ${EVIDENCE_DEPLOY_ID}. Nothing was created. Aborting."
+    exit 1
+  }
+  if [ -z "$BACKUP_FILE" ]; then
+    BACKUP_FILE="${EVIDENCE% *}"
+  elif [ "$(realpath -e -- "$BACKUP_FILE" 2>/dev/null)" != "$(realpath -e -- "${APP_DIR}/${EVIDENCE% *}" 2>/dev/null)" ]; then
+    echo "FATAL: deploy ${EVIDENCE_DEPLOY_ID} recorded ${EVIDENCE% *}, not ${BACKUP_FILE}. Nothing was created. Aborting."
+    exit 1
+  fi
+  EXPECTED_SHA256="${EVIDENCE##* }"
+  INTEGRITY_SOURCE="the root-only log of deploy ${EVIDENCE_DEPLOY_ID}"
+else
+  INTEGRITY_SOURCE="an independent record passed by the administrator"
 fi
 echo "Source backup : ${BACKUP_FILE}"
-BACKUP_SIZE="$(wc -c < "$BACKUP_FILE" | tr -d ' ')"
+dms_restore_check_source "$BACKUP_FILE" "$RUNTIME_USER" "$(id -un)" || {
+  echo "FATAL: the backup file failed its source checks. Nothing was created. Aborting."
+  exit 1
+}
+STAGING_DIR="$(mktemp -d)"
+chmod 0700 -- "$STAGING_DIR"
+trap 'rm -rf -- "$STAGING_DIR"' EXIT
+STAGED_BACKUP="$(dms_restore_stage_copy "$BACKUP_FILE" "$STAGING_DIR")" || {
+  echo "FATAL: could not stage a private copy of ${BACKUP_FILE}. Nothing was created. Aborting."
+  exit 1
+}
+INTEGRITY="$(dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256")" || {
+  echo "FATAL: integrity check failed: the backup does not match ${INTEGRITY_SOURCE}. Nothing was created. Aborting."
+  exit 1
+}
+echo "$INTEGRITY (expected digest from ${INTEGRITY_SOURCE})"
+BACKUP_SIZE="$(wc -c < "$STAGED_BACKUP" | tr -d ' ')"
 
+# The runtime's own format check of its file: informational, never the trust anchor.
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
 
 # --- Privilege preflight (D-Q7: privileged operator, no runtime CREATEDB) ----
@@ -166,7 +251,7 @@ esac
 # role stops the drill. It is never created here, and ownership is never
 # stripped, rewritten or given to the runtime.
 OWNER_ROLE_STATUS=0
-MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$BACKUP_FILE" as_superuser)" || OWNER_ROLE_STATUS=$?
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser)" || OWNER_ROLE_STATUS=$?
 case "$OWNER_ROLE_STATUS" in
   0) : ;;
   1) echo "FATAL: the backup makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created. An authorised operator provisions the role(s) separately, then repeats the drill (D-Q6-a). Aborting."; exit 1 ;;
@@ -178,7 +263,7 @@ esac
 # refused here, before anything is created, and goes through the separate
 # operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
 RUNTIME_GATE_STATUS=0
-RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$BACKUP_FILE" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
 case "$RUNTIME_GATE_STATUS" in
   0) : ;;
   1) echo "FATAL: ${RUNTIME_GATE} Nothing was created. Aborting."; exit 1 ;;
@@ -224,6 +309,7 @@ on_exit() {
   elif [ "$DRILL_DB_CREATED" = "0" ]; then
     echo "No disposable database was created by this run; nothing is dropped."
   fi
+  rm -rf -- "$STAGING_DIR"
   exit "$status"
 }
 trap on_exit EXIT
@@ -247,9 +333,24 @@ case "$DRILL_DB_OID" in
 esac
 
 echo "== Restore backup into disposable database =="
-# The dump is streamed on stdin: the superuser OS account need not be able to
-# open the runtime-owned file.
-as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - < "$BACKUP_FILE" > /dev/null
+# Only the verified root-only staging copy is replayed, streamed on stdin (the
+# superuser OS account cannot open it, but it can read a pipe). The stream puts
+# psql in restricted mode under a fresh random key, so no backslash meta-command
+# in the dump can run as the superuser's OS account (finding A-1).
+RESTRICT_KEY="$(dms_restore_restrict_key)" || { echo "FATAL: could not generate the restricted-mode key. Aborting."; exit 1; }
+set +o errexit
+dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" | as_superuser psql -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
+PIPE_STATUS=("${PIPESTATUS[@]}")
+set -o errexit
+# psql is reported first: when it stops on an error the reader dies of SIGPIPE.
+if [ "${PIPE_STATUS[1]:-1}" -ne 0 ]; then
+  echo "FATAL: the replay into '${DRILL_DB}' FAILED (psql exit ${PIPE_STATUS[1]:-1}); a refused meta-command or a SQL error stops it. Aborting."
+  exit 1
+fi
+if [ "${PIPE_STATUS[0]:-1}" -ne 0 ]; then
+  echo "FATAL: could not read the staged copy (exit ${PIPE_STATUS[0]:-1}). Aborting."
+  exit 1
+fi
 DB_CONNECTIVITY="GO"
 
 echo "== Verify restored data (read-only counts, NO patient rows) =="
@@ -305,7 +406,7 @@ as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
   "operator": "${OPERATOR}",
   "commands_summary": [
     "createdb -O <superuser> <disposable_target> (as the superuser OS account)",
-    "psql -d <disposable_target> -f - < <backup> (as the superuser OS account)",
+    "psql -d <disposable_target> -f - from the root-only staged copy whose SHA-256 matched trusted evidence, in restricted mode (as the superuser OS account)",
     "read-only count verification (no patient rows)",
     "dropdb <disposable_target>, only when created by this run with an unchanged oid (as the superuser OS account)"
   ],
@@ -322,6 +423,7 @@ as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
   "decision": "${DECISION}",
   "notes": [
     "${CLEANUP_NOTE}",
+    "backup integrity: VERIFIED sha256=${EXPECTED_SHA256}",
     "restored public table count: ${TABLE_COUNT}"
   ]
 }
