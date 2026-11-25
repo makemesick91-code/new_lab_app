@@ -479,9 +479,27 @@ it('keeps root confined to the supervisor: two fixed modes, root-owned code, the
         ->and($code)->toContain('[ "$SUDO_USER" = "${C[DMS_SUPERVISOR_CALLER]}" ]')
         ->and($code)->toContain('|| refuse identities_not_separate')
         // R6C-3: a VM only for the run whose signed STARTED record is the newest record of the store.
-        ->and($code)->toContain('grep -qx \'DMS_DRILL_EVIDENCE_DECISION=STARTED\' -- "$last" || refuse run_not_started')
-        ->and($code)->toContain('systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu "${PROPS[@]}"')
-        ->and($code)->toContain("trap 'stop_unit; exit 143' TERM INT HUP PIPE USR1 USR2 ALRM")
+        ->and($code)->toContain('grep -qx \'DMS_DRILL_EVIDENCE_DECISION=STARTED\' <<< "$rec" || refuse run_not_started')
+        ->and($code)->toContain('systemd-run --system --wait --pipe --collect --quiet --unit="$UNIT" "$@" <&3 >&4 3<&- 4>&- &')
+        ->and($code)->toContain('run_unit dmsqemu "${PROPS[@]}" -- /bin/bash "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" run "$NAME"')
+        // R6F-L1: every catchable signal stops the unit at once; never a second VM while one runs.
+        ->and($code)->toContain("trap 'stop_unit; exit 143' TERM INT HUP PIPE USR1 USR2 ALRM QUIT XCPU XFSZ VTALRM PROF SYS")
+        ->and($code)->toContain('unit_idle dmsqemu || refuse unit_busy')
+        // R6F-L5: the STARTED record is the signer's regular file, read bounded; a run boots once.
+        ->and($code)->toContain('|| refuse record_unsafe')
+        ->and($code)->toContain('rec="$(head -c 65536 -- "$last")"')
+        ->and($code)->toContain('( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted')
+        // R6F-L4, R6F-L6, R6F-L10, R6F-L11: dedicated work file system, root-owned parent, one inspection, trusted code.
+        ->and($code)->toContain('|| refuse work_dir_not_dedicated')
+        ->and($code)->toContain('_root_ok "$(dirname -- "$W")" || refuse work_dir_parent_unsafe')
+        ->and($code)->toContain('flock -n "$ilock" || refuse inspect_busy')
+        ->and($code)->toContain('|| refuse launcher_untrusted')
+        // R6F-L2, R6F-L3, R6F-L4: no io_uring or namespaces, a private /dev/shm, no journal or D-Bus, bounded resources.
+        ->and($vm)->toContain('io_uring_setup io_uring_enter io_uring_register')
+        ->and($vm)->toContain('-p RestrictNamespaces=yes -p RemoveIPC=yes -p ProtectProc=invisible')
+        ->and($vm)->toContain('-p "TemporaryFileSystem=/dev/shm:size=1M,mode=1777,noexec,nosuid,nodev"')
+        ->and($vm)->toContain('-p "InaccessiblePaths=-/dev/mqueue -/run/systemd/journal -/run/dbus"')
+        ->and($vm)->toContain('-p CPUQuota=150% -p IOWeight=10 -p LimitFSIZE=12G')
         // R6A-1, R6A-2, R6A-6, R6A-11: the unit's bounds are outside QEMU's reach.
         ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX')
         ->and($vm)->toContain('-p KillMode=control-group')
@@ -508,4 +526,63 @@ it('provisions the drill configuration the signer verifies, and lets the unprivi
         // Only root reads another account's file as that account; an unprivileged identity opens it with its own rights.
         ->and($fn)->toContain('if [ "$owner" = "$(id -un)" ] || [ "$(id -u)" != 0 ]; then')
         ->and(strpos($fn, 'dd if="$dump" iflag=nofollow,nonblock'))->toBeLessThan(strpos($fn, 'runuser -u "$owner"'));
+});
+
+it('gives the QEMU unit no writable path but its work directory, and the CI console only when configured (CI run 10)', function () {
+    $lib = base_path('scripts/lib/restore-vm.sh');
+    $props = function (string ...$args) use ($lib): array {
+        $p = new Process(['bash', '-c', '. "$1"; shift; dms_vm_qemu_unit_properties "$@"', 'x', $lib, ...$args]);
+        $p->mustRun();
+
+        return array_values(array_filter(explode("\n", $p->getOutput()), fn (string $l): bool => str_starts_with($l, 'ReadWritePaths=')));
+    };
+    $gate = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/vm-boot-gate.sh'));
+    $sup = (string) file_get_contents(base_path('scripts/restore-drill-supervisor.sh'));
+    $prov = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/provision-drill-host.sh'));
+
+    expect($props('dmsdrill-qemu', '/var/lib/dmsdrill-qemu/work', '30'))->toBe(['ReadWritePaths=/var/lib/dmsdrill-qemu/work'])
+        ->and($props('dmsdrill-qemu', '/var/lib/dmsdrill-qemu/work', '30', 'none'))->toBe(['ReadWritePaths=/var/lib/dmsdrill-qemu/work'])
+        ->and($props('dmsdrill-qemu', '/var/lib/dmsdrill-qemu/work', '30', '/var/lib/dmsdrill-qemu/console'))
+        ->toBe(['ReadWritePaths=/var/lib/dmsdrill-qemu/work', 'ReadWritePaths=/var/lib/dmsdrill-qemu/console'])
+        // The console directory must be the QEMU account's own, private; `none` on a drill host.
+        ->and($sup)->toContain('[ "$(stat -c \'%u %a\' -- "$CON" 2> /dev/null)" = "${QUID} 700" ] || refuse console_dir_not_private')
+        ->and($prov)->toContain('"DMS_SUPERVISOR_QEMU_CONSOLE_DIR=/var/lib/dmsdrill-qemu/console"')
+        // A code-bearing archive passes only as the guest's own replay failure, never as an unreadable VM.
+        ->and($gate)->toContain("has V6 '^Decision: FAIL:unit_exit_20 '")
+        ->and($gate)->toContain("has V9 '^Decision: FAIL:unit_exit_20 '")
+        ->and($gate)->not->toContain("has V6 '^Decision: FAIL:' ")
+        ->and($gate)->not->toContain("has V9 '^Decision: FAIL:' ");
+});
+
+it('stops the supervised unit at once when the supervisor is signalled, not when the unit ends by itself (R6F-L1)', function () {
+    $rt = (string) getenv('XDG_RUNTIME_DIR');
+    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
+        test()->markTestSkipped('no per-user systemd manager on this host');
+    }
+    $code = (string) file_get_contents(base_path('scripts/restore-drill-supervisor.sh'));
+    $from = (int) strpos($code, 'UNIT=""; SR=""');
+    $to = (int) strpos($code, 'unit_idle()');
+    // The supervisor's own stop_unit, traps and run_unit, against the caller's per-user manager.
+    $harness = str_replace(['systemctl ', 'systemd-run --system '], ['systemctl --user ', 'systemd-run --user '], substr($code, $from, $to - $from));
+    $unit = 'dmsl1probe-'.bin2hex(random_bytes(4));
+    $script = $harness."\nrun_unit {$unit} -p Type=exec -- /bin/sleep 60\n";
+    $p = new Process(['bash', '-c', $script], null, ['XDG_RUNTIME_DIR' => $rt, 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'), 'PATH' => (string) getenv('PATH')]);
+    $p->setInput('');
+    $p->start();
+    $active = fn (): string => trim((string) (new Process(['systemctl', '--user', 'show', '-P', 'ActiveState', "{$unit}.service"], null, ['XDG_RUNTIME_DIR' => $rt]))->mustRun()->getOutput());
+    for ($i = 0; $i < 50 && $active() !== 'active'; $i++) {
+        usleep(100000);
+    }
+    $wasActive = $active();
+    $t = microtime(true);
+    $p->signal(SIGTERM);
+    $p->wait();
+    $elapsed = microtime(true) - $t;
+    $after = $active();
+    (new Process(['systemctl', '--user', 'stop', "{$unit}.service"], null, ['XDG_RUNTIME_DIR' => $rt]))->run();
+
+    expect($wasActive)->toBe('active')
+        ->and($p->getExitCode())->toBe(143)
+        ->and($elapsed)->toBeLessThan(15.0)
+        ->and($after)->toBeIn(['inactive', 'failed', '']);
 });

@@ -387,31 +387,37 @@ LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS \$${tag}\$
 DECLARE
   problem text;
   r record;
+  regt text;
 BEGIN
+  -- R6F-P2: the object-id types (and their arrays), whose values the RESTORING cluster assigns.
+  SELECT string_agg(t.oid::text, '|') INTO regt FROM pg_type t
+   WHERE t.typnamespace = 'pg_catalog'::regnamespace
+     AND ltrim(t.typname, '_') = ANY (ARRAY['regclass', 'regtype', 'regproc', 'regprocedure', 'regoper', 'regoperator',
+       'regrole', 'regnamespace', 'regcollation', 'regconfig', 'regdictionary']);
   WITH ext AS (
     SELECT classid, objid FROM pg_depend WHERE deptype = 'e'
   ), expr AS (
-    SELECT format('check constraint %I', c.conname) AS what, c.conbin::text AS tree
+    SELECT format('check constraint %I', c.conname) AS what, c.conbin::text AS tree, c.oid AS uoid
       FROM pg_constraint c WHERE c.contype = 'c' AND c.conbin IS NOT NULL
     UNION ALL
-    SELECT format('generated column %s.%I', d.adrelid::regclass, a.attname), d.adbin::text
+    SELECT format('generated column %s.%I', d.adrelid::regclass, a.attname), d.adbin::text, d.oid
       FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
      WHERE a.attgenerated <> ''
     UNION ALL
-    SELECT format('partition key of %s', p.partrelid::regclass), p.partexprs::text
+    SELECT format('partition key of %s', p.partrelid::regclass), p.partexprs::text, p.partrelid
       FROM pg_partitioned_table p WHERE p.partexprs IS NOT NULL
   ), ops AS (
-    SELECT e.what, m[1]::oid AS op
+    SELECT e.what, m[1]::oid AS op, e.uoid
       FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':opno ([0-9]+)', 'g') AS m
     UNION ALL
-    SELECT e.what, x::oid
+    SELECT e.what, x::oid, e.uoid
       FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':opnos \(o ([0-9 ]+)\)', 'g') AS m
       CROSS JOIN LATERAL unnest(string_to_array(m[1], ' ')) AS x
   ), fns AS (
-    SELECT e.what, m[1]::oid AS fn
+    SELECT e.what, m[1]::oid AS fn, e.uoid
       FROM expr e CROSS JOIN LATERAL regexp_matches(e.tree, ':[a-z]*funcid ([0-9]+)', 'g') AS m
     UNION ALL
-    SELECT o.what, p.oprcode::oid FROM ops o JOIN pg_operator p ON p.oid = o.op
+    SELECT o.what, p.oprcode::oid, o.uoid FROM ops o JOIN pg_operator p ON p.oid = o.op
   )
   SELECT string_agg(DISTINCT reason, '; ') INTO problem FROM (
     -- P4P-1: code that ran while the schema was created can drop the function it was called from; the stored
@@ -451,20 +457,58 @@ BEGIN
     SELECT 'user-defined cast ' || format_type(c.castsource, NULL) || ' AS ' || format_type(c.casttarget, NULL)
       FROM pg_cast c
      WHERE c.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_cast'::regclass AND ext.objid = c.oid)
+    UNION ALL
+    -- R6F-P1: IMMUTABLE by PostgreSQL's label, yet the result depends on session settings (TimeZone, extra_float_digits,
+    -- bytea_output, IntervalStyle, xmlbinary …): an XML expression, a conversion through a value's text form, a domain
+    -- coercion, or a call of such an output or XML function. Refused in the dump's own objects.
+    SELECT e.what || ' uses an XML expression, a text-form conversion or a domain coercion (session-dependent)'
+      FROM expr e WHERE e.uoid >= 16384 AND e.tree ~ '[{](XMLEXPR|COERCEVIAIO|COERCETODOMAIN) '
+    UNION ALL
+    SELECT f.what || ' calls ' || p.oid::regprocedure::text || ' (its result depends on session settings)'
+      FROM fns f JOIN pg_proc p ON p.oid = f.fn
+     WHERE f.uoid >= 16384 AND p.pronamespace = 'pg_catalog'::regnamespace
+       AND (p.proname = ANY (ARRAY['float4out', 'float8out', 'byteaout', 'time_out', 'timetz_out', 'box_out', 'circle_out',
+              'line_out', 'lseg_out', 'path_out', 'point_out', 'poly_out'])
+            OR p.prorettype = 'pg_catalog.xml'::regtype OR 'pg_catalog.xml'::regtype = ANY (p.proargtypes::oid[]))
+    UNION ALL
+    -- R6F-P2: an object id (regclass …) in an expression or as a column: the restoring cluster assigns it, so a check
+    -- over it can hold in the drill's fresh cluster and fail in a real restore.
+    SELECT e.what || ' uses an object-id type (its value is assigned by the restoring cluster)'
+      FROM expr e
+     WHERE e.uoid >= 16384 AND regt IS NOT NULL
+       AND e.tree ~ (':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) (' || regt || ')[ }]')
+    UNION ALL
+    SELECT format('column %s.%I', a.attrelid::regclass, a.attname) || ' has an object-id type ' || format_type(a.atttypid, NULL) || ' (its values are assigned by the restoring cluster)'
+      FROM pg_attribute a JOIN pg_class cl ON cl.oid = a.attrelid
+     WHERE cl.oid >= 16384 AND cl.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
+       AND regt IS NOT NULL AND a.atttypid::text ~ ('^(' || regt || ')$')
+       AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_class'::regclass AND ext.objid = cl.oid)
+    UNION ALL
+    -- R6F-P3: a domain constraint of the dump's (the archive validator refuses domains; this is the second layer).
+    SELECT format('domain constraint %I', c.conname) || ' (a domain of the dump; not restored by the drill)'
+      FROM pg_constraint c
+     WHERE c.contype = 'c' AND c.conrelid = 0 AND c.contypid <> 0 AND c.oid >= 16384
+       AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_type'::regclass AND ext.objid = c.contypid)
   ) r;
-  -- R6B-1: every CHECK must be IMMUTABLE by PostgreSQL's own test, not only by the function ids it names: a CHECK that
-  -- depends on the session or the clock ('now'::date, CURRENT_USER …) can hold in the drill and fail in a real
+  -- R6B-1: every table CHECK must be IMMUTABLE by PostgreSQL's own test, not only by the function ids it names: a CHECK
+  -- that depends on the session or the clock ('now'::date, CURRENT_USER …) can hold in the drill and fail in a real
   -- restore. Each one is tried as an index expression on a temporary copy of its table (42P17 when not immutable);
-  -- any error refuses. No function of the dump exists yet (P5-1), so this evaluates nothing from the backup.
+  -- any other error refuses too, named as such. No function of the dump exists yet (P5-1), so this evaluates nothing
+  -- from the backup. R6F-P4: each probe runs in a subtransaction that is always rolled back (the sentinel R6B00), so
+  -- it keeps no lock: any number of CHECKs fits the lock table.
   FOR r IN SELECT c.conname, c.conrelid, cl.relname, pg_get_expr(c.conbin, c.conrelid) AS expr
              FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
             WHERE c.contype = 'c' AND c.conbin IS NOT NULL LOOP
     BEGIN
       EXECUTE format('CREATE TEMP TABLE %I (LIKE %s)', r.relname, r.conrelid::regclass);
       EXECUTE format('CREATE INDEX ON pg_temp.%I ((%s))', r.relname, r.expr);
-      EXECUTE format('DROP TABLE pg_temp.%I', r.relname);
-    EXCEPTION WHEN OTHERS THEN
-      problem := concat_ws('; ', problem, format('check constraint %I is not immutable (SQLSTATE %s)', r.conname, SQLSTATE));
+      RAISE SQLSTATE 'R6B00';
+    EXCEPTION
+      WHEN SQLSTATE 'R6B00' THEN NULL;
+      WHEN SQLSTATE '42P17' THEN
+        problem := concat_ws('; ', problem, format('check constraint %I is not immutable (SQLSTATE 42P17)', r.conname));
+      WHEN OTHERS THEN
+        problem := concat_ws('; ', problem, format('check constraint %I could not be verified (SQLSTATE %s)', r.conname, SQLSTATE));
     END;
   END LOOP;
   IF problem IS NOT NULL THEN

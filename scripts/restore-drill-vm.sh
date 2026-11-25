@@ -124,10 +124,17 @@ sign_request() { evidence_request "$1" | sudo -n -u "${C[DMS_DRILL_SIGNER_USER]}
 record() {
   [ "$RECORDABLE" = 1 ] && [ "$RECORDED" = 0 ] || return 1
   RECORDED=1
-  RECORD="$(sign_request "$1")"
+  # R6F-E1: a store held locked by other callers delays the record, it never suppresses it: retried for up to about
+  # ten minutes (inside the D6 budget). The failure line names no decision, so nobody learns an unrecorded outcome.
+  local try
+  for ((try = 0; try < 20; try++)); do
+    RECORD="$(sign_request "$1")"
+    case "$RECORD" in *"the store is locked"*) sleep 1; continue ;; esac
+    break
+  done
   case "$RECORD" in
     "RECORD "*) echo "Evidence: ${RECORD} (signed by ${C[DMS_DRILL_SIGNER_USER]}; keep this head digest outside the drill host)"; return 0 ;;
-    *) echo "Evidence: NOT RECORDED: ${1}: the signer refused or failed: ${RECORD}"; return 1 ;;
+    *) echo "Evidence: NOT RECORDED: the signer refused or failed: ${RECORD}"; return 1 ;;
   esac
 }
 # R6C-3: an outcome is recorded only for an open start; a refusal opens its own start when none is open yet.
@@ -187,12 +194,44 @@ for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGN
   why="$(dms_trusted_file "$k" "${C[$k]}" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 done
 why="$(dms_trusted_dir DMS_DRILL_WORK_DIR "${C[DMS_DRILL_WORK_DIR]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
+# --- One drill at a time (D6), taken BEFORE the start is recorded (R6F-E1): a second drill can never close a live one.
+STAGE=lock
+exec {lock_fd}>> "${C[DMS_DRILL_WORK_DIR]}/drill.lock"
+flock -n "$lock_fd" || { echo "REFUSED: another drill holds ${C[DMS_DRILL_WORK_DIR]}/drill.lock (one drill at a time, D6). Nothing ran; not recorded, as a start would close the live drill's record."; exit 2; }
 # From here on every outcome is recorded through the signer: refusals and aborts included (Phase 3).
 RUN_ID="$(dms_sandbox_unit_name)" || refuse "cannot draw a run id"
 RECORDABLE=1
 [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || refuse "--expected-sha256 must be the 64-hex digest from an independent record"
 [ -n "$MANIFEST" ] || refuse "--manifest <signed role manifest> is required (D3)"
 [ -n "$BACKUP_FILE" ] || refuse "the backup file is required"
+WORK=""; VM_PID=""; INSPECT_UNIT=""
+# vm_idle: the supervisor's QEMU unit is not running (a status query; any account may ask).
+vm_idle() { case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in inactive | failed | '') return 0 ;; *) return 1 ;; esac; }
+# stop_vm: TERM first, which timeout forwards to sudo and sudo relays to the supervisor; the supervisor stops the QEMU
+# unit at once (R6F-L1). KILL only if that did not end it within 30 s; then wait until the unit itself has stopped.
+stop_vm() {
+  [ -n "$VM_PID" ] || return 0
+  kill -TERM -- "-${VM_PID}" 2> /dev/null
+  local i
+  for ((i = 0; i < 60; i++)); do kill -0 "$VM_PID" 2> /dev/null || break; sleep 0.5; done
+  dms_vm_kill_group "$VM_PID"
+  VM_PID=""
+  for ((i = 0; i < 90; i++)); do vm_idle && return 0; sleep 1; done
+  echo "WARNING: the QEMU unit is still running; its own time limit ends it, and the next drill refuses until then"
+}
+cleanup() {
+  stop_vm
+  dms_archive_inspect_stop "$INSPECT_UNIT"
+  [ -z "$WORK" ] || rm -rf -- "$WORK"
+}
+trap cleanup EXIT
+# Phase 3: an interrupted drill is stopped and RECORDED as aborted, never left unrecorded; installed before the start
+# is recorded (R6F-E2), and the drill cannot be suspended (a relayed TSTP would hold the lock and the run directory).
+on_abort() { trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF; echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143; }
+# R6A-5: every catchable terminating signal is an abort, recorded (SIGKILL is closed at the next start: R6C-3).
+trap on_abort TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
+trap '' TSTP TTIN TTOU
+
 # R6C-3: every attempt is opened by a signed STARTED record before any further check, and the supervisor boots a VM
 # only for the run whose STARTED record is the newest; a run that never closes is closed by the signer later.
 STAGE=start
@@ -207,11 +246,8 @@ VCPU=1; MEMORY_MIB=2048; DISK_GIB=10; MINUTES=30; TASKS=64
 why="$(dms_sandbox_limits_check "$VCPU" "$MEMORY_MIB" "$DISK_GIB" "$MINUTES" "$TASKS")" || refuse "$why"
 # Inside the 2 GiB VM: the unit gets MemoryMax 1536 MiB; its tmpfs (PGDATA, WAL) at most 1024 MiB.
 UNIT_MEMORY_MIB=1536; TMPFS_MAX_MIB=1024; UNIT_TIMEOUT=$(( (MINUTES - 5) * 60 ))
-
-# --- One drill at a time (D6) ---------------------------------------------------------------------------------------
-STAGE=lock
-exec {lock_fd}>> "${C[DMS_DRILL_WORK_DIR]}/drill.lock"
-flock -n "$lock_fd" || refuse "another drill holds ${C[DMS_DRILL_WORK_DIR]}/drill.lock (one drill at a time, D6)"
+# R6F-L8: on a drill host the run directory (staged copy, input disk) must never reach a swap device.
+if [ "$TRUST_UID" = 0 ] && [ "$(tail -n +2 /proc/swaps | grep -c .)" != 0 ]; then refuse "swap is active on the drill host (the run directory could be swapped out)"; fi
 
 # --- The pinned PostgreSQL client ----------------------------------------------------------------------------------
 # The pinned PostgreSQL 16.15+ client that inspects the archive (pg_restore, never through PATH).
@@ -234,29 +270,7 @@ FREE_KIB="$(df -Pk -- "${C[DMS_DRILL_WORK_DIR]}" | awk 'NR == 2 { print $4 }')"
 NEED_KIB=$(( (BACKUP_GUESS * 3 / 1024) + 1048576 ))
 [[ "$FREE_KIB" =~ ^[0-9]+$ ]] && [ "$FREE_KIB" -ge "$NEED_KIB" ] || refuse "the work directory has ${FREE_KIB:-?} KiB free; a drill needs ${NEED_KIB} KiB (staged copy, input disk, margin)"
 WORK="${C[DMS_DRILL_WORK_DIR]}/${RUN_ID}"
-mkdir -m 0700 -- "$WORK" || refuse "cannot create ${WORK}"
-VM_PID=""
-INSPECT_UNIT=""
-# stop_vm: TERM first, which timeout forwards to sudo and sudo relays to the launcher (it stops QEMU and removes its
-# run files as the QEMU identity); KILL only if that did not end it within 30 s.
-stop_vm() {
-  [ -n "$VM_PID" ] || return 0
-  kill -TERM -- "-${VM_PID}" 2> /dev/null
-  local i
-  for ((i = 0; i < 60; i++)); do kill -0 "$VM_PID" 2> /dev/null || break; sleep 0.5; done
-  dms_vm_kill_group "$VM_PID"
-  VM_PID=""
-}
-cleanup() {
-  stop_vm
-  dms_archive_inspect_stop "$INSPECT_UNIT"
-  rm -rf -- "$WORK"
-}
-trap cleanup EXIT
-# Phase 3: an interrupted drill is stopped and RECORDED as aborted, never left unrecorded.
-on_abort() { trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF; echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143; }
-# R6A-5: every catchable terminating signal is an abort, recorded (SIGKILL is closed at the next start: R6C-3).
-trap on_abort TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
+mkdir -m 0700 -- "$WORK" || { WORK=""; refuse "cannot create the run directory"; }
 
 # --- D3: the signed role manifest, read once into the run directory (VR-10) ----------------------------------------
 STAGE=manifest
@@ -344,7 +358,7 @@ LAUNCH="$(grep -a -E '^(QEMU_LAUNCH|SUPERVISOR) ' "$WORK/vm.status" | tail -n 1 
 QEMU_EXIT=x
 if [[ "$LAUNCH" =~ ^QEMU_LAUNCH\ exit=([0-9]{1,3})\ image_sha256=([0-9a-f]{64})$ ]]; then
   QEMU_EXIT="${BASH_REMATCH[1]}"; IMAGE_SHA="${BASH_REMATCH[2]}"
-elif [[ "$LAUNCH" =~ ^(QEMU_LAUNCH|SUPERVISOR)\ refused=([a-z0-9_]{1,40})$ ]]; then
+elif [[ "$LAUNCH" =~ ^(QEMU_LAUNCH|SUPERVISOR)\ refused=([a-z0-9_]{1,64})$ ]]; then
   STAGE=vm_launch
   refuse "the VM was not started: ${BASH_REMATCH[1]} refused ${BASH_REMATCH[2]}"
 else
@@ -369,10 +383,12 @@ if [ "$(stat -c %s -- "$WORK/output.raw" 2> /dev/null)" = "$DMS_VM_OUTPUT_BYTES"
 fi
 # VR-8: a reason built from guest text must still fit the evidence schema, or the FAIL would go unrecorded.
 DECISION="$(dms_vm_decision_safe "$DECISION")"
-echo "${INTEGRITY}"
-echo "Decision: ${DECISION} (host-verified inputs; restore result asserted by the disposable guest, VR-1)"
+# R6F-E1: the decision is shown only once it is recorded; an unrecorded outcome is never revealed.
 if ! record "$DECISION"; then
-  echo "FATAL: decision ${DECISION} is unrecorded"
+  echo "FATAL: the drill's outcome is unrecorded"
   exit 1
 fi
+echo "${INTEGRITY}"
+echo "VM: QEMU exited ${QEMU_EXIT}"
+echo "Decision: ${DECISION} (host-verified inputs; restore result asserted by the disposable guest, VR-1)"
 [ "$DECISION" = GO ]

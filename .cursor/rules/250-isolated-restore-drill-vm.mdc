@@ -79,17 +79,22 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
    - The orchestrator trusts only inputs owned by root or by the owner of its own script, and records `install=root`
      or `install=operator`. Acceptance needs a root-owned install.
    - The readiness service is not wired to it without a separate change.
-10. **Phase 3, four identities:**
-    - QEMU runs only through `scripts/restore-drill-qemu-launcher.sh` under its own account. The launcher's
-      root-owned configuration pins the image, binaries and work directory; D6 is fixed in the launcher. The operator
-      passes only the encrypted input disk and the run id.
-    - Every published record is appended to the witness (`scripts/restore-drill-evidence-witness.sh`, a separate
-      account). The store must match every witnessed digest.
-    - Once the configuration is trusted, refused and aborted drills are `REFUSED:` and `ABORTED:` records.
-    - The signer (drill-host profile, root-owned configuration) verifies the root-owned install itself
-      (`INSTALL=root:<sha256>`) and refuses a GO from any other install. The operator never states its install.
-    - The guest keeps the plaintext archive on a RAM tmpfs. The working space is sized from the uncompressed data
-      size and refused above D6.
+10. **Phase 3 and review round 6: separate identities (design §0.12):**
+    - The operator only places inputs in the inbox and starts the INSTALLED orchestrator as `dmsdrill-runner`. Only
+      the runner may call the signer's `sign` and the root supervisor; the signer refuses every other caller.
+    - The root supervisor (`scripts/restore-drill-supervisor.sh`, two fixed modes) runs:
+      - the archive inspection in a DynamicUser system unit;
+      - QEMU under its own account in `dmsqemu.service`, with no network, a cgroup killed at the time limit, no swap
+        or core dumps, and KVM via the `kvm` group only.
+      No AppArmor exception is ever needed.
+    - Evidence contract 4: a signed STARTED record opens every drill and exactly one outcome closes it. The supervisor
+      boots a VM only for the open run; an unclosed start is closed by the signer as `ABORTED:unclosed`.
+    - Every record is appended to the witness first, then to the head log. Verification re-checks every record, the
+      store id and every witnessed digest.
+    - The signer verifies the root-owned install and its configuration itself (`INSTALL=root:…,config:…`) and refuses
+      a GO otherwise.
+    - The guard tests every CHECK with PostgreSQL's own immutability check (R6B-1).
+    - Never give the operator a sudoers route to `sign`. Never run QEMU outside the supervisor's unit.
 11. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
    patient data and is removed with the run directory.
 

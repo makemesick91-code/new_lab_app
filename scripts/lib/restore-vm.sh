@@ -161,21 +161,34 @@ dms_vm_qemu_args() {
     -drive "if=none,id=dmsout,file=${output},format=raw" -device "virtio-blk-pci,drive=dmsout,serial=${DMS_VM_OUTPUT_SERIAL}"
 }
 
-# dms_vm_qemu_unit_properties <QEMU account> <QEMU work directory> <minutes>
+# dms_vm_qemu_unit_properties <QEMU account> <QEMU work directory> <minutes> [console directory | none]
 # R6A-1, R6A-2, R6A-6, R6A-7, R6A-11 (review round 6): the SYSTEM unit the root-owned supervisor starts QEMU in. Its
 # bounds are outside QEMU's reach: an escaped QEMU cannot kill them, leave the cgroup, reach any network, swap or dump
 # guest RAM, or outlive the time limit (the whole control group is killed). KVM only through the kvm group.
+# Fix verification of round 6 (R6F-L2, R6F-L3, R6F-L4): no io_uring (it opens sockets past RestrictAddressFamilies) and
+# no namespaces, mounts, keyrings or other privileged system calls; a private /dev/shm, no POSIX queues, IPC removed
+# with the unit, the journal and D-Bus sockets unreachable, other users' processes invisible; CPU, I/O and file size
+# bounded.
 dms_vm_qemu_unit_properties() {
-  local user="${1:?user}" work="${2:?work dir}" minutes="${3:?minutes}"
+  local user="${1:?user}" work="${2:?work dir}" minutes="${3:?minutes}" console="${4:-none}"
   printf '%s\n' "--uid=${user}" "--gid=${user}" -p SupplementaryGroups=kvm -p Type=exec \
     -p "RuntimeMaxSec=$((minutes * 60 + 120))" -p KillMode=control-group -p TimeoutStopSec=20 -p SendSIGKILL=yes \
     -p NoNewPrivileges=yes -p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX \
     -p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0 \
-    -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateIPC=yes -p "ReadWritePaths=${work}" \
+    -p ProtectSystem=strict -p ProtectHome=yes -p PrivateIPC=yes -p "ReadWritePaths=${work}" \
+    -p "TemporaryFileSystem=/tmp:size=64M,mode=1777,nosuid,nodev,noexec" -p "TemporaryFileSystem=/var/tmp:size=64M,mode=1777,nosuid,nodev,noexec" \
     -p RuntimeDirectory=dmsqemu -p RuntimeDirectoryMode=0700 -p UMask=0077 \
     -p DevicePolicy=closed -p "DeviceAllow=/dev/kvm rw" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
     -p ProtectKernelLogs=yes -p ProtectControlGroups=yes -p ProtectClock=yes -p ProtectHostname=yes \
-    -p RestrictSUIDSGID=yes -p RestrictRealtime=yes -p LockPersonality=yes -p "CapabilityBoundingSet=" -p AmbientCapabilities=
+    -p RestrictSUIDSGID=yes -p RestrictRealtime=yes -p LockPersonality=yes -p "CapabilityBoundingSet=" -p AmbientCapabilities= \
+    -p SystemCallArchitectures=native -p SystemCallErrorNumber=EPERM \
+    -p "SystemCallFilter=~@mount @keyring @swap @reboot @raw-io @module @obsolete @debug @cpu-emulation @clock @privileged io_uring_setup io_uring_enter io_uring_register" \
+    -p RestrictNamespaces=yes -p RemoveIPC=yes -p ProtectProc=invisible \
+    -p "TemporaryFileSystem=/dev/shm:size=1M,mode=1777,noexec,nosuid,nodev" \
+    -p "InaccessiblePaths=-/dev/mqueue -/run/systemd/journal -/run/dbus" \
+    -p CPUQuota=150% -p IOWeight=10 -p LimitFSIZE=12G
+  # Disposable CI only: the guest console directory is the one other writable path (ProtectSystem=strict, CI run 10).
+  if [ "$console" != none ]; then printf '%s\n' -p "ReadWritePaths=${console}"; fi
 }
 
 # dms_vm_image_info_ok <qemu-img info JSON file> <max virtual bytes>

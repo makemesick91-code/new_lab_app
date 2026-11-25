@@ -152,11 +152,14 @@ function rdmeRequest(array $over = []): string
 {
     $h = str_repeat('a', 64);
     $now = gmdate('Y-m-d\TH:i:s\Z');
+    // R6F-E3: a run's outcome carries its start's STARTED_AT, so every request of this process shares one start time.
+    static $started = null;
+    $started ??= $now;
     $fields = array_merge([
         'DMS_DRILL_EVIDENCE_RUN_ID' => 'dmsdrill-'.bin2hex(random_bytes(6)),
         'DMS_DRILL_EVIDENCE_OPERATOR' => 'drillop',
         'DMS_DRILL_EVIDENCE_DRILL_HOST' => rdmeHost(),
-        'DMS_DRILL_EVIDENCE_STARTED_AT' => $now,
+        'DMS_DRILL_EVIDENCE_STARTED_AT' => $started,
         'DMS_DRILL_EVIDENCE_COMPLETED_AT' => $now,
         'DMS_DRILL_EVIDENCE_BACKUP_SHA256' => $h,
         'DMS_DRILL_EVIDENCE_BACKUP_BYTES' => '4304',
@@ -203,14 +206,21 @@ function rdmeSignerConf(string $dir, string $extra = ''): void
     chmod("{$dir}/evidence-anchor", 0600);
 }
 
-/** Publishes $count records through the signer library (the signer side) into a fresh store with a head log. */
+/**
+ * Publishes $count records through the signer library (the signer side) into a fresh store with a head log, as
+ * contract 4 sequences them (R6F-E3): a STARTED record, then that run's GO, then the next run's STARTED, …
+ */
 function rdmeStore(int $count): array
 {
     $dir = rdmeDir();
     $store = "{$dir}/store";
     mkdir($store, 0700);
+    $runId = '';
     for ($i = 0; $i < $count; $i++) {
-        file_put_contents("{$dir}/req", rdmeRequest());
+        if ($i % 2 === 0) {
+            $runId = 'dmsdrill-'.bin2hex(random_bytes(6));
+        }
+        file_put_contents("{$dir}/req", $i % 2 === 0 ? rdmeStart($runId) : rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $runId]));
         $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development 0123456789abcdef0123456789abcdef', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
         expect($run['out'])->toStartWith('RECORD ', $run['out'].$run['err']);
     }
@@ -286,7 +296,8 @@ it('refuses to sign a replayed run, an invalid request, or onto a store that doe
         'tampered store' => rdmeRequest(),
     };
     if ($case === 'tampered store') {
-        file_put_contents("{$store}/000001/record", str_replace('DECISION=GO', 'DECISION=FAIL:x', (string) file_get_contents("{$store}/000001/record")));
+        // Record 1 is the run's STARTED record (contract 4): any edit breaks its signature.
+        file_put_contents("{$store}/000001/record", str_replace('DECISION=STARTED', 'DECISION=FAIL:x', (string) file_get_contents("{$store}/000001/record")));
     }
     file_put_contents("{$dir}/req", $req);
     // Contract 4: a replayed run is refused by the binding check (a STARTED for a run the store already has).

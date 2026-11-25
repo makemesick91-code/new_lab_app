@@ -93,6 +93,8 @@ check V1-qemu "QEMU ran as ${QEU} in dmsqemu.service, in its own network namespa
   "$(head -n 1 "$OUT/V1-qemu-identity.txt" | head -c 70) netns=${ns_q}/${ns_h}"
 # shellcheck disable=SC2024  # the operator, not the sudo target, writes this evidence file
 sudo sh -c "cat /var/lib/dmsdrill-qemu/console/*.log" > "$OUT/V1-console.txt" 2> /dev/null || true
+# shellcheck disable=SC2024  # the operator writes this evidence file
+sudo sh -c "cat /var/lib/dmsdrill-qemu/console/*.stderr" > "$OUT/V1-qemu-stderr.txt" 2> /dev/null || true
 check V1-console "the guest kernel booted and the guest agent powered the VM off" "$(grep -Eq 'Linux version' "$OUT/V1-console.txt"; echo $?)" "$(grep -m1 -o 'Linux version [^ ]*' "$OUT/V1-console.txt")"
 rec="$(sudo sh -c 'for f in /var/lib/dmsdrill-signer/store/*/record; do grep -q "^DMS_DRILL_EVIDENCE_DECISION=GO$" "$f" && cat "$f"; done' | head -n 40)"
 exp="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_EXPECTED=//p')"; gst="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_GUEST_ASSERTED=//p')"
@@ -117,10 +119,10 @@ check V10 "an extension outside the allowlist is refused at the TOC, and recorde
 
 # --- Code-bearing archives in the VM (P5-1: they fail with 42883 before any of their code runs) ---------------------
 rc="$(drill --expected-sha256 "$(sha "$W/bomb.dump")" --manifest "$INBOX/manifest" "$INBOX/bomb.dump")"; cp "$OUT/last.txt" "$OUT/V6.txt"
-check V6 "the restore-bomb archive boots the VM and ends FAIL, recorded (PR-2, P5-1)" "$([ "$rc" = 1 ] && has V6 '^Decision: FAIL:' && recorded V6; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V6.txt" | head -c 70)"
+check V6 "the restore-bomb archive boots the VM and ends FAIL, recorded (PR-2, P5-1)" "$([ "$rc" = 1 ] && has V6 '^Decision: FAIL:unit_exit_20 ' && recorded V6; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V6.txt" | head -c 70)"
 clean_after V6
 rc="$(drill --expected-sha256 "$(sha "$W/vanish.dump")" --manifest "$INBOX/manifest" "$INBOX/vanish.dump")"; cp "$OUT/last.txt" "$OUT/V9.txt"
-check V9 "self-erasing pre-data code fails in the VM, recorded (P5-1)" "$([ "$rc" = 1 ] && has V9 '^Decision: FAIL:' && recorded V9; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V9.txt" | head -c 70)"
+check V9 "self-erasing pre-data code fails in the VM, recorded (P5-1)" "$([ "$rc" = 1 ] && has V9 '^Decision: FAIL:unit_exit_20 ' && recorded V9; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V9.txt" | head -c 70)"
 clean_after V9
 
 # --- V11: forced termination while the VM runs: stopped, recorded as ABORTED, nothing left -----------------------------
@@ -140,13 +142,13 @@ else check V14 "the operator cannot open /dev/kvm (only the QEMU account can, R6
 
 # --- The evidence chain ---------------------------------------------------------------------------------------------
 NREC="$(sudo find /var/lib/dmsdrill-signer/store -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | wc -l)"
-r="$(sudo -n -u "$SIG" -- "$L/signer/restore-drill-evidence-signer.sh" verify 2>&1)"
+r="$(sudo -n -u "$RUNR" -- sudo -n -u "$SIG" -- "$L/signer/restore-drill-evidence-signer.sh" verify 2>&1)"
 check V7 "the signer's store verifies against its head log and every witnessed digest" "$(case "$r" in "VERIFIED ${NREC} head="*) echo 0 ;; *) echo 1 ;; esac)" "$r"
 mkdir -p "$OUT/evidence"
 sudo cp -a /var/lib/dmsdrill-signer/store /var/lib/dmsdrill-signer/head.log "$OUT/evidence/"
 # shellcheck disable=SC2024  # the operator, not the sudo target, writes this evidence file
 sudo -n -u "$WIT" -- "$L/witness/restore-drill-evidence-witness.sh" show > "$OUT/evidence/witness.log" 2>&1
-sudo sh -c "cp /var/lib/dmsdrill-qemu/console/*.log '$OUT/evidence/'" 2> /dev/null || true
+sudo sh -c "cp /var/lib/dmsdrill-qemu/console/*.log /var/lib/dmsdrill-qemu/console/*.stderr '$OUT/evidence/'" 2> /dev/null || true
 sudo chown -R "$(id -un):" "$OUT/evidence"
 cp -- "$PINNED" "$OUT/evidence/pinned-anchor"
 r="$(bash -c '. "$1/scripts/lib/restore-evidence.sh"; dms_evidence_verify_store "$2/store" "$2/pinned-anchor" "$2/head.log" "$2/witness.log"' _ "$REPO" "$OUT/evidence" 2>&1)"

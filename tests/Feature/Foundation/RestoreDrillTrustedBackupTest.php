@@ -518,7 +518,36 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'CHECK calling a builtin that runs SQL text' => ["CREATE TABLE rdtb_q (id int CONSTRAINT rdtb_qcheck CHECK (query_to_xml('SELECT 1', false, false, '') IS NOT NULL));", 'query_to_xml(text,boolean,boolean,text)'],
     'a user-defined cast (JSON constructors and foreign-key checks use casts with no function id in the expression)' => ["CREATE TYPE rdtb_e AS ENUM ('a'); CREATE FUNCTION rdtb_cast(rdtb_e) RETURNS json LANGUAGE sql IMMUTABLE AS \$f\$ SELECT '1'::json \$f\$; CREATE CAST (rdtb_e AS json) WITH FUNCTION rdtb_cast(rdtb_e);", 'user-defined cast'],
     'a user-defined operator' => ['CREATE FUNCTION rdtb_eq(int, int) RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$ SELECT $1 = $2 $f$; CREATE OPERATOR ==== (FUNCTION = rdtb_eq, LEFTARG = int, RIGHTARG = int);', 'user-defined operator'],
+    // R6F-P1..P3 (fix verification of round 6): IMMUTABLE by label, yet session- or cluster-dependent.
+    'a CHECK printing a timestamp through XML (TimeZone)' => ["CREATE TABLE rdtb_x (ts timestamptz, CONSTRAINT rdtb_xcheck CHECK ((xmlserialize(content xmlelement(name t, ts) AS text)) LIKE '%+00:00</t>'));", 'an XML expression'],
+    'a CHECK on a float\'s text form (extra_float_digits)' => ["CREATE TABLE rdtb_f (f float8, CONSTRAINT rdtb_fcheck CHECK ((f)::text = '0.30000000000000004'));", 'text-form conversion'],
+    'a CHECK on bytea text (bytea_output)' => ["CREATE TABLE rdtb_b (b bytea, CONSTRAINT rdtb_bcheck CHECK ((b)::text LIKE '\\x%'));", 'text-form conversion'],
+    'a CHECK calling float8out directly' => ["CREATE TABLE rdtb_o (f float8, CONSTRAINT rdtb_ocheck CHECK (textin(float8out(f)) <> ''));", 'float8out(double precision)'],
+    'a regclass column (cluster-assigned object ids)' => ['CREATE TABLE rdtb_r (r regclass);', 'object-id type regclass'],
+    'a CHECK over a regclass constant' => ["CREATE TABLE rdtb_c (n int, CONSTRAINT rdtb_ccheck CHECK (n < ('pg_class'::regclass)::integer));", 'uses an object-id type'],
+    'a domain constraint of the dump' => ['CREATE DOMAIN rdtb_pos AS int CONSTRAINT rdtb_pos_check CHECK (VALUE > 0);', 'domain constraint rdtb_pos_check'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
+
+it('keeps no lock per probed CHECK: the probes run in rolled-back subtransactions (R6F-P4)', function () {
+    $call = rdtbGuard();
+    $locks = fn (): int => (int) DB::selectOne("SELECT count(*) AS n FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'relation'")->n;
+    $plant = function (string $prefix, int $n): void {
+        for ($i = 0; $i < $n; $i++) {
+            DB::unprepared("CREATE TABLE {$prefix}_{$i} (id int CONSTRAINT {$prefix}_{$i}_c CHECK (id > 0))");
+        }
+    };
+
+    DB::transaction(function () use ($call, $locks, $plant) {
+        $plant('rdtb_l', 5);
+        DB::select($call);
+        $few = $locks();
+        $plant('rdtb_m', 60);
+        DB::select($call);
+        $many = $locks();
+        // 60 more CHECKs, each probed with a temporary table and an index: only the 60 new tables' own locks remain.
+        expect($many - $few)->toBeLessThanOrEqual(60 + 5);
+    });
+})->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 function rdtbTemp(string $content): string
 {
