@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb, agebomb, aclbomb (.dump).
+# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb, agebomb, aclbomb, arrnull (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -160,7 +160,13 @@ dump rd_agebomb agebomb
 base rd_aclbomb
 q -U app_runtime -d rd_aclbomb -c "CREATE TABLE grants (acl aclitem)" -c "INSERT INTO grants VALUES ('app_runtime=r/app_runtime')"
 dump rd_aclbomb aclbomb
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb rd_agebomb rd_aclbomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# F3 (Restore Environment Compatibility Contract): an honest array with a NULL element. It loads only where the
+# restore session has array_nulls=on: a contract pinning production's array_nulls=off makes the drill FAIL exactly as
+# the real restore would.
+base rd_arrnull
+q -U app_runtime -d rd_arrnull -c "CREATE TABLE tags (id int PRIMARY KEY, codes int[])" -c "INSERT INTO tags VALUES (1, ARRAY[1, NULL, 3]), (2, ARRAY[4])"
+dump rd_arrnull arrnull
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb rd_agebomb rd_aclbomb rd_arrnull; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do

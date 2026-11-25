@@ -137,12 +137,15 @@ dms_sandbox_run() {
   [[ "$locale" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || { _dms_sandbox_err "bad locale"; return 2; }
   [ -z "$runtime" ] || dms_sandbox_role_name_ok "$runtime" || { _dms_sandbox_err "bad runtime role"; return 2; }
   [[ "$exts" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] || { _dms_sandbox_err "bad extension allowlist"; return 2; }
+  # F3: the pinned restore-session settings of the signed environment contract (the inner script validates them again).
+  local pins="${DMS_SANDBOX_ENV_PINS:-none}"
+  [[ "$pins" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14})$ ]] || { _dms_sandbox_err "bad environment pins"; return 2; }
   local status_file
   status_file="$(mktemp)" || return 2
   {
     systemd-run "${scope[@]}" --wait --pipe --collect --quiet --unit="${unit}" "$@" \
       "--setenv=DRILL_ROLES=${roles}" "--setenv=DRILL_LOCALE=${locale}" "--setenv=DRILL_RUNTIME_ROLE=${runtime}" \
-      "--setenv=DRILL_EXTENSIONS=${exts}" \
+      "--setenv=DRILL_EXTENSIONS=${exts}" "--setenv=DRILL_ENV_PINS=${pins}" \
       -- /usr/bin/bash "$DMS_SANDBOX_INNER_TARGET" < /dev/null 2> >(head -c "$DMS_SANDBOX_MAX_STDERR_BYTES" > "$err")
     echo $? > "$status_file"
   } | head -c $((DMS_SANDBOX_MAX_RESULT_BYTES + 1)) > "$raw"

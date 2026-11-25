@@ -68,33 +68,59 @@ the only supported way to replay a backup for a drill. Design and evidence:
   `deploy/restore-drill-vm/ci/provision-drill-host.sh` (CI only); the design is in design §0.12.
   - All drill code installed **root-owned** outside any checkout (`/usr/local/lib/dms-restore-drill/`), in
     directories no other identity can write. The signer verifies this itself and records
-    `INSTALL=root:<code digest>,config:<configuration digest>`; it refuses a GO from any other install.
+    `INSTALL=root:<code digest>,config:<configuration digest>`; it refuses a GO from any other install, and a GO whose
+    install changed since the run started. The code digest covers the drill code and the QEMU, qemu-img and pg_restore
+    binaries. The configuration digest covers `/etc/dms-restore-drill/*.conf`, the manifest anchor and revocation list,
+    and the drill's sudoers rules (`/etc/dms-restore-drill/sudoers`).
   - Accounts, each owning only its own state, with no login and no other sudo right:
     - the **operator**, a person, who places the backup (`pg_dump -Fc`) and the signed manifest in the **inbox**
       (`/var/lib/dms-restore-drill/inbox`, group `dmsdrill-inbox`, mode 2770, files 0640);
     - the **runner** (`dmsdrill-runner`, also in `dmsdrill-inbox`), which runs the installed orchestrator. Its work
-      directory should be a tmpfs: the staged copy and the input disk are plaintext-equivalent;
+      directory must be a tmpfs, and the host must have **no swap**: the staged copy and the input disk are
+      plaintext-equivalent. The orchestrator refuses to run while swap is active;
     - the **signer** (signing key, `allowed_signers` with `namespaces="dms-restore-drill-evidence"`, store, head log);
-    - the **witness** (the append-only head log);
-    - the **QEMU** account (the VM work directory; a member of `kvm`; `/dev/kvm` root:kvm 0660; no sudoers rule).
+    - the **witness** (the append-only head log).
+    The signer's state directory (store, head log and working files) and the witness's log directory are each a
+    **mount point of a file system of their own**: a small dedicated partition, not a subvolume or thin volume that
+    shares space. Then nobody else can fill them and stop a publication half way. The signer verifies the mount points
+    and refuses a GO otherwise.
+    - the **QEMU** account (a member of `kvm`; `/dev/kvm` root:kvm 0660; no sudoers rule). Its VM work directory is a
+      **file system of its own**, for example a dedicated partition of at least 12 GiB, under a root-owned parent
+      directory. The supervisor refuses otherwise, so a full VM disk can never fill the evidence store.
   - The **supervisor** (`restore-drill-supervisor.sh`, run as root by the runner only) starts the archive inspection in
     a DynamicUser system unit and QEMU in the system unit `dmsqemu.service`: no network, cgroup killed at the time
-    limit, no swap, no core dump. No AppArmor exception and no lingering user manager are needed.
+    limit, no swap, no core dump, no socket of any kind (no host daemon such as the DNS resolver is reachable), no
+    io_uring and no namespaces, a private `/dev/shm`, bounded CPU, I/O and file size. It starts one VM at a time, and each run's VM boots only once. No AppArmor
+    exception and no lingering user manager are needed.
   - Root-owned configuration in `/etc/dms-restore-drill/`, mode 0644 (paths only, no secret): `drill.conf`,
     `signer.conf` (`DMS_SIGNER_PROFILE=drill-host`, `DMS_SIGNER_IMAGE_SHA256` the allowed image digests),
     `witness.conf`, `qemu.conf` (the pinned image and digest, the QEMU binaries) and `supervisor.conf`. The drill image
     is root-owned.
-  - Exactly these sudoers rules, with `Defaults!<the four commands> !use_pty, !log_input, !log_output`, no SETENV and
-    `secure_path` set:
+  - Exactly these sudoers rules. Use `Defaults!<the four commands> !use_pty, !log_input, !log_output`, and the same
+    commands' `rlimit_*` defaults exactly as `provision-drill-host.sh` writes them: `rlimit_nproc=infinity`,
+    `rlimit_cpu=infinity`, `rlimit_as=infinity`, `rlimit_data=infinity`, `rlimit_fsize=infinity`,
+    `rlimit_locks=infinity`, `rlimit_nofile=65536`, `rlimit_stack=8388608`, `rlimit_memlock=8388608`, `rlimit_core=0`.
+    Then a caller's resource limits never reach the drill identities. The orchestrator and the signer refuse to run
+    when the process, CPU or address-space limit is not unlimited. No SETENV, and `secure_path` set. The rules live in `/etc/dms-restore-drill/sudoers`: check it with `visudo -c` at mode 0440,
+    then make it 0444 so the signer can digest it. The drop-in `/etc/sudoers.d/dms-restore-drill` (0440) holds only
+    `@include /etc/dms-restore-drill/sudoers`:
     - operator → runner: the orchestrator `*`;
-    - operator → signer: `verify`;
-    - operator → witness: `show`;
+    - operator → witness: `show` (the operator has **no** route to the signer);
     - runner → signer: `sign`, `verify`;
     - runner → root: the supervisor's `inspect *` and `vm *`;
     - runner → witness: `show`;
     - signer → witness: `append *`, `show`.
   - Before the first drill: write down the signer key's fingerprint outside the host (it is the anchor every exported
-    store is verified against), and the expected INSTALL digest of the release.
+    store is verified against), and the expected INSTALL digest of this host's install. The configuration part names
+    this host's accounts, so it is per host, not per release.
+  - After every drill: copy the witness log (`show`) off the host. It is the independently retained record of every
+    evidence digest. `show` ends after 30 seconds, so read it to the end at once (a reader that stalls gets a
+    truncated copy and exit 137).
+  - **A record published but not witnessed** (the signer says so, and every later record is refused): root runs the
+    signer's `recover-head` **as the signer account through sudo**, so the pinned limits apply. It refuses unless the
+    store verifies and the witness and the head log are each at most one record behind. If an environmental stall (a hung disk,
+    sudo or PAM) leaves a drill hanging after its VM, only root can end it; its run is then closed by the next start as
+    `ABORTED:unclosed_after_boot`.
   - `DMS_DRILL_LOCALE` must equal the production database's locale. Generated values and indexes depend on it.
   - The image is built by `scripts/restore-drill-vm-image.sh` with the same extension allowlist (`none`). Widening the
     allowlist needs a production-side check first that no table belongs to an extension.
@@ -102,13 +128,20 @@ the only supported way to replay a backup for a drill. Design and evidence:
   column or index names a function of the dump. The restore order keeps every dump function out of the database until
   the end, so no code from the backup can run (P5-1). For an honest schema, it means the schema uses its own
   functions outside triggers, which the drill does not accept.
+- **Reading a load-guard refusal (`FAIL:unit_exit_21`) or `environment_dependent` (`FAIL:unit_exit_22`):** a CHECK,
+  generated column, partition key or index of the schema depends on the session or the cluster. Examples are the
+  clock, the role, an XML expression, a value converted through its text form, or an object-id type such as
+  `regclass` (full-text search ids included). The drill also re-evaluates every CHECK, generated column and index
+  over the restored rows under several session settings; a difference FAILs as `environment_dependent`. Such an expression can hold in the drill and fail in a real restore, so the drill does not accept it.
 
 ```bash
 # On the ISOLATED DRILL HOST only (never on production), as the operator, with both files in the inbox:
 sudo -n -u dmsdrill-runner -- /usr/local/lib/dms-restore-drill/drill/scripts/restore-drill-vm.sh \
   --expected-sha256 <hex> --manifest /var/lib/dms-restore-drill/inbox/<manifest> /var/lib/dms-restore-drill/inbox/<archive.dump>
-# Verify the store at any time (prints the head digest to keep off the host):
-sudo -n -u dmsdrill-signer -- /usr/local/lib/dms-restore-drill/signer/restore-drill-evidence-signer.sh verify
+# The witness log, to copy off the host after every drill (one line per evidence record; the last line is the head):
+sudo -n -u dmsdrill-witness -- /usr/local/lib/dms-restore-drill/witness/restore-drill-evidence-witness.sh show
+# Only after the signer reported a record published but not witnessed (root, as the signer account):
+sudo -n -u dmsdrill-signer -- /usr/local/lib/dms-restore-drill/signer/restore-drill-evidence-signer.sh recover-head
 # Production-side verification only (no replay; exit 3 by design):
 bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>
 ```

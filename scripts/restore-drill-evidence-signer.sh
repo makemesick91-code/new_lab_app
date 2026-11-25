@@ -112,18 +112,20 @@ install_state() {
   [ -n "$qb" ] && [ -n "$qi" ] && [ -n "$pb" ] || { echo "unverified:binaries_unknown"; return 0; }
   files+=("$qb" "$qi" "$pb/pg_restore")
   # R6F-E4: the trust roots (manifest anchor, revocations) and the sudoers rules the identity separation rests on.
-  local an rv
+  local an rv ip
   an="$(sed -n 's/^DMS_DRILL_MANIFEST_ANCHOR=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
   rv="$(sed -n 's/^DMS_DRILL_MANIFEST_REVOCATIONS=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
-  [ -n "$an" ] && [ -n "$rv" ] || { echo "unverified:trust_roots_unknown"; return 0; }
+  # F3: the drill image's properties are a trust root too (the environment compatibility check reads them).
+  ip="$(sed -n 's/^DMS_DRILL_IMAGE_PROPERTIES=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
+  [ -n "$an" ] && [ -n "$rv" ] && [ -n "$ip" ] || { echo "unverified:trust_roots_unknown"; return 0; }
   local -a roots=()
-  for f in "$an" "$rv"; do [ -e "$f" ] && roots+=("$f"); done
+  for f in "$an" "$rv" "$ip"; do [ -e "$f" ] && roots+=("$f"); done
   # The rules themselves live in /etc/dms-restore-drill/sudoers (root 0444), which the fixed drop-in
   # /etc/sudoers.d/dms-restore-drill only @includes (/etc/sudoers.d is not readable by other accounts).
   [ -r /etc/dms-restore-drill/sudoers ] || { echo "unverified:sudoers_unreadable"; return 0; }
   cfg+=("${roots[@]}" /etc/dms-restore-drill/sudoers)
   # R6C-8: the orchestrator's own library directory must be there in full, not only "enough files".
-  for f in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
+  for f in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-envcontract.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
     [ -f "$o/scripts/lib/$f" ] || { echo "unverified:install_incomplete"; return 0; }
   done
   for f in "${files[@]}" "${cfg[@]}"; do
@@ -159,7 +161,7 @@ install_state() {
   code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
   lines=()
   for f in "${cfg[@]}"; do lines+=("$(sha256sum -- "$f")"); done
-  for f in "$an" "$rv"; do [ -e "$f" ] || lines+=("absent  ${f}"); done
+  for f in "$an" "$rv" "$ip"; do [ -e "$f" ] || lines+=("absent  ${f}"); done
   echo "root:${code},config:$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 }
 # The witness (Phase 3): its log is read for every verification and extended after every publication.

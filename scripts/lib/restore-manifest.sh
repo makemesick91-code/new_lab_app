@@ -30,7 +30,9 @@ DMS_ROLE_MANIFEST_MAX_BYTES=4096
 DMS_ROLE_MANIFEST_MAX_SIG_BYTES=4096
 DMS_ROLE_MANIFEST_MAX_VALIDITY_SECONDS=$((90 * 86400))
 DMS_ROLE_MANIFEST_CLOCK_SKEW_SECONDS=300
-DMS_ROLE_MANIFEST_KEYS="DMS_ROLE_MANIFEST_CONTRACT DMS_ROLE_MANIFEST_ID DMS_ROLE_MANIFEST_ROLES DMS_ROLE_MANIFEST_RUNTIME_ROLE DMS_ROLE_MANIFEST_R6_OWNER_ROLE DMS_ROLE_MANIFEST_ISSUED_BY DMS_ROLE_MANIFEST_ISSUED_AT DMS_ROLE_MANIFEST_NOT_AFTER"
+# Contract 2 (F3): the manifest names the sha256 of the signed Restore Environment Compatibility Contract the drill
+# must restore under (scripts/lib/restore-envcontract.sh), binding the two.
+DMS_ROLE_MANIFEST_KEYS="DMS_ROLE_MANIFEST_CONTRACT DMS_ROLE_MANIFEST_ID DMS_ROLE_MANIFEST_ROLES DMS_ROLE_MANIFEST_RUNTIME_ROLE DMS_ROLE_MANIFEST_R6_OWNER_ROLE DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256 DMS_ROLE_MANIFEST_ISSUED_BY DMS_ROLE_MANIFEST_ISSUED_AT DMS_ROLE_MANIFEST_NOT_AFTER"
 declare -gA DMS_ROLE_MANIFEST=()
 
 _dms_manifest_epoch() {
@@ -101,7 +103,8 @@ _dms_manifest_verify_copy() {
 
 _dms_manifest_check_content() {
   local now="$1" issued not_after r runtime_ok=0 owner_ok=0
-  [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_CONTRACT]}" = 1 ] || { echo "manifest: unsupported contract"; return 1; }
+  [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_CONTRACT]}" = 2 ] || { echo "manifest: unsupported contract"; return 1; }
+  [[ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256]}" =~ ^[0-9a-f]{64}$ ]] || { echo "manifest: ENV_CONTRACT_SHA256 is not a sha256"; return 1; }
   [[ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]}" =~ ^[a-z0-9-]{8,64}$ ]] || { echo "manifest: bad ID"; return 1; }
   [ -n "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" ] || { echo "manifest: no roles"; return 1; }
   local -A uniq=()

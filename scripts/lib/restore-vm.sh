@@ -25,7 +25,7 @@ DMS_RESTORE_VM_LOADED=1
 DMS_VM_HEADER_BYTES=4096
 DMS_VM_OUTPUT_BYTES=65536
 DMS_VM_OUTPUT_READ_BYTES=8192
-DMS_VM_INPUT_KEYS="run_id payload_bytes payload_sha256 payload_key payload_iv roles runtime_role extension_allowlist locale tmpfs_mib memory_mib tasks timeout_seconds"
+DMS_VM_INPUT_KEYS="run_id payload_bytes payload_sha256 payload_key payload_iv roles runtime_role extension_allowlist locale env_pins tmpfs_mib memory_mib tasks timeout_seconds"
 DMS_VM_INPUT_SERIAL=dmsdrill-input
 DMS_VM_OUTPUT_SERIAL=dmsdrill-output
 # shellcheck disable=SC2034  # read by the guest agent
@@ -45,6 +45,8 @@ _dms_vm_input_value_ok() {
     runtime_role) [[ "$2" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] ;;
     extension_allowlist) [[ "$2" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] ;;
     locale) [[ "$2" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] ;;
+    # F3: the contract's pinned restore-session settings, all fifteen, or none.
+    env_pins) [[ "$2" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14})$ ]] ;;
     tmpfs_mib | memory_mib | tasks | timeout_seconds) [[ "$2" =~ ^[1-9][0-9]{0,6}$ ]] ;;
     *) return 1 ;;
   esac
@@ -235,7 +237,7 @@ dms_vm_decision_safe() {
 # then the sandbox result must pass dms_sandbox_decide against the per-table digest the host computed from the archive.
 # Everything read here is GUEST-ASSERTED (VR-1); the evidence records it as such.
 dms_vm_decide() {
-  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" exp_digest="${4:-}" exp_tables="${5:-}" exp_shape="${6:-}" k
+  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" exp_digest="${4:-}" exp_tables="${5:-}" exp_shape="${6:-}" exp_env="${7:-}" k d
   [ "$qemu_exit" = 0 ] || { echo "FAIL:vm_exit_${qemu_exit}"; return 0; }
   [ "$DMS_VM_OUTPUT_DUPLICATES" = 0 ] && [ "$DMS_VM_OUTPUT_REJECTED" = 0 ] || { echo "FAIL:vm_output_malformed"; return 0; }
   [ "${DMS_VM_OUTPUT[run_id]:-}" = "$run" ] || { echo "FAIL:vm_run_id_mismatch"; return 0; }
@@ -250,5 +252,9 @@ dms_vm_decide() {
   DMS_SANDBOX_DUPLICATES="${DMS_VM_OUTPUT[result_duplicates]:-x}"
   # shellcheck disable=SC2034
   DMS_SANDBOX_REJECTED="${DMS_VM_OUTPUT[result_rejected]:-x}"
-  dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "$exp_digest" "$exp_tables" "$exp_shape"
+  d="$(dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "$exp_digest" "$exp_tables" "$exp_shape")"
+  # F3: with an environment expectation (the orchestrator always passes one), GO also needs the guest's environment
+  # digest to equal the one computed from the signed contract (the signer refuses a GO without that equality too).
+  if [ "$d" = GO ] && [ -n "$exp_env" ] && [ "${DMS_VM_OUTPUT[sandbox_env_digest]:-}" != "$exp_env" ]; then d="FAIL:env_mismatch"; fi
+  echo "$d"
 }

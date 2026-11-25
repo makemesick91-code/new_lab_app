@@ -34,7 +34,7 @@ const RDVM_BUILD = <<<'SH'
     printf 'SELECT 1;\n' > "$T/payload"
     declare -A IN=([run_id]=dmsdrill-0123456789ab [payload_bytes]=$(stat -c %s "$T/payload") [payload_sha256]=$(sha256sum "$T/payload" | cut -d' ' -f1)
       [payload_key]=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef [payload_iv]=00112233445566778899aabbccddeeff
-      [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]=none [locale]=C.UTF-8 [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
+      [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]=none [locale]=C.UTF-8 [env_pins]=none [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
     dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
 
     SH;
@@ -179,7 +179,9 @@ it('pins the orchestrator to D6, refuses the production host (D1), and keeps hos
         ->and($code)->toContain('flock -n "$lock_fd"')
         // Phase 3: QEMU runs only under its own identity, through the launcher; the operator holds no image and no KVM.
         ->and($code)->toContain('sudo -n -- "${C[DMS_DRILL_SUPERVISOR_COMMAND]}" vm "$RUN_ID"')
-        ->and($code)->not->toContain('DMS_DRILL_IMAGE')
+        // (The orchestrator reads only the image's PROPERTIES, never an image path or digest of its own: F3.)
+        ->and($code)->not->toContain('DMS_DRILL_IMAGE=')
+        ->and($code)->not->toContain('DMS_DRILL_IMAGE_SHA256')
         ->and($code)->not->toContain('DMS_DRILL_QEMU_USER')
         ->and($code)->toContain('[ "$(hostname)" != "$PROD_HOSTNAME" ]')
         ->and($code)->toContain('[ ! -e "$PROD_APP_DIR" ]')
@@ -258,8 +260,8 @@ it('refuses before anything runs when its inputs or its environment are not trus
     file_put_contents("{$dir}/backup.sql", "-- PostgreSQL database dump\n");
     file_put_contents("{$dir}/manifest", "x\n");
     $signer = $case === 'signer is the operator' ? (string) trim((string) shell_exec('id -un')) : 'nobody';
-    $conf = "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER={$signer}\nDMS_DRILL_SIGNER_COMMAND={$dir}/signer\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/no-supervisor\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n";
-    foreach (['no-supervisor', 'anchor', 'revocations', 'signer'] as $f) {
+    $conf = "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER={$signer}\nDMS_DRILL_SIGNER_COMMAND={$dir}/signer\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/no-supervisor\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\nDMS_DRILL_IMAGE_PROPERTIES={$dir}/image.properties\n";
+    foreach (['no-supervisor', 'anchor', 'revocations', 'signer', 'image.properties'] as $f) {
         file_put_contents("{$dir}/{$f}", "x\n");
         chmod("{$dir}/{$f}", 0600);
     }
@@ -322,7 +324,7 @@ function rdvmTrustedSetup(string $dir, string $fixture): array
 {
     (new Process(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'owner', '-f', "{$dir}/owner"]))->mustRun();
     file_put_contents("{$dir}/anchor", 'owner@ci '.file_get_contents("{$dir}/owner.pub"));
-    $manifest = "DMS_ROLE_MANIFEST_CONTRACT=1\nDMS_ROLE_MANIFEST_ID=test-manifest-0001\nDMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner\n"
+    $manifest = "DMS_ROLE_MANIFEST_CONTRACT=2\nDMS_ROLE_MANIFEST_ID=test-manifest-0001\nDMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner\nDMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256=".str_repeat('c', 64)."\n"
         ."DMS_ROLE_MANIFEST_RUNTIME_ROLE=app_runtime\nDMS_ROLE_MANIFEST_R6_OWNER_ROLE=none\nDMS_ROLE_MANIFEST_ISSUED_BY=owner@ci\n"
         .'DMS_ROLE_MANIFEST_ISSUED_AT='.gmdate('Y-m-d\TH:i:s\Z', time() - 60)."\nDMS_ROLE_MANIFEST_NOT_AFTER=".gmdate('Y-m-d\TH:i:s\Z', time() + 86400)."\n";
     file_put_contents("{$dir}/manifest", $manifest);
@@ -337,10 +339,12 @@ function rdvmTrustedSetup(string $dir, string $fixture): array
     @mkdir("{$dir}/work", 0700);
     copy(base_path("tests/Fixtures/restore-drill/{$fixture}"), "{$dir}/backup.dump");
     chmod("{$dir}/backup.dump", 0600);
-    file_put_contents("{$dir}/drill.conf", "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER=nobody\nDMS_DRILL_SIGNER_COMMAND={$dir}/qemu\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/qemu\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n");
+    file_put_contents("{$dir}/drill.conf", "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER=nobody\nDMS_DRILL_SIGNER_COMMAND={$dir}/qemu\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/qemu\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\nDMS_DRILL_IMAGE_PROPERTIES={$dir}/image.properties\n");
     chmod("{$dir}/drill.conf", 0600);
+    file_put_contents("{$dir}/image.properties", "x\n");
+    chmod("{$dir}/image.properties", 0600);
 
-    return ['--expected-sha256', hash_file('sha256', "{$dir}/backup.dump"), '--manifest', "{$dir}/manifest", "{$dir}/backup.dump"];
+    return ['--expected-sha256', hash_file('sha256', "{$dir}/backup.dump"), '--manifest', "{$dir}/manifest", '--env-contract', "{$dir}/env-contract", "{$dir}/backup.dump"];
 }
 
 it('never inspects an archive it cannot record: without its signer, the drill stops before any input is opened (R6C-3)', function (string $fixture) {
@@ -363,7 +367,7 @@ it('runs only from an install nobody else can change, and accepts only its own p
     $code = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
 
     expect($code)->toContain('TRUST_UID="$(stat -c \'%u\' -- "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")")"')
-        ->and($code)->toContain('for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND; do')
+        ->and($code)->toContain('for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND DMS_DRILL_IMAGE_PROPERTIES; do')
         ->and($code)->toContain('xdg="${XDG_RUNTIME_DIR:-}"; [ "$xdg" = "/run/user/$(id -u)" ] || xdg=""')
         ->and($code)->toContain('[ "$bus" = "unix:path=${xdg}/bus" ] || bus=""')
         ->and($code)->toContain('dms_archive_inspect_stop "$INSPECT_UNIT"')

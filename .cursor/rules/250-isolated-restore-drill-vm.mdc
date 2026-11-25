@@ -95,6 +95,23 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
       a GO otherwise.
     - The guard tests every CHECK with PostgreSQL's own immutability check (R6B-1).
     - Never give the operator a sudoers route to `sign`. Never run QEMU outside the supervisor's unit.
+    - Fix verification of round 6 (R6F-*, design §0.13):
+      - **Guard.** It also refuses, in the dump's own expressions, anything that is IMMUTABLE by label but depends on
+        session settings or cluster-assigned object ids: XML expressions, text-form conversions (CoerceViaIO), domain
+        coercions, the float, bytea, time and geometric output functions, XML functions, and reg* values and columns.
+        Index expressions and predicates get the same check after post-data (`FAIL:unit_exit_22`). Text search ids
+        are cluster-assigned too, because they depend on the host's locales at initdb. Never exempt a reg* type.
+      - **Differential.** After post-data, before any dump function exists, every CHECK, generated column and
+        expression or partial index is re-evaluated on the restored rows under five session profiles. It reads every
+        row: no index scan, no constraint exclusion, and keys only where the predicate holds. Any difference FAILs
+        (`unit_exit_22`). Never let it use an index or skip a profile.
+      - **Supervisor.** Every signal stops the unit at once. It refuses a busy unit; each run boots once.
+      - **QEMU unit.** A system-call filter (no `socket()`, no io_uring), no namespaces, a private `/dev/shm`, a
+        read-only `/run`, no journal or D-Bus, and bounded CPU, I/O and file size. The work directory is a dedicated
+        file system. `systemd-run` rejects the address-family value `none`, so never use it.
+      - **Operator.** It has no route to the signer at all, only to the witness `show`. The decision is shown only
+        after it is recorded.
+      - **Evidence.** The drill lock is taken before the start. The verifier replays contract 4.
 11. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
    patient data and is removed with the run directory.
 
@@ -112,5 +129,6 @@ Each item needs real evidence; a configuration-only claim is not enough:
 - two independent adversarial reviews (Linux/systemd/VM, and PostgreSQL restore security).
 
 Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-boot-gate.sh`, on disposable
-infrastructure only (workflow proposal, inactive until the owner decides). A gate that did not run is NOT RUN, never
-PASS. `provision-drill-host.sh` runs only on a disposable CI runner.
+infrastructure only. The audited workflow is activated only on the dedicated branch `validation/r6-b6-real-isolation`
+(owner directive "R6-B6 — Phase 3"), never on a PR, base or production branch. A gate that did not run is NOT RUN,
+never PASS. `provision-drill-host.sh` runs only on a GitHub-hosted, disposable runner.

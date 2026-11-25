@@ -21,6 +21,8 @@
 #   DRILL_EXPECT_DYNAMIC_UID=1  system mode: the uid must be a DynamicUser uid (DR-11)
 #   DRILL_RUNTIME_ROLE          the manifest's runtime role: its object count after the replay decides P5 (PR-3)
 #   DRILL_EXTENSIONS            the extension allowlist (PR-8), "none" when empty
+#   DRILL_ENV_PINS              F3: production's restore-session settings from the signed Restore Environment
+#                               Compatibility Contract ("name=value;…", all 15, or "none"), applied to every restore session
 set -uo pipefail
 umask 077
 exec 3>&1 1>> /srv/inner.log 2>&1
@@ -94,6 +96,25 @@ GUARD=/opt/dmsdrill/guard.sql
 [ -f "$ARCHIVE" ] && [ -r "$ARCHIVE" ] && [ -f "$GUARD" ] && [ -r "$GUARD" ] || fail inputs_missing 12
 [ -z "$RUNTIME" ] || [[ "$RUNTIME" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail runtime_role_invalid 12
 [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || fail locale_invalid 12
+# F3: the pinned restore-session settings: each of the fifteen names exactly once, values of a safe alphabet. They
+# become libpq options of every restore session (spaces escaped), exactly as production's restore session has them.
+PIN_NAMES="TimeZone DateStyle IntervalStyle array_nulls lc_monetary lc_numeric lc_time extra_float_digits bytea_output xmlbinary xmloption standard_conforming_strings quote_all_identifiers default_text_search_config timezone_abbreviations"
+PINS="${DRILL_ENV_PINS:-none}"
+PIN_OPTS=""
+if [ "$PINS" != none ]; then
+  [[ "$PINS" =~ ^[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14}$ ]] || fail env_pins_invalid 12
+  declare -A PSEEN=()
+  rest="$PINS"
+  while [ -n "$rest" ]; do
+    item="${rest%%;*}"
+    if [ "$item" = "$rest" ]; then rest=""; else rest="${rest#*;}"; fi
+    pname="${item%%=*}"; pval="${item#*=}"
+    [[ " ${PIN_NAMES} " == *" ${pname} "* ]] && [ -z "${PSEEN[$pname]:-}" ] || fail env_pins_invalid 12
+    PSEEN[$pname]=1
+    PIN_OPTS="${PIN_OPTS} -c ${pname}=${pval// /\\ }"
+  done
+  [ "${#PSEEN[@]}" = 15 ] || fail env_pins_invalid 12
+fi
 
 # --- Trusted setup (no backup byte has been read yet) -----------------------------------------------------------
 "$PGBIN/initdb" -D "$R/data" -U "$SU" --auth=trust -E UTF8 --locale="$LOCALE" > "$R/initdb.log" 2>&1 3>&- || fail initdb 10
@@ -182,7 +203,7 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
   { "$PGBIN/pg_restore" "${sect[@]}" -L "$list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
     echo "$?" > "$R/pg_restore.rc"
     printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;'; } 3>&- \
-    | "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
+    | PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
   st=("${PIPESTATUS[@]}")
   prc="$(< "$R/pg_restore.rc")"
   st[0]="${prc:-1}"
@@ -200,7 +221,7 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
   fi
 }
 restore_part pre_data "$R/list.schema" pre-data
-if ! "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f "$GUARD" > /dev/null 2> "$R/guard.err" 3>&-; then
+if ! PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f "$GUARD" > /dev/null 2> "$R/guard.err" 3>&-; then
   emit "replay_section=load_guard"
   fail load_guard 21
 fi
@@ -296,6 +317,28 @@ for profile in \
     fail environment_dependent 22
   fi
 done
+# F3: what a pinned restore session actually observes, as one digest: the PostgreSQL major, the database's encoding,
+# locale provider, collate, ctype and collation version, the tzdata version PostgreSQL reads (system tzdata), and the
+# effective value of every pinned setting. The host compares it with the digest it computed from the signed contract
+# (scripts/lib/restore-envcontract.sh, dms_env_expected_digest); this is the guest's assertion, never production's.
+TZV=unknown
+if IFS= read -r tzl < /usr/share/zoneinfo/tzdata.zi 2> /dev/null && [[ "$tzl" =~ ^\#\ version\ ([0-9]{4}[a-z])$ ]]; then TZV="${BASH_REMATCH[1]}"; fi
+PIN_SQL=""
+for n in $PIN_NAMES; do PIN_SQL="${PIN_SQL}${PIN_SQL:+, }pg_catalog.concat('${n}=', pg_catalog.current_setting('${n}'))"; done
+read -r -d '' ENV_SQL <<SQL
+SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.concat(pg_catalog.concat_ws(E'\\n',
+  pg_catalog.concat('pg_major=', pg_catalog.current_setting('server_version_num')::pg_catalog.int4 OPERATOR(pg_catalog./) 10000),
+  pg_catalog.concat('server_encoding=', pg_catalog.current_setting('server_encoding')),
+  pg_catalog.concat('locale_provider=', CASE d.datlocprovider WHEN 'c' THEN 'libc' WHEN 'i' THEN 'icu' ELSE 'other' END),
+  pg_catalog.concat('datcollate=', d.datcollate), pg_catalog.concat('datctype=', d.datctype),
+  pg_catalog.concat('collation_version=', COALESCE(d.datcollversion, 'none')),
+  pg_catalog.concat('tzdata_version=', '${TZV}'),
+  ${PIN_SQL}
+), E'\\n'), 'UTF8')), 'hex') FROM pg_catalog.pg_database d WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database()
+SQL
+envd="$(PGOPTIONS="$PIN_OPTS -c search_path=pg_catalog -c default_transaction_read_only=on" "$PGBIN/psql" -X -Atq -v ON_ERROR_STOP=1 -h "$R/data" -U "$RR" -d "$DB" -c "$ENV_SQL" 2> /dev/null 3>&-)" || fail env_digest 30
+[[ "$envd" =~ ^[0-9a-f]{64}$ ]] || fail env_digest 30
+emit "env_digest=${envd}"
 restore_part functions "$R/list.functions"
 restore_part triggers "$R/list.triggers"
 restore_part acls "$R/list.acls"

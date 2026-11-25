@@ -65,7 +65,7 @@ while :; do
   [ "$d" = / ] && break
   d="$(dirname -- "$d")"
 done
-for lib in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
+for lib in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-envcontract.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
   node="${SCRIPT_DIR}/lib/${lib}"
   if [ -L "$node" ] || [ ! -f "$node" ] || { [ "$(stat -c '%u' -- "$node")" != "$TRUST_UID" ] && [ "$(stat -c '%u' -- "$node")" != 0 ]; } \
     || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
@@ -79,14 +79,16 @@ RECORDABLE=0; RECORDED=0; RUN_ID=""; STAGE=arguments
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EXPECTED_SHA256=""; MANIFEST=""; BACKUP_FILE=""; BACKUP_BYTES=0; MANIFEST_SHA=""; IMAGE_SHA=""
 EXPECT_TABLES=""; EXPECT_ROWS=""; EXPECT_DIGEST=""; EXPECT_SHAPE=""; VM_RAN=0
+ENV_CONTRACT=""; ENV_SHA=""; EXPECT_ENV=""; ENV_PINS=""
 declare -A DMS_VM_OUTPUT=()
 # The request for the separate signer (VR-4, D10). VR-1: what the host verified is kept apart from what the guest
 # asserted. A refused or aborted drill carries `none` wherever a fact was never established.
 evidence_request() { # <decision>
-  local decision="$1" kind="${1%%:*}" hv exp guest dg
+  local decision="$1" kind="${1%%:*}" hv exp guest dg ge
   [ "$kind" = GO ] || [ "$kind" = FAIL ] && hv="$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS" || hv=none
   exp=none
-  [ -n "$EXPECT_SHAPE" ] && exp="tables=${EXPECT_TABLES},rows=${EXPECT_ROWS},per_table_digest=${EXPECT_DIGEST},catalog_shape=${EXPECT_SHAPE}"
+  [ -n "$EXPECT_SHAPE" ] && [ -n "$ENV_SHA" ] && [ -n "$EXPECT_ENV" ] \
+    && exp="tables=${EXPECT_TABLES},rows=${EXPECT_ROWS},per_table_digest=${EXPECT_DIGEST},catalog_shape=${EXPECT_SHAPE},env_contract=${ENV_SHA},env=${EXPECT_ENV}"
   guest=none
   if [ "$VM_RAN" = 1 ]; then
     dg="${DMS_VM_OUTPUT[sandbox_table_digest]:-none}"
@@ -101,6 +103,10 @@ evidence_request() { # <decision>
       "$(printf '%s' "${DMS_VM_OUTPUT[vm_net_ifaces]:-none}" | tr -cd 'a-z0-9:' | head -c 40)")"
     for f in restore tables catalog_shape user_code user_code_executed fidelity vm_ifaces; do guest="${guest/${f}=,/${f}=none,}"; done
     guest="${guest%vm_ifaces=}"; [[ "$guest" == *vm_ifaces=* ]] || guest="${guest}vm_ifaces=none"
+    # F3: the digest of the restore environment the guest applied and observed (its assertion; checked against EXPECTED).
+    ge="${DMS_VM_OUTPUT[sandbox_env_digest]:-none}"
+    [[ "$ge" =~ ^([0-9a-f]{64}|none)$ ]] || ge=invalid
+    guest="${guest},env=${ge}"
   fi
   printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\n' "$RUN_ID"
   printf 'DMS_DRILL_EVIDENCE_OPERATOR=%s\n' "${DMS_DRILL_OPERATOR:-$(id -un)}"
@@ -155,7 +161,8 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --expected-sha256) EXPECTED_SHA256="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
     --manifest) MANIFEST="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
-    -*) refuse "usage: restore-drill-vm.sh --expected-sha256 <hex> --manifest <file> <backup.dump (pg_dump -Fc)>" ;;
+    --env-contract) ENV_CONTRACT="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+    -*) refuse "usage: restore-drill-vm.sh --expected-sha256 <hex> --manifest <file> --env-contract <file> <backup.dump (pg_dump -Fc)>" ;;
     *) [ -z "$BACKUP_FILE" ] || refuse "one backup file at most"; BACKUP_FILE="$1"; shift ;;
   esac
 done
@@ -175,7 +182,7 @@ CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}"
 why="$(dms_trusted_file "drill configuration" "$CONF" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 # VR-4: the signing key, the evidence store and its head log belong to the SIGNER identity; the drill image, QEMU and
 # KVM belong to the QEMU identity (Phase 3). This operator holds none of them.
-DRILL_CONF_KEYS="DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE"
+DRILL_CONF_KEYS="DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE DMS_DRILL_IMAGE_PROPERTIES"
 declare -A C=()
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
@@ -190,7 +197,7 @@ SIGNER_UID="$(id -u -- "${C[DMS_DRILL_SIGNER_USER]}" 2> /dev/null)" || refuse "t
 [ "$SIGNER_UID" != "$(id -u)" ] && [ "$SIGNER_UID" != 0 ] || refuse "the signer must be a separate, unprivileged identity (VR-4)"
 # Phase 3, review round 6: QEMU runs under its own account in a system unit of the root supervisor, which checks that
 # the runner, QEMU and the signer are three different unprivileged accounts (scripts/restore-drill-supervisor.sh).
-for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND; do
+for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND DMS_DRILL_IMAGE_PROPERTIES; do
   why="$(dms_trusted_file "$k" "${C[$k]}" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 done
 why="$(dms_trusted_dir DMS_DRILL_WORK_DIR "${C[DMS_DRILL_WORK_DIR]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
@@ -204,6 +211,7 @@ RECORDABLE=1
 [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || refuse "--expected-sha256 must be the 64-hex digest from an independent record"
 [ -n "$MANIFEST" ] || refuse "--manifest <signed role manifest> is required (D3)"
 [ -n "$BACKUP_FILE" ] || refuse "the backup file is required"
+[ -n "$ENV_CONTRACT" ] || refuse "--env-contract <signed Restore Environment Compatibility Contract> is required (F3)"
 WORK=""; VM_PID=""; INSPECT_UNIT=""
 # vm_idle: the supervisor's QEMU unit is not running (a status query; any account may ask).
 vm_idle() { case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in inactive | failed) return 0 ;; *) return 1 ;; esac; }
@@ -307,6 +315,28 @@ MANIFEST_SHA="$(head -n 1 "$WORK/manifest.verify")"
 STAGE=manifest_revoked
 why="$(dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS]}")" || refuse "$why"
 
+# --- F3: the signed Restore Environment Compatibility Contract, bound to the manifest ------------------------------
+# Production's restore environment comes only from the contract the owner signed (never from the operator or the
+# guest); the manifest names its sha256. Missing, unsigned, expired, revoked or unbound: no drill.
+STAGE=env_contract
+[ ! -L "$ENV_CONTRACT" ] && [ -f "$ENV_CONTRACT" ] && [ ! -L "${ENV_CONTRACT}.sig" ] && [ -f "${ENV_CONTRACT}.sig" ] || refuse "the environment contract or its .sig is missing or a symlink"
+cat -- "$ENV_CONTRACT" > "$WORK/env-contract" && cat -- "${ENV_CONTRACT}.sig" > "$WORK/env-contract.sig" || refuse "cannot copy the environment contract"
+dms_env_contract_verify "$WORK/env-contract" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/env-contract.verify" || refuse "$(head -c 300 "$WORK/env-contract.verify")"
+ENV_SHA="$(head -n 1 "$WORK/env-contract.verify")"
+[[ "$ENV_SHA" =~ ^[0-9a-f]{64}$ ]] && [ -n "${DMS_ENV_CONTRACT[DMS_ENV_CONTRACT_ID]:-}" ] || { ENV_SHA=""; refuse "the environment contract did not verify in this shell"; }
+why="$(dms_env_contract_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS]}")" || { ENV_SHA=""; refuse "$why"; }
+[ "$ENV_SHA" = "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256]}" ] || { ENV_SHA=""; refuse "the environment contract is not the one the signed manifest names"; }
+# The drill image's own environment, read from the image at build time (root-owned, bound to the image digest).
+STAGE=env_compatibility
+why="$(dms_env_image_properties_parse "${C[DMS_DRILL_IMAGE_PROPERTIES]}")" || { ENV_SHA=""; refuse "$why"; }
+dms_env_image_properties_parse "${C[DMS_DRILL_IMAGE_PROPERTIES]}" > /dev/null
+why="$(dms_env_compatibility_check "$EXTENSIONS")" || { ENV_SHA=""; refuse "$why"; }
+[ "${DMS_ENV_CONTRACT[DMS_ENV_DATCOLLATE]}" = "${C[DMS_DRILL_LOCALE]}" ] || { ENV_SHA=""; refuse "DMS_DRILL_LOCALE (${C[DMS_DRILL_LOCALE]}) differs from production's database locale in the contract"; }
+EXPECT_ENV="$(dms_env_expected_digest)"
+ENV_PINS="$(dms_env_pins)"
+[[ "$EXPECT_ENV" =~ ^[0-9a-f]{64}$ ]] && [ -n "$ENV_PINS" ] || { ENV_SHA=""; EXPECT_ENV=""; refuse "the expected restore environment could not be computed"; }
+echo "ENV_CONTRACT=VERIFIED id=${DMS_ENV_CONTRACT[DMS_ENV_CONTRACT_ID]} sha256=${ENV_SHA} environment=${EXPECT_ENV}"
+
 # --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
 STAGE=backup_source
 dms_restore_check_source "$BACKUP_FILE" "$(id -un)" ${DMS_DRILL_OPERATOR:+"$DMS_DRILL_OPERATOR"} || refuse "the backup file failed its source checks"
@@ -363,7 +393,7 @@ declare -A IN=([run_id]="$RUN_ID" [payload_bytes]="$PAYLOAD_BYTES" [payload_sha2
   [payload_key]="$PAYLOAD_KEY" [payload_iv]="$PAYLOAD_IV"
   [roles]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" [runtime_role]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}"
   [extension_allowlist]="${EXTENSIONS:-none}"
-  [locale]="${C[DMS_DRILL_LOCALE]}" [tmpfs_mib]="$TMPFS_MIB"
+  [locale]="${DMS_ENV_CONTRACT[DMS_ENV_DATCOLLATE]}" [env_pins]="$ENV_PINS" [tmpfs_mib]="$TMPFS_MIB"
   [memory_mib]="$UNIT_MEMORY_MIB" [tasks]="$TASKS" [timeout_seconds]="$UNIT_TIMEOUT")
 dms_vm_input_build "$WORK/input.raw" "$WORK/payload" IN || refuse "cannot build the input disk"
 rm -f -- "$WORK/payload"
@@ -405,7 +435,9 @@ STAGE=decision
 DECISION="FAIL:vm_output_unreadable"
 if [ "$(stat -c %s -- "$WORK/output.raw" 2> /dev/null)" = "$DMS_VM_OUTPUT_BYTES" ] && dms_vm_output_parse "$WORK/output.raw"; then
   VM_RAN=1
-  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$EXPECT_DIGEST" "$EXPECT_TABLES" "$EXPECT_SHAPE")"
+  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$EXPECT_DIGEST" "$EXPECT_TABLES" "$EXPECT_SHAPE" "$EXPECT_ENV")"
+  # F3: the image that ran must be the one whose properties the compatibility check used.
+  if [ "$DECISION" = GO ] && [ "$IMAGE_SHA" != "${DMS_IMAGE_PROPERTIES[DMS_IMAGE_SHA256]}" ]; then DECISION="FAIL:image_properties_mismatch"; fi
   # D1: the VM had no network interface but loopback (the guest kernel's own view).
   if [ "$DECISION" = GO ] && [ "${DMS_VM_OUTPUT[vm_net_ifaces]:-}" != lo ]; then DECISION="FAIL:vm_has_network_interface"; fi
   # P5 from the restored catalog (PR-3): after R6, no object may be owned by the runtime role.
