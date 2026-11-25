@@ -2088,6 +2088,9 @@ return [
         'tests/Feature/Foundation/RestoreDrillIsolationProfileTest.php',
         'tests/Feature/Foundation/RestoreDrillManifestEvidenceTest.php',
         'tests/Feature/Foundation/RestoreDrillVmProtocolTest.php',
+        // R6-B6 phase 2 (PR-6, PR-5, PR-8): the structured custom-format archive, its strict TOC and data-section
+        // validation and the per-table counts, over committed synthetic fixtures (no PostgreSQL binary needed).
+        'tests/Feature/Foundation/RestoreDrillArchiveTest.php',
     ],
 
     /*

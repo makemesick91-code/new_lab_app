@@ -68,12 +68,12 @@ dms_sandbox_unit_name() {
 # dms_sandbox_role_name_ok <name>
 dms_sandbox_role_name_ok() { [[ "${1:-}" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; }
 
-# dms_sandbox_properties <mode: system|user> <unit/user name> <tmpfs MiB> <memory MiB> <tasks> <timeout seconds> <inner script>
+# dms_sandbox_properties <mode: system|user> <unit/user name> <tmpfs MiB> <memory MiB> <tasks> <timeout seconds> <inner script> <archive> <guard sql>
 # Prints the systemd-run arguments, one per line. `system` is the only mode the drill uses (D2: DynamicUser in a
 # system unit inside the VM). `user` exists for the local test harness (systemd-run --user, which implies
 # PrivateUsers and keeps the caller's uid); it cannot provide identity separation and is never used by the drill.
 dms_sandbox_properties() {
-  local mode="${1:?mode}" name="${2:?name}" tmpfs="${3:?tmpfs}" mem="${4:?memory}" tasks="${5:?tasks}" timeout="${6:?timeout}" inner="${7:?inner}"
+  local mode="${1:?mode}" name="${2:?name}" tmpfs="${3:?tmpfs}" mem="${4:?memory}" tasks="${5:?tasks}" timeout="${6:?timeout}" inner="${7:?inner}" archive="${8:?archive}" guard="${9:?guard}"
   case "$mode" in system | user) : ;; *) _dms_sandbox_err "unknown mode '${mode}'"; return 2 ;; esac
   [[ "$name" =~ ^dmsdrill-[0-9a-f]{12}$ ]] || { _dms_sandbox_err "bad unit name"; return 2; }
   local n
@@ -99,6 +99,7 @@ dms_sandbox_properties() {
     -p "ReadOnlyPaths=/tmp /var/tmp" \
     -p "InaccessiblePaths=/sys/fs/cgroup /dev/pts" \
     -p "BindReadOnlyPaths=${inner}:${DMS_SANDBOX_INNER_TARGET}" \
+    -p "BindReadOnlyPaths=${archive}:/opt/dmsdrill/archive.dump ${guard}:/opt/dmsdrill/guard.sql" \
     -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes -p ProtectControlGroups=yes \
     -p ProtectClock=yes -p ProtectHostname=yes -p ProtectProc=invisible -p ProcSubset=pid \
     -p RestrictNamespaces=yes -p LockPersonality=yes -p RestrictRealtime=yes -p MemoryDenyWriteExecute=yes \
@@ -121,26 +122,28 @@ dms_sandbox_properties() {
 # every terminating signal is a failure (exit 255, proven). RuntimeMaxSec does not apply to oneshot units (proven), so
 # the wall-clock limit is TimeoutStartSec.
 #
-# dms_sandbox_run <mode> <unit name> <raw result file> <stderr file> <roles> <locale> <runtime role> <property args…>
+# dms_sandbox_run <mode> <unit name> <raw result file> <stderr file> <roles> <locale> <runtime role> <extensions> <property args…>
 # Runs the inner script in a transient unit; stdin is the restricted replay stream. The unit's stdout (the result
 # channel) is read up to DMS_SANDBOX_MAX_RESULT_BYTES + 1 into <raw result file> (one byte more than allowed, so an
 # overflow is visible to dms_sandbox_parse: VR-5), its stderr up to
 # DMS_SANDBOX_MAX_STDERR_BYTES into <stderr file> (DR-14). Prints nothing; returns the unit's exit status.
 dms_sandbox_run() {
-  local mode="${1:?mode}" unit="${2:?unit}" raw="${3:?raw}" err="${4:?err}" roles="${5-}" locale="${6:?locale}" runtime="${7-}"
-  shift 7
+  local mode="${1:?mode}" unit="${2:?unit}" raw="${3:?raw}" err="${4:?err}" roles="${5-}" locale="${6:?locale}" runtime="${7-}" exts="${8:-none}"
+  shift 8
   local -a scope=()
   [ "$mode" = user ] && scope=(--user)
   local r
   for r in $roles; do dms_sandbox_role_name_ok "$r" || { _dms_sandbox_err "bad role name"; return 2; }; done
   [[ "$locale" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || { _dms_sandbox_err "bad locale"; return 2; }
   [ -z "$runtime" ] || dms_sandbox_role_name_ok "$runtime" || { _dms_sandbox_err "bad runtime role"; return 2; }
+  [[ "$exts" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] || { _dms_sandbox_err "bad extension allowlist"; return 2; }
   local status_file
   status_file="$(mktemp)" || return 2
   {
     systemd-run "${scope[@]}" --wait --pipe --collect --quiet --unit="${unit}" "$@" \
       "--setenv=DRILL_ROLES=${roles}" "--setenv=DRILL_LOCALE=${locale}" "--setenv=DRILL_RUNTIME_ROLE=${runtime}" \
-      -- /usr/bin/bash "$DMS_SANDBOX_INNER_TARGET" 2> >(head -c "$DMS_SANDBOX_MAX_STDERR_BYTES" > "$err")
+      "--setenv=DRILL_EXTENSIONS=${exts}" \
+      -- /usr/bin/bash "$DMS_SANDBOX_INNER_TARGET" < /dev/null 2> >(head -c "$DMS_SANDBOX_MAX_STDERR_BYTES" > "$err")
     echo $? > "$status_file"
   } | head -c $((DMS_SANDBOX_MAX_RESULT_BYTES + 1)) > "$raw"
   local st
@@ -159,29 +162,6 @@ dms_sandbox_stop() {
     systemctl "${scope[@]}" stop "${2}.service" 2> /dev/null || true
   fi
   systemctl "${scope[@]}" reset-failed "${2}.service" 2> /dev/null || true
-}
-
-# dms_sandbox_dump_trailer_ok <plain dump>
-# DR-7: a complete pg_dump 16 plain dump opens with `\restrict <key>` and closes with `-- PostgreSQL database dump
-# complete` followed by `\unrestrict <the same key>` as its last non-empty line. Returns 0 only for that shape.
-dms_sandbox_dump_trailer_ok() {
-  local dump="${1:?dump}" key last
-  key="$(grep -m1 -E '^\\restrict [A-Za-z0-9]{1,128}$' -- "$dump" | cut -d' ' -f2)"
-  [ -n "$key" ] || return 1
-  last="$(grep -v '^$' -- "$dump" | tail -n 1)"
-  [ "$last" = "\\unrestrict ${key}" ] || return 1
-  tail -n 8 -- "$dump" | grep -qx -- '-- PostgreSQL database dump complete'
-}
-
-# dms_sandbox_dump_counts <plain dump>
-# DR-7: prints "<tables> <rows>": the `CREATE [UNLOGGED] TABLE public.` statements and the data rows of every
-# `COPY public.… FROM stdin;` block (COPY text format: one line per row). Counted by the host from the staged copy,
-# never taken from the sandbox.
-dms_sandbox_dump_counts() {
-  local dump="${1:?dump}" tables rows
-  tables="$(grep -cE '^CREATE (UNLOGGED )?TABLE public\.' -- "$dump")" || tables=0
-  rows="$(awk 'c && $0 == "\\." { c = 0; next } c { n++ } /^COPY public\..* FROM stdin;$/ { c = 1 } END { print n + 0 }' "$dump")" || return 1
-  printf '%s %s\n' "$tables" "$rows"
 }
 
 # dms_sandbox_parse <raw result file>
@@ -221,14 +201,13 @@ dms_sandbox_parse() {
   done < "$raw"
 }
 
-# dms_sandbox_decide <unit exit> <feed exit> <bytes streamed> <bytes expected> <expected tables> <expected rows>
-# Prints GO, or FAIL:<reason>. GO only when every condition holds; none rests on the sandbox's word alone except the
-# counts, which must equal what the host counted in the dump (a forged or partial result cannot match both, DR-7).
+# dms_sandbox_decide <unit exit> <expected per-table digest> <expected table count>
+# Prints GO, or FAIL:<reason>. GO only when every condition holds. The per-table digest (PR-5) must equal the digest of
+# the row counts the HOST took from the archive's data section before the drill: a forged or partial result cannot
+# match it unless it knows and reproduces every table's count, and even then it remains a guest assertion (VR-1).
 dms_sandbox_decide() {
-  local unit_exit="${1:-x}" feed_exit="${2:-x}" sent="${3:-x}" expected="${4:-y}" exp_tables="${5:-x}" exp_rows="${6:-x}"
+  local unit_exit="${1:-x}" exp_digest="${2:-x}" exp_tables="${3:-x}"
   [ "$unit_exit" = 0 ] || { echo "FAIL:unit_exit_${unit_exit}"; return 0; }
-  [ "$feed_exit" = 0 ] || { echo "FAIL:feed_exit_${feed_exit}"; return 0; }
-  [[ "$sent" =~ ^[0-9]+$ ]] && [ "$sent" = "$expected" ] || { echo "FAIL:short_stream"; return 0; }
   [ "$DMS_SANDBOX_DUPLICATES" = 0 ] || { echo "FAIL:duplicate_result_keys"; return 0; }
   [ "$DMS_SANDBOX_REJECTED" = 0 ] || { echo "FAIL:rejected_result_lines"; return 0; }
   [ "${DMS_SANDBOX_RESULT[profile]:-}" = attested ] || { echo "FAIL:profile_not_attested"; return 0; }
@@ -238,7 +217,8 @@ dms_sandbox_decide() {
   # PR-2: a GO means no user code sits on a restore path (index expressions or predicates, materialized views, user
   # operators in constraints), where it would run during a real restore and could behave differently there.
   [ "${DMS_SANDBOX_RESULT[user_code_reachable]:-}" = 0 ] || { echo "FAIL:user_code_in_restore_path"; return 0; }
+  [ "${DMS_SANDBOX_RESULT[extensions_outside_allowlist]:-}" = 0 ] || { echo "FAIL:extension_outside_allowlist"; return 0; }
   [ "${DMS_SANDBOX_RESULT[base_table_count]:-}" = "$exp_tables" ] || { echo "FAIL:table_count_mismatch"; return 0; }
-  [ "${DMS_SANDBOX_RESULT[rows_total]:-}" = "$exp_rows" ] || { echo "FAIL:row_count_mismatch"; return 0; }
+  [[ "$exp_digest" =~ ^[0-9a-f]{64}$ ]] && [ "${DMS_SANDBOX_RESULT[table_digest]:-}" = "$exp_digest" ] || { echo "FAIL:per_table_rows_mismatch"; return 0; }
   echo GO
 }

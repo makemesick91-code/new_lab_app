@@ -4,7 +4,7 @@
 #
 # The drill VM has NO network device. The host hands it one read-only raw disk (the input) and one small raw disk (the
 # output); no filesystem is needed on either, so the host builds them without privileges:
-#   input   4096-byte header (text, NUL-padded), then the payload (the restricted replay stream) ENCRYPTED with
+#   input   4096-byte header (text, NUL-padded), then the payload (the custom-format archive, PR-6) ENCRYPTED with
 #           AES-256-CTR under a fresh per-run key carried in the header, padded to 512 bytes. The encryption is not for
 #           secrecy (the key travels with it): it makes every byte the guest kernel, udev or libblkid could probe on
 #           the disk unpredictable, so dump content can never be shaped into a superblock or partition table (VR-6)
@@ -25,7 +25,7 @@ DMS_RESTORE_VM_LOADED=1
 DMS_VM_HEADER_BYTES=4096
 DMS_VM_OUTPUT_BYTES=65536
 DMS_VM_OUTPUT_READ_BYTES=8192
-DMS_VM_INPUT_KEYS="run_id payload_bytes payload_sha256 payload_key payload_iv roles runtime_role locale tmpfs_mib memory_mib tasks timeout_seconds"
+DMS_VM_INPUT_KEYS="run_id payload_bytes payload_sha256 payload_key payload_iv roles runtime_role extension_allowlist locale tmpfs_mib memory_mib tasks timeout_seconds"
 DMS_VM_INPUT_SERIAL=dmsdrill-input
 DMS_VM_OUTPUT_SERIAL=dmsdrill-output
 # shellcheck disable=SC2034  # read by the guest agent
@@ -43,6 +43,7 @@ _dms_vm_input_value_ok() {
     payload_iv) [[ "$2" =~ ^[0-9a-f]{32}$ ]] ;;
     roles) [[ "$2" =~ ^[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,63}$ ]] ;;
     runtime_role) [[ "$2" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] ;;
+    extension_allowlist) [[ "$2" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] ;;
     locale) [[ "$2" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] ;;
     tmpfs_mib | memory_mib | tasks | timeout_seconds) [[ "$2" =~ ^[1-9][0-9]{0,6}$ ]] ;;
     *) return 1 ;;
@@ -196,11 +197,12 @@ dms_vm_decision_safe() {
   if [ "$d" = GO ] || [[ "$d" =~ ^FAIL:[a-z0-9_]{1,60}$ ]]; then printf '%s\n' "$d"; else printf 'FAIL:guest_invalid_value\n'; fi
 }
 
-# dms_vm_decide <qemu exit> <run id> <payload sha256> <payload bytes> <expected tables> <expected rows>
-# Host side, after dms_vm_output_parse. Prints GO or FAIL:<reason>. The VM's own facts must echo what the host sent,
-# then the sandbox result must pass dms_sandbox_decide against the counts the host took from the dump.
+# dms_vm_decide <qemu exit> <run id> <payload sha256> <expected per-table digest> <expected tables>
+# Host side, after dms_vm_output_parse. Prints GO or FAIL:<reason>. The VM's own facts must echo what the host sent;
+# then the sandbox result must pass dms_sandbox_decide against the per-table digest the host computed from the archive.
+# Everything read here is GUEST-ASSERTED (VR-1); the evidence records it as such.
 dms_vm_decide() {
-  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" bytes="${4:-}" et="${5:-}" er="${6:-}" k
+  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" exp_digest="${4:-}" exp_tables="${5:-}" k
   [ "$qemu_exit" = 0 ] || { echo "FAIL:vm_exit_${qemu_exit}"; return 0; }
   [ "$DMS_VM_OUTPUT_DUPLICATES" = 0 ] && [ "$DMS_VM_OUTPUT_REJECTED" = 0 ] || { echo "FAIL:vm_output_malformed"; return 0; }
   [ "${DMS_VM_OUTPUT[run_id]:-}" = "$run" ] || { echo "FAIL:vm_run_id_mismatch"; return 0; }
@@ -211,11 +213,9 @@ dms_vm_decide() {
   for k in "${!DMS_VM_OUTPUT[@]}"; do
     case "$k" in sandbox_*) DMS_SANDBOX_RESULT[${k#sandbox_}]="${DMS_VM_OUTPUT[$k]}" ;; esac
   done
-  # shellcheck disable=SC2034  # read by dms_sandbox_decide
+  # shellcheck disable=SC2034
   DMS_SANDBOX_DUPLICATES="${DMS_VM_OUTPUT[result_duplicates]:-x}"
   # shellcheck disable=SC2034
   DMS_SANDBOX_REJECTED="${DMS_VM_OUTPUT[result_rejected]:-x}"
-  local fed=short
-  [ "${DMS_VM_OUTPUT[feed_exit]:-x}" = 0 ] && fed="$bytes"
-  dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "${DMS_VM_OUTPUT[feed_exit]:-x}" "$fed" "$bytes" "$et" "$er"
+  dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "$exp_digest" "$exp_tables"
 }

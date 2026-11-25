@@ -34,7 +34,7 @@ const RDVM_BUILD = <<<'SH'
     printf 'SELECT 1;\n' > "$T/payload"
     declare -A IN=([run_id]=dmsdrill-0123456789ab [payload_bytes]=$(stat -c %s "$T/payload") [payload_sha256]=$(sha256sum "$T/payload" | cut -d' ' -f1)
       [payload_key]=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef [payload_iv]=00112233445566778899aabbccddeeff
-      [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [locale]=C.UTF-8 [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
+      [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]=none [locale]=C.UTF-8 [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
     dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
 
     SH;
@@ -76,25 +76,25 @@ it('makes the guest refuse a payload whose digest differs, before it starts any 
         ->and($run['out'])->toContain('stage=payload_digest_mismatch run=dmsdrill-0123456789ab');
 });
 
-it('parses the VM output strictly and decides only from facts the host can check', function (string $lines, int $qemu, string $decision) {
+it('parses the VM output strictly and decides from the host\'s own expectations (VR-1: the guest only asserts)', function (string $lines, int $qemu, string $decision) {
     $dir = rdvmDir();
     file_put_contents("{$dir}/lines", $lines);
-    $run = rdvmSh('dms_vm_output_write "$T/output.raw" "$T/lines"; dms_vm_output_parse "$T/output.raw"; dms_vm_decide '.$qemu.' dmsdrill-0123456789ab '.str_repeat('a', 64).' 10 2 3', ['T' => $dir]);
+    $run = rdvmSh('dms_vm_output_write "$T/output.raw" "$T/lines"; dms_vm_output_parse "$T/output.raw"; dms_vm_decide '.$qemu.' dmsdrill-0123456789ab '.str_repeat('a', 64).' '.str_repeat('d', 64).' 2', ['T' => $dir]);
     (new Process(['rm', '-rf', '--', $dir]))->run();
 
     expect($run['out'])->toBe($decision);
 })->with(function () {
     $sha = str_repeat('a', 64);
-    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nfeed_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_user_code_reachable=0\nsandbox_base_table_count=2\nsandbox_rows_total=3\nguest_stage=done\n";
+    $dg = str_repeat('d', 64);
+    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_user_code_reachable=0\nsandbox_extensions_outside_allowlist=0\nsandbox_base_table_count=2\nsandbox_table_digest={$dg}\nguest_stage=done\n";
 
     return [
         'all facts hold' => [$good, 0, 'GO'],
         'VM killed or crashed' => [$good, 124, 'FAIL:vm_exit_124'],
         'another run' => [str_replace('dmsdrill-0123456789ab', 'dmsdrill-ffffffffffff', $good), 0, 'FAIL:vm_run_id_mismatch'],
         'other payload' => [str_replace($sha, str_repeat('b', 64), $good), 0, 'FAIL:vm_payload_digest_mismatch'],
-        'guest stopped early' => [str_replace('guest_stage=done', 'guest_stage=profile_build_failed', $good), 0, 'FAIL:guest_profile_build_failed'],
-        'feeder cut short' => [str_replace('feed_exit=0', 'feed_exit=141', $good), 0, 'FAIL:feed_exit_141'],
-        'rows lost' => [str_replace('sandbox_rows_total=3', 'sandbox_rows_total=1', $good), 0, 'FAIL:row_count_mismatch'],
+        'guest stopped early' => [str_replace('guest_stage=done', 'guest_stage=archive_digest_mismatch', $good), 0, 'FAIL:guest_archive_digest_mismatch'],
+        'one table lost rows' => [str_replace($dg, str_repeat('e', 64), $good), 0, 'FAIL:per_table_rows_mismatch'],
         'forged duplicate' => [$good."sandbox_result=GO\n", 0, 'FAIL:vm_output_malformed'],
         'injected noise' => [$good."\x1b]0;owned\x07\n", 0, 'FAIL:vm_output_malformed'],
     ];
@@ -170,7 +170,7 @@ it('keeps every FAIL reason inside the evidence schema, so a guest-chosen reason
     ['go', 'FAIL:guest_invalid_value'],
 ]);
 
-it('pins the orchestrator to the D6 limits, one drill at a time, and refuses on the production host (D1)', function () {
+it('pins the orchestrator to D6, refuses the production host (D1), and keeps host-verified apart from guest-asserted facts', function () {
     $code = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
 
     expect($code)->toContain('VCPU=1; MEMORY_MIB=2048; DISK_GIB=10; MINUTES=30; TASKS=64')
@@ -178,21 +178,31 @@ it('pins the orchestrator to the D6 limits, one drill at a time, and refuses on 
         ->and($code)->toContain('timeout --kill-after=10 "$((MINUTES * 60))"')
         ->and($code)->toContain('[ "$(hostname)" != "$PROD_HOSTNAME" ]')
         ->and($code)->toContain('[ ! -e "$PROD_APP_DIR" ]')
-        // VR-10: the manifest is copied once into the private run directory and verified, parsed and hashed there.
+        // PR-7, VR-10: verified in this shell from one private copy; PR-9: revocation.
         ->and($code)->toContain('cat -- "$MANIFEST" > "$WORK/manifest"')
-        // PR-7: verified in the orchestrator's own shell, so the parsed manifest survives; P5 from the catalog (PR-3).
         ->and($code)->toContain('dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify"')
         ->and($code)->not->toContain('$(dms_restore_manifest_verify')
+        ->and($code)->toContain('dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS]}"')
+        // PR-6, PR-5, PR-8: the structured archive, inspected in a sandbox, validated, counted per table.
+        ->and($code)->toContain('dms_archive_inspect "$STAGED" "$WORK/inspect"')
+        ->and($code)->toContain('dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS"')
+        ->and($code)->toContain('EXPECT_DIGEST="$(dms_archive_digest "$WORK/inspect/counts.txt")"')
+        // P5 twice: from the TOC before the VM boots, from the restored catalog after.
+        ->and($code)->toContain('refuse "the archive makes the runtime role an owner after R6 (P5)"')
         ->and($code)->toContain('DECISION="FAIL:p5_runtime_owned_objects"')
-        // VR-4, VR-11: never as root, and with a fixed environment.
+        // VR-4: a separate signer identity through one sudo command; the operator holds no key and no store.
+        ->and($code)->toContain('sudo -n -u "${C[DMS_DRILL_SIGNER_USER]}" -- "${C[DMS_DRILL_SIGNER_COMMAND]}" sign < "$WORK/evidence.request"')
+        ->and($code)->toContain('the signer must be a separate, unprivileged identity (VR-4)')
+        ->and($code)->not->toContain('DMS_DRILL_EVIDENCE_KEY')
+        // VR-1: the record separates what the host verified from what the guest asserted.
+        ->and($code)->toContain('DMS_DRILL_EVIDENCE_HOST_VERIFIED=')
+        ->and($code)->toContain('DMS_DRILL_EVIDENCE_GUEST_ASSERTED=')
+        // VR-4, VR-11: never as root, with a fixed environment, and QEMU killed with its process group.
         ->and($code)->toContain('exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin')
         ->and($code)->toContain('never as root (VR-4)')
         ->and($code)->toContain('dms_vm_kill_group "$QEMU_PID"')
-        ->and($code)->toContain('dms_evidence_write')
-        // The configuration is parsed, never sourced; nothing connects to production PostgreSQL (D3).
         ->and($code)->not->toMatch('/^\s*(\.|source)\s+"?\$CONF/m')
-        ->and($code)->not->toContain('psql')
-        ->and(strpos($code, 'dms_restore_verify_copy "$STAGED"'))->toBeLessThan(strpos($code, 'dms_vm_input_build'));
+        ->and($code)->not->toContain('psql -');
 });
 
 function rdvmOrchestrate(string $dir, array $args, array $env = []): array
@@ -211,12 +221,12 @@ it('refuses before anything runs when its inputs or its environment are not trus
     $dir = rdvmDir();
     file_put_contents("{$dir}/backup.sql", "-- PostgreSQL database dump\n");
     file_put_contents("{$dir}/manifest", "x\n");
-    $conf = "DMS_DRILL_IMAGE={$dir}/image.qcow2\nDMS_DRILL_IMAGE_SHA256=".str_repeat('a', 64)."\nDMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_EVIDENCE_KEY={$dir}/key\nDMS_DRILL_EVIDENCE_SIGNER=drill-host@dms\nDMS_DRILL_EVIDENCE_STORE={$dir}/store\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\nDMS_DRILL_QEMU={$dir}/no-qemu\nDMS_DRILL_QEMU_IMG={$dir}/no-qemu-img\n";
-    foreach (['image.qcow2', 'anchor', 'key'] as $f) {
+    $signer = $case === 'signer is the operator' ? (string) trim((string) shell_exec('id -un')) : 'nobody';
+    $conf = "DMS_DRILL_IMAGE={$dir}/image.qcow2\nDMS_DRILL_IMAGE_SHA256=".str_repeat('a', 64)."\nDMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER={$signer}\nDMS_DRILL_SIGNER_COMMAND={$dir}/signer\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\nDMS_DRILL_QEMU={$dir}/no-qemu\nDMS_DRILL_QEMU_IMG={$dir}/no-qemu-img\n";
+    foreach (['image.qcow2', 'anchor', 'revocations', 'signer'] as $f) {
         file_put_contents("{$dir}/{$f}", "x\n");
         chmod("{$dir}/{$f}", 0600);
     }
-    mkdir("{$dir}/store", 0700);
     mkdir("{$dir}/work", 0700);
     $args = ['--expected-sha256', hash('sha256', "-- PostgreSQL database dump\n"), '--manifest', "{$dir}/manifest", "{$dir}/backup.sql"];
     match ($case) {
@@ -229,6 +239,10 @@ it('refuses before anything runs when its inputs or its environment are not trus
         })(),
         'configuration with shell code' => (function () use ($dir, $conf) {
             file_put_contents("{$dir}/drill.conf", $conf."DMS_DRILL_LOCALE=\$(touch {$dir}/pwned)\n");
+            chmod("{$dir}/drill.conf", 0600);
+        })(),
+        'signer is the operator' => (function () use ($dir, $conf) {
+            file_put_contents("{$dir}/drill.conf", $conf);
             chmod("{$dir}/drill.conf", 0600);
         })(),
         'no hypervisor' => (function () use ($dir, $conf) {
@@ -253,6 +267,7 @@ it('refuses before anything runs when its inputs or its environment are not trus
     ['missing configuration', 'drill configuration'],
     ['configuration writable by others', 'writable by group or others'],
     ['configuration with shell code', 'unexpected line in'],
+    ['signer is the operator', 'the signer must be a separate, unprivileged identity (VR-4)'],
     ['no hypervisor', 'DMS_DRILL_QEMU'],
 ]);
 

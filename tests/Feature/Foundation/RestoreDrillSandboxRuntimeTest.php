@@ -3,8 +3,9 @@
 use Symfony\Component\Process\Process;
 
 /*
- * R6-B6 isolated restore drill — the REAL sandbox: a disposable PostgreSQL 16 cluster in a transient systemd unit with
- * the full isolation profile, through the guest agent and the host decision, on synthetic data.
+ * R6-B6 isolated restore drill — the REAL sandbox: the synthetic fixture archives (tests/Fixtures/restore-drill)
+ * restored by a disposable PostgreSQL 16 cluster in a transient systemd unit with the full isolation profile, through
+ * the guest agent, and decided by the host against the per-table counts it took from the archive itself.
  *
  * It needs a working per-user systemd manager and PostgreSQL 16.15+ binaries. Where they are missing the tests are
  * SKIPPED, never passed (CG-17): the dedicated real-sandbox CI gate on disposable infrastructure (D8) runs them, and
@@ -14,8 +15,10 @@ use Symfony\Component\Process\Process;
 function rdsrAvailable(): ?string
 {
     $bin = '/usr/lib/postgresql/16/bin';
-    if (! is_executable("{$bin}/postgres") || ! is_executable("{$bin}/initdb")) {
-        return 'PostgreSQL 16 server binaries are not installed';
+    foreach (['postgres', 'initdb', 'pg_restore', 'psql'] as $tool) {
+        if (! is_executable("{$bin}/{$tool}")) {
+            return "PostgreSQL 16 {$tool} is not installed";
+        }
     }
     $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
     $probe->setTimeout(30);
@@ -24,37 +27,37 @@ function rdsrAvailable(): ?string
     return $probe->getExitCode() === 0 ? null : 'no working per-user systemd manager (systemd-run --user)';
 }
 
-/** Runs the guest agent (user mode) over an input disk built from $dump, then the host decision. */
-function rdsrDrill(string $dump, bool $restricted = true): array
+/** Restores one fixture archive through the guest agent (user mode) and decides on the host. */
+function rdsrDrill(string $fixture, string $extensions = 'none'): array
 {
     $dir = sys_get_temp_dir().'/rdsr-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700, true);
-    file_put_contents("{$dir}/dump.sql", $dump);
     $script = <<<'SH'
-        . "$LIB/restore-integrity.sh"; . "$LIB/restore-sandbox.sh"; . "$LIB/restore-vm.sh"
-        read -r ET ER < <(dms_sandbox_dump_counts "$T/dump.sql")
+        . "$LIB/restore-integrity.sh"; . "$LIB/restore-sandbox.sh"; . "$LIB/restore-vm.sh"; . "$LIB/restore-archive.sh"
+        B=/usr/lib/postgresql/16/bin
+        dms_archive_count_program > "$T/count.awk"
+        "$B/pg_restore" --section=data --restrict-key=hostk -f - "$ARCHIVE" | awk -f "$T/count.awk" > "$T/counts" || exit 7
+        ET=$(wc -l < "$T/counts"); ED=$(dms_archive_digest "$T/counts")
         RUN=$(dms_sandbox_unit_name)
-        if [ "$RESTRICTED" = 1 ]; then
-          KEY=$(dms_restore_restrict_key); TAG="g$(dms_restore_restrict_key | cut -c1-32)"
-          dms_restore_restricted_stream "$T/dump.sql" "$KEY" "$TAG" > "$T/payload"
-        else
-          cp "$T/dump.sql" "$T/payload"
-        fi
+        cp -- "$ARCHIVE" "$T/payload"
         PB=$(stat -c %s "$T/payload"); PS=$(sha256sum "$T/payload" | cut -d' ' -f1)
         read -r PK PIV < <(dms_vm_input_key_iv)
-        declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [payload_key]=$PK [payload_iv]=$PIV [roles]=app_runtime [runtime_role]=app_runtime [locale]=C.UTF-8
+        declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [payload_key]=$PK [payload_iv]=$PIV
+          [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$EXTS" [locale]=C.UTF-8
           [tmpfs_mib]=256 [memory_mib]=768 [tasks]=64 [timeout_seconds]=300)
         dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
         head -c 65536 /dev/zero > "$T/output.raw"
         bash "$GUEST" "$T/input.raw" "$T/output.raw" user
         dms_vm_output_parse "$T/output.raw" || exit 8
         for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done
-        echo "decision=$(dms_vm_decide 0 "$RUN" "$PS" "$PB" "$ET" "$ER")"
+        echo "expected_digest=$ED"
+        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET")")"
         echo "units_left=$(systemctl --user list-units --all --plain --no-legend "$RUN.service" | wc -l)"
+
         SH;
     $process = new Process(['bash', '-c', $script], null, [
         'LIB' => base_path('scripts/lib'), 'GUEST' => base_path('scripts/restore-drill-vm-guest.sh'), 'T' => $dir,
-        'RESTRICTED' => $restricted ? '1' : '0', 'PATH' => getenv('PATH'),
+        'ARCHIVE' => base_path("tests/Fixtures/restore-drill/{$fixture}.dump"), 'EXTS' => $extensions, 'PATH' => getenv('PATH'),
         'XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'),
     ]);
     $process->setTimeout(240);
@@ -71,82 +74,57 @@ function rdsrDrill(string $dump, bool $restricted = true): array
     return $facts + ['_exit' => (string) $process->getExitCode(), '_err' => $process->getErrorOutput()];
 }
 
-const RDSR_DUMP = "--\n-- PostgreSQL database dump\n--\n\n\\restrict K1synthetic\n\nSET statement_timeout = 0;\nSELECT pg_catalog.set_config('search_path', '', false);\nCREATE TABLE public.migrations (id integer NOT NULL, migration character varying(255) NOT NULL);\nALTER TABLE public.migrations OWNER TO app_runtime;\nCREATE TABLE public.items (id integer NOT NULL, label text NOT NULL, CONSTRAINT items_label_check CHECK ((length(label) < 200)));\nALTER TABLE public.items OWNER TO app_runtime;\nCOPY public.migrations (id, migration) FROM stdin;\n1\tsynthetic_one\n2\tsynthetic_two\n\\.\n\nCOPY public.items (id, label) FROM stdin;\n1\tsynthetic item\n\\.\n\nALTER TABLE ONLY public.items ADD CONSTRAINT items_pkey PRIMARY KEY (id);\n\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict K1synthetic\n\n";
-
 beforeEach(function () {
     if (($why = rdsrAvailable()) !== null) {
         $this->markTestSkipped("real sandbox not available here: {$why} (covered by the real-sandbox CI gate)");
     }
 });
 
-it('restores a synthetic runtime-owned dump in the real sandbox as the restore role and decides GO from matching counts', function () {
-    $facts = rdsrDrill(RDSR_DUMP);
+it('restores the synthetic archive section by section as the restore role and decides GO from the per-table digest (PR-5, PR-6)', function () {
+    $facts = rdsrDrill('clean');
 
     expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
         ->and($facts['sandbox_profile'] ?? null)->toBe('attested')
         ->and($facts['sandbox_bootstrap_superuser'] ?? null)->toBe('nologin')
+        ->and($facts['sandbox_table_digest'] ?? null)->toBe($facts['expected_digest'] ?? 'x')
         ->and($facts['sandbox_base_table_count'] ?? null)->toBe('2')
-        ->and($facts['sandbox_rows_total'] ?? null)->toBe('3')
         ->and($facts['units_left'] ?? null)->toBe('0');
 });
 
-it('refuses a superuser reconnect from the dump even without restricted mode (DR-5)', function () {
-    // After the dump's own \unrestrict: psql is out of restricted mode, so only the NOLOGIN superuser stands here.
-    $dump = RDSR_DUMP."\\c - drill_super\nSELECT 1;\n";
-    $facts = rdsrDrill($dump, restricted: false);
-
-    expect($facts['decision'] ?? null)->toStartWith('FAIL:')
-        ->and($facts['sandbox_stage'] ?? null)->toBe('replay')
-        ->and($facts['sandbox_bootstrap_superuser'] ?? null)->toBe('nologin')
-        ->and($facts['units_left'] ?? null)->toBe('0');
-});
-
-it('lets nothing in the dump write to the result channel, even without restricted mode (DR-10)', function () {
-    // After the dump's own \unrestrict: only the closed fd 3 stands between psql and the result channel.
-    $dump = RDSR_DUMP."\\t on\n\\a\n\\o /proc/self/fd/3\nSELECT 'DRILL result=GO';\n\\o\n";
-    $facts = rdsrDrill($dump, restricted: false);
-
-    expect($facts['decision'] ?? null)->toStartWith('FAIL:')
-        ->and($facts['result_duplicates'] ?? null)->toBe('0')
-        ->and($facts['result_rejected'] ?? null)->toBe('0');
-});
-
-it('refuses superuser-only statements planted in the dump: the replay role is not a superuser (D4)', function (string $statement) {
-    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$statement}\n--\n-- PostgreSQL database dump complete", RDSR_DUMP);
-    $facts = rdsrDrill($dump);
-
-    expect($facts['decision'] ?? null)->toStartWith('FAIL:')
-        ->and($facts['sandbox_replay_sqlstate'] ?? null)->toBe('42501');
-})->with([
-    "COPY (SELECT 1) TO PROGRAM 'id';",
-    "SELECT pg_catalog.pg_read_file('/etc/passwd');",
-    'CREATE ROLE intruder SUPERUSER;',
-    "SELECT pg_catalog.lo_import('/etc/passwd');",
-]);
-
-it('refuses GO when user code sits on a restore path, such as an index expression that could act differently in a real restore (PR-2)', function () {
-    $bomb = "CREATE FUNCTION public.zz_norm(t text) RETURNS text LANGUAGE sql IMMUTABLE AS \$\$ SELECT lower(t) \$\$;\nALTER FUNCTION public.zz_norm(text) OWNER TO app_runtime;\nCREATE INDEX items_norm ON public.items USING btree (public.zz_norm(label));\n";
-    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$bomb}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
-    $facts = rdsrDrill($dump);
+it('refuses GO for an index-expression restore bomb: user code on a restore path (PR-2)', function () {
+    $facts = rdsrDrill('bomb');
 
     expect($facts['sandbox_replay'] ?? null)->toBe('ok', json_encode($facts))
         ->and($facts['sandbox_user_code_reachable'] ?? null)->not->toBe('0')
         ->and($facts['decision'] ?? null)->toBe('FAIL:user_code_in_restore_path');
 });
 
-it('counts runtime-owned objects from the restored catalog, whatever a function body hides from the text scan (PR-3)', function () {
-    $hidden = "CREATE FUNCTION public.a_helper() RETURNS void LANGUAGE plpgsql AS \$\$\nBEGIN\nCOPY x FROM stdin;\nEND \$\$;\nALTER FUNCTION public.a_helper() OWNER TO app_runtime;\n";
-    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$hidden}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
-    $facts = rdsrDrill($dump);
-
-    expect((int) ($facts['sandbox_runtime_owned_objects'] ?? -1))->toBeGreaterThan(2, json_encode($facts));
-});
-
-it('never runs row-security policy code during verification: the policy makes verification fail instead (PR-5)', function () {
-    $policy = "CREATE FUNCTION public.p_hook() RETURNS boolean LANGUAGE plpgsql AS \$\$ BEGIN INSERT INTO public.migrations VALUES (99, 'planted'); RETURN true; END \$\$;\nALTER FUNCTION public.p_hook() OWNER TO app_runtime;\nALTER TABLE public.items ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.items FORCE ROW LEVEL SECURITY;\nCREATE POLICY p ON public.items USING (public.p_hook());\n";
-    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$policy}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
-    $facts = rdsrDrill($dump);
+it('never runs row-security policy code during verification: verification fails instead (PR-5)', function () {
+    // The host refuses this archive at its TOC (ROW SECURITY); this drives the guest directly to prove the inner layer.
+    $facts = rdsrDrill('rls');
 
     expect($facts['decision'] ?? null)->toStartWith('FAIL:')
         ->and($facts['sandbox_stage'] ?? null)->toBe('verify');
+});
+
+it('keeps a backslash line inside a function body as text: no meta-command runs (D5, PR-6)', function () {
+    $facts = rdsrDrill('metabody');
+
+    expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
+        ->and($facts['sandbox_replay'] ?? null)->toBe('ok');
+});
+
+it('enforces the extension allowlist after the restore too (PR-8)', function () {
+    $allowed = rdsrDrill('ext', 'pgcrypto');
+    $refused = rdsrDrill('ext', 'none');
+
+    expect($allowed['decision'] ?? null)->toBe('GO', json_encode($allowed))
+        ->and($refused['sandbox_extensions_outside_allowlist'] ?? null)->toBe('1')
+        ->and($refused['decision'] ?? null)->toBe('FAIL:extension_outside_allowlist');
+});
+
+it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-3)', function () {
+    $facts = rdsrDrill('r6owner');
+
+    expect((int) ($facts['sandbox_runtime_owned_objects'] ?? 0))->toBeGreaterThan(0, json_encode($facts));
 });

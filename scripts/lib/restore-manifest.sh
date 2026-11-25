@@ -16,8 +16,9 @@
 #   DMS_ROLE_MANIFEST_ISSUED_AT=<YYYY-MM-DDTHH:MM:SSZ>
 #   DMS_ROLE_MANIFEST_NOT_AFTER=<YYYY-MM-DDTHH:MM:SSZ>
 # The signature (<manifest>.sig) must verify for the principal ISSUED_BY names, in the namespace above.
-# Uses: D-Q6-a (every owner role in the dump is in the manifest) and P5 (after R6, a dump that makes the runtime an
-# owner is refused), now decided against the manifest instead of a live production cluster.
+# Uses: D-Q6-a (every owner in the archive's TOC is in the manifest: restore-archive.sh) and P5 (after R6, the runtime
+# owns nothing: from the TOC before the VM boots and from the restored catalog after), decided against the manifest
+# instead of a live production cluster.
 
 if [ -n "${DMS_RESTORE_MANIFEST_LOADED:-}" ]; then
   return 0
@@ -123,23 +124,28 @@ _dms_manifest_check_content() {
   return 0
 }
 
-# dms_restore_manifest_dump_gate <plain dump>
-# After dms_restore_manifest_verify. D-Q6-a: every role the dump makes an object owner must be in the manifest (a
-# missing role stops the drill; nothing is created or stripped). P5: when the manifest names an R6 owner role, a dump
-# that makes the runtime an owner is refused. Prints the reason; returns 0 to proceed, 1 to refuse.
-dms_restore_manifest_dump_gate() {
-  local dump="${1:?dump}" owners missing runtime
-  [ -n "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]:-}" ] || { echo "manifest: not verified"; return 1; }
-  owners="$(dms_restore_owner_roles "$dump")" || { echo "manifest: cannot read the dump's owner roles"; return 1; }
-  missing="$(comm -23 <(printf '%s\n' "$owners" | sed '/^$/d' | sort -u) <(printf '%s\n' ${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]} | sort -u))"
-  if [ -n "$missing" ]; then
-    echo "the dump makes these roles object owners and the manifest does not list them: $(printf '%s\n' "$missing" | paste -sd, -) (D-Q6-a)"
-    return 1
-  fi
-  runtime="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}"
-  if [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_R6_OWNER_ROLE]}" != none ] && printf '%s\n' "$owners" | grep -qxF -- "$runtime"; then
-    echo "the manifest names the R6 owner role and the dump makes the runtime role '${runtime}' an owner (a pre-R6 dump, P5)"
-    return 1
-  fi
+# dms_restore_manifest_revocation_check <revocation list>
+# PR-9: after dms_restore_manifest_verify. The revocation list is a trusted file (root- or operator-owned, never
+# writable by others: the caller checks that) holding lines of exactly two kinds:
+#   revoked <manifest id>               this manifest must never be used again
+#   not-before <YYYY-MM-DDTHH:MM:SSZ>   every manifest issued earlier is revoked (e.g. after R6-D changes the roles)
+# Comments (#) and blank lines are allowed; anything else makes the whole check fail closed.
+dms_restore_manifest_revocation_check() {
+  local list="${1:?revocation list}" line id="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]:-}" issued nb
+  [ -n "$id" ] || { echo "manifest: not verified"; return 1; }
+  [ -f "$list" ] && [ ! -L "$list" ] || { echo "manifest: the revocation list ${list} is missing"; return 1; }
+  issued="$(_dms_manifest_epoch "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ISSUED_AT]}")" || { echo "manifest: bad ISSUED_AT"; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    if [[ "$line" =~ ^revoked\ ([a-z0-9-]{8,64})$ ]]; then
+      [ "${BASH_REMATCH[1]}" != "$id" ] || { echo "manifest: ${id} is revoked"; return 1; }
+    elif [[ "$line" =~ ^not-before\ ([0-9TZ:-]{20})$ ]]; then
+      nb="$(_dms_manifest_epoch "${BASH_REMATCH[1]}")" || { echo "manifest: the revocation list has a bad not-before"; return 1; }
+      [ "$issued" -ge "$nb" ] || { echo "manifest: ${id} was issued before ${BASH_REMATCH[1]} and is revoked"; return 1; }
+    else
+      echo "manifest: the revocation list has an unexpected line"
+      return 1
+    fi
+  done < "$list"
   return 0
 }

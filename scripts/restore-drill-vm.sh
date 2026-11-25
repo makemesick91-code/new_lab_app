@@ -19,8 +19,13 @@ set -uo pipefail
 umask 077
 # VR-11: run with a fixed, minimal environment (no LD_PRELOAD, QEMU_* or PATH from the caller). Only the
 # configuration path is carried over.
+# The operator's per-user manager (it runs the sandboxed archive inspection) is reached through XDG_RUNTIME_DIR and the
+# session bus; both are kept, as absolute paths only.
 if [ "${DMS_DRILL_CLEAN_ENV:-}" != 1 ]; then
+  xdg="${XDG_RUNTIME_DIR:-}"; [[ "$xdg" =~ ^/[A-Za-z0-9/._-]+$ ]] || xdg=""
+  bus="${DBUS_SESSION_BUS_ADDRESS:-}"; [[ "$bus" =~ ^unix:path=/[A-Za-z0-9/._-]+$ ]] || bus=""
   exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 HOME="${HOME:-/nonexistent}" DMS_DRILL_CLEAN_ENV=1 \
+    XDG_RUNTIME_DIR="$xdg" DBUS_SESSION_BUS_ADDRESS="$bus" \
     DMS_RESTORE_DRILL_CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}" bash "$0" "$@"
 fi
 # VR-4: QEMU runs as the identity of this script. It must never be root: a device-model escape would be host root.
@@ -28,7 +33,7 @@ if [ "$(id -u)" = 0 ]; then echo "REFUSED: run the drill as the unprivileged dri
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-for lib in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh; do
+for lib in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
   node="${SCRIPT_DIR}/lib/${lib}"
   if [ -L "$node" ] || [ ! -f "$node" ] || [ "$(stat -c '%u' -- "$node")" != "$(id -u)" ] \
     || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
@@ -46,7 +51,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --expected-sha256) EXPECTED_SHA256="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
     --manifest) MANIFEST="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
-    -*) refuse "usage: restore-drill-vm.sh --expected-sha256 <hex> --manifest <file> <backup.sql>" ;;
+    -*) refuse "usage: restore-drill-vm.sh --expected-sha256 <hex> --manifest <file> <backup.dump (pg_dump -Fc)>" ;;
     *) [ -z "$BACKUP_FILE" ] || refuse "one backup file at most"; BACKUP_FILE="$1"; shift ;;
   esac
 done
@@ -65,7 +70,8 @@ PROD_APP_DIR="$(sed -n 's/^DMS_PRODUCTION_APP_DIR=//p' "$PROD_CONF" 2> /dev/null
 # --- Trusted configuration (parsed, never sourced) -------------------------------------------------------------------
 CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}"
 why="$(dms_trusted_file "drill configuration" "$CONF" "$(id -u)" "$REPO_DIR")" || refuse "$why"
-DRILL_CONF_KEYS="DMS_DRILL_IMAGE DMS_DRILL_IMAGE_SHA256 DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_EVIDENCE_KEY DMS_DRILL_EVIDENCE_SIGNER DMS_DRILL_EVIDENCE_STORE DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG"
+# VR-4: the signing key, the evidence store and its head log belong to the SIGNER identity, never to this operator.
+DRILL_CONF_KEYS="DMS_DRILL_IMAGE DMS_DRILL_IMAGE_SHA256 DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG"
 declare -A C=()
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
@@ -76,13 +82,15 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$CONF"
 for k in $DRILL_CONF_KEYS; do [ -n "${C[$k]:-}" ] || refuse "${k} is missing from ${CONF}"; done
 [[ "${C[DMS_DRILL_IMAGE_SHA256]}" =~ ^[0-9a-f]{64}$ ]] || refuse "DMS_DRILL_IMAGE_SHA256 is not a sha256"
-[[ "${C[DMS_DRILL_EVIDENCE_SIGNER]}" =~ ^[A-Za-z0-9._@-]{1,64}$ ]] || refuse "DMS_DRILL_EVIDENCE_SIGNER is not a principal"
-for k in DMS_DRILL_IMAGE DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_EVIDENCE_KEY; do
+[[ "${C[DMS_DRILL_SIGNER_USER]}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "DMS_DRILL_SIGNER_USER is not a user name"
+SIGNER_UID="$(id -u -- "${C[DMS_DRILL_SIGNER_USER]}" 2> /dev/null)" || refuse "the signer account ${C[DMS_DRILL_SIGNER_USER]} does not exist"
+[ "$SIGNER_UID" != "$(id -u)" ] && [ "$SIGNER_UID" != 0 ] || refuse "the signer must be a separate, unprivileged identity (VR-4)"
+[[ "${C[DMS_DRILL_EXTENSION_ALLOWLIST]}" =~ ^(none|[a-z_][a-z0-9_]{0,62}(,[a-z_][a-z0-9_]{0,62}){0,15})$ ]] || refuse "DMS_DRILL_EXTENSION_ALLOWLIST must be none or a comma-separated list"
+EXTENSIONS="${C[DMS_DRILL_EXTENSION_ALLOWLIST]//,/ }"
+for k in DMS_DRILL_IMAGE DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND; do
   why="$(dms_trusted_file "$k" "${C[$k]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
 done
-for k in DMS_DRILL_EVIDENCE_STORE DMS_DRILL_WORK_DIR; do
-  why="$(dms_trusted_dir "$k" "${C[$k]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
-done
+why="$(dms_trusted_dir DMS_DRILL_WORK_DIR "${C[DMS_DRILL_WORK_DIR]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
 
 # --- D6: the pilot limits, fixed ------------------------------------------------------------------------------------
 VCPU=1; MEMORY_MIB=2048; DISK_GIB=10; MINUTES=30; TASKS=64
@@ -104,6 +112,10 @@ IMAGE_SHA="$(sha256sum -- "${C[DMS_DRILL_IMAGE]}" | cut -d' ' -f1)"
 "${C[DMS_DRILL_QEMU_IMG]}" info -f qcow2 --output=json -- "${C[DMS_DRILL_IMAGE]}" > "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" 2> /dev/null || refuse "cannot inspect the drill image as qcow2"
 IMAGE_VSIZE="$(dms_vm_image_info_ok "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" $((DISK_GIB * 1024 * 1024 * 1024)) 2>&1)" || refuse "${IMAGE_VSIZE} (D6)"
 rm -f -- "${C[DMS_DRILL_WORK_DIR]}/.image-info.json"
+# The pinned PostgreSQL 16.15+ client that inspects the archive (pg_restore, never through PATH).
+why="$(dms_restore_pg_client_check "${C[DMS_DRILL_PG_BINDIR]}" "$(id -u)" "$REPO_DIR" 2>&1)" || refuse "the PostgreSQL client directory failed its checks: ${why}"
+[ -x "${C[DMS_DRILL_PG_BINDIR]}/pg_restore" ] && [ ! -L "${C[DMS_DRILL_PG_BINDIR]}/pg_restore" ] || refuse "pg_restore is missing from the pinned client directory"
+why="$(dms_restore_psql_version_check "$("${C[DMS_DRILL_PG_BINDIR]}/psql" --version 2> /dev/null | head -n 1)")" || refuse "the pinned client is not PostgreSQL 16.15 or later"
 
 # --- The run directory; stale runs; free space (VR-9) -----------------------------------------------------------
 # Under the lock, any earlier run directory is a leftover of an interrupted drill and may hold a plaintext dump.
@@ -134,31 +146,40 @@ cat -- "$MANIFEST" > "$WORK/manifest" && cat -- "${MANIFEST}.sig" > "$WORK/manif
 dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify" || refuse "$(head -c 300 "$WORK/manifest.verify")"
 MANIFEST_SHA="$(head -n 1 "$WORK/manifest.verify")"
 [[ "$MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]] && [ -n "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]:-}" ] || refuse "the manifest did not verify in this shell"
+# PR-9: a revoked manifest, or one issued before the list's not-before, is never used.
+why="$(dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS]}")" || refuse "$why"
 
 # --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
 dms_restore_check_source "$BACKUP_FILE" "$(id -un)" || refuse "the backup file failed its source checks"
 STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")" || refuse "could not stage a private copy"
 INTEGRITY="$(dms_restore_verify_copy "$STAGED" "$EXPECTED_SHA256")" || refuse "the backup does not match the expected digest"
-dms_sandbox_dump_trailer_ok "$STAGED" || refuse "the backup is not a complete pg_dump 16 plain dump (no trailer or no matching \\unrestrict key, DR-7)"
-SPLIT=0; dms_restore_split_check_entries "$STAGED" > /dev/null || SPLIT=$?
-[ "$SPLIT" = 0 ] || refuse "the backup holds a CHECK that pg_dump validates after the data (defense in depth, D5)"
-why="$(dms_restore_manifest_dump_gate "$STAGED")" || refuse "$why"
-read -r EXPECT_TABLES EXPECT_ROWS < <(dms_sandbox_dump_counts "$STAGED") || refuse "cannot count the dump's tables and rows"
+# --- PR-6: the structured archive, inspected in a sandbox; PR-5/PR-8/D-Q6-a/P5 from its structure ------------------
+mkdir -m 0700 -- "$WORK/inspect" || refuse "cannot create the inspection directory"
+why="$(dms_archive_inspect "$STAGED" "$WORK/inspect" "${C[DMS_DRILL_PG_BINDIR]}")" || refuse "${why} (a pg_dump 16 custom-format archive is required, PR-6)"
+why="$(dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS")" || refuse "$why"
+dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS" > /dev/null
+why="$(dms_archive_counts_check "$WORK/inspect/counts.txt")" || refuse "$why"
+EXPECT_TABLES="${#DMS_ARCHIVE_DATA_TABLES[@]}"
+EXPECT_DIGEST="$(dms_archive_digest "$WORK/inspect/counts.txt")"
+EXPECT_ROWS="$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$WORK/inspect/counts.txt")"
+if [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_R6_OWNER_ROLE]}" != none ] && [ -n "${DMS_ARCHIVE_OWNERS[${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}]:-}" ]; then
+  refuse "the archive makes the runtime role an owner after R6 (P5)"
+fi
 BACKUP_BYTES="$(stat -c %s -- "$STAGED")"
-TMPFS_MIB=$(( BACKUP_BYTES * 6 / 1048576 + 256 ))
-[ "$TMPFS_MIB" -le "$TMPFS_MAX_MIB" ] || refuse "the backup needs about ${TMPFS_MIB} MiB of working space, above the pilot limit ${TMPFS_MAX_MIB} MiB (D6)"
+TMPFS_MIB=$(( BACKUP_BYTES * 8 / 1048576 + 256 ))
+[ "$TMPFS_MIB" -le "$TMPFS_MAX_MIB" ] || refuse "the archive needs about ${TMPFS_MIB} MiB of working space, above the pilot limit ${TMPFS_MAX_MIB} MiB (D6)"
 
-# --- The replay stream (restricted mode + load guard, D5), the disks and the VM ------------------------------------
-KEY="$(dms_restore_restrict_key)" && TAG="g$(dms_restore_restrict_key | cut -c1-32)" || refuse "cannot draw the restricted-mode key"
-dms_restore_restricted_stream "$STAGED" "$KEY" "$TAG" > "$WORK/payload" || refuse "cannot build the replay stream"
-rm -f -- "$STAGED"
+# --- The disks and the VM (the restore, with restricted mode and the load guard, happens inside: D5) ------------------
+mv -- "$STAGED" "$WORK/payload" || refuse "cannot move the staged archive"
 PAYLOAD_BYTES="$(stat -c %s -- "$WORK/payload")"
 PAYLOAD_SHA="$(sha256sum -- "$WORK/payload" | cut -d' ' -f1)"
+[ "$PAYLOAD_SHA" = "$EXPECTED_SHA256" ] || refuse "the staged archive changed"
 read -r PAYLOAD_KEY PAYLOAD_IV < <(dms_vm_input_key_iv) || refuse "cannot draw the payload key"
 # shellcheck disable=SC2034  # passed by name to dms_vm_input_build
 declare -A IN=([run_id]="$RUN_ID" [payload_bytes]="$PAYLOAD_BYTES" [payload_sha256]="$PAYLOAD_SHA"
   [payload_key]="$PAYLOAD_KEY" [payload_iv]="$PAYLOAD_IV"
   [roles]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" [runtime_role]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}"
+  [extension_allowlist]="${EXTENSIONS:-none}"
   [locale]="${C[DMS_DRILL_LOCALE]}" [tmpfs_mib]="$TMPFS_MIB"
   [memory_mib]="$UNIT_MEMORY_MIB" [tasks]="$TASKS" [timeout_seconds]="$UNIT_TIMEOUT")
 dms_vm_input_build "$WORK/input.raw" "$WORK/payload" IN || refuse "cannot build the input disk"
@@ -178,7 +199,7 @@ COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # --- Decision from host-checkable facts, then signed evidence (D10) -------------------------------------------------
 DECISION="FAIL:vm_output_unreadable"
 if dms_vm_output_parse "$WORK/output.raw"; then
-  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$PAYLOAD_BYTES" "$EXPECT_TABLES" "$EXPECT_ROWS")"
+  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$EXPECT_DIGEST" "$EXPECT_TABLES")"
   # D1: the VM had no network interface but loopback (the guest kernel's own view).
   if [ "$DECISION" = GO ] && [ "${DMS_VM_OUTPUT[vm_net_ifaces]:-}" != lo ]; then DECISION="FAIL:vm_has_network_interface"; fi
   # P5 from the restored catalog (PR-3): after R6, no object may be owned by the runtime role.
@@ -187,19 +208,34 @@ if dms_vm_output_parse "$WORK/output.raw"; then
 fi
 # VR-8: a reason built from guest text must still fit the evidence schema, or the FAIL would go unrecorded.
 DECISION="$(dms_vm_decision_safe "$DECISION")"
-# shellcheck disable=SC2034  # passed by name to dms_evidence_write
-declare -A EV=([DMS_DRILL_EVIDENCE_RUN_ID]="$RUN_ID" [DMS_DRILL_EVIDENCE_DRILL_HOST]="$(hostname | tr -cd 'A-Za-z0-9._-')"
-  [DMS_DRILL_EVIDENCE_SIGNER]="${C[DMS_DRILL_EVIDENCE_SIGNER]}" [DMS_DRILL_EVIDENCE_STARTED_AT]="$STARTED_AT"
-  [DMS_DRILL_EVIDENCE_COMPLETED_AT]="$COMPLETED_AT" [DMS_DRILL_EVIDENCE_BACKUP_SHA256]="$EXPECTED_SHA256"
-  [DMS_DRILL_EVIDENCE_BACKUP_BYTES]="$BACKUP_BYTES" [DMS_DRILL_EVIDENCE_DIGEST_SOURCE]=expected-sha256
-  [DMS_DRILL_EVIDENCE_MANIFEST_ID]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]}" [DMS_DRILL_EVIDENCE_MANIFEST_SHA256]="$MANIFEST_SHA"
-  [DMS_DRILL_EVIDENCE_IMAGE_SHA256]="$IMAGE_SHA"
-  [DMS_DRILL_EVIDENCE_LIMITS]="vcpu=${VCPU},memory_mib=${MEMORY_MIB},disk_gib=${DISK_GIB},minutes=${MINUTES},tasks=${TASKS}"
-  [DMS_DRILL_EVIDENCE_EXPECTED]="tables=${EXPECT_TABLES},rows=${EXPECT_ROWS}"
-  [DMS_DRILL_EVIDENCE_OBSERVED]="guest-asserted:tables=${DMS_VM_OUTPUT[sandbox_base_table_count]:-none},rows=${DMS_VM_OUTPUT[sandbox_rows_total]:-none}"
-  [DMS_DRILL_EVIDENCE_FIDELITY]="${DMS_VM_OUTPUT[sandbox_fidelity_trg_con_fn_idx]:-none}" [DMS_DRILL_EVIDENCE_DECISION]="$DECISION")
-RECORD="$(dms_evidence_write "${C[DMS_DRILL_EVIDENCE_STORE]}" "${C[DMS_DRILL_EVIDENCE_KEY]}" EV)" || { echo "FATAL: could not write signed evidence; decision ${DECISION} is unrecorded."; exit 1; }
+# --- The evidence request, to the separate signer (VR-4, D10). VR-1: what the host verified is kept apart from what
+# the guest asserted; a GO is never stronger than the guest's integrity.
+GUEST_DIGEST="${DMS_VM_OUTPUT[sandbox_table_digest]:-none}"
+[[ "$GUEST_DIGEST" =~ ^([0-9a-f]{64}|none)$ ]] || GUEST_DIGEST=invalid
+{
+  printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\n' "$RUN_ID"
+  printf 'DMS_DRILL_EVIDENCE_DRILL_HOST=%s\n' "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)"
+  printf 'DMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\n' "$STARTED_AT" "$COMPLETED_AT"
+  printf 'DMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=%s\n' "$EXPECTED_SHA256" "$BACKUP_BYTES"
+  printf 'DMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\n'
+  printf 'DMS_DRILL_EVIDENCE_MANIFEST_ID=%s\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\n' "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]}" "$MANIFEST_SHA"
+  printf 'DMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' "$IMAGE_SHA"
+  printf 'DMS_DRILL_EVIDENCE_LIMITS=vcpu=%s,memory_mib=%s,disk_gib=%s,minutes=%s,tasks=%s\n' "$VCPU" "$MEMORY_MIB" "$DISK_GIB" "$MINUTES" "$TASKS"
+  printf 'DMS_DRILL_EVIDENCE_HOST_VERIFIED=backup_sha256,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,image_sha256,no_nic_by_construction,limits\n'
+  printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=%s,rows=%s,per_table_digest=%s\n' "$EXPECT_TABLES" "$EXPECT_ROWS" "$EXPECT_DIGEST"
+  printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=%s,tables=%s,per_table_digest=%s,fidelity=%s,vm_ifaces=%s\n' \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_replay]:-none}" | tr -cd 'a-z_' | head -c 20)" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_base_table_count]:-none}" | tr -cd '0-9a-z' | head -c 12)" "$GUEST_DIGEST" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_fidelity_trg_con_fn_idx]:-none}" | tr -cd '0-9:a-z' | head -c 40)" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[vm_net_ifaces]:-none}" | tr -cd 'a-z0-9:' | head -c 40)"
+  printf 'DMS_DRILL_EVIDENCE_DECISION=%s\n' "$DECISION"
+} > "$WORK/evidence.request"
+RECORD="$(sudo -n -u "${C[DMS_DRILL_SIGNER_USER]}" -- "${C[DMS_DRILL_SIGNER_COMMAND]}" sign < "$WORK/evidence.request" 2>&1 | head -c 400)"
+case "$RECORD" in
+  "RECORD "*) : ;;
+  *) echo "FATAL: the signer refused or failed; decision ${DECISION} is unrecorded: $(printf '%s' "$RECORD" | tr -cd '[:print:]')"; exit 1 ;;
+esac
 echo "${INTEGRITY}"
-echo "Decision: ${DECISION}"
-echo "Evidence: ${RECORD} (signed, chained)"
+echo "Decision: ${DECISION} (host-verified inputs; restore result asserted by the disposable guest)"
+echo "Evidence: ${RECORD} (signed by ${C[DMS_DRILL_SIGNER_USER]}; keep this head digest outside the drill host)"
 [ "$DECISION" = GO ]

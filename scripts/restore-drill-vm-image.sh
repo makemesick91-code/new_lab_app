@@ -4,13 +4,16 @@
 # drill host only, never on the production host. Needs qemu-img and virt-customize (libguestfs-tools); the package
 # installation inside the image is the only step that uses a network, and it happens here, never at drill time.
 #
-# Usage: restore-drill-vm-image.sh <ubuntu-24.04 cloud image> <its sha256 from Ubuntu's signed SHA256SUMS> <output.qcow2>
+# Usage: restore-drill-vm-image.sh <ubuntu-24.04 cloud image> <its sha256 from Ubuntu's signed SHA256SUMS> <output.qcow2> [extension allowlist, comma-separated, default none]
 # Prints the output image's sha256: the owner pins it as DMS_DRILL_IMAGE_SHA256 in the drill configuration.
-# Hardening baked in (review VR-6): apport purged and kernel.core_pattern neutralised (no root crash handler fed by the
+# Hardening baked in: every PostgreSQL extension control file outside plpgsql and the allowlist is deleted (PR-8, so
+# CREATE EXTENSION of anything else cannot even be attempted in the VM). Review VR-6: apport purged and
+# kernel.core_pattern neutralised (no root crash handler fed by the
 # sandbox). The input payload is encrypted per run, so udev/blkid probing the drill disks only ever sees the host's
 # header and random-looking bytes; a probe-suppression udev rule is to be validated on the real image (phase 3).
 set -euo pipefail
-SRC="${1:?ubuntu cloud image}"; SRC_SHA="${2:?its sha256}"; OUT="${3:?output qcow2}"
+SRC="${1:?ubuntu cloud image}"; SRC_SHA="${2:?its sha256}"; OUT="${3:?output qcow2}"; EXT_ALLOW="${4:-none}"
+[[ "$EXT_ALLOW" =~ ^(none|[a-z_][a-z0-9_]{0,62}(,[a-z_][a-z0-9_]{0,62}){0,15})$ ]] || { echo "FATAL: bad extension allowlist"; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 [[ "$SRC_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "FATAL: the source sha256 must be 64 hex digits"; exit 2; }
@@ -23,7 +26,7 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf -- "$STAGE"' EXIT
 mkdir -p "$STAGE/dms/lib"
 install -m 0755 "$REPO/scripts/restore-drill-vm-guest.sh" "$REPO/scripts/restore-drill-sandbox-inner.sh" "$STAGE/dms/"
-install -m 0644 "$REPO/scripts/lib/restore-sandbox.sh" "$REPO/scripts/lib/restore-vm.sh" "$STAGE/dms/lib/"
+install -m 0644 "$REPO/scripts/lib/restore-integrity.sh" "$REPO/scripts/lib/restore-sandbox.sh" "$REPO/scripts/lib/restore-vm.sh" "$STAGE/dms/lib/"
 qemu-img convert -O qcow2 "$SRC" "$OUT"
 qemu-img resize -q "$OUT" 10G
 virt-customize -a "$OUT" \
@@ -35,6 +38,8 @@ virt-customize -a "$OUT" \
   --run-command 'chown -R root:root /usr/local/lib/dms-restore-drill && chmod -R go-w /usr/local/lib/dms-restore-drill' \
   --run-command 'systemctl enable dms-restore-drill-guest.service' \
   --run-command 'apt-get purge -y apport apport-symptoms whoopsie || true' \
+  --copy-in "$REPO/deploy/restore-drill-vm/prune-extensions.sh:/usr/local/lib/dms-restore-drill" \
+  --run-command "/usr/local/lib/dms-restore-drill/prune-extensions.sh /usr/share/postgresql/16/extension ${EXT_ALLOW}" \
   --write '/etc/sysctl.d/90-dms-drill-no-core.conf:kernel.core_pattern=|/bin/false' \
   --run-command 'test ! -e /usr/share/apport && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
   --run-command 'systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service snapd.service unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer' \

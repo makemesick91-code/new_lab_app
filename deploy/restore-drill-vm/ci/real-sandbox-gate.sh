@@ -43,8 +43,10 @@ limit() { LIMIT=$((LIMIT + 1)); echo "LIMIT  $1  $2  [$3]" >> "$RESULTS"; }
 is() { [ "$1" = "$2" ]; echo $?; }
 starts() { case "$1" in "$2"*) echo 0 ;; *) echo 1 ;; esac; }
 units_left() { systemctl "${SCOPE[@]}" list-units --all --plain --no-legend 'dmsdrill-*' 2> /dev/null | wc -l; }
+DRILL_DIRS=()
 cleanup_all() {
   [ -n "$ABS_PID" ] && kill "$ABS_PID" 2> /dev/null
+  [ "${#DRILL_DIRS[@]}" -eq 0 ] || "${RUNNER[@]}" rm -rf -- "${DRILL_DIRS[@]}"
   "$PGBIN/pg_ctl" -D "$DWORK/data" -m immediate stop > /dev/null 2>&1 || true
   rm -rf -- "$DWORK" "$DSHM" "$DHOME" "$DVAR"
 }
@@ -72,7 +74,8 @@ check H1 "the decoy cluster is reachable from outside the sandbox (socket and TC
 
 # --- P: arbitrary native code inside a unit built from the drill's own profile ---------------------------------------
 NAME="$(dms_sandbox_unit_name)"
-mapfile -t PROPS < <(dms_sandbox_properties "$MODE" "$NAME" 256 768 64 300 "$REPO/scripts/restore-drill-sandbox-inner.sh")
+: > "$DWORK/none.dump"; : > "$DWORK/none.sql"; chmod 0644 "$DWORK/none.dump" "$DWORK/none.sql"
+mapfile -t PROPS < <(dms_sandbox_properties "$MODE" "$NAME" 256 768 64 300 "$REPO/scripts/restore-drill-sandbox-inner.sh" "$DWORK/none.dump" "$DWORK/none.sql")
 # Test-only additions for the probe itself: python may execute, the probe file is bound read-only.
 PROPS+=(-p "ExecPaths=/usr/bin/python3.12 /usr/lib/python3.12/lib-dynload" -p "BindReadOnlyPaths=$HERE/probe.py:/opt/dmsdrill/probe.py")
 "${RUNNER[@]}" systemd-run "${SCOPE[@]}" --wait --pipe --collect --quiet --unit="$NAME" "${PROPS[@]}" \
@@ -99,50 +102,23 @@ else
   limit P-signal "same uid: signal 0 to the operator's process" "$(pv signal0_harness_pid)"
 fi
 
-# --- S: the guest agent's replay, through the host decision -----------------------------------------------------------
-DUMP_OK="--
--- PostgreSQL database dump
---
-
-\\restrict K1synthetic
-
-SET statement_timeout = 0;
-SELECT pg_catalog.set_config('search_path', '', false);
-CREATE TABLE public.migrations (id integer NOT NULL, migration character varying(255) NOT NULL);
-ALTER TABLE public.migrations OWNER TO app_runtime;
-CREATE TABLE public.items (id integer NOT NULL, label text NOT NULL);
-ALTER TABLE public.items OWNER TO app_runtime;
-COPY public.migrations (id, migration) FROM stdin;
-1	synthetic_one
-\\.
-
-COPY public.items (id, label) FROM stdin;
-1	synthetic item
-2	synthetic item
-\\.
-
---
--- PostgreSQL database dump complete
---
-
-\\unrestrict K1synthetic
-"
-drill() { # <label> <dump text> <restricted 1|0> [tmpfs MiB] [timeout s] -> prints decision; facts in $OUT/<label>.facts
-  local label="$1" dump="$2" restricted="$3" tmpfs="${4:-256}" timeout="${5:-300}" d et er run ps pb
-  d="$(mktemp -d)"; chmod 0755 "$d"
-  printf '%s' "$dump" > "$d/dump.sql"
-  read -r et er < <(dms_sandbox_dump_counts "$d/dump.sql")
+# --- S: the guest agent restores STRUCTURED archives (PR-6), decided by the host from per-table counts (PR-5) ---------
+FX="$REPO/tests/Fixtures/restore-drill"
+# shellcheck source=/dev/null
+. "$REPO/scripts/lib/restore-archive.sh"
+drill() { # <label> <archive> [extension allowlist] [tmpfs MiB] [timeout s] -> prints decision; facts in $OUT/<label>.facts
+  local label="$1" archive="$2" exts="${3:-none}" tmpfs="${4:-256}" timeout="${5:-300}" d et ed run ps pb pk piv
+  d="$(mktemp -d)"; chmod 0755 "$d"; DRILL_DIRS+=("$d")
+  dms_archive_count_program > "$d/count.awk"
+  "$PGBIN/pg_restore" --section=data --restrict-key=gatek -f - "$archive" | awk -f "$d/count.awk" > "$d/counts" || { echo "FAIL:host_count"; return 0; }
+  et="$(wc -l < "$d/counts")"; ed="$(dms_archive_digest "$d/counts")"
   run="$(dms_sandbox_unit_name)"
-  if [ "$restricted" = 1 ]; then
-    dms_restore_restricted_stream "$d/dump.sql" "$(dms_restore_restrict_key)" "g$(dms_restore_restrict_key | cut -c1-32)" > "$d/payload"
-  else
-    cp "$d/dump.sql" "$d/payload"
-  fi
+  cp -- "$archive" "$d/payload"
   pb="$(stat -c %s "$d/payload")"; ps="$(sha256sum "$d/payload" | cut -d' ' -f1)"
-  local pk piv
   read -r pk piv < <(dms_vm_input_key_iv)
   # shellcheck disable=SC2034
-  declare -A IN=([run_id]="$run" [payload_bytes]="$pb" [payload_sha256]="$ps" [payload_key]="$pk" [payload_iv]="$piv" [roles]=app_runtime [runtime_role]=app_runtime [locale]=C.UTF-8
+  declare -A IN=([run_id]="$run" [payload_bytes]="$pb" [payload_sha256]="$ps" [payload_key]="$pk" [payload_iv]="$piv"
+    [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$exts" [locale]=C.UTF-8
     [tmpfs_mib]="$tmpfs" [memory_mib]=768 [tasks]=64 [timeout_seconds]="$timeout")
   dms_vm_input_build "$d/input.raw" "$d/payload" IN
   head -c "$DMS_VM_OUTPUT_BYTES" /dev/zero > "$d/output.raw"
@@ -150,46 +126,63 @@ drill() { # <label> <dump text> <restricted 1|0> [tmpfs MiB] [timeout s] -> prin
   "${RUNNER[@]}" bash "$REPO/scripts/restore-drill-vm-guest.sh" "$d/input.raw" "$d/output.raw" "$MODE" > /dev/null 2>&1
   dms_vm_output_parse "$d/output.raw" || true
   for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done | sort > "$OUT/${label}.facts"
-  dms_vm_decide 0 "$run" "$ps" "$pb" "$et" "$er"
+  dms_vm_decision_safe "$(dms_vm_decide 0 "$run" "$ps" "$ed" "$et")"
   "${RUNNER[@]}" rm -rf -- "$d"
 }
 fact() { sed -n "s/^$2=//p" "$OUT/$1.facts" | head -n 1; }
-d="$(drill S-ok "$DUMP_OK" 1)"
-check S-ok "a synthetic runtime-owned dump restores: GO from host-counted completeness" "$(is "$d" GO)" "$d tables=$(fact S-ok sandbox_base_table_count) rows=$(fact S-ok sandbox_rows_total)"
-d="$(drill S-super "${DUMP_OK}\\c - drill_super
-SELECT 1;
-" 0)"
-check S-super "a superuser reconnect after the dump's own \\unrestrict fails (bootstrap superuser NOLOGIN)" "$([ "$(fact S-super sandbox_stage)" = replay ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
-d="$(drill S-fd3 "${DUMP_OK}\\t on
-\\a
-\\o /proc/self/fd/3
-SELECT 'DRILL result=GO';
-" 0)"
-check S-fd3 "nothing in the dump reaches the result channel (fd 3 closed)" "$([ "$(fact S-fd3 result_duplicates)" = 0 ] && [ "$(fact S-fd3 result_rejected)" = 0 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
-i=0
-for stmt in "COPY (SELECT 1) TO PROGRAM 'id';" "SELECT pg_catalog.pg_read_file('/etc/passwd');" "CREATE ROLE intruder SUPERUSER;" "SELECT pg_catalog.lo_import('/etc/passwd');" "CREATE EXTENSION dblink SCHEMA public;"; do
-  i=$((i + 1))
-  d="$(drill "S-su$i" "${DUMP_OK/--
--- PostgreSQL database dump complete/$stmt
---
--- PostgreSQL database dump complete}" 1)"
-  check "S-su$i" "superuser-only statement refused to the restore role: $stmt" "$([ "$(fact "S-su$i" sandbox_replay_sqlstate)" = 42501 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d sqlstate=$(fact "S-su$i" sandbox_replay_sqlstate)"
-done
+d="$(drill S-ok "$FX/clean.dump")"
+check S-ok "a synthetic runtime-owned archive restores: GO from the host's per-table digest" "$(is "$d" GO)" "$d tables=$(fact S-ok sandbox_base_table_count)"
+d="$(drill S-bomb "$FX/bomb.dump")"
+check S-bomb "an index-expression restore bomb is refused: user code on a restore path (PR-2)" "$(is "$d" FAIL:user_code_in_restore_path)" "$d"
+d="$(drill S-rls "$FX/rls.dump")"
+check S-rls "row-security policy code never runs during verification; verification fails (PR-5)" "$([ "$(fact S-rls sandbox_stage)" = verify ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+d="$(drill S-meta "$FX/metabody.dump")"
+check S-meta "a backslash line inside a function body stays text (D5)" "$(is "$d" GO)" "$d"
+d="$(drill S-ext-no "$FX/ext.dump")"
+check S-ext "an extension outside the allowlist fails the drill after the restore too (PR-8)" "$(is "$d" FAIL:extension_outside_allowlist)" "$d"
+d="$(drill S-r6 "$FX/r6owner.dump")"
+check S-r6 "runtime-owned objects are counted from the restored catalog (P5, PR-3)" "$([ "$(fact S-r6 sandbox_runtime_owned_objects)" -gt 0 ]; echo $?)" "runtime_owned=$(fact S-r6 sandbox_runtime_owned_objects)"
 
-# --- X: resource exhaustion stays inside the unit --------------------------------------------------------------------
+# --- X: resource exhaustion stays inside the unit (hostile archives built here, synthetic data only) ------------------
+"$PGBIN/psql" -X -q -h "$DSHM" -p "$DPORT" -U decoy_super -d postgres -c "CREATE ROLE app_runtime" -c "CREATE DATABASE xfill OWNER app_runtime" -c "CREATE DATABASE xtime OWNER app_runtime" > /dev/null
+"$PGBIN/psql" -X -q -h "$DSHM" -p "$DPORT" -U decoy_super -d xfill > /dev/null << 'SQL'
+SET ROLE app_runtime;
+CREATE TABLE migrations (id int PRIMARY KEY);
+INSERT INTO migrations VALUES (1);
+CREATE TABLE fill (t text);
+INSERT INTO fill SELECT md5(random()::text) || md5(random()::text) FROM generate_series(1, 1500000);
+SQL
+"$PGBIN/psql" -X -q -h "$DSHM" -p "$DPORT" -U decoy_super -d xtime > /dev/null << 'SQL'
+SET ROLE app_runtime;
+CREATE TABLE migrations (id int PRIMARY KEY);
+INSERT INTO migrations VALUES (1);
+-- Environment-aware, as an attacker would write it: it stalls only inside the drill's database.
+CREATE FUNCTION slow(x int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN IF current_database() = 'dms_restore_drill' THEN PERFORM pg_catalog.pg_sleep(600); END IF; RETURN x; END $$;
+CREATE INDEX migrations_slow ON migrations (slow(id));
+SQL
+"$PGBIN/pg_dump" -h "$DSHM" -p "$DPORT" -U decoy_super -d xfill -Fc -f "$DWORK/xfill.dump"
+"$PGBIN/pg_dump" -h "$DSHM" -p "$DPORT" -U decoy_super -d xtime -Fc -f "$DWORK/xtime.dump"
 s=$(date +%s)
-d="$(drill X-disk "${DUMP_OK/--
--- PostgreSQL database dump complete/CREATE TABLE public.fill (t text);
-INSERT INTO public.fill SELECT md5(random()::text) || md5(random()::text) FROM generate_series(1, 3000000);
---
--- PostgreSQL database dump complete}" 1 96)"
-check X-disk "a disk fill stops at the tmpfs cap, quickly, as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 120 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
+d="$(drill X-disk "$DWORK/xfill.dump" none 64)"
+check X-disk "a restore that outgrows the capped tmpfs ends as FAIL, quickly" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 180 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
 s=$(date +%s)
-d="$(drill X-time "${DUMP_OK/--
--- PostgreSQL database dump complete/SELECT pg_catalog.pg_sleep(600);
---
--- PostgreSQL database dump complete}" 1 256 20)"
-check X-time "an endless statement ends at the unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 60 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
+d="$(drill X-time "$DWORK/xtime.dump" none 256 20)"
+check X-time "an endless restore step ends at the unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 90 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
+
+# --- G: the evidence signer is a separate identity (VR-4); only in system mode, provisioned by the CI job ---------------
+if [ "$MODE" = system ] && [ -n "${DMS_GATE_SIGNER_USER:-}" ]; then
+  # shellcheck source=/dev/null
+  . "$REPO/scripts/lib/restore-evidence.sh"
+  req() { printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=gate\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\nDMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\nDMS_DRILL_EVIDENCE_LIMITS=vcpu=1\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=gate\nDMS_DRILL_EVIDENCE_EXPECTED=gate\nDMS_DRILL_EVIDENCE_GUEST_ASSERTED=gate\nDMS_DRILL_EVIDENCE_DECISION=GO\n' \
+    "$(dms_sandbox_unit_name)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"; }
+  r="$(req | sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" sign 2>&1)"
+  check G1 "the operator obtains a record only through sudo to the signer identity" "$(starts "$r" "RECORD ")" "$(printf '%s' "$r" | head -c 80)"
+  r="$(req | DMS_SIGNER_CONF="$DMS_GATE_SIGNER_CONF" bash "$DMS_GATE_SIGNER_COMMAND" sign 2>&1)"
+  check G2 "calling the signer directly as the operator is refused" "$([ "${r#*refused}" != "$r" ] || [ "${r#*SIGNER: }" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  check G3 "the operator cannot read the signer's key" "$([ ! -r "$DMS_GATE_SIGNER_KEY" ]; echo $?)" "$(stat -c '%U %a' "$DMS_GATE_SIGNER_KEY" 2> /dev/null)"
+  r="$(sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" verify 2>&1)"
+  check G4 "the signer's store verifies against its head log" "$(starts "$r" "VERIFIED ")" "$(printf '%s' "$r" | head -c 80)"
+fi
 
 # --- C: nothing left behind --------------------------------------------------------------------------------------------
 nap 1

@@ -7,7 +7,10 @@
 # cluster, its roles, this process and every file under /srv die with the unit.
 #
 # Only bash builtins and the pinned PostgreSQL 16 binaries run here; the unit's ExecPaths= allows nothing else.
-#   stdin   the restricted replay stream (the caller verified the backup's trusted digest and built the stream)
+#   /opt/dmsdrill/archive.dump  the pg_dump 16 CUSTOM-format archive, bound read-only (PR-6: a structured format; the
+#                               host validated its TOC and counted its rows per table before the VM booted)
+#   /opt/dmsdrill/guard.sql     the load guard (#695, D5), bound read-only, run between pre-data and data
+#   stdin   /dev/null
 #   fd 3    the result channel (the unit's stdout): `DRILL key=value` lines only; no PostgreSQL or psql process
 #           inherits it (DR-10)
 #   stdout/stderr  /srv/inner.log, which never leaves the unit (no error text, no row ever reaches the caller: CG-11)
@@ -17,6 +20,7 @@
 #   DRILL_PG_BINDIR             the pinned PostgreSQL 16 binaries
 #   DRILL_EXPECT_DYNAMIC_UID=1  system mode: the uid must be a DynamicUser uid (DR-11)
 #   DRILL_RUNTIME_ROLE          the manifest's runtime role: its object count after the replay decides P5 (PR-3)
+#   DRILL_EXTENSIONS            the extension allowlist (PR-8), "none" when empty
 set -uo pipefail
 umask 077
 exec 3>&1 1>> /srv/inner.log 2>&1
@@ -81,6 +85,11 @@ for r in ${DRILL_ROLES:-}; do
 done
 LOCALE="${DRILL_LOCALE:-C.UTF-8}"
 RUNTIME="${DRILL_RUNTIME_ROLE:-}"
+EXTS="${DRILL_EXTENSIONS:-none}"
+[[ "$EXTS" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] || fail extensions_invalid 12
+ARCHIVE=/opt/dmsdrill/archive.dump
+GUARD=/opt/dmsdrill/guard.sql
+[ -f "$ARCHIVE" ] && [ -r "$ARCHIVE" ] && [ -f "$GUARD" ] && [ -r "$GUARD" ] || fail inputs_missing 12
 [ -z "$RUNTIME" ] || [[ "$RUNTIME" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail runtime_role_invalid 12
 [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || fail locale_invalid 12
 
@@ -119,19 +128,36 @@ su_sql -d postgres -v r="$SU" <<< 'ALTER ROLE :"r" NOLOGIN;' > /dev/null || fail
 emit "bootstrap_superuser=nologin"
 emit "roles_created=${#ROLES[@]}"
 
-# --- Untrusted: the replay, as the NOSUPERUSER restore role (D4) -------------------------------------------------
-"$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
-rc=$?
-if [ "$rc" -ne 0 ]; then
-  state="unknown"
-  while IFS= read -r l; do
-    [[ "$l" =~ ERROR:\ +([0-9A-Z]{5})$ ]] && state="${BASH_REMATCH[1]}"
-    [[ "$l" =~ restricted ]] && state="restricted_meta"
-  done < "$R/replay.err"
-  emit "replay_exit=$rc"
-  emit "replay_sqlstate=$state"
-  fail replay 20
+# --- Untrusted: the restore, section by section, as the NOSUPERUSER restore role (D4) ------------------------------
+# pg_restore turns the structured archive into SQL; psql runs it in restricted mode under a fresh key per section
+# (D5: no meta-command can run). The load guard runs between pre-data and data, as its own session: nothing is ever
+# injected into the stream (PR-6).
+restore_section() { # <section> -> 0, or emits the failure and exits
+  local section="$1" key st
+  key="$(printf '%08x%08x%08x%08x%08x%08x%08x%08x' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"
+  "$PGBIN/pg_restore" --section="$section" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&- \
+    | "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
+  st=("${PIPESTATUS[@]}")
+  if [ "${st[1]}" -ne 0 ] || [ "${st[0]}" -ne 0 ]; then
+    local state="unknown" l
+    while IFS= read -r l; do
+      [[ "$l" =~ ERROR:\ +([0-9A-Z]{5})$ ]] && state="${BASH_REMATCH[1]}"
+      [[ "$l" =~ restricted ]] && state="restricted_meta"
+    done < "$R/replay.err"
+    [ "${st[0]}" -ne 0 ] && [ "$state" = unknown ] && state="pg_restore_failed"
+    emit "replay_section=${section//-/_}"
+    emit "replay_exit=${st[1]}"
+    emit "replay_sqlstate=$state"
+    fail replay 20
+  fi
+}
+restore_section pre-data
+if ! "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f "$GUARD" > /dev/null 2> "$R/guard.err" 3>&-; then
+  emit "replay_section=load_guard"
+  fail load_guard 21
 fi
+restore_section data
+restore_section post-data
 emit "replay=ok"
 
 # --- Verification, as the restore role, search_path pinned, names qualified --------------------------------------
@@ -161,13 +187,22 @@ rown=0
 if [ -n "$RUNTIME" ]; then
   rown="$(vsql "SELECT (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE pg_catalog.pg_get_userbyid(c.relowner) OPERATOR(pg_catalog.=) '${RUNTIME}' AND n.nspname OPERATOR(pg_catalog.<>) ALL (ARRAY['pg_catalog','information_schema'])) OPERATOR(pg_catalog.+) (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p WHERE pg_catalog.pg_get_userbyid(p.proowner) OPERATOR(pg_catalog.=) '${RUNTIME}') OPERATOR(pg_catalog.+) (SELECT pg_catalog.count(*) FROM pg_catalog.pg_type t WHERE pg_catalog.pg_get_userbyid(t.typowner) OPERATOR(pg_catalog.=) '${RUNTIME}') OPERATOR(pg_catalog.+) (SELECT pg_catalog.count(*) FROM pg_catalog.pg_namespace s WHERE pg_catalog.pg_get_userbyid(s.nspowner) OPERATOR(pg_catalog.=) '${RUNTIME}')")" || fail verify 30
 fi
-for v in "$tables" "$mig" "$base" "$rows" "$trg" "$con" "$fns" "$idx" "$ucode" "$rown"; do num "$v" || fail verify_format 30; done
+# PR-5: one canonical digest over EVERY table's row count ("schema<TAB>table<TAB>rows\n", C order); the host compares
+# it with the digest of the counts it took from the archive's data section before the VM booted.
+userrel="n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE c.relkind OPERATOR(pg_catalog.=) 'r' AND n.nspname OPERATOR(pg_catalog.<>) ALL (ARRAY['pg_catalog','information_schema']) AND n.nspname OPERATOR(pg_catalog.!~) '^pg_(toast|temp)'"
+tdigest="$(vsql "SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(COALESCE(pg_catalog.string_agg(n.nspname OPERATOR(pg_catalog.||) E'\\t' OPERATOR(pg_catalog.||) c.relname OPERATOR(pg_catalog.||) E'\\t' OPERATOR(pg_catalog.||) ((pg_catalog.xpath('/row/c/text()', pg_catalog.query_to_xml(pg_catalog.format('SELECT pg_catalog.count(*) AS c FROM ONLY %I.%I', n.nspname, c.relname), false, true, '')))[1])::text OPERATOR(pg_catalog.||) E'\\n', '' ORDER BY n.nspname COLLATE \"C\", c.relname COLLATE \"C\"), ''), 'UTF8')), 'hex') FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${userrel}")" || fail verify 30
+[[ "$tdigest" =~ ^[0-9a-f]{64}$ ]] || fail verify_format 30
+# PR-8: no extension beyond plpgsql and the allowlist exists after the restore.
+extbad="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_extension WHERE extname OPERATOR(pg_catalog.<>) 'plpgsql' AND extname OPERATOR(pg_catalog.<>) ALL (pg_catalog.string_to_array('${EXTS}', ' '))")" || fail verify 30
+for v in "$tables" "$mig" "$base" "$rows" "$trg" "$con" "$fns" "$idx" "$ucode" "$rown" "$extbad"; do num "$v" || fail verify_format 30; done
 emit "table_count=$tables"
 emit "migrations_table=$mig"
 emit "base_table_count=$base"
 emit "rows_total=$rows"
 emit "fidelity_trg_con_fn_idx=${trg}:${con}:${fns}:${idx}"
 emit "user_code_reachable=$ucode"
+emit "table_digest=$tdigest"
+emit "extensions_outside_allowlist=$extbad"
 emit "runtime_owned_objects=$rown"
 stop_server
 emit "result=GO"

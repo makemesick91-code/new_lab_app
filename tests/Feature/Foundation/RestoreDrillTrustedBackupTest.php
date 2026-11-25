@@ -329,7 +329,8 @@ it('runs the whole replay in psql restricted mode under a fresh key and drops on
         ->and($first['replayed'])->toContain("COPY public.t (id) FROM stdin;\n1\n\\.\n")
         ->and(substr_count((string) $first['replayed'], '\\restrict '))->toBe(1)
         ->and(substr_count((string) $first['replayed'], '\\unrestrict'))->toBe(0)
-        ->and(file_get_contents(base_path('scripts/restore-drill-vm.sh')))->toContain('dms_restore_restricted_stream "$STAGED" "$KEY" "$TAG" > "$WORK/payload"');
+        // The isolated drill restores a structured archive: pg_restore emits each section under a fresh key (PR-6, D5).
+        ->and(file_get_contents(base_path('scripts/restore-drill-sandbox-inner.sh')))->toContain('--restrict-key="$key"');
 });
 
 it('keeps every meta-command inside a digest-matching dump under the fresh key, so real psql refuses it', function () {

@@ -2,12 +2,22 @@
 # Activating it is a separate owner decision: copy it to .github/workflows/restore-drill-real-sandbox.yml.
 #
 # The dedicated real-sandbox gate for the R6-B6 isolated restore drill, on DISPOSABLE infrastructure only: each job
-# runs on a fresh GitHub-hosted VM that is discarded afterwards. It uses no self-hosted or shared runner, no secret,
-# no production host and no production data. It adds nothing to the existing gates and changes none of them.
-#   system-mode-sandbox  the drill's sandbox profile in a SYSTEM unit with DynamicUser (identity separation for real),
-#                        against stand-ins the gate creates itself;
-#   vm-boot              builds the drill VM image from Ubuntu's signed cloud image and drives
-#                        scripts/restore-drill-vm.sh end to end under KVM.
+# runs on a fresh GitHub-hosted VM that is discarded afterwards.
+#   Data:        synthetic only (tests/Fixtures/restore-drill, and archives the gate builds from its own decoy cluster).
+#                No production backup, host, credential or patient data is ever involved.
+#   Identity:    no repository secret, no token use beyond a read-only checkout (persist-credentials: false).
+#   Permissions: contents: read only.
+#   Actions:     pinned by full commit SHA (checkout v4.4.0, upload-artifact v4.6.2; both releases older than 2 weeks).
+#   Network:     the runner fetches Ubuntu packages and Ubuntu's cloud image (verified against Ubuntu's signed
+#                SHA256SUMS with gpgv and the ubuntu-cloudimage-keyring). The drill VM itself has NO network device;
+#                the decoy services listen only on 127.0.0.1, /dev/shm and an abstract socket inside the runner.
+#   KVM:         GitHub-hosted Linux runners expose /dev/kvm (made usable by the udev rule below). If it is absent, the
+#                orchestrator refuses (fail closed) and the job fails; nothing falls back to emulation.
+#   It adds nothing to the existing gates and changes none of them.
+#
+#   system-mode-sandbox  the drill's sandbox profile in a SYSTEM unit with DynamicUser (real identity separation),
+#                        against stand-ins the gate creates; and the evidence signer as a separate identity (VR-4).
+#   vm-boot              builds the drill VM image and drives scripts/restore-drill-vm.sh end to end under KVM.
 name: restore-drill-real-sandbox
 
 on:
@@ -26,18 +36,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: PostgreSQL 16.15+ binaries (Ubuntu archive); the packaged cluster is removed
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q postgresql-16
           sudo pg_dropcluster --stop 16 main || true
           /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
-      - name: Real sandbox, system mode (DynamicUser)
+      - name: Separate evidence signer identity (VR-4), installed outside the checkout
+        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner
+      - name: Real sandbox, system mode (DynamicUser) + signer separation
+        env:
+          DMS_GATE_SIGNER_USER: dmsdrill-signer
+          DMS_GATE_SIGNER_COMMAND: /usr/local/lib/dms-restore-drill/signer/restore-drill-evidence-signer.sh
+          DMS_GATE_SIGNER_CONF: /etc/dms-restore-drill/signer.conf
+          DMS_GATE_SIGNER_KEY: /var/lib/dmsdrill-signer/signing-key
         run: bash deploy/restore-drill-vm/ci/real-sandbox-gate.sh system "$RUNNER_TEMP/gate-system"
       - name: Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: restore-drill-real-sandbox-system
           path: ${{ runner.temp }}/gate-system/results-*.txt
@@ -46,15 +65,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - name: KVM for the runner user, QEMU and libguestfs
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: KVM for the runner user; QEMU, libguestfs, PostgreSQL 16 client
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           sudo apt-get update -q
-          sudo apt-get install -y -q qemu-system-x86 qemu-utils libguestfs-tools ubuntu-cloudimage-keyring
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils libguestfs-tools ubuntu-cloudimage-keyring postgresql-16
+          sudo pg_dropcluster --stop 16 main || true
           sudo chmod 0644 /boot/vmlinuz-* || true
-      - name: Ubuntu 24.04 cloud image, verified against Ubuntu's signed SHA256SUMS
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: The runner's own user manager (the orchestrator inspects archives in a per-user sandbox unit)
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
+          test -S "/run/user/$(id -u)/bus"
+      - name: Separate evidence signer identity (VR-4), installed outside the checkout
+        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner
+      - name: Ubuntu 24.04 cloud image, verified against Ubuntu's signed SHA256SUMS; drill image built
         run: |
           base=https://cloud-images.ubuntu.com/releases/noble/release
           curl -fsSLO "$base/SHA256SUMS" && curl -fsSLO "$base/SHA256SUMS.gpg"
@@ -62,12 +92,16 @@ jobs:
           img=ubuntu-24.04-server-cloudimg-amd64.img
           curl -fsSLO "$base/$img"
           sha="$(grep " \*$img\$" SHA256SUMS | cut -d' ' -f1)"
-          bash scripts/restore-drill-vm-image.sh "$img" "$sha" "$RUNNER_TEMP/drill.qcow2"
+          bash scripts/restore-drill-vm-image.sh "$img" "$sha" "$RUNNER_TEMP/drill.qcow2" none
       - name: VM boot gate
-        run: bash deploy/restore-drill-vm/ci/vm-boot-gate.sh "$RUNNER_TEMP/drill.qcow2" "$RUNNER_TEMP/gate-vm"
+        env:
+          DMS_GATE_SIGNER_USER: dmsdrill-signer
+          DMS_GATE_SIGNER_COMMAND: /usr/local/lib/dms-restore-drill/signer/restore-drill-evidence-signer.sh
+          DMS_GATE_SIGNER_KEY: /var/lib/dmsdrill-signer/signing-key
+        run: XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" bash deploy/restore-drill-vm/ci/vm-boot-gate.sh "$RUNNER_TEMP/drill.qcow2" "$RUNNER_TEMP/gate-vm"
       - name: Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: restore-drill-vm-boot
           path: ${{ runner.temp }}/gate-vm/

@@ -25,7 +25,7 @@ function rdipLib(string $script, array $env = []): array
 
 function rdipProps(string $mode): array
 {
-    $run = rdipLib('dms_sandbox_properties '.$mode.' dmsdrill-0123456789ab 1024 1536 64 1500 /opt/x/inner.sh');
+    $run = rdipLib('dms_sandbox_properties '.$mode.' dmsdrill-0123456789ab 1024 1536 64 1500 /opt/x/inner.sh /w/archive.dump /w/guard.sql');
     expect($run['exit'])->toBe(0, $run['err']);
 
     return explode("\n", trim($run['out']));
@@ -38,9 +38,6 @@ function rdipTemp(string $content): string
 
     return $file;
 }
-
-/** A synthetic pg_dump 16 plain dump: two tables, three rows, the restrict envelope and the trailer. */
-const RDIP_DUMP = "--\n-- PostgreSQL database dump\n--\n\n\\restrict K1synthetic\n\nSET statement_timeout = 0;\nCREATE TABLE public.a (id integer);\nCREATE TABLE public.migrations (id integer);\nCOPY public.a (id) FROM stdin;\n1\n2\n\\.\n\nCOPY public.migrations (id) FROM stdin;\n1\n\\.\n\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict K1synthetic\n\n";
 
 it('requires every isolation property of the sandbox unit, in system and in user mode', function (string $mode) {
     $props = rdipProps($mode);
@@ -57,6 +54,8 @@ it('requires every isolation property of the sandbox unit, in system and in user
         // DR-12: host cgroup tree and devpts.
         'InaccessiblePaths=/sys/fs/cgroup /dev/pts',
         'BindReadOnlyPaths=/opt/x/inner.sh:/opt/dmsdrill/inner.sh',
+        // PR-6: the structured archive and the load guard, read-only; stdin carries nothing.
+        'BindReadOnlyPaths=/w/archive.dump:/opt/dmsdrill/archive.dump /w/guard.sql:/opt/dmsdrill/guard.sql',
         'ProtectKernelTunables=yes', 'ProtectKernelModules=yes', 'ProtectKernelLogs=yes', 'ProtectControlGroups=yes',
         'ProtectProc=invisible', 'ProcSubset=pid', 'RestrictNamespaces=yes', 'MemoryDenyWriteExecute=yes',
         'SystemCallArchitectures=native', 'SystemCallFilter=@system-service',
@@ -109,12 +108,12 @@ it('refuses a unit profile outside the limits or with a tmpfs not smaller than M
     expect($run['exit'])->toBe(2)
         ->and($run['out'])->toBe('');
 })->with([
-    'tasks above 64' => ['system dmsdrill-0123456789ab 1024 1536 65 1500 /x'],
-    'timeout above 30 min' => ['system dmsdrill-0123456789ab 1024 1536 64 1801 /x'],
-    'memory above 2 GiB' => ['system dmsdrill-0123456789ab 1024 4096 64 1500 /x'],
-    'tmpfs as large as memory' => ['system dmsdrill-0123456789ab 1536 1536 64 1500 /x'],
-    'bad unit name' => ['system dms-restore-drill-x 1024 1536 64 1500 /x'],
-    'unknown mode' => ['root dmsdrill-0123456789ab 1024 1536 64 1500 /x'],
+    'tasks above 64' => ['system dmsdrill-0123456789ab 1024 1536 65 1500 /x /a /g'],
+    'timeout above 30 min' => ['system dmsdrill-0123456789ab 1024 1536 64 1801 /x /a /g'],
+    'memory above 2 GiB' => ['system dmsdrill-0123456789ab 1024 4096 64 1500 /x /a /g'],
+    'tmpfs as large as memory' => ['system dmsdrill-0123456789ab 1536 1536 64 1500 /x /a /g'],
+    'bad unit name' => ['system dms-restore-drill-x 1024 1536 64 1500 /x /a /g'],
+    'unknown mode' => ['root dmsdrill-0123456789ab 1024 1536 64 1500 /x /a /g'],
 ]);
 
 it('draws a fresh run name of at most 31 characters, valid as a DynamicUser name (DR-11)', function () {
@@ -127,22 +126,30 @@ it('draws a fresh run name of at most 31 characters, valid as a DynamicUser name
         ->and($names[0])->not->toBe($names[1]);
 });
 
-it('keeps the inner script to builtins and pinned binaries, as the restore role, with the superuser locked and fd 3 closed', function () {
+it('keeps the inner script to builtins and pinned binaries, restores the structured archive by section as the restore role, superuser locked, fd 3 closed', function () {
     $inner = (string) file_get_contents(base_path('scripts/restore-drill-sandbox-inner.sh'));
     $code = implode("\n", array_filter(explode("\n", $inner), fn (string $l): bool => ! str_starts_with(ltrim($l), '#')));
 
     expect(preg_match('/(^|[;|&(]\s*|\$\(\s*)(cat|sed|awk|grep|rm|mkdir|sleep|head|tail|cut|tr|date|id|ls|cp|mv|chmod|env|python3?|perl|sh)\s/m', $code))->toBe(0)
-        // D4: the replay and the verification run as the NOSUPERUSER restore role.
+        // PR-6 + D5: pg_restore emits each section under a fresh restricted-mode key; psql runs it as the restore role (D4).
+        ->and($code)->toContain('"$PGBIN/pg_restore" --section="$section" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-')
         ->and($code)->toContain('-U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-')
+        ->and($code)->toContain('restore_section pre-data')
+        ->and(strpos($code, 'restore_section pre-data'))->toBeLessThan(strpos($code, '-d "$DB" -f "$GUARD"'))
+        ->and(strpos($code, '-d "$DB" -f "$GUARD"'))->toBeLessThan(strpos($code, 'restore_section data'))
+        ->and(strpos($code, 'restore_section data'))->toBeLessThan(strpos($code, 'restore_section post-data'))
         ->and($code)->toContain('CREATE ROLE :"r" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;')
-        // DR-5: the bootstrap superuser is NOLOGIN before the first byte of the backup is read.
-        ->and(strpos($code, 'ALTER ROLE :"r" NOLOGIN;'))->toBeLessThan(strpos($code, '-f - > /dev/null'))
-        // DR-10: the server and every psql close the result channel.
+        // DR-5: the bootstrap superuser is NOLOGIN before the first byte of the archive is restored.
+        ->and(strpos($code, 'ALTER ROLE :"r" NOLOGIN;'))->toBeLessThan(strpos($code, 'restore_section pre-data'))
+        // DR-10: the server, pg_restore and every psql close the result channel.
         ->and($code)->toContain('> "$R/pg.log" 2>&1 3>&- &')
-        ->and(preg_match_all('/"\$PGBIN\/psql"(?![^\n]*3>&-)/', $code))->toBe(0)
+        ->and(preg_match_all('/"\$PGBIN\/(psql|pg_restore)"(?![^\n]*3>&-)/', $code))->toBe(0)
         // F-ISO-4: always an immediate shutdown; only the SQLSTATE of a failure leaves the unit.
         ->and($code)->toContain('kill -QUIT "$PGPID"')
         ->and($code)->toContain('-v VERBOSITY=sqlstate')
+        // PR-5: the per-table digest; PR-8: the extension allowlist.
+        ->and($code)->toContain('emit "table_digest=$tdigest"')
+        ->and($code)->toContain('emit "extensions_outside_allowlist=$extbad"')
         // DR-3: the effective profile is attested before any input.
         ->and($code)->toContain('fail profile_exec_writable_mount 13')
         ->and($code)->toContain('fail profile_writable_persistent_fs 13')
@@ -165,29 +172,6 @@ it('ships none of the prototype-only paths (DR-18)', function (string $path) {
     'scripts/restore-drill-vm.sh', 'scripts/lib/restore-vm.sh',
 ]);
 
-it('recognises a complete pg_dump 16 dump and refuses a truncated one (DR-7)', function (string $content, int $exit) {
-    $file = rdipTemp($content);
-    $run = rdipLib('dms_sandbox_dump_trailer_ok "$F"', ['F' => $file]);
-    unlink($file);
-
-    expect($run['exit'])->toBe($exit);
-})->with([
-    'complete' => [RDIP_DUMP, 0],
-    'cut after the first table' => [substr(RDIP_DUMP, 0, strpos(RDIP_DUMP, 'CREATE TABLE public.migrations')), 1],
-    'trailer without the unrestrict line' => [str_replace("\\unrestrict K1synthetic\n", '', RDIP_DUMP), 1],
-    'unrestrict with another key' => [str_replace('\\unrestrict K1synthetic', '\\unrestrict K2other', RDIP_DUMP), 1],
-    'no restrict header' => [str_replace("\\restrict K1synthetic\n", '', RDIP_DUMP), 1],
-    'content appended after the trailer' => [RDIP_DUMP."CREATE ROLE x;\n", 1],
-]);
-
-it('counts the base tables and the COPY rows of the dump on the host (DR-7)', function () {
-    $file = rdipTemp(RDIP_DUMP);
-    $run = rdipLib('dms_sandbox_dump_counts "$F"', ['F' => $file]);
-    unlink($file);
-
-    expect(trim($run['out']))->toBe('2 3');
-});
-
 it('parses the result channel strictly: only well-formed lines, each key once, bounded', function () {
     $raw = "DRILL result=GO\nDRILL result=GO\nnoise\nDRILL bad key=1\nDRILL table_count=1\x1b[31m\nDRILL x=".str_repeat('a', 81)."\nDRILL ok_key=1\n";
     $file = rdipTemp($raw);
@@ -199,7 +183,7 @@ it('parses the result channel strictly: only well-formed lines, each key once, b
         ->and($run['out'])->not->toContain('table_count');
 });
 
-it('decides GO only from host-checkable facts, and names the first failing one', function (array $result, string $args, string $decision) {
+it('decides GO only when every fact holds, including the per-table digest the host computed (PR-5)', function (array $result, string $args, string $decision) {
     $lines = collect($result)->map(fn (string $v, string $k): string => "DRILL {$k}={$v}")->implode("\n")."\n";
     $file = rdipTemp($lines);
     $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide '.$args, ['F' => $file]);
@@ -207,21 +191,23 @@ it('decides GO only from host-checkable facts, and names the first failing one',
 
     expect(trim($run['out']))->toBe($decision);
 })->with(function () {
-    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'user_code_reachable' => '0', 'base_table_count' => '2', 'rows_total' => '3'];
+    $d = str_repeat('a', 64);
+    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'user_code_reachable' => '0', 'extensions_outside_allowlist' => '0', 'base_table_count' => '2', 'table_digest' => $d];
 
     return [
-        'all facts hold' => [$good, '0 0 100 100 2 3', 'GO'],
-        'unit failed' => [$good, '20 0 100 100 2 3', 'FAIL:unit_exit_20'],
-        'feeder failed' => [$good, '0 141 100 100 2 3', 'FAIL:feed_exit_141'],
-        'short stream' => [$good, '0 0 99 100 2 3', 'FAIL:short_stream'],
-        'profile not attested' => [array_merge($good, ['profile' => 'no']), '0 0 100 100 2 3', 'FAIL:profile_not_attested'],
-        'superuser not locked' => [array_diff_key($good, ['bootstrap_superuser' => 1]), '0 0 100 100 2 3', 'FAIL:superuser_not_locked'],
-        'sandbox said FAIL' => [array_merge($good, ['result' => 'FAIL', 'stage' => 'replay']), '0 0 100 100 2 3', 'FAIL:sandbox_replay'],
-        'tables differ' => [array_merge($good, ['base_table_count' => '1']), '0 0 100 100 2 3', 'FAIL:table_count_mismatch'],
-        'rows lost' => [array_merge($good, ['rows_total' => '2']), '0 0 100 100 2 3', 'FAIL:row_count_mismatch'],
-        'no migrations table' => [array_merge($good, ['migrations_table' => '0']), '0 0 100 100 2 3', 'FAIL:no_migrations_table'],
-        'user code on a restore path' => [array_merge($good, ['user_code_reachable' => '1']), '0 0 100 100 2 3', 'FAIL:user_code_in_restore_path'],
-        'user code not reported' => [array_diff_key($good, ['user_code_reachable' => 1]), '0 0 100 100 2 3', 'FAIL:user_code_in_restore_path'],
+        'all facts hold' => [$good, "0 {$d} 2", 'GO'],
+        'unit failed' => [$good, "20 {$d} 2", 'FAIL:unit_exit_20'],
+        'profile not attested' => [array_merge($good, ['profile' => 'no']), "0 {$d} 2", 'FAIL:profile_not_attested'],
+        'superuser not locked' => [array_diff_key($good, ['bootstrap_superuser' => 1]), "0 {$d} 2", 'FAIL:superuser_not_locked'],
+        'sandbox said FAIL' => [array_merge($good, ['result' => 'FAIL', 'stage' => 'replay']), "0 {$d} 2", 'FAIL:sandbox_replay'],
+        'no migrations table' => [array_merge($good, ['migrations_table' => '0']), "0 {$d} 2", 'FAIL:no_migrations_table'],
+        'user code on a restore path' => [array_merge($good, ['user_code_reachable' => '1']), "0 {$d} 2", 'FAIL:user_code_in_restore_path'],
+        'user code not reported' => [array_diff_key($good, ['user_code_reachable' => 1]), "0 {$d} 2", 'FAIL:user_code_in_restore_path'],
+        'extension outside the allowlist' => [array_merge($good, ['extensions_outside_allowlist' => '1']), "0 {$d} 2", 'FAIL:extension_outside_allowlist'],
+        'tables differ' => [array_merge($good, ['base_table_count' => '1']), "0 {$d} 2", 'FAIL:table_count_mismatch'],
+        'one table lost rows (digest differs)' => [array_merge($good, ['table_digest' => str_repeat('b', 64)]), "0 {$d} 2", 'FAIL:per_table_rows_mismatch'],
+        'no digest reported' => [array_diff_key($good, ['table_digest' => 1]), "0 {$d} 2", 'FAIL:per_table_rows_mismatch'],
+        'host digest malformed' => [$good, '0 nodigest 2', 'FAIL:per_table_rows_mismatch'],
     ];
 });
 
@@ -239,9 +225,9 @@ it('fails the decision when the result channel overflows its window or carries N
 ]);
 
 it('fails the decision when the result channel carried a duplicate or a rejected line (forgery)', function (string $extra, string $decision) {
-    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL user_code_reachable=0\nDRILL base_table_count=2\nDRILL rows_total=3\n".$extra;
+    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL user_code_reachable=0\nDRILL extensions_outside_allowlist=0\nDRILL base_table_count=2\nDRILL table_digest=".str_repeat('a', 64)."\n".$extra;
     $file = rdipTemp($lines);
-    $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide 0 0 1 1 2 3', ['F' => $file]);
+    $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide 0 '.str_repeat('a', 64).' 2', ['F' => $file]);
     unlink($file);
 
     expect(trim($run['out']))->toBe($decision);
