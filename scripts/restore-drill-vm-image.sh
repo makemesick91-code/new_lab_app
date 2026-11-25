@@ -56,11 +56,11 @@ virt-customize -a "$OUT" \
   --copy-in "$REPO/deploy/restore-drill-vm/dms-restore-drill-guest.service:/etc/systemd/system" \
   --run-command 'chown -R root:root /usr/local/lib/dms-restore-drill && chmod -R go-w /usr/local/lib/dms-restore-drill' \
   --run-command 'systemctl enable dms-restore-drill-guest.service' \
-  --run-command 'apt-get purge -y apport apport-symptoms whoopsie || true' \
+  --run-command 'for p in apport apport-symptoms apport-core-dump-handler python3-apport whoopsie; do dpkg-query -W "$p" > /dev/null 2>&1 && apt-get purge -y "$p"; done; true' \
   --copy-in "$REPO/deploy/restore-drill-vm/prune-extensions.sh:/usr/local/lib/dms-restore-drill" \
   --run-command "bash /usr/local/lib/dms-restore-drill/prune-extensions.sh /usr/share/postgresql/16/extension ${EXT_ALLOW}" \
   --write '/etc/sysctl.d/90-dms-drill-no-core.conf:kernel.core_pattern=|/bin/false' \
-  --run-command 'test ! -e /usr/share/apport && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
+  --run-command '! dpkg-query -W -f="\${Status}" apport 2> /dev/null | grep -q "ok installed" && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
   --run-command 'systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service snapd.service unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer' \
   --run-command '/usr/lib/postgresql/16/bin/psql --version | grep -Eq "^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])"' \
   --root-password disabled
