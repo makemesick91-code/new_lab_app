@@ -136,7 +136,9 @@ the only supported way to replay a backup for a drill. Design and evidence:
   - **Review** every line. Fill in the id (8–64 of `a-z0-9-`), the issuing principal and the validity window (at most
     90 days).
   - **Sign** offline with the owner key: `ssh-keygen -Y sign -f <owner key> -n dms-restore-env-contract <file>`.
-    Never edit the file after signing; a signature on another namespace is refused.
+    Never edit the file after signing; a signature on another namespace is refused. The manifest anchor serves both
+    namespaces: a `namespaces="…"` restriction on its line must list `dms-restore-role-manifest` and
+    `dms-restore-env-contract`, or contracts are refused.
   - **Bind:** the next role manifest (contract 2) names the contract's sha256 in
     `DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256`. Copy both, with their `.sig` files, into the inbox.
   - **Classes, checked before any VM boots:**
@@ -144,7 +146,9 @@ the only supported way to replay a backup for a drill. Design and evidence:
       glibc, ICU, tzdata, extensions, locales present;
     - compatible: same major, image minor 16.15 or later;
     - pinned: sixteen restore-session settings, applied to every restore session. The guest measures the environment
-      at the end of every restore session and once more in a fresh one; any difference reports `inconsistent`.
+      at the end of each of the six restore sessions (behind a per-session nonce the archive cannot forge) and once
+      more in a fresh one; any difference reports `inconsistent`. A setting the archive changes and resets within one
+      session is not seen; production's restore runs the same statements.
     - `xmloption` must be `content` and `standard_conforming_strings` must be `on`: pg_restore's own preamble sets
       both in every restore session, in production as in the drill. The collector notes another server value on
       stderr; the verifier refuses it.

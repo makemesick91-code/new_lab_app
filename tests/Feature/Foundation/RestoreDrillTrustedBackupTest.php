@@ -591,6 +591,10 @@ it('fails, on the restored rows, a CHECK or a generated column whose result depe
     // R6F-P17: loaded with extra_float_digits = 0 the generated text is '0.3' and fits varchar(3); under 1 it is
     // '0.30000000000000004', which a real restore's COPY refuses as too long, but an explicit cast silently truncates
     // back to the stored '0.3' (record_image_eq alone would see no difference).
+    // R6F-P18: the same for an element of a varchar(n)[] and for the bit length of varbit(n) and bit(n).
+    'a generated varchar array whose element would be too long under another profile' => ['SET LOCAL extra_float_digits = 0; CREATE TABLE rdtb_d6 (f float8, g varchar(3)[] GENERATED ALWAYS AS (ARRAY[(f)::text]) STORED); INSERT INTO rdtb_d6 (f) VALUES (0.1::float8 + 0.2::float8);', 'SET LOCAL extra_float_digits = 1;'],
+    'a generated varbit whose bit length would exceed n under another profile' => ["SET LOCAL extra_float_digits = 0; CREATE TABLE rdtb_d7 (f float8, g varbit(3) GENERATED ALWAYS AS (CAST(repeat('1', length((f)::text)) AS varbit)) STORED); INSERT INTO rdtb_d7 (f) VALUES (0.1::float8 + 0.2::float8);", 'SET LOCAL extra_float_digits = 1;'],
+    'a generated bit(n) whose bit length would differ under another profile' => ["SET LOCAL extra_float_digits = 0; CREATE TABLE rdtb_d8 (f float8, g bit(3) GENERATED ALWAYS AS (CAST(repeat('1', length((f)::text)) AS varbit)) STORED); INSERT INTO rdtb_d8 (f) VALUES (0.1::float8 + 0.2::float8);", 'SET LOCAL extra_float_digits = 1;'],
     'a generated varchar whose value would be too long under another profile' => ['SET LOCAL extra_float_digits = 0; CREATE TABLE rdtb_d5 (f float8, g varchar(3) GENERATED ALWAYS AS ((f)::text) STORED); INSERT INTO rdtb_d5 (f) VALUES (0.1::float8 + 0.2::float8);', 'SET LOCAL extra_float_digits = 1;'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
@@ -612,6 +616,7 @@ it('never fails an honest schema in the differential: constants, rounding genera
 })->with([
     'a float constant in a CHECK, read back with few digits' => ["CREATE TABLE rdtb_h1 (rate float8, CONSTRAINT rdtb_h1c CHECK (rate <= '0.35'::float8)); INSERT INTO rdtb_h1 VALUES (0.35);", 'SET LOCAL extra_float_digits = -15;'],
     'a generated numeric(10,2) column that rounds' => ['CREATE TABLE rdtb_h2 (a numeric, r numeric(10,2) GENERATED ALWAYS AS (a * 1.005) STORED); INSERT INTO rdtb_h2 (a) VALUES (3.333);', "SET LOCAL TimeZone = 'Pacific/Kiritimati';"],
+    'generated varchar arrays and bit strings whose length never depends on the session (R6F-P18)' => ['CREATE TABLE rdtb_h6 (a int, g varchar(5)[] GENERATED ALWAYS AS (ARRAY[(a)::text]) STORED, b bit(4) GENERATED ALWAYS AS ((a)::bit(4)) STORED, v varbit(8) GENERATED ALWAYS AS (((a)::bit(4))::varbit) STORED); INSERT INTO rdtb_h6 (a) VALUES (7);', 'SET LOCAL extra_float_digits = -15;'],
     'a generated point column (no equality operator)' => ['CREATE TABLE rdtb_h3 (a float8, p point GENERATED ALWAYS AS (point(a, a)) STORED); INSERT INTO rdtb_h3 (a) VALUES (0.1);', 'SET LOCAL extra_float_digits = -15;'],
     // R6F-P15: an expensive predicate is still evaluated before the keys (the key would not parse on this row).
     'a partial expression index with an expensive predicate' => ["CREATE TABLE rdtb_h5 (kind text, payload jsonb); INSERT INTO rdtb_h5 VALUES ('txt', '{\"n\": \"abc\"}'), ('num', '{\"n\": \"4\"}'); CREATE INDEX rdtb_h5i ON rdtb_h5 (((payload->>'n')::numeric)) WHERE to_tsvector('simple', kind) @@ 'num'::tsquery;", "SET LOCAL TimeZone = 'Asia/Makassar';"],

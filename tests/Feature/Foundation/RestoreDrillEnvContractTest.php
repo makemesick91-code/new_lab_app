@@ -188,6 +188,7 @@ it('accepts a contract the drill image matches, and refuses every incompatibilit
     'a newer image minor (compatible)' => [[], ['DMS_IMAGE_PG_MINOR' => '17'], 'none', null],
     'another PostgreSQL major' => [['DMS_ENV_PG_MAJOR' => '17'], [], 'none', 'PostgreSQL 17 in production, 16 in the drill image'],
     'an image below 16.15' => [[], ['DMS_IMAGE_PG_MINOR' => '9'], 'none', 'below 16.15'],
+    'an image older than production\'s minor' => [['DMS_ENV_PG_MINOR' => '17'], ['DMS_IMAGE_PG_MINOR' => '16'], 'none', 'older 16.16 in the drill image'],
     'another glibc (collation)' => [['DMS_ENV_GLIBC_VERSION' => '2.35'], [], 'none', 'glibc 2.35 in production'],
     'another ICU' => [['DMS_ENV_ICU_VERSION' => '70.1'], [], 'none', 'ICU 70.1 in production'],
     'another tzdata' => [['DMS_ENV_TZDATA_VERSION' => '2024a'], [], 'none', 'tzdata 2024a in production'],
@@ -252,7 +253,13 @@ it('binds the contract into the drill: manifest contract 2 names it, the orchest
         ->and($inner)->toContain('| PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -At -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-')
         // F3 review: the digest is measured at the end of EVERY restore session too, not only in a fresh one.
         ->and($inner)->toContain('for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done')
-        ->and($inner)->toContain('[ "${#SECTION_ENV[@]}" -ge 3 ] || envd=inconsistent')
+        ->and($inner)->toContain('[ "${#SECTION_ENV[@]}" = 6 ] || envd=inconsistent')
+        // R6F-E14: each session's marker carries a nonce drawn after the archive is fixed; the archive cannot forge it.
+        ->and($inner)->toContain('nonce="$(printf \'%08x%08x%08x%08x\' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"')
+        ->and($inner)->toContain("\"SELECT pg_catalog.concat('DMSENV:\${nonce}:', \${ENV_EXPR}) \${ENV_FROM};\"")
+        ->and($inner)->toContain('[[ "$l" =~ ^DMSENV:${nonce}:([0-9a-f]{64})$ ]] && env="${BASH_REMATCH[1]}"')
+        // compared only after the last restore session (functions, triggers, ACLs included)
+        ->and(strpos($inner, 'emit "env_digest=${envd}"'))->toBeGreaterThan(strpos($inner, 'restore_part acls "$R/list.acls"'))
         ->and($inner)->toContain('emit "env_digest=${envd}"')
         // The image properties must describe the image QEMU is pinned to, checked before boot.
         ->and($orch)->toContain('refuse "the image properties describe another image than the pinned drill image"')
