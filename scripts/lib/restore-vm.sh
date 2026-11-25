@@ -152,13 +152,30 @@ dms_vm_qemu_args() {
   # VR-7: no nested virtualisation, no PMU, no vmport/HPET/SMM. VR-3a: disks are -drive if=none + -device
   # virtio-blk-pci (the serial is a device property; `-drive …,serial=` was removed in QEMU 3.0).
   printf '%s\n' \
-    -machine q35,accel=kvm,vmport=off,hpet=off,smm=off -cpu host,-vmx,-svm,pmu=off -smp "$vcpu" -m "$mem" \
+    -machine q35,accel=kvm,vmport=off,hpet=off,smm=off,dump-guest-core=off -cpu host,-vmx,-svm,pmu=off -smp "$vcpu" -m "$mem" \
     -nodefaults -no-user-config -nographic -display none -serial none -monitor none -parallel none \
     -nic none -no-reboot \
     -sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny \
     -drive "if=none,id=dmsroot,file=${root},format=qcow2,discard=unmap" -device virtio-blk-pci,drive=dmsroot,bootindex=0 \
     -drive "if=none,id=dmsin,file=${input},format=raw,readonly=on" -device "virtio-blk-pci,drive=dmsin,serial=${DMS_VM_INPUT_SERIAL}" \
     -drive "if=none,id=dmsout,file=${output},format=raw" -device "virtio-blk-pci,drive=dmsout,serial=${DMS_VM_OUTPUT_SERIAL}"
+}
+
+# dms_vm_qemu_unit_properties <QEMU account> <QEMU work directory> <minutes>
+# R6A-1, R6A-2, R6A-6, R6A-7, R6A-11 (review round 6): the SYSTEM unit the root-owned supervisor starts QEMU in. Its
+# bounds are outside QEMU's reach: an escaped QEMU cannot kill them, leave the cgroup, reach any network, swap or dump
+# guest RAM, or outlive the time limit (the whole control group is killed). KVM only through the kvm group.
+dms_vm_qemu_unit_properties() {
+  local user="${1:?user}" work="${2:?work dir}" minutes="${3:?minutes}"
+  printf '%s\n' "--uid=${user}" "--gid=${user}" -p SupplementaryGroups=kvm -p Type=exec \
+    -p "RuntimeMaxSec=$((minutes * 60 + 120))" -p KillMode=control-group -p TimeoutStopSec=20 -p SendSIGKILL=yes \
+    -p NoNewPrivileges=yes -p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX \
+    -p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0 \
+    -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateIPC=yes -p "ReadWritePaths=${work}" \
+    -p RuntimeDirectory=dmsqemu -p RuntimeDirectoryMode=0700 -p UMask=0077 \
+    -p DevicePolicy=closed -p "DeviceAllow=/dev/kvm rw" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
+    -p ProtectKernelLogs=yes -p ProtectControlGroups=yes -p ProtectClock=yes -p ProtectHostname=yes \
+    -p RestrictSUIDSGID=yes -p RestrictRealtime=yes -p LockPersonality=yes -p "CapabilityBoundingSet=" -p AmbientCapabilities=
 }
 
 # dms_vm_image_info_ok <qemu-img info JSON file> <max virtual bytes>

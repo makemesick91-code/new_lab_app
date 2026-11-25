@@ -203,24 +203,24 @@ dms_archive_digest() {
   awk -F'\t' '{ split($1, p, "."); printf "%s\t%s\t%s\n", p[1], p[2], $2 }' "${1:?counts}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
 
-# dms_archive_inspect <archive> <out dir> <pg bindir> <unit name dmsinspect-<12 hex>>
-# Runs pg_restore over the untrusted archive inside a hardened transient unit of the caller's per-user manager: no
-# network, read-only system, /etc, /mnt, /media and the cgroup tree hidden (P4V-3: no way to lift its own limits or move
-# out of the unit), a private /dev/shm, the archive bound read-only, every writable mount a capped noexec tmpfs, nothing
-# but the PostgreSQL binaries, bash, awk, head and wc executable, 512 MiB, 300 s. The caller names the unit so that it
-# can stop it on an interrupt (P4V-10). Writes <out>/toc.txt, <out>/counts.txt and <out>/bytes.txt (the uncompressed
-# size of all rows). A TOC or a count list above its
-# limit is REFUSED, never truncated (P4P-2), and the stream must end with its end marker.
-dms_archive_inspect() {
-  local archive="${1:?archive}" out="${2:?out}" bindir="${3:?bindir}" unit="${4:-}" awk_bin raw_size
-  [[ "$unit" =~ ^dmsinspect-[0-9a-f]{12}$ ]] || { _dms_archive_fail "the inspection unit name is invalid"; return 1; }
-  # /etc is hidden inside the unit, so the alternatives symlink behind /usr/bin/awk is resolved here (P4V-9).
-  awk_bin="$(readlink -f /usr/bin/awk)"
-  [[ "$awk_bin" =~ ^/usr/bin/[a-z]+$ ]] && [ -x "$awk_bin" ] || { _dms_archive_fail "no awk binary under /usr/bin"; return 1; }
-  dms_archive_count_program > "${out}/count.awk"
-  local script='set -o pipefail
-"$B/pg_restore" -l /opt/dmsinspect/archive.dump > /srv/toc.txt 2> /dev/null || { echo "INSPECT pg_restore_list_failed"; exit 1; }
-"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - /opt/dmsinspect/archive.dump 2> /dev/null | "$AWK" -v bytes_out=/srv/bytes.txt -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
+# The archive limit for the inspection (the D6 working space admits at most ~96 MiB of compressed archive).
+DMS_ARCHIVE_INSPECT_MAX_BYTES=$((128 * 1024 * 1024))
+
+# dms_archive_inspect_script — the fixed script the inspection unit runs. The archive is bound read-only at
+# /opt/dmsinspect/archive.dump (development user unit), or arrives on stdin and is copied, bounded, onto the unit's
+# own tmpfs (the supervisor's system unit). LC_ALL=C: awk counts BYTES, not characters (R6A-8).
+dms_archive_inspect_script() {
+  cat << 'SCRIPT'
+set -o pipefail
+export LC_ALL=C
+A=/opt/dmsinspect/archive.dump
+if [ ! -f "$A" ]; then
+  A=/srv/archive.dump
+  /usr/bin/head -c $((ARCHIVE_MAX + 1)) > "$A" || { echo "INSPECT archive_read_failed"; exit 1; }
+  [ "$(/usr/bin/wc -c < "$A")" -le "$ARCHIVE_MAX" ] || { echo "INSPECT archive_too_large"; exit 1; }
+fi
+"$B/pg_restore" -l "$A" > /srv/toc.txt 2> /dev/null || { echo "INSPECT pg_restore_list_failed"; exit 1; }
+"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - "$A" 2> /dev/null | "$AWK" -v bytes_out=/srv/bytes.txt -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
 t=$(/usr/bin/wc -c < /srv/toc.txt) && c=$(/usr/bin/wc -c < /srv/counts.txt) || { echo "INSPECT size_unknown"; exit 1; }
 [ "$t" -le "$TOC_MAX" ] || { echo "INSPECT toc_too_large"; exit 1; }
 [ "$c" -le "$COUNTS_MAX" ] || { echo "INSPECT counts_too_large"; exit 1; }
@@ -228,28 +228,77 @@ echo "INSPECT ok"
 printf "@@TOC\n"; /usr/bin/head -c "$TOC_MAX" /srv/toc.txt
 printf "@@COUNTS\n"; /usr/bin/head -c "$COUNTS_MAX" /srv/counts.txt
 printf "@@BYTES\n"; /usr/bin/head -c 32 /srv/bytes.txt
-printf "@@END\n"'
-  local cap=$((DMS_ARCHIVE_TOC_MAX_BYTES + DMS_ARCHIVE_COUNTS_MAX_BYTES + 4096))
-  systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
-    -p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M -p MemorySwapMax=0 -p TasksMax=16 -p LimitCORE=0 \
+printf "@@END\n"
+SCRIPT
+}
+
+# dms_archive_inspect_properties <user|system> <pg bindir> <awk binary> <count program file> [<archive file>]
+# The hardened unit (P4V-3): no network, read-only system, /etc, /mnt, /media and the cgroup tree hidden, a private
+# /dev/shm, every writable mount a capped noexec tmpfs, nothing but the PostgreSQL binaries, bash, awk, head and wc
+# executable, 512 MiB, 300 s. user: the caller's per-user manager (development installs), PrivateUsers explicit
+# (R6A I3), the archive bound read-only. system: the root supervisor's DynamicUser unit (drill hosts): no user
+# namespace is needed (R6A-3), the archive comes on stdin.
+dms_archive_inspect_properties() {
+  local mode="${1:?mode}" bindir="${2:?bindir}" awk_bin="${3:?awk}" count="${4:?count program}" archive="${5:-}" binds
+  binds="${count}:/opt/dmsinspect/count.awk"
+  case "$mode" in
+    user) [ -n "$archive" ] || return 1; binds="${archive}:/opt/dmsinspect/archive.dump ${binds}"; printf '%s\n' -p PrivateUsers=yes ;;
+    system) printf '%s\n' -p DynamicUser=yes ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' -p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M -p MemorySwapMax=0 -p TasksMax=16 -p LimitCORE=0 \
     -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateDevices=yes -p PrivateIPC=yes \
     -p PrivateNetwork=yes -p RestrictAddressFamilies=AF_UNIX -p ProtectControlGroups=yes -p "InaccessiblePaths=/sys/fs/cgroup" \
     -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes -p ProtectClock=yes -p ProtectHostname=yes \
     -p LockPersonality=yes -p RestrictRealtime=yes -p RestrictSUIDSGID=yes -p "CapabilityBoundingSet=" \
     -p "TemporaryFileSystem=/run:ro" -p "TemporaryFileSystem=/var:ro" -p "TemporaryFileSystem=/opt:ro" -p "TemporaryFileSystem=/etc:ro" \
     -p "TemporaryFileSystem=/mnt:ro" -p "TemporaryFileSystem=/media:ro" -p "TemporaryFileSystem=/dev/shm:size=1M,mode=1777,noexec,nosuid,nodev" \
-    -p "TemporaryFileSystem=/srv:size=64M,mode=1777,noexec,nosuid,nodev" \
-    -p "ReadOnlyPaths=/tmp /var/tmp" -p "BindReadOnlyPaths=${archive}:/opt/dmsinspect/archive.dump ${out}/count.awk:/opt/dmsinspect/count.awk" \
+    -p "TemporaryFileSystem=/srv:size=192M,mode=1777,noexec,nosuid,nodev" \
+    -p "ReadOnlyPaths=/tmp /var/tmp" -p "BindReadOnlyPaths=${binds}" \
     -p RestrictNamespaces=yes -p MemoryDenyWriteExecute=yes -p SystemCallArchitectures=native -p SystemCallFilter=@system-service \
     -p "SystemCallFilter=~@privileged @resources @mount memfd_create io_uring_setup io_uring_enter io_uring_register @keyring" \
     -p "NoExecPaths=/ /tmp /var/tmp" -p "ExecPaths=${bindir} -${bindir%/bin}/lib -/usr/lib/x86_64-linux-gnu -/usr/lib64 /usr/bin/bash ${awk_bin} /usr/bin/head /usr/bin/wc" \
     "--setenv=B=${bindir}" "--setenv=AWK=${awk_bin}" "--setenv=TOC_MAX=${DMS_ARCHIVE_TOC_MAX_BYTES}" "--setenv=COUNTS_MAX=${DMS_ARCHIVE_COUNTS_MAX_BYTES}" \
-    -- /usr/bin/bash -c "$script" < /dev/null 2> /dev/null | head -c "$((cap + 1))" > "${out}/inspect.raw"
-  local st=("${PIPESTATUS[@]}")
-  rm -f -- "${out}/count.awk"
+    "--setenv=ARCHIVE_MAX=${DMS_ARCHIVE_INSPECT_MAX_BYTES}"
+}
+
+# dms_archive_awk_binary — /etc is hidden inside the unit, so the alternatives symlink behind /usr/bin/awk is
+# resolved here (P4V-9).
+dms_archive_awk_binary() {
+  local awk_bin
+  awk_bin="$(readlink -f /usr/bin/awk)"
+  [[ "$awk_bin" =~ ^/usr/bin/[a-z]+$ ]] && [ -x "$awk_bin" ] || return 1
+  printf '%s\n' "$awk_bin"
+}
+
+# dms_archive_inspect <archive> <out dir> <pg bindir> <unit name dmsinspect-<12 hex>> [<supervisor command>]
+# Runs pg_restore over the untrusted archive inside the hardened unit and writes <out>/toc.txt, counts.txt and
+# bytes.txt (the uncompressed size of all rows). With a supervisor command (a root-owned install on a drill host),
+# the archive is streamed through `sudo -n <supervisor> inspect <unit>` into a system unit under DynamicUser; without
+# one (a development install), a unit of the caller's per-user manager binds the archive read-only. The caller names
+# the unit so that it can stop it on an interrupt (P4V-10). A TOC or a count list above its limit is REFUSED, never
+# truncated (P4P-2), and the stream must end with its end marker.
+dms_archive_inspect() {
+  local archive="${1:?archive}" out="${2:?out}" bindir="${3:?bindir}" unit="${4:-}" sup="${5:-}" awk_bin raw_size
+  [[ "$unit" =~ ^dmsinspect-[0-9a-f]{12}$ ]] || { _dms_archive_fail "the inspection unit name is invalid"; return 1; }
+  local cap=$((DMS_ARCHIVE_TOC_MAX_BYTES + DMS_ARCHIVE_COUNTS_MAX_BYTES + 4096))
+  local -a st
+  if [ -n "$sup" ]; then
+    sudo -n -- "$sup" inspect "$unit" < "$archive" 2> /dev/null | head -c "$((cap + 1))" > "${out}/inspect.raw"
+    st=("${PIPESTATUS[@]}")
+  else
+    awk_bin="$(dms_archive_awk_binary)" || { _dms_archive_fail "no awk binary under /usr/bin"; return 1; }
+    dms_archive_count_program > "${out}/count.awk"
+    local -a props
+    mapfile -t props < <(dms_archive_inspect_properties user "$bindir" "$awk_bin" "${out}/count.awk" "$archive")
+    systemd-run --user --wait --pipe --collect --quiet --unit="$unit" "${props[@]}" \
+      -- /usr/bin/bash -c "$(dms_archive_inspect_script)" < /dev/null 2> /dev/null | head -c "$((cap + 1))" > "${out}/inspect.raw"
+    st=("${PIPESTATUS[@]}")
+    rm -f -- "${out}/count.awk"
+  fi
   if [ ! -s "${out}/inspect.raw" ]; then
     rm -f -- "${out}/inspect.raw"
-    _dms_archive_fail "the sandboxed inspection produced no output: the operator's per-user service manager is unreachable, or the unit failed to start (systemd-run exit ${st[0]})"
+    _dms_archive_fail "the sandboxed inspection produced no output: the inspection unit did not start (exit ${st[0]})"
     return 1
   fi
   [ "${st[0]}" = 0 ] && [ "$(head -n 1 "${out}/inspect.raw")" = "INSPECT ok" ] || { _dms_archive_fail "the sandboxed inspection failed ($(head -n 1 "${out}/inspect.raw" | tr -cd 'A-Za-z0-9 _' | head -c 60))"; rm -f -- "${out}/inspect.raw"; return 1; }

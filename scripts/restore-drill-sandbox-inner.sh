@@ -27,8 +27,10 @@ exec 3>&1 1>> /srv/inner.log 2>&1
 PGBIN="${DRILL_PG_BINDIR:-/usr/lib/postgresql/16/bin}"
 R=/srv
 SU=drill_super
-RR=drill_restore
-DB=dms_restore_drill
+# R6B-1 (defence in depth): the restore role and the database are named afresh for every run, so no archive can
+# branch on them (the bootstrap superuser is NOLOGIN before any byte is read, so its name does not matter).
+RR="drill_restore_$(printf '%08x' "$SRANDOM")"
+DB="dms_restore_drill_$(printf '%08x' "$SRANDOM")"
 PGPID=""
 
 emit() { printf 'DRILL %s\n' "$*" >&3; }
@@ -80,7 +82,7 @@ emit "profile=attested"
 ROLES=()
 for r in ${DRILL_ROLES:-}; do
   [[ "$r" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail roles_invalid 12
-  case "$r" in "$SU" | "$RR") fail roles_reserved 12 ;; esac
+  case "$r" in "$SU" | drill_restore*) fail roles_reserved 12 ;; esac
   ROLES+=("$r")
 done
 LOCALE="${DRILL_LOCALE:-C.UTF-8}"

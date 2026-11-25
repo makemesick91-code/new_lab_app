@@ -158,6 +158,8 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
         // P4P-1: function calls tracked by a superuser-only setting, flushed per section; the catalog shape; user code
         // decided from the dependency graph, including references that no longer resolve.
         ->and($code)->toContain('-c track_functions=all')
+        // R6B-1: the restore role and the database are named afresh for every run.
+        ->and($code)->toContain('RR="drill_restore_$(printf \'%08x\' "$SRANDOM")"')
         ->and($code)->toContain("'SELECT pg_catalog.pg_stat_force_next_flush();'")
         ->and($code)->toContain('emit "user_code_executed=$ucalls"')
         ->and($code)->toContain('emit "catalog_shape=$shape"')

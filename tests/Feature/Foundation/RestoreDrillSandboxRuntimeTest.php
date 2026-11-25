@@ -152,3 +152,11 @@ it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-
 
     expect((int) ($facts['sandbox_runtime_owned_objects'] ?? 0))->toBeGreaterThan(0, json_encode($facts));
 });
+
+it('refuses a CHECK that depends on the session or the clock: it would hold in the drill and fail in a real restore (R6B-1)', function () {
+    foreach (['rolebomb', 'timebomb'] as $fixture) {
+        $facts = rdsrDrill($fixture);
+        expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', $fixture.' '.json_encode($facts))
+            ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+    }
+});

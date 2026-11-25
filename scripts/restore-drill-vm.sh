@@ -22,16 +22,19 @@ set -uo pipefail
 umask 077
 # VR-11: run with a fixed, minimal environment (no LD_PRELOAD, QEMU_* or PATH from the caller). Only the
 # configuration path is carried over.
-# The operator's per-user manager (it runs the sandboxed archive inspection) is reached through XDG_RUNTIME_DIR and the
-# session bus. P4V-8: only the operator's OWN manager is accepted (/run/user/<uid> and its bus); anything else is
-# dropped, and the inspection then refuses (systemd-run does not authenticate the manager it talks to).
+# A development install inspects the archive in the caller's per-user manager (XDG_RUNTIME_DIR and the session bus;
+# P4V-8: only its OWN manager, /run/user/<uid> and its bus, is accepted). On a drill host (root-owned install) this
+# script runs as the drill RUNNER identity, started by the operator through sudo (review round 6, R6C-1): the
+# operator's name (SUDO_USER) is kept for the record and for the backup's source check.
 if [ "${DMS_DRILL_CLEAN_ENV:-}" != 1 ]; then
   xdg="${XDG_RUNTIME_DIR:-}"; [ "$xdg" = "/run/user/$(id -u)" ] || xdg=""
   bus="${DBUS_SESSION_BUS_ADDRESS:-}"; [ -n "$xdg" ] && [ "$bus" = "unix:path=${xdg}/bus" ] || bus=""
+  op="${SUDO_USER:-}"; [[ "$op" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || op=""
   exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 HOME="${HOME:-/nonexistent}" DMS_DRILL_CLEAN_ENV=1 \
-    XDG_RUNTIME_DIR="$xdg" DBUS_SESSION_BUS_ADDRESS="$bus" \
+    XDG_RUNTIME_DIR="$xdg" DBUS_SESSION_BUS_ADDRESS="$bus" DMS_DRILL_OPERATOR="$op" \
     DMS_RESTORE_DRILL_CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}" bash "$0" "$@"
 fi
+ulimit -c 0
 # VR-4: QEMU runs as the identity of this script. It must never be root: a device-model escape would be host root.
 if [ "$(id -u)" = 0 ]; then echo "REFUSED: run the drill as the unprivileged drill operator, never as root (VR-4). Nothing ran."; exit 2; fi
 
@@ -100,6 +103,7 @@ evidence_request() { # <decision>
     guest="${guest%vm_ifaces=}"; [[ "$guest" == *vm_ifaces=* ]] || guest="${guest}vm_ifaces=none"
   fi
   printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\n' "$RUN_ID"
+  printf 'DMS_DRILL_EVIDENCE_OPERATOR=%s\n' "${DMS_DRILL_OPERATOR:-$(id -un)}"
   printf 'DMS_DRILL_EVIDENCE_DRILL_HOST=%s\n' "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)"
   printf 'DMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\n' "$STARTED_AT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
@@ -116,16 +120,28 @@ evidence_request() { # <decision>
 # record <decision>: one signed record per drill, through the separate signer. Prints the outcome; returns 1 when
 # the signer refused or failed (the decision is then unrecorded, and says so).
 RECORD=""
+sign_request() { evidence_request "$1" | sudo -n -u "${C[DMS_DRILL_SIGNER_USER]}" -- "${C[DMS_DRILL_SIGNER_COMMAND]}" sign 2>&1 | head -c 400 | tr -cd '[:print:]'; }
 record() {
   [ "$RECORDABLE" = 1 ] && [ "$RECORDED" = 0 ] || return 1
   RECORDED=1
-  RECORD="$(evidence_request "$1" | sudo -n -u "${C[DMS_DRILL_SIGNER_USER]}" -- "${C[DMS_DRILL_SIGNER_COMMAND]}" sign 2>&1 | head -c 400 | tr -cd '[:print:]')"
+  RECORD="$(sign_request "$1")"
   case "$RECORD" in
-    "RECORD "*) echo "Evidence: ${RECORD} (signed by ${C[DMS_DRILL_SIGNER_USER]}, witnessed; keep this head digest outside the drill host)"; return 0 ;;
+    "RECORD "*) echo "Evidence: ${RECORD} (signed by ${C[DMS_DRILL_SIGNER_USER]}; keep this head digest outside the drill host)"; return 0 ;;
     *) echo "Evidence: NOT RECORDED: ${1}: the signer refused or failed: ${RECORD}"; return 1 ;;
   esac
 }
-refuse() { echo "REFUSED: $*. Nothing ran."; record "REFUSED:${STAGE}" || true; exit 2; }
+# R6C-3: an outcome is recorded only for an open start; a refusal opens its own start when none is open yet.
+STARTED_REC=0
+ensure_started() {
+  [ "$RECORDABLE" = 1 ] || return 1
+  [ "$STARTED_REC" = 1 ] && return 0
+  START="$(sign_request STARTED)"
+  case "$START" in
+    "RECORD "*) STARTED_REC=1; echo "Evidence: started ${START}"; return 0 ;;
+    *) echo "Evidence: NOT RECORDED: the signer did not open a record for this drill: ${START}"; RECORDABLE=0; return 1 ;;
+  esac
+}
+refuse() { echo "REFUSED: $*. Nothing ran."; ensure_started && { record "REFUSED:${STAGE}" || true; }; exit 2; }
 
 # --- Arguments -------------------------------------------------------------------------------------------------------
 while [ "$#" -gt 0 ]; do
@@ -152,7 +168,7 @@ CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}"
 why="$(dms_trusted_file "drill configuration" "$CONF" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 # VR-4: the signing key, the evidence store and its head log belong to the SIGNER identity; the drill image, QEMU and
 # KVM belong to the QEMU identity (Phase 3). This operator holds none of them.
-DRILL_CONF_KEYS="DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU_USER DMS_DRILL_QEMU_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE"
+DRILL_CONF_KEYS="DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE"
 declare -A C=()
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
@@ -162,15 +178,12 @@ while IFS= read -r line || [ -n "$line" ]; do
   C[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
 done < "$CONF"
 for k in $DRILL_CONF_KEYS; do [ -n "${C[$k]:-}" ] || refuse "${k} is missing from ${CONF}"; done
-for k in DMS_DRILL_SIGNER_USER DMS_DRILL_QEMU_USER; do
-  [[ "${C[$k]}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "${k} is not a user name"
-done
+[[ "${C[DMS_DRILL_SIGNER_USER]}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "DMS_DRILL_SIGNER_USER is not a user name"
 SIGNER_UID="$(id -u -- "${C[DMS_DRILL_SIGNER_USER]}" 2> /dev/null)" || refuse "the signer account ${C[DMS_DRILL_SIGNER_USER]} does not exist"
-QEMU_UID="$(id -u -- "${C[DMS_DRILL_QEMU_USER]}" 2> /dev/null)" || refuse "the QEMU account ${C[DMS_DRILL_QEMU_USER]} does not exist"
 [ "$SIGNER_UID" != "$(id -u)" ] && [ "$SIGNER_UID" != 0 ] || refuse "the signer must be a separate, unprivileged identity (VR-4)"
-# Phase 3: three distinct, unprivileged identities: operator, QEMU, signer.
-[ "$QEMU_UID" != "$(id -u)" ] && [ "$QEMU_UID" != 0 ] && [ "$QEMU_UID" != "$SIGNER_UID" ] || refuse "QEMU must run under its own unprivileged identity, neither the operator nor the signer (Phase 3)"
-for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU_COMMAND; do
+# Phase 3, review round 6: QEMU runs under its own account in a system unit of the root supervisor, which checks that
+# the runner, QEMU and the signer are three different unprivileged accounts (scripts/restore-drill-supervisor.sh).
+for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND; do
   why="$(dms_trusted_file "$k" "${C[$k]}" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 done
 why="$(dms_trusted_dir DMS_DRILL_WORK_DIR "${C[DMS_DRILL_WORK_DIR]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
@@ -180,6 +193,10 @@ RECORDABLE=1
 [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || refuse "--expected-sha256 must be the 64-hex digest from an independent record"
 [ -n "$MANIFEST" ] || refuse "--manifest <signed role manifest> is required (D3)"
 [ -n "$BACKUP_FILE" ] || refuse "the backup file is required"
+# R6C-3: every attempt is opened by a signed STARTED record before any further check, and the supervisor boots a VM
+# only for the run whose STARTED record is the newest; a run that never closes is closed by the signer later.
+STAGE=start
+ensure_started || { echo "REFUSED: the drill cannot be recorded, so it does not run. Nothing ran."; exit 2; }
 STAGE=configuration_values
 [[ "${C[DMS_DRILL_EXTENSION_ALLOWLIST]}" =~ ^(none|[a-z_][a-z0-9_]{0,62}(,[a-z_][a-z0-9_]{0,62}){0,15})$ ]] || refuse "DMS_DRILL_EXTENSION_ALLOWLIST must be none or a comma-separated list"
 EXTENSIONS="${C[DMS_DRILL_EXTENSION_ALLOWLIST]//,/ }"
@@ -237,8 +254,9 @@ cleanup() {
 }
 trap cleanup EXIT
 # Phase 3: an interrupted drill is stopped and RECORDED as aborted, never left unrecorded.
-on_abort() { trap '' TERM HUP INT; echo "ABORTED: signal at stage ${STAGE}"; stop_vm; record "ABORTED:${STAGE}" || true; exit 143; }
-trap on_abort TERM HUP INT
+on_abort() { trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF; echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143; }
+# R6A-5: every catchable terminating signal is an abort, recorded (SIGKILL is closed at the next start: R6C-3).
+trap on_abort TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
 
 # --- D3: the signed role manifest, read once into the run directory (VR-10) ----------------------------------------
 STAGE=manifest
@@ -254,7 +272,7 @@ why="$(dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS
 
 # --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
 STAGE=backup_source
-dms_restore_check_source "$BACKUP_FILE" "$(id -un)" || refuse "the backup file failed its source checks"
+dms_restore_check_source "$BACKUP_FILE" "$(id -un)" ${DMS_DRILL_OPERATOR:+"$DMS_DRILL_OPERATOR"} || refuse "the backup file failed its source checks"
 STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")" || refuse "could not stage a private copy"
 # P4V-2: the digest, then the custom-format magic (a plain-SQL dump is refused here, PR-6).
 STAGE=backup_integrity
@@ -262,11 +280,16 @@ INTEGRITY="$(dms_archive_verify_copy "$STAGED" "$EXPECTED_SHA256")" || refuse "$
 BACKUP_BYTES="$(stat -c %s -- "$STAGED")"
 # --- PR-6: the structured archive, inspected in a sandbox; PR-5/PR-8/D-Q6-a/P5 from its structure ------------------
 STAGE=archive_inspection
-[ -n "${XDG_RUNTIME_DIR:-}" ] && [ "$(stat -c '%u %a' -- "$XDG_RUNTIME_DIR" 2> /dev/null)" = "$(id -u) 700" ] \
-  || refuse "the operator's own per-user service manager (/run/user/$(id -u), lingering) is required: the archive is inspected in a per-user unit (P4V-8)"
+# A root-owned install (a drill host) inspects through the root supervisor's system unit; a development install in the
+# caller's own per-user manager.
+SUP=""
+if [ "$TRUST_UID" = 0 ]; then SUP="${C[DMS_DRILL_SUPERVISOR_COMMAND]}"
+elif [ -z "${XDG_RUNTIME_DIR:-}" ] || [ "$(stat -c '%u %a' -- "$XDG_RUNTIME_DIR" 2> /dev/null)" != "$(id -u) 700" ]; then
+  refuse "a development install needs the caller's own per-user service manager (/run/user/$(id -u)) for the sandboxed inspection (P4V-8)"
+fi
 mkdir -m 0700 -- "$WORK/inspect" || refuse "cannot create the inspection directory"
 INSPECT_UNIT="dmsinspect-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
-why="$(dms_archive_inspect "$STAGED" "$WORK/inspect" "${C[DMS_DRILL_PG_BINDIR]}" "$INSPECT_UNIT")" || refuse "${why} (a pg_dump 16 custom-format archive is required, PR-6)"
+why="$(dms_archive_inspect "$STAGED" "$WORK/inspect" "${C[DMS_DRILL_PG_BINDIR]}" "$INSPECT_UNIT" "$SUP")" || refuse "${why} (a pg_dump 16 custom-format archive is required, PR-6)"
 INSPECT_UNIT=""
 STAGE=archive_toc
 why="$(dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS")" || refuse "$why"
@@ -308,24 +331,28 @@ declare -A IN=([run_id]="$RUN_ID" [payload_bytes]="$PAYLOAD_BYTES" [payload_sha2
 dms_vm_input_build "$WORK/input.raw" "$WORK/payload" IN || refuse "cannot build the input disk"
 rm -f -- "$WORK/payload"
 STAGE=vm
-echo "== drill ${RUN_ID}: VM boot under ${C[DMS_DRILL_QEMU_USER]} (1 vCPU, ${MEMORY_MIB} MiB, no network, ${MINUTES} min) =="
-# The only channel to the QEMU identity: the encrypted input disk on stdin, the output disk on stdout, one status line.
-timeout --kill-after=30 "$((MINUTES * 60 + 300))" sudo -n -u "${C[DMS_DRILL_QEMU_USER]}" -- "${C[DMS_DRILL_QEMU_COMMAND]}" run "$RUN_ID" \
+echo "== drill ${RUN_ID}: VM boot in the supervised QEMU unit (1 vCPU, ${MEMORY_MIB} MiB, no network, ${MINUTES} min) =="
+# The only channel to the QEMU identity: the encrypted input disk on stdin, the output disk on stdout, one status line,
+# through the root supervisor, which runs QEMU in a system unit under its own account (review round 6).
+timeout --kill-after=30 "$((MINUTES * 60 + 300))" sudo -n -- "${C[DMS_DRILL_SUPERVISOR_COMMAND]}" vm "$RUN_ID" \
   < "$WORK/input.raw" > "$WORK/output.raw" 2> "$WORK/vm.status" &
 VM_PID=$!
 wait "$VM_PID"
 VM_PID=""
 rm -f -- "$WORK/input.raw"
-LAUNCH="$(grep -a '^QEMU_LAUNCH ' "$WORK/vm.status" | tail -n 1 | head -c 200 | tr -cd '[:print:]')"
+LAUNCH="$(grep -a -E '^(QEMU_LAUNCH|SUPERVISOR) ' "$WORK/vm.status" | tail -n 1 | head -c 200 | tr -cd '[:print:]')"
 QEMU_EXIT=x
 if [[ "$LAUNCH" =~ ^QEMU_LAUNCH\ exit=([0-9]{1,3})\ image_sha256=([0-9a-f]{64})$ ]]; then
   QEMU_EXIT="${BASH_REMATCH[1]}"; IMAGE_SHA="${BASH_REMATCH[2]}"
-elif [[ "$LAUNCH" =~ ^QEMU_LAUNCH\ refused=([a-z0-9_]{1,40})$ ]]; then
-  STAGE="vm_launch_${BASH_REMATCH[1]}"
-  refuse "the QEMU launcher refused: ${BASH_REMATCH[1]}"
+elif [[ "$LAUNCH" =~ ^(QEMU_LAUNCH|SUPERVISOR)\ refused=([a-z0-9_]{1,40})$ ]]; then
+  STAGE=vm_launch
+  refuse "the VM was not started: ${BASH_REMATCH[1]} refused ${BASH_REMATCH[2]}"
 else
-  STAGE=vm_launch_no_status
-  refuse "the QEMU launcher gave no status"
+  # R6A I1: no status after the launch: a VM may have run; recorded as aborted, never as "nothing ran".
+  echo "ABORTED: the QEMU unit ended without a status line"
+  STAGE=vm_no_status
+  ensure_started && { record "ABORTED:vm_no_status" || true; }
+  exit 1
 fi
 
 # --- Decision from host-checkable facts, then signed evidence (D10) -------------------------------------------------

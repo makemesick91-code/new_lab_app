@@ -154,6 +154,7 @@ function rdmeRequest(array $over = []): string
     $now = gmdate('Y-m-d\TH:i:s\Z');
     $fields = array_merge([
         'DMS_DRILL_EVIDENCE_RUN_ID' => 'dmsdrill-'.bin2hex(random_bytes(6)),
+        'DMS_DRILL_EVIDENCE_OPERATOR' => 'drillop',
         'DMS_DRILL_EVIDENCE_DRILL_HOST' => rdmeHost(),
         'DMS_DRILL_EVIDENCE_STARTED_AT' => $now,
         'DMS_DRILL_EVIDENCE_COMPLETED_AT' => $now,
@@ -197,7 +198,7 @@ function rdmeInstallSigner(): string
 function rdmeSignerConf(string $dir, string $extra = ''): void
 {
     file_put_contents("{$dir}/signer.conf", "DMS_SIGNER_KEY={$dir}/drill\nDMS_SIGNER_PRINCIPAL=drill-host@dms\nDMS_SIGNER_ANCHOR={$dir}/evidence-anchor\nDMS_SIGNER_STORE={$dir}/store\nDMS_SIGNER_HEAD_LOG={$dir}/head.log\nDMS_SIGNER_ALLOWED_CALLERS=drillop\nDMS_SIGNER_IMAGE_SHA256=".str_repeat('a', 64)."\n"
-        .($extra === '' ? "DMS_SIGNER_PROFILE=development\nDMS_SIGNER_WITNESS_USER=none\nDMS_SIGNER_WITNESS_COMMAND=none\nDMS_SIGNER_ORCHESTRATOR_DIR=none\nDMS_SIGNER_QEMU_LAUNCHER=none\n" : $extra));
+        .($extra === '' ? "DMS_SIGNER_PROFILE=development\nDMS_SIGNER_WITNESS_USER=none\nDMS_SIGNER_WITNESS_COMMAND=none\nDMS_SIGNER_ORCHESTRATOR_DIR=none\nDMS_SIGNER_QEMU_LAUNCHER=none\nDMS_SIGNER_SUPERVISOR=none\n" : $extra));
     chmod("{$dir}/signer.conf", 0600);
     chmod("{$dir}/evidence-anchor", 0600);
 }
@@ -210,7 +211,7 @@ function rdmeStore(int $count): array
     mkdir($store, 0700);
     for ($i = 0; $i < $count; $i++) {
         file_put_contents("{$dir}/req", rdmeRequest());
-        $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+        $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development 0123456789abcdef0123456789abcdef', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
         expect($run['out'])->toStartWith('RECORD ', $run['out'].$run['err']);
     }
 
@@ -229,8 +230,8 @@ it('publishes signed, chained records atomically and keeps an independent head l
     expect($run['exit'])->toBe(0, $run['out'])
         ->and($run['out'])->toStartWith('VERIFIED 3 head=')
         ->and($entries)->toBe(['000001', '000002', '000003'])
-        ->and($first)->toContain("DMS_DRILL_EVIDENCE_CONTRACT=3\nDMS_DRILL_EVIDENCE_SEQ=000001\nDMS_DRILL_EVIDENCE_PREV_SHA256=genesis\n")
-        ->and($first)->toContain("DMS_DRILL_EVIDENCE_SIGNER=drill-host@dms\nDMS_DRILL_EVIDENCE_CALLER=operator\nDMS_DRILL_EVIDENCE_INSTALL=unverified:development\n")
+        ->and($first)->toContain("DMS_DRILL_EVIDENCE_CONTRACT=4\nDMS_DRILL_EVIDENCE_SEQ=000001\nDMS_DRILL_EVIDENCE_PREV_SHA256=genesis\n")
+        ->and($first)->toContain("DMS_DRILL_EVIDENCE_SIGNER=drill-host@dms\nDMS_DRILL_EVIDENCE_CALLER=operator\nDMS_DRILL_EVIDENCE_INSTALL=unverified:development\nDMS_DRILL_EVIDENCE_STORE_ID=0123456789abcdef0123456789abcdef\n")
         ->and($second)->toContain('DMS_DRILL_EVIDENCE_PREV_SHA256='.hash('sha256', $first)."\n")
         ->and(substr_count($head, "\n"))->toBe(3)
         ->and($head)->toContain('000001 '.hash('sha256', $first));
@@ -288,7 +289,11 @@ it('refuses to sign a replayed run, an invalid request, or onto a store that doe
         file_put_contents("{$store}/000001/record", str_replace('DECISION=GO', 'DECISION=FAIL:x', (string) file_get_contents("{$store}/000001/record")));
     }
     file_put_contents("{$dir}/req", $req);
-    $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+    // Contract 4: a replayed run is refused by the binding check (a STARTED for a run the store already has).
+    $script = $case === 'replayed run id'
+        ? 'dms_evidence_request_parse "$Q" && dms_evidence_binding_check "$S" STARTED "${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_RUN_ID]}"'
+        : 'dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development 0123456789abcdef0123456789abcdef';
+    $run = rdmeSh($script, ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
     $entries = array_values(array_diff(scandir($store), ['.', '..']));
     rdmeCleanup($dir);
 
@@ -297,8 +302,8 @@ it('refuses to sign a replayed run, an invalid request, or onto a store that doe
         ->and($entries)->toBe(['000001']);
 })->with([
     ['replayed run id', 'is already recorded (replay refused)'],
-    ['missing key', 'request keys differ from contract 3'],
-    ['signer key smuggled in', 'request keys differ from contract 3'],
+    ['missing key', 'request keys differ from contract 4'],
+    ['signer key smuggled in', 'request keys differ from contract 4'],
     ['shell text in a value', 'request has an invalid DMS_DRILL_EVIDENCE_DECISION'],
     ['tampered store', 'the store does not verify, nothing is appended'],
 ]);
@@ -347,8 +352,9 @@ it('signs through the signer entrypoint for an allowed caller, verifies, and rec
     // The real separation (a different uid through sudo) runs in the system-mode CI gate; here SUDO_* stand for it.
     $sudo = ['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf", 'SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop'];
     $signer = fn (string $mode, string $in = '') => tap(new Process(['bash', $signerPath, $mode], null, $sudo, $in), fn ($p) => $p->run());
-    $first = $signer('sign', rdmeRequest());
-    $second = $signer('sign', rdmeRequest());
+    $run = 'dmsdrill-'.bin2hex(random_bytes(6));
+    $first = $signer('sign', rdmeStart($run));
+    $second = $signer('sign', rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $run]));
     $verify = $signer('verify');
     // A crash between publication and the head-log append: drop the last head entry, then recover it.
     $lines = explode("\n", trim((string) file_get_contents("{$dir}/head.log")));
@@ -364,12 +370,33 @@ it('signs through the signer entrypoint for an allowed caller, verifies, and rec
         ->and($second->getOutput())->toStartWith('RECORD 000002 ')
         ->and($verify->getOutput())->toStartWith('VERIFIED 2 head=')
         ->and($broken->getExitCode())->toBe(1)
-        ->and($recover->getOutput())->toContain('head log recovered to 000002')
+        ->and($recover->getOutput())->toContain('recovered to 000002')
         ->and($again->getOutput())->toStartWith('VERIFIED 2 head=')
         ->and($twice->getExitCode())->toBe(1);
 });
 
 /** Runs the installed signer's sign mode as an allowed sudo caller would; $prefix runs before it in the same shell. */
+/** A STARTED request for $run (contract 4: every outcome closes the newest start). */
+function rdmeStart(string $run): string
+{
+    return rdmeRequest([
+        'DMS_DRILL_EVIDENCE_RUN_ID' => $run, 'DMS_DRILL_EVIDENCE_BACKUP_SHA256' => 'none', 'DMS_DRILL_EVIDENCE_BACKUP_BYTES' => '0',
+        'DMS_DRILL_EVIDENCE_DIGEST_SOURCE' => 'none', 'DMS_DRILL_EVIDENCE_MANIFEST_ID' => 'none', 'DMS_DRILL_EVIDENCE_MANIFEST_SHA256' => 'none',
+        'DMS_DRILL_EVIDENCE_IMAGE_SHA256' => 'none', 'DMS_DRILL_EVIDENCE_HOST_VERIFIED' => 'none', 'DMS_DRILL_EVIDENCE_EXPECTED' => 'none',
+        'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'none', 'DMS_DRILL_EVIDENCE_DECISION' => 'STARTED',
+    ]);
+}
+
+/** Opens the request's run with a STARTED record, then signs the request (its outcome). */
+function rdmeSignRun(string $dir, string $signerPath, string $request): array
+{
+    preg_match('/^DMS_DRILL_EVIDENCE_RUN_ID=(\S+)$/m', $request, $m);
+    $start = rdmeSign($dir, $signerPath, rdmeStart($m[1]));
+    expect($start['out'])->toStartWith('RECORD ', $start['out']);
+
+    return rdmeSign($dir, $signerPath, $request);
+}
+
 function rdmeSign(string $dir, string $signerPath, string $request, string $prefix = ''): array
 {
     $env = ['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf", 'SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop', 'S' => $signerPath];
@@ -407,7 +434,7 @@ it('never signs a contradictory or invented record: the signer checks the reques
         'invented host-verified facts' => [['DMS_DRILL_EVIDENCE_HOST_VERIFIED' => 'nothing'], 'HOST_VERIFIED is not the fixed fact list'],
         'another drill host' => [['DMS_DRILL_EVIDENCE_DRILL_HOST' => 'elsewhere'], "DRILL_HOST is not this signer's host"],
         'an image the signer does not pin' => [['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => str_repeat('c', 64)], 'is not a drill image pinned'],
-        'completed before it started' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2030-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:00:00Z'], 'out of order or not recent'],
+        'completed before it started' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2030-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:00:00Z'], 'out of order'],
         'a drill from long ago' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2001-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:10:00Z'], 'out of order or not recent'],
         'a duplicated, contradictory guest key (P5-3)' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('vm_ifaces=lo', 'vm_ifaces=lo,restore=failed,user_code=7')], 'GUEST_ASSERTED is not the fixed key list'],
         'an extra expected key (P5-3)' => [['DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,tables=999'], 'EXPECTED is not the fixed key list'],
@@ -419,12 +446,12 @@ it('still records a FAIL whose guest facts differ from the expectation: a failur
     mkdir("{$dir}/store", 0700);
     rdmeSignerConf($dir);
     $signerPath = rdmeInstallSigner();
-    $run = rdmeSign($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:per_table_rows_mismatch', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=1,per_table_digest='.str_repeat('b', 64).',catalog_shape=1:1:0:1:0:0:1,user_code=0,user_code_executed=0,fidelity=0:1:1:0,vm_ifaces=lo']));
+    $run = rdmeSignRun($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:per_table_rows_mismatch', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=1,per_table_digest='.str_repeat('b', 64).',catalog_shape=1:1:0:1:0:0:1,user_code=0,user_code_executed=0,fidelity=0:1:1:0,vm_ifaces=lo']));
     rdmeCleanup($dir);
     rdmeCleanup(dirname($signerPath, 2));
 
     expect($run['exit'])->toBe(0, $run['out'])
-        ->and($run['out'])->toStartWith('RECORD 000001 ');
+        ->and($run['out'])->toStartWith('RECORD 000002 ');
 });
 
 it('refuses to sign under a file-size limit, with an exposed key, from an unsafe install, or with a relative head log (P4V-5, P4V-7)', function (string $case, int $exit, string $message) {
@@ -465,7 +492,7 @@ it('publishes the head log atomically and removes a crashed staging directory un
     mkdir("{$store}/.stage-000002-abcdef", 0700);
     file_put_contents("{$store}/.stage-000002-abcdef/record", "half written\n");
     file_put_contents("{$dir}/req", rdmeRequest());
-    $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+    $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development 0123456789abcdef0123456789abcdef', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
     $entries = array_values(array_diff(scandir($store), ['.', '..']));
     $leftovers = glob("{$dir}/head.log.*");
     $evidence = (string) file_get_contents(base_path('scripts/lib/restore-evidence.sh'));
@@ -497,8 +524,8 @@ it('records refused and aborted drills as signed non-GO events, asserting nothin
     mkdir("{$dir}/store", 0700);
     rdmeSignerConf($dir);
     $signerPath = rdmeInstallSigner();
-    $run = rdmeSign($dir, $signerPath, $request);
-    $record = (string) @file_get_contents("{$dir}/store/000001/record");
+    $run = rdmeSignRun($dir, $signerPath, $request);
+    $record = (string) @file_get_contents("{$dir}/store/000002/record");
     rdmeCleanup($dir);
     rdmeCleanup(dirname($signerPath, 2));
 
@@ -512,8 +539,8 @@ it('records refused and aborted drills as signed non-GO events, asserting nothin
     $h = str_repeat('a', 64);
 
     return [
-        'a refusal at the manifest stage' => [rdmeRefusal('REFUSED:manifest'), 0, 'RECORD 000001 '],
-        'an abort during the VM' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h, 'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1']), 0, 'RECORD 000001 '],
+        'a refusal at the manifest stage' => [rdmeRefusal('REFUSED:manifest'), 0, 'RECORD 000002 '],
+        'an abort during the VM' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h, 'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1']), 0, 'RECORD 000002 '],
         'a refusal that claims host-verified facts' => [rdmeRefusal('REFUSED:manifest', ['DMS_DRILL_EVIDENCE_HOST_VERIFIED' => RDME_HOST_VERIFIED]), 1, 'claims host-verified facts'],
         'an abort that carries guest facts' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo']), 1, 'carries guest facts'],
         'a refusal naming an image the signer does not pin' => [rdmeRefusal('REFUSED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => str_repeat('c', 64)]), 1, 'is not a drill image pinned'],
@@ -525,7 +552,7 @@ it('records refused and aborted drills as signed non-GO events, asserting nothin
 it('runs the drill-host profile only from a root-owned configuration (Phase 3)', function () {
     $dir = rdmeDir();
     mkdir("{$dir}/store", 0700);
-    rdmeSignerConf($dir, "DMS_SIGNER_PROFILE=drill-host\nDMS_SIGNER_WITNESS_USER=nobody\nDMS_SIGNER_WITNESS_COMMAND=/bin/true\nDMS_SIGNER_ORCHESTRATOR_DIR=/nonexistent\nDMS_SIGNER_QEMU_LAUNCHER=/nonexistent\n");
+    rdmeSignerConf($dir, "DMS_SIGNER_PROFILE=drill-host\nDMS_SIGNER_WITNESS_USER=nobody\nDMS_SIGNER_WITNESS_COMMAND=/bin/true\nDMS_SIGNER_ORCHESTRATOR_DIR=/nonexistent\nDMS_SIGNER_QEMU_LAUNCHER=/nonexistent\nDMS_SIGNER_SUPERVISOR=/nonexistent\n");
     $signerPath = rdmeInstallSigner();
     $run = rdmeSign($dir, $signerPath, rdmeRequest());
     rdmeCleanup($dir);
@@ -535,7 +562,9 @@ it('runs the drill-host profile only from a root-owned configuration (Phase 3)',
     expect($run['exit'])->toBe(2, $run['out'])
         ->and($run['out'])->toContain('a drill-host configuration must be owned by root')
         // The signer verifies the install itself (never the caller's word) and refuses a GO from anything else.
-        ->and($code)->toContain('echo "root:$(printf \'%s\n\' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d\' \' -f1)"')
+        // The install digest covers the code AND the trust-relevant configuration, and the configured paths (R6C-8).
+        ->and($code)->toContain('echo "root:${code},config:$(printf \'%s\n\' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d\' \' -f1)"')
+        ->and($code)->toContain('unverified:config_paths_differ')
         ->and($code)->toContain('a GO from an install the signer could not verify');
 });
 
@@ -618,3 +647,84 @@ it('detects rollback, truncation, rewrite and unwitnessed publication against th
     ['record rewritten and re-chained', 'record 000002 differs from the digest the witness recorded'],
     ['record published without the witness', 'a record was published without the witness'],
 ]);
+
+it('binds every outcome to the newest open start, refuses a closed run, and closes a start that never ended (contract 4, R6C-3)', function () {
+    $dir = rdmeDir();
+    mkdir("{$dir}/store", 0700);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
+    $a = 'dmsdrill-'.bin2hex(random_bytes(6));
+    $b = 'dmsdrill-'.bin2hex(random_bytes(6));
+    $c = 'dmsdrill-'.bin2hex(random_bytes(6));
+    $unstarted = rdmeSign($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $a]));
+    $go = rdmeSignRun($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $a]));
+    $again = rdmeSign($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $a]));
+    $restart = rdmeSign($dir, $signerPath, rdmeStart($a));
+    $openB = rdmeSign($dir, $signerPath, rdmeStart($b));
+    $startC = rdmeSign($dir, $signerPath, rdmeStart($c));
+    $lateB = rdmeSign($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_RUN_ID' => $b]));
+    $closed = (string) file_get_contents("{$dir}/store/000004/record");
+    $verify = rdmeSh('dms_evidence_verify_store "$S" "$A" "$H"', ['S' => "{$dir}/store", 'A' => "{$dir}/evidence-anchor", 'H' => "{$dir}/head.log"]);
+    rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
+
+    expect($unstarted['out'])->toContain('has no open STARTED record')
+        ->and($go['out'])->toStartWith('RECORD 000002 ')
+        ->and($again['out'])->toContain('has no open STARTED record')
+        ->and($restart['out'])->toContain('is already recorded (replay refused)')
+        ->and($openB['out'])->toStartWith('RECORD 000003 ')
+        ->and($startC['out'])->toContain("closed {$b} as 000004")
+        ->and($closed)->toContain("DMS_DRILL_EVIDENCE_RUN_ID={$b}\n")
+        ->and($closed)->toContain("DMS_DRILL_EVIDENCE_DECISION=ABORTED:unclosed\n")
+        ->and($lateB['out'])->toContain('has no open STARTED record')
+        ->and($verify['out'])->toStartWith('VERIFIED 5 ');
+});
+
+it('re-checks every record at verification: consistency, one store id, a witness log that ends with its newline (R6C-5, R6C-6, R6C-11)', function (string $case, string $message) {
+    [$dir, $store] = rdmeStore(2);
+    $witness = "{$dir}/witness.log";
+    $shas = [hash_file('sha256', "{$store}/000001/record"), hash_file('sha256', "{$store}/000002/record")];
+    file_put_contents($witness, "000001 {$shas[0]}\n000002 {$shas[1]}\n");
+    match ($case) {
+        'times out of order' => (function () use ($dir, $store) {
+            file_put_contents("{$dir}/req", rdmeRequest(['DMS_DRILL_EVIDENCE_STARTED_AT' => '2030-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2029-01-01T00:00:00Z']));
+            rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development 0123456789abcdef0123456789abcdef', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+        })(),
+        'another store id' => (function () use ($dir, $store) {
+            file_put_contents("{$dir}/req", rdmeRequest());
+            rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A" unverified:development ffffffffffffffffffffffffffffffff', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+        })(),
+        'witness log without its last newline' => (function () use ($store, $dir, $shas, $witness) {
+            (new Process(['rm', '-rf', '--', "{$store}/000002"]))->mustRun();
+            file_put_contents("{$dir}/head.log", "000001 {$shas[0]}\n");
+            file_put_contents($witness, "000001 {$shas[0]}\n000002 {$shas[1]}");
+        })(),
+    };
+    $w = $case === 'witness log without its last newline' ? $witness : '';
+    $run = rdmeSh('dms_evidence_verify_store "$S" "$A" "$H" "$W"', ['S' => $store, 'A' => "{$dir}/evidence-anchor", 'H' => "{$dir}/head.log", 'W' => $w]);
+    rdmeCleanup($dir);
+
+    expect($run['exit'])->toBe(1, $run['out'])
+        ->and($run['out'])->toContain($message);
+})->with([
+    ['times out of order', 'the drill times are out of order'],
+    ['another store id', 'a record of another store (STORE_ID differs)'],
+    ['witness log without its last newline', 'the witness log does not end with a newline'],
+]);
+
+it('accepts the longest guest list the orchestrator can build, and a FAIL from a VM that asserted nothing (R6A-4, R6C-4)', function () {
+    $h = str_repeat('a', 64);
+    $long = 'restore='.str_repeat('a', 20).',tables='.str_repeat('9', 12).',per_table_digest='.$h.',catalog_shape='.str_repeat('1:', 40).',user_code='.str_repeat('0', 12).',user_code_executed='.str_repeat('0', 12).',fidelity='.str_repeat('1:', 20).',vm_ifaces='.str_repeat('a', 40);
+    $q1 = tempnam(sys_get_temp_dir(), 'rdq');
+    $q2 = tempnam(sys_get_temp_dir(), 'rdq');
+    file_put_contents($q1, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:profile_not_attested', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => substr($long, 0, 380)]));
+    file_put_contents($q2, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:vm_output_unreadable', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'none']));
+    $long1 = rdmeSh('dms_evidence_request_parse "$Q" && echo PARSED', ['Q' => $q1]);
+    $none = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_request_policy "$H" "$I" "$(date -u +%s)" && echo ALLOWED', ['Q' => $q2, 'H' => rdmeHost(), 'I' => $h]);
+    @unlink($q1);
+    @unlink($q2);
+
+    expect(strlen(substr($long, 0, 380)))->toBeGreaterThan(300)
+        ->and($long1['out'])->toContain('PARSED')
+        ->and($none['out'])->toContain('ALLOWED');
+});

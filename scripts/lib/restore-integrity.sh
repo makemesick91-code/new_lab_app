@@ -383,6 +383,7 @@ CREATE FUNCTION pg_temp.dms_restore_guard_${tag}() RETURNS void
 LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS \$${tag}\$
 DECLARE
   problem text;
+  r record;
 BEGIN
   WITH ext AS (
     SELECT classid, objid FROM pg_depend WHERE deptype = 'e'
@@ -440,10 +441,29 @@ BEGIN
       FROM pg_opfamily f
      WHERE f.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_opfamily'::regclass AND ext.objid = f.oid)
     UNION ALL
+    -- R6B-1: session- or time-dependent values carry no function id (CURRENT_USER, CURRENT_DATE, LOCALTIMESTAMP …).
+    SELECT e.what || ' uses a session- or time-dependent value'
+      FROM expr e WHERE e.tree ~ '[{](SQLVALUEFUNCTION|NEXTVALUEEXPR) '
+    UNION ALL
     SELECT 'user-defined cast ' || format_type(c.castsource, NULL) || ' AS ' || format_type(c.casttarget, NULL)
       FROM pg_cast c
      WHERE c.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_cast'::regclass AND ext.objid = c.oid)
   ) r;
+  -- R6B-1: every CHECK must be IMMUTABLE by PostgreSQL's own test, not only by the function ids it names: a CHECK that
+  -- depends on the session or the clock ('now'::date, CURRENT_USER …) can hold in the drill and fail in a real
+  -- restore. Each one is tried as an index expression on a temporary copy of its table (42P17 when not immutable);
+  -- any error refuses. No function of the dump exists yet (P5-1), so this evaluates nothing from the backup.
+  FOR r IN SELECT c.conname, c.conrelid, cl.relname, pg_get_expr(c.conbin, c.conrelid) AS expr
+             FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
+            WHERE c.contype = 'c' AND c.conbin IS NOT NULL LOOP
+    BEGIN
+      EXECUTE format('CREATE TEMP TABLE %I (LIKE %s)', r.relname, r.conrelid::regclass);
+      EXECUTE format('CREATE INDEX ON pg_temp.%I ((%s))', r.relname, r.expr);
+      EXECUTE format('DROP TABLE pg_temp.%I', r.relname);
+    EXCEPTION WHEN OTHERS THEN
+      problem := concat_ws('; ', problem, format('check constraint %I is not immutable (SQLSTATE %s)', r.conname, SQLSTATE));
+    END;
+  END LOOP;
   IF problem IS NOT NULL THEN
     RAISE EXCEPTION 'restore load guard (finding A-1): % would run as the superuser during the replay; the replay stops here', problem;
   END IF;

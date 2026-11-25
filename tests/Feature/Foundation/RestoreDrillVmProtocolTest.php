@@ -118,7 +118,7 @@ it('boots the VM with KVM, no network device, read-only input, QEMU\'s own sandb
     expect($args[array_search('-nic', $args, true) + 1])->toBe('none')
         ->and($args[array_search('-smp', $args, true) + 1])->toBe('1')
         ->and($args[array_search('-m', $args, true) + 1])->toBe('2048')
-        ->and($args[array_search('-machine', $args, true) + 1])->toBe('q35,accel=kvm,vmport=off,hpet=off,smm=off')
+        ->and($args[array_search('-machine', $args, true) + 1])->toBe('q35,accel=kvm,vmport=off,hpet=off,smm=off,dump-guest-core=off')
         ->and($args[array_search('-cpu', $args, true) + 1])->toBe('host,-vmx,-svm,pmu=off')
         ->and($args)->toContain('-nodefaults')
         ->and($args)->toContain('-sandbox')
@@ -178,9 +178,9 @@ it('pins the orchestrator to D6, refuses the production host (D1), and keeps hos
     expect($code)->toContain('VCPU=1; MEMORY_MIB=2048; DISK_GIB=10; MINUTES=30; TASKS=64')
         ->and($code)->toContain('flock -n "$lock_fd"')
         // Phase 3: QEMU runs only under its own identity, through the launcher; the operator holds no image and no KVM.
-        ->and($code)->toContain('sudo -n -u "${C[DMS_DRILL_QEMU_USER]}" -- "${C[DMS_DRILL_QEMU_COMMAND]}" run "$RUN_ID"')
-        ->and($code)->toContain('QEMU must run under its own unprivileged identity, neither the operator nor the signer (Phase 3)')
+        ->and($code)->toContain('sudo -n -- "${C[DMS_DRILL_SUPERVISOR_COMMAND]}" vm "$RUN_ID"')
         ->and($code)->not->toContain('DMS_DRILL_IMAGE')
+        ->and($code)->not->toContain('DMS_DRILL_QEMU_USER')
         ->and($code)->toContain('[ "$(hostname)" != "$PROD_HOSTNAME" ]')
         ->and($code)->toContain('[ ! -e "$PROD_APP_DIR" ]')
         // PR-7, VR-10: verified in this shell from one private copy; PR-9: revocation.
@@ -207,9 +207,11 @@ it('pins the orchestrator to D6, refuses the production host (D1), and keeps hos
         ->and($code)->toContain('never as root (VR-4)')
         ->and($code)->toContain('kill -TERM -- "-${VM_PID}"')
         // Phase 3: refusals and aborts are recorded through the signer once the configuration is trusted.
-        ->and($code)->toContain('refuse() { echo "REFUSED: $*. Nothing ran."; record "REFUSED:${STAGE}" || true; exit 2; }')
+        ->and($code)->toContain('refuse() { echo "REFUSED: $*. Nothing ran."; ensure_started && { record "REFUSED:${STAGE}" || true; }; exit 2; }')
         ->and($code)->toContain('record "ABORTED:${STAGE}"')
-        ->and(strpos($code, 'RECORDABLE=1'))->toBeGreaterThan(strpos($code, 'DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU_COMMAND; do'))
+        // R6C-3: a STARTED record opens every attempt before any input is read.
+        ->and(strpos($code, 'ensure_started || { echo "REFUSED: the drill cannot be recorded'))->toBeLessThan(strpos($code, 'STAGE=manifest'))
+        ->and(strpos($code, 'RECORDABLE=1'))->toBeGreaterThan(strpos($code, 'DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND; do'))
         ->and($code)->not->toMatch('/^\s*(\.|source)\s+"?\$CONF/m')
         ->and($code)->not->toContain('psql -');
 });
@@ -256,8 +258,8 @@ it('refuses before anything runs when its inputs or its environment are not trus
     file_put_contents("{$dir}/backup.sql", "-- PostgreSQL database dump\n");
     file_put_contents("{$dir}/manifest", "x\n");
     $signer = $case === 'signer is the operator' ? (string) trim((string) shell_exec('id -un')) : 'nobody';
-    $conf = "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER={$signer}\nDMS_DRILL_SIGNER_COMMAND={$dir}/signer\nDMS_DRILL_QEMU_USER=daemon\nDMS_DRILL_QEMU_COMMAND={$dir}/no-qemu-launcher\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n";
-    foreach (['no-qemu-launcher', 'anchor', 'revocations', 'signer'] as $f) {
+    $conf = "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER={$signer}\nDMS_DRILL_SIGNER_COMMAND={$dir}/signer\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/no-supervisor\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n";
+    foreach (['no-supervisor', 'anchor', 'revocations', 'signer'] as $f) {
         file_put_contents("{$dir}/{$f}", "x\n");
         chmod("{$dir}/{$f}", 0600);
     }
@@ -288,10 +290,10 @@ it('refuses before anything runs when its inputs or its environment are not trus
             file_put_contents("{$dir}/drill.conf", $conf);
             chmod("{$dir}/drill.conf", 0600);
         })(),
-        'no QEMU launcher' => (function () use ($dir, $conf) {
+        'no supervisor' => (function () use ($dir, $conf) {
             file_put_contents("{$dir}/drill.conf", $conf);
             chmod("{$dir}/drill.conf", 0600);
-            unlink("{$dir}/no-qemu-launcher");
+            unlink("{$dir}/no-supervisor");
         })(),
     };
     $run = rdvmOrchestrate($dir, $args);
@@ -312,7 +314,7 @@ it('refuses before anything runs when its inputs or its environment are not trus
     ['configuration writable by others', 'writable by group or others'],
     ['configuration with shell code', 'unexpected line in'],
     ['signer is the operator', 'the signer must be a separate, unprivileged identity (VR-4)'],
-    ['no QEMU launcher', 'DMS_DRILL_QEMU_COMMAND'],
+    ['no supervisor', 'DMS_DRILL_SUPERVISOR_COMMAND'],
 ]);
 
 /** A complete, trusted drill configuration with a signed synthetic manifest; QEMU is a stub that never runs. */
@@ -335,55 +337,33 @@ function rdvmTrustedSetup(string $dir, string $fixture): array
     @mkdir("{$dir}/work", 0700);
     copy(base_path("tests/Fixtures/restore-drill/{$fixture}"), "{$dir}/backup.dump");
     chmod("{$dir}/backup.dump", 0600);
-    file_put_contents("{$dir}/drill.conf", "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER=nobody\nDMS_DRILL_SIGNER_COMMAND={$dir}/qemu\nDMS_DRILL_QEMU_USER=daemon\nDMS_DRILL_QEMU_COMMAND={$dir}/qemu\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n");
+    file_put_contents("{$dir}/drill.conf", "DMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER=nobody\nDMS_DRILL_SIGNER_COMMAND={$dir}/qemu\nDMS_DRILL_SUPERVISOR_COMMAND={$dir}/qemu\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\n");
     chmod("{$dir}/drill.conf", 0600);
 
     return ['--expected-sha256', hash_file('sha256', "{$dir}/backup.dump"), '--manifest', "{$dir}/manifest", "{$dir}/backup.dump"];
 }
 
-it('drives the orchestrator through integrity, sandboxed inspection and the TOC with real archives, up to the hypervisor (P4V-2)', function (string $fixture, string $message) {
-    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
-    $probe->run();
-    if ($probe->getExitCode() !== 0 || ! is_executable('/usr/lib/postgresql/16/bin/pg_restore') || getenv('XDG_RUNTIME_DIR') !== '/run/user/'.getmyuid()) {
-        $this->markTestSkipped('no per-user systemd manager or PostgreSQL 16 here (covered by the vm-boot CI gate)');
-    }
+it('never inspects an archive it cannot record: without its signer, the drill stops before any input is opened (R6C-3)', function (string $fixture) {
+    // The full path (integrity, sandboxed inspection, TOC, VM) runs end to end in the vm-boot CI gate on real accounts.
     $dir = rdvmDir();
     $args = rdvmTrustedSetup($dir, $fixture);
-    $run = rdvmOrchestrate($dir, $args, ['XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS')]);
-    $workLeft = array_values(array_diff(scandir("{$dir}/work"), ['.', '..', 'drill.lock']));
-    $units = (new Process(['systemctl', '--user', 'list-units', '--all', '--plain', '--no-legend', 'dmsinspect-*']));
-    $units->run();
-    (new Process(['rm', '-rf', '--', $dir]))->run();
-
-    expect($run['exit'])->toBe(2, $run['out'])
-        ->and($run['out'])->toMatch('/'.$message.'/')
-        ->and($workLeft)->toBe([])
-        ->and(trim($units->getOutput()))->toBe('');
-})->with([
-    // A valid archive passes every input check and stops only where this host has no usable hypervisor or image.
-    'the clean archive reaches the VM stage' => ['clean.dump', 'the QEMU launcher (gave no status|refused)'],
-    'an index-expression bomb also passes the host checks (the guest decides)' => ['bomb.dump', 'the QEMU launcher (gave no status|refused)'],
-    'pg_database_owner as an owner is refused at the TOC (P4P-3)' => ['dbowner.dump', 'makes pg_database_owner the owner of a TABLE'],
-    'a second schema is refused at the TOC' => ['otherschema.dump', 'entry type outside the allowlist: SCHEMA'],
-]);
-
-it('refuses a plain-SQL backup that matches its digest: a custom-format archive is required (P4V-2, PR-6)', function () {
-    $dir = rdvmDir();
-    $args = rdvmTrustedSetup($dir, 'clean.dump');
-    file_put_contents("{$dir}/backup.dump", "--\n-- PostgreSQL database dump\n--\nSELECT 1;\n");
-    $args[1] = hash_file('sha256', "{$dir}/backup.dump");
     $run = rdvmOrchestrate($dir, $args);
+    $workLeft = array_values(array_diff(scandir("{$dir}/work"), ['.', '..', 'drill.lock']));
     (new Process(['rm', '-rf', '--', $dir]))->run();
 
     expect($run['exit'])->toBe(2, $run['out'])
-        ->and($run['out'])->toContain('is not a pg_dump custom-format archive (no PGDMP header); a custom-format archive is required (PR-6)');
-});
+        ->and($run['out'])->toContain('the signer did not open a record for this drill')
+        ->and($run['out'])->toContain('REFUSED: the drill cannot be recorded, so it does not run. Nothing ran.')
+        ->and($run['out'])->not->toContain('RESTORE_INTEGRITY')
+        ->and($run['out'])->not->toContain('archive:')
+        ->and($workLeft)->toBe([]);
+})->with(['clean.dump', 'bomb.dump', 'dbowner.dump']);
 
 it('runs only from an install nobody else can change, and accepts only its own per-user manager (P4V-4, P4V-8)', function () {
     $code = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
 
     expect($code)->toContain('TRUST_UID="$(stat -c \'%u\' -- "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")")"')
-        ->and($code)->toContain('for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU_COMMAND; do')
+        ->and($code)->toContain('for k in DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_SUPERVISOR_COMMAND; do')
         ->and($code)->toContain('xdg="${XDG_RUNTIME_DIR:-}"; [ "$xdg" = "/run/user/$(id -u)" ] || xdg=""')
         ->and($code)->toContain('[ "$bus" = "unix:path=${xdg}/bus" ] || bus=""')
         ->and($code)->toContain('dms_archive_inspect_stop "$INSPECT_UNIT"')
@@ -433,8 +413,11 @@ it('runs QEMU only in the launcher, under its own identity, with D6 and the imag
         ->and($code)->toContain('[ "$IMAGE_SHA" = "${C[DMS_QEMU_IMAGE_SHA256]}" ] || die image_digest_mismatch')
         ->and($code)->toContain('[ -r /dev/kvm ] && [ -w /dev/kvm ] || die kvm_unavailable')
         // The only inputs: the bounded input disk on stdin and the run id; the QEMU command line is built here.
-        ->and($code)->toContain('head -c $((INPUT_MAX_BYTES + 1)) > "$QWORK/input.raw"')
-        ->and($code)->toContain('mapfile -t QARGS < <(dms_vm_qemu_args "$QWORK/root.qcow2" "$QWORK/input.raw" "$QWORK/output.raw" "$VCPU" "$MEMORY_MIB")')
+        ->and($code)->toContain('timeout 120 head -c $((INPUT_MAX_BYTES + 1)) > "$RT/input.raw"')
+        ->and($code)->toContain('mapfile -t QARGS < <(dms_vm_qemu_args "$QWORK/root.qcow2" "$RT/input.raw" "$RT/output.raw" "$VCPU" "$MEMORY_MIB")')
+        // Review round 6: only inside the supervisor's unit; its code is root's alone (R6A-9).
+        ->and($code)->toContain("grep -qx '0::/system.slice/dmsqemu.service' /proc/self/cgroup || die not_in_the_supervised_unit")
+        ->and($code)->toContain('[ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#022 )) -eq 0 ]; }')
         ->and($code)->toContain("trap 'status \"aborted=signal\"; exit 143' TERM INT HUP")
         ->and($code)->toContain('rm -rf -- "$QWORK"');
 });
@@ -460,8 +443,8 @@ it('refuses to launch a VM unless asked through sudo from another identity with 
     expect($process->getExitCode())->not->toBe(0)
         ->and($process->getErrorOutput())->toContain($message);
 })->with([
-    'called directly' => [[], 'QEMU_LAUNCH refused=not_through_sudo_from_another_identity'],
-    'a configuration the QEMU identity owns' => [['SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop'], 'QEMU_LAUNCH refused=config_untrusted'],
+    'called directly' => [[], 'QEMU_LAUNCH refused='],
+    'through sudo, but outside the supervised unit' => [['SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop'], 'QEMU_LAUNCH refused='],
 ]);
 
 it('keeps the real-isolation workflow audited: one validation branch, read-only, pinned, KVM-only, no secrets (Phase 3)', function () {
@@ -477,7 +460,32 @@ it('keeps the real-isolation workflow audited: one validation branch, read-only,
         ->and(substr_count($yml, 'persist-credentials: false'))->toBe(2)
         ->and(preg_match_all('/uses: [^@\s]+@([0-9a-f]{40}) # v/', $yml))->toBe(substr_count($yml, 'uses: '))
         ->and($yml)->toContain('gpgv --keyring /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg SHA256SUMS.gpg SHA256SUMS')
-        ->and($yml)->toContain('test -r /dev/kvm && test -w /dev/kvm || { echo "KVM is not available on this runner: the drill never falls back to emulation"; exit 1; }')
+        ->and($yml)->toContain('sudo -n -u dmsdrill-qemu test -r /dev/kvm -a -w /dev/kvm || { echo "KVM is not usable by the QEMU account: the drill never falls back to emulation"; exit 1; }')
+        ->and($yml)->not->toContain('apparmor')
+        ->and($yml)->not->toContain('0666')
         ->and(substr_count($yml, 'timeout-minutes: '))->toBe(2)
         ->and($yml)->toContain('cancel-in-progress: true');
+});
+
+it('keeps root confined to the supervisor: two fixed modes, root-owned code, the runner as its only caller (review round 6)', function () {
+    $code = (string) file_get_contents(base_path('scripts/restore-drill-supervisor.sh'));
+    $vm = (string) file_get_contents(base_path('scripts/lib/restore-vm.sh'));
+    $process = new Process(['bash', base_path('scripts/restore-drill-supervisor.sh'), 'vm', 'dmsdrill-0123456789ab'], null, ['PATH' => getenv('PATH')]);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getErrorOutput())->toContain('SUPERVISOR refused=not_root')
+        ->and($code)->toStartWith("#!/bin/bash\n")
+        ->and($code)->toContain('[ "$SUDO_USER" = "${C[DMS_SUPERVISOR_CALLER]}" ]')
+        ->and($code)->toContain('|| refuse identities_not_separate')
+        // R6C-3: a VM only for the run whose signed STARTED record is the newest record of the store.
+        ->and($code)->toContain('grep -qx \'DMS_DRILL_EVIDENCE_DECISION=STARTED\' -- "$last" || refuse run_not_started')
+        ->and($code)->toContain('systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu "${PROPS[@]}"')
+        ->and($code)->toContain("trap 'stop_unit; exit 143' TERM INT HUP PIPE USR1 USR2 ALRM")
+        // R6A-1, R6A-2, R6A-6, R6A-11: the unit's bounds are outside QEMU's reach.
+        ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX')
+        ->and($vm)->toContain('-p KillMode=control-group')
+        ->and($vm)->toContain('-p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0')
+        ->and($vm)->toContain('-p DevicePolicy=closed -p "DeviceAllow=/dev/kvm rw"')
+        ->and($vm)->toContain('dump-guest-core=off');
 });
