@@ -509,6 +509,17 @@ it('refuses, before any VM, an archive extension the signed contract does not na
         ->and(substr_count($gate, 'clean_after V2'))->toBe(4);
 });
 
+it('records a refusal at every orchestrator stage: each stage the orchestrator sets is one the signer accepts (CI run 21)', function () {
+    $orch = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
+    $evidence = (string) file_get_contents(base_path('scripts/lib/restore-evidence.sh'));
+    preg_match('/^DMS_DRILL_EVIDENCE_STAGES=" ([a-z0-9_ ]+) "$/m', $evidence, $m);
+    preg_match_all('/\bSTAGE=([a-z0-9_]+)/', $orch, $set);
+    $accepted = explode(' ', $m[1] ?? '');
+
+    expect($set[1])->not->toBeEmpty()
+        ->and(array_values(array_diff(array_unique($set[1]), $accepted)))->toBe([]);
+});
+
 it('prunes the drill image to exactly the allowlist: production\'s pg_stat_statements stays, every other extension goes (R6-B8)', function () {
     $dir = sys_get_temp_dir().'/rdvm-prune-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700, true);
