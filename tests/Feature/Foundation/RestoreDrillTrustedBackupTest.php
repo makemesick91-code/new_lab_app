@@ -578,6 +578,30 @@ it('fails, on the restored rows, a CHECK or a generated column whose result depe
 })->with([
     'age() across a month end' => ["CREATE TABLE rdtb_d1 (s timestamptz, e timestamptz, CONSTRAINT rdtb_d1c CHECK (age(e, s) < interval '1 mon')); INSERT INTO rdtb_d1 VALUES ('2026-01-31 17:00+00', '2026-02-28 17:00+00');", "SET LOCAL TimeZone = 'Asia/Makassar';"],
     'a quote_ident() generated column' => ['CREATE TABLE rdtb_d2 (n text, g text GENERATED ALWAYS AS (quote_ident(n)) STORED); INSERT INTO rdtb_d2 (n) VALUES (\'abc\');', 'SET LOCAL quote_all_identifiers = on;'],
+    // R6F-P11: a partial unique index whose predicate depends on TimeZone (two equal keys outside the predicate in UTC).
+    'a partial unique index on age()' => ["CREATE TABLE rdtb_d3 (k int, s timestamptz, e timestamptz); INSERT INTO rdtb_d3 VALUES (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'), (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'); CREATE UNIQUE INDEX rdtb_d3u ON rdtb_d3 (k) WHERE age(e, s) >= interval '1 mon';", "SET LOCAL TimeZone = 'Asia/Makassar';"],
+])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
+
+it('never fails an honest schema in the differential: constants, rounding generated columns, NULLS NOT DISTINCT (R6F-P9, P10, P11)', function (string $plant, string $setting) {
+    $sql = rdtbDifferential();
+    DB::beginTransaction();
+    try {
+        DB::unprepared("SET LOCAL TimeZone = 'UTC'; ".$plant);
+        DB::unprepared($setting);
+        DB::unprepared($sql);
+        $result = 'ok';
+    } catch (Throwable $e) {
+        $result = $e->getMessage();
+    } finally {
+        DB::rollBack();
+    }
+
+    expect($result)->toBe('ok');
+})->with([
+    'a float constant in a CHECK, read back with few digits' => ["CREATE TABLE rdtb_h1 (rate float8, CONSTRAINT rdtb_h1c CHECK (rate <= '0.35'::float8)); INSERT INTO rdtb_h1 VALUES (0.35);", 'SET LOCAL extra_float_digits = -15;'],
+    'a generated numeric(10,2) column that rounds' => ['CREATE TABLE rdtb_h2 (a numeric, r numeric(10,2) GENERATED ALWAYS AS (a * 1.005) STORED); INSERT INTO rdtb_h2 (a) VALUES (3.333);', "SET LOCAL TimeZone = 'Pacific/Kiritimati';"],
+    'a generated point column (no equality operator)' => ['CREATE TABLE rdtb_h3 (a float8, p point GENERATED ALWAYS AS (point(a, a)) STORED); INSERT INTO rdtb_h3 (a) VALUES (0.1);', 'SET LOCAL extra_float_digits = -15;'],
+    'a unique index with NULLS NOT DISTINCT and a NULL key' => ['CREATE TABLE rdtb_h4 (k int, v text); INSERT INTO rdtb_h4 VALUES (NULL, \'a\'); CREATE UNIQUE INDEX rdtb_h4u ON rdtb_h4 ((lower(v))) NULLS NOT DISTINCT;', 'SET LOCAL quote_all_identifiers = on;'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 it('keeps no lock per probed CHECK: the probes run in rolled-back subtransactions (R6F-P4)', function () {

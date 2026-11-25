@@ -132,9 +132,13 @@ case "$MODE" in
     _root_ok "$B" || refuse booted_dir
     [ ! -e "$B/$NAME" ] || refuse already_booted
     W="${C[DMS_SUPERVISOR_QEMU_WORK_DIR]}"
-    dms_trusted_dir "QEMU work directory" "$W" "$QUID" "$APP" > /dev/null || refuse work_dir_untrusted
     # R6F-L10: the directory above the work directory is root's, so nothing can swap the work directory itself.
     _root_ok "$(dirname -- "$W")" || refuse work_dir_parent_unsafe
+    # R6F-L19: root repairs the work directory's owner and mode (an escaped QEMU may have changed them) and empties it,
+    # before every boot and after it, so nothing a run left there survives into the next one.
+    [ -d "$W" ] && [ ! -L "$W" ] || refuse work_dir_untrusted
+    chown "${QUID}:$(id -g -- "${C[DMS_SUPERVISOR_QEMU_USER]}")" -- "$W" && chmod 0700 -- "$W" || refuse work_dir_untrusted
+    dms_trusted_dir "QEMU work directory" "$W" "$QUID" "$APP" > /dev/null || refuse work_dir_untrusted
     # R6F-L4: the work directory is a file system of its own, so a full disk there never reaches the evidence store.
     mountpoint -q -- "$W" && [ "$(stat -c %d -- "$W")" != "$(stat -c %d -- "${C[DMS_SUPERVISOR_SIGNER_STORE]}")" ] || refuse work_dir_not_dedicated
     # R6A-1, R6F-L4: a run's VM files never outlive it; everything left in the work directory is removed first.
@@ -150,6 +154,7 @@ case "$MODE" in
     # The marker is root's and readable, written only now that the VM boots (R6F-L15): the signer closes a run with a
     # marker as ABORTED:unclosed_after_boot; a run boots once.
     ( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted
+    trap 'stop_unit; find "$W" -mindepth 1 -maxdepth 1 -execdir rm -rf -- {} + 2> /dev/null' EXIT
     run_unit dmsqemu "${PROPS[@]}" -- /bin/bash "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" run "$NAME"
     exit $?
     ;;

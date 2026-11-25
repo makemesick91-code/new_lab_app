@@ -85,14 +85,12 @@ trap '' INT TERM HUP QUIT USR1 USR2 ALRM PIPE TSTP TTIN TTOU
 case "$MODE" in
   show)
     [[ " ${C[DMS_WITNESS_SHOW_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not read"; exit 1; }
-    # R6F-E1: no lock at all. The log is only ever replaced by a rename, so one read is a whole, consistent version;
-    # readers can never queue ahead of the signer's append.
-    # R6F-E8: the snapshot is kept in the witness's own directory, never in a shared /tmp another identity can fill.
-    snap="$(mktemp "$(dirname -- "$LOG")/.snapshot.XXXXXX")" || { echo "WITNESS: cannot read"; exit 1; }
-    trap 'rm -f -- "$snap"' EXIT
-    cat -- "$LOG" > "$snap" || { echo "WITNESS: cannot read"; exit 1; }
-    log_ok "$snap" || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
-    cat -- "$snap"
+    # R6F-E1: no lock at all. The log is only ever replaced by a rename, so the version opened here stays whole and
+    # consistent; readers can never queue ahead of the signer's append. R6F-E9: no copy is written anywhere: the
+    # version is validated and printed through the one descriptor, and a reader that never drains it is cut off.
+    exec {lfd}< "$LOG" || { echo "WITNESS: cannot read"; exit 1; }
+    log_ok "/dev/fd/${lfd}" || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
+    timeout -s KILL 30 cat -- "/dev/fd/${lfd}"
     ;;
   append)
     [[ " ${C[DMS_WITNESS_APPEND_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not append"; exit 1; }

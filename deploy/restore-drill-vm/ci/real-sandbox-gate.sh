@@ -277,18 +277,20 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   mapfile -t QP < <(dms_vm_qemu_unit_properties "$QEU" /var/lib/dmsdrill-qemu/work 1)
   r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c '{ : 3<> /dev/tcp/1.1.1.1/53; } 2> /dev/null && echo CONNECTED || echo BLOCKED; ls /sys/class/net | tr "\n" " "' 2>&1)"
   check Q5 "the QEMU unit has no network: no outbound connection, loopback only (R6A-2)" "$([ "${r#*BLOCKED}" != "$r" ] && [ "${r#*CONNECTED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | tr -d '\n' | head -c 80)"
-  sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c '( setsid sleep 600 & ) ; sleep 1' > /dev/null 2>&1
+  # R6F-L20: every probe proves it ran inside the unit (RAN), so a unit that never started can never pass.
+  ran="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c '( setsid sleep 600 & ) ; sleep 1; echo RAN' 2>&1)"
   nap 2
   left="$(pgrep -u "$QEU" -c 2> /dev/null || true)"
-  check Q6 "a process that leaves its parent does not outlive the QEMU unit (cgroup kill, R6A-1)" "$([ "${left:-0}" = 0 ]; echo $?)" "qemu_processes_left=${left:-0}"
+  check Q6 "a process that leaves its parent does not outlive the QEMU unit (cgroup kill, R6A-1)" "$([ "${ran#*RAN}" != "$ran" ] && [ "${left:-0}" = 0 ]; echo $?)" "ran=$(printf '%s' "$ran" | tr -d '\n' | head -c 30) qemu_processes_left=${left:-0}"
   # R6F-L2: io_uring (which opens sockets past RestrictAddressFamilies) is refused in the unit, and works outside it.
   iou='import ctypes,os; l=ctypes.CDLL(None,use_errno=True); p=ctypes.create_string_buffer(120); r=l.syscall(425,4,p); print("IOURING_OK" if r>=0 else "IOURING_DENIED errno=%d" % ctypes.get_errno())'
   r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /usr/bin/python3 -I -c "$iou" 2>&1)"
   rc="$(sudo -n -u "$QEU" -- /usr/bin/python3 -I -c "$iou" 2>&1)"
   check Q7 "io_uring is refused inside the QEMU unit (it is available outside: the control)" "$([ "${r#*IOURING_DENIED errno=1}" != "$r" ] && [ "${rc#*IOURING_OK}" != "$rc" ]; echo $?)" "unit=$(printf '%s' "$r" | head -c 40) control=$(printf '%s' "$rc" | head -c 20)"
   # R6F-L3: nothing written to /dev/shm survives the unit; the journal and D-Bus sockets are out of reach.
-  sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'echo x > /dev/shm/dmsqemu-probe' > /dev/null 2>&1
-  check Q8 "a file the QEMU unit writes to /dev/shm is gone with the unit (a private /dev/shm, R6F-L3)" "$([ ! -e /dev/shm/dmsqemu-probe ]; echo $?)" "host_shm_file=$([ -e /dev/shm/dmsqemu-probe ] && echo present || echo absent)"
+  ran="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'echo x > /dev/shm/dmsqemu-probe && echo RAN; { echo x > /run/lock/dmsqemu-probe; } 2> /dev/null && echo RUNLOCK_WRITTEN || echo RUNLOCK_REFUSED' 2>&1)"
+  check Q8 "a file the QEMU unit writes to /dev/shm is gone with the unit (a private /dev/shm, R6F-L3)" "$([ "${ran#*RAN}" != "$ran" ] && [ ! -e /dev/shm/dmsqemu-probe ]; echo $?)" "ran=$(printf '%s' "$ran" | tr -d '\n' | head -c 40) host_shm_file=$([ -e /dev/shm/dmsqemu-probe ] && echo present || echo absent)"
+  check Q11 "the QEMU unit cannot leave a file in the host's /run/lock (/run read-only, R6F-L18)" "$([ "${ran#*RUNLOCK_REFUSED}" != "$ran" ] && [ ! -e /run/lock/dmsqemu-probe ]; echo $?)" "host_run_lock_file=$([ -e /run/lock/dmsqemu-probe ] && echo present || echo absent)"
   r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'for s in /run/systemd/journal/socket /run/dbus/system_bus_socket; do [ -e "$s" ] && echo "REACH $s"; done; echo DONE' 2>&1)"
   check Q9 "the QEMU unit reaches neither the journal nor the system D-Bus socket (R6F-L3)" "$([ "${r#*REACH}" = "$r" ] && [ "${r#*DONE}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | tr '\n' ' ' | head -c 80)"
   # R6F-L13: no socket of any kind in the QEMU unit, so no host daemon (systemd-resolved: DNS to the outside) is reachable.
