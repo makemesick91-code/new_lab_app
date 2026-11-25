@@ -14,7 +14,7 @@ mkdir -p -m 0700 "$W"; W="$(cd "$W" && pwd)"
 export GNUPGHOME="$W/gnupg"; mkdir -m 0700 "$GNUPGHOME"
 TAG="cab_$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"; LIVE="${TAG}_live"; REST="${TAG}_restored"
 cleanup() {
-  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS ${LIVE}" -c "DROP DATABASE IF EXISTS ${REST}" > /dev/null 2>&1
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS ${LIVE}" -c "DROP DATABASE IF EXISTS ${REST}" -c "DROP DATABASE IF EXISTS ${TAG}_bk2" > /dev/null 2>&1
   gpgconf --kill gpg-agent > /dev/null 2>&1
   chmod -R u+w "$W" 2> /dev/null; rm -rf -- "$W"
 }
@@ -162,6 +162,21 @@ v="$(bash "$B" verify --store "$STORE" --deep)"; rc=$?
 days="$(cut -c1-8 "$STORE/CHAIN" | sort -u | wc -l)"   # one snapshot kept per UTC day (the head is its day's last)
 [ "$rc" = 0 ] && echo "$out" | grep -q "kept=${days} dropped=$((nsnap - days))"; ok C10-retention "$?" "$(echo "$out" | tail -1); ${v}"
 out="$(bash "$B" restore --store "$STORE" --target "$W/after-prune")"; ok C10-head-restorable-after-prune $? "$out"
+
+# --- C11 a BK-2-shaped package reproduces the estate: the database as BK-2 dumps it (pg_dump -Fc -C -Z 6) and
+# storage/app without backups/ as BK-2 tars it, restored into isolation, reconcile exactly like the live estate
+mkdir -p "$W/bk2/x"
+pg_dump -Fc -C -Z 6 -d "$LIVE" -f "$W/bk2/db.pgdump"
+put "backups/deploy/auto_backup_synthetic.sql" 100          # BK-2 leaves backups/ out of the documents archive
+( cd "$W/live/storage" && tar --anchored --exclude=app/backups -cf - app ) | zstd -q -9 > "$W/bk2/docs.tar.zst"
+q postgres "CREATE DATABASE ${TAG}_bk2"; pg_restore -d "${TAG}_bk2" --no-owner "$W/bk2/db.pgdump" 2> "$W/bk2/restore.err"; rr=$?
+zstd -dcq "$W/bk2/docs.tar.zst" | tar -C "$W/bk2/x" -xf -
+PGDATABASE="$LIVE" bash "$R" --map "$MAP" --out "$W/rec6" --storage "$S" --roots "$ROOTS" > /dev/null
+PGDATABASE="${TAG}_bk2" bash "$R" --map "$MAP" --out "$W/rec7" --storage "$W/bk2/x/app" --roots "$ROOTS" > /dev/null
+same=1; cmp -s <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec6/report.txt") <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec7/report.txt") && same=0
+cp "$W/rec7/report.txt" "$W/bk2-report.txt" 2> /dev/null
+[ -e "$W/bk2/x/app/backups" ]; nb=$?
+[ "$rr" = 0 ] && [ "$same" = 0 ] && [ "$nb" = 1 ]; ok C11-bk2-shaped-package-reconciles-like-live "$?" "pg_restore (no --create) exit ${rr}; reports identical: $([ "$same" = 0 ] && echo yes || echo no); backups/ left out: $([ "$nb" = 1 ] && echo yes || echo no)"
 
 echo "TOTAL pass=${P} fail=${F}"
 [ "$F" = 0 ]

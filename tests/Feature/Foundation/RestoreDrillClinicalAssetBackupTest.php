@@ -29,7 +29,7 @@ function cabMap(): array
     return $rows;
 }
 
-it('backs up and reconciles synthetic clinical files end to end: missing, corrupted, orphaned, duplicate, interrupted, cross-branch, tampered (R6-B13)', function () {
+it('backs up and reconciles synthetic clinical files end to end: missing, corrupted, orphaned, duplicate, interrupted, cross-branch, tampered, and a BK-2-shaped package (R6-B13)', function () {
     if (config('database.default') !== 'pgsql') {
         $this->markTestSkipped('needs PostgreSQL: the rehearsal creates throwaway databases');
     }
@@ -44,7 +44,7 @@ it('backs up and reconciles synthetic clinical files end to end: missing, corrup
     $out = $p->getOutput();
 
     expect($p->getExitCode())->toBe(0, $out.$p->getErrorOutput())
-        ->and($out)->toContain('TOTAL pass=33 fail=0')
+        ->and($out)->toContain('TOTAL pass=34 fail=0')
         ->and(is_dir($work))->toBeFalse();
 });
 
