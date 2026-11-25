@@ -35,20 +35,20 @@ DMS_DRILL_EVIDENCE_SIGNER_KEYS="DMS_DRILL_EVIDENCE_CONTRACT DMS_DRILL_EVIDENCE_S
 DMS_DRILL_EVIDENCE_REQUEST_KEYS="DMS_DRILL_EVIDENCE_RUN_ID DMS_DRILL_EVIDENCE_OPERATOR DMS_DRILL_EVIDENCE_DRILL_HOST DMS_DRILL_EVIDENCE_STARTED_AT DMS_DRILL_EVIDENCE_COMPLETED_AT DMS_DRILL_EVIDENCE_BACKUP_SHA256 DMS_DRILL_EVIDENCE_BACKUP_BYTES DMS_DRILL_EVIDENCE_DIGEST_SOURCE DMS_DRILL_EVIDENCE_MANIFEST_ID DMS_DRILL_EVIDENCE_MANIFEST_SHA256 DMS_DRILL_EVIDENCE_IMAGE_SHA256 DMS_DRILL_EVIDENCE_LIMITS DMS_DRILL_EVIDENCE_HOST_VERIFIED DMS_DRILL_EVIDENCE_EXPECTED DMS_DRILL_EVIDENCE_GUEST_ASSERTED DMS_DRILL_EVIDENCE_DECISION"
 DMS_DRILL_EVIDENCE_KEYS="${DMS_DRILL_EVIDENCE_SIGNER_KEYS} ${DMS_DRILL_EVIDENCE_REQUEST_KEYS}"
 # What the orchestrator verifies on the host before the VM boots (VR-1). GO and FAIL records carry exactly this list.
-DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS="backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits"
+DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS="backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits,env_contract,env_compatibility"
 # The D6 limits, fixed: a record never states others.
 DMS_DRILL_EVIDENCE_LIMITS_D6="vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,tasks=64"
 # P5-3: the two comma lists have fixed keys in a fixed order with typed values (no duplicate, unknown or reordered key).
-DMS_DRILL_EVIDENCE_EXPECTED_RE='^tables=[0-9]{1,9},rows=[0-9]{1,15},per_table_digest=[0-9a-f]{64},catalog_shape=[0-9]{1,9}(:[0-9]{1,9}){6}$'
+DMS_DRILL_EVIDENCE_EXPECTED_RE='^tables=[0-9]{1,9},rows=[0-9]{1,15},per_table_digest=[0-9a-f]{64},catalog_shape=[0-9]{1,9}(:[0-9]{1,9}){6},env_contract=[0-9a-f]{64},env=[0-9a-f]{64}$'
 # R6C-9: the stages a refusal or an abort may name (the orchestrator's STAGE values), nothing else.
-DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed unclosed_after_boot "
-DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_table_digest=([0-9a-f]{64}|none|invalid),catalog_shape=[0-9:a-z]{1,80},user_code=[0-9a-z]{1,12},user_code_executed=[0-9a-z]{1,12},fidelity=[0-9:a-z]{1,40},vm_ifaces=[a-z0-9:]{1,40}$'
+DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed unclosed_after_boot env_contract env_compatibility image_properties "
+DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_table_digest=([0-9a-f]{64}|none|invalid),catalog_shape=[0-9:a-z]{1,80},user_code=[0-9a-z]{1,12},user_code_executed=[0-9a-z]{1,12},fidelity=[0-9:a-z]{1,40},vm_ifaces=[a-z0-9:]{1,40},env=([0-9a-f]{64}|none|invalid)$'
 
 # _dms_evidence_value_ok <key> <value>
 _dms_evidence_value_ok() {
   local k="$1" v="$2"
   case "$k" in
-    DMS_DRILL_EVIDENCE_CONTRACT) [ "$v" = 4 ] ;;
+    DMS_DRILL_EVIDENCE_CONTRACT) [ "$v" = 5 ] ;;
     DMS_DRILL_EVIDENCE_STORE_ID) [[ "$v" =~ ^[0-9a-f]{32}$ ]] ;;
     DMS_DRILL_EVIDENCE_OPERATOR) [[ "$v" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] ;;
     DMS_DRILL_EVIDENCE_DIGEST_SOURCE) [ "$v" = expected-sha256 ] || [ "$v" = none ] ;;
@@ -84,7 +84,7 @@ dms_evidence_request_parse() {
     DMS_EVIDENCE_REQUEST[$k]="$v"
     order="${order}${order:+ }${k}"
   done < "$req"
-  [ "$order" = "$DMS_DRILL_EVIDENCE_REQUEST_KEYS" ] || { echo "evidence: request keys differ from contract 4"; DMS_EVIDENCE_REQUEST=(); return 1; }
+  [ "$order" = "$DMS_DRILL_EVIDENCE_REQUEST_KEYS" ] || { echo "evidence: request keys differ from contract 5"; DMS_EVIDENCE_REQUEST=(); return 1; }
 }
 
 # _dms_evidence_field <comma list of key=value> <key> — prints the value of <key>, or nothing.
@@ -174,6 +174,9 @@ _dms_evidence_policy_core() {
   [ "$(_dms_evidence_field "$guest" user_code)" = 0 ] && [ "$(_dms_evidence_field "$guest" user_code_executed)" = 0 ] \
     || { echo "evidence: a GO with user code on a restore path"; return 1; }
   [ "$(_dms_evidence_field "$guest" vm_ifaces)" = lo ] || { echo "evidence: a GO from a VM with a network interface"; return 1; }
+  # F3: a GO only for the restore environment of the signed contract, as the guest applied and observed it.
+  [[ "$(_dms_evidence_field "$guest" env)" =~ ^[0-9a-f]{64}$ ]] && [ "$(_dms_evidence_field "$guest" env)" = "$(_dms_evidence_field "$exp" env)" ] \
+    || { echo "evidence: a GO whose restore environment differs from the signed environment contract"; return 1; }
 }
 
 # dms_evidence_binding_check <store> <decision> <run id>
@@ -316,7 +319,7 @@ dms_evidence_publish() {
   shopt -u nullglob
   seq="$(printf '%06d' $((10#$n + 1)))"
   rec="$(
-    printf 'DMS_DRILL_EVIDENCE_CONTRACT=4\nDMS_DRILL_EVIDENCE_SEQ=%s\nDMS_DRILL_EVIDENCE_PREV_SHA256=%s\n' "$seq" "$prev"
+    printf 'DMS_DRILL_EVIDENCE_CONTRACT=5\nDMS_DRILL_EVIDENCE_SEQ=%s\nDMS_DRILL_EVIDENCE_PREV_SHA256=%s\n' "$seq" "$prev"
     printf 'DMS_DRILL_EVIDENCE_SIGNER=%s\nDMS_DRILL_EVIDENCE_CALLER=%s\nDMS_DRILL_EVIDENCE_INSTALL=%s\n' "$principal" "$caller" "$install"
     printf 'DMS_DRILL_EVIDENCE_STORE_ID=%s\n' "$storeid"
     printf 'DMS_DRILL_EVIDENCE_SIGNED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -334,7 +337,7 @@ dms_evidence_publish() {
     _dms_evidence_value_ok "${v%%=*}" "${v#*=}" || { rm -rf -- "$stage"; echo "evidence: invalid value for ${v%%=*}"; return 1; }
     keys="${keys}${keys:+ }${v%%=*}"
   done < "${stage}/record"
-  [ "$keys" = "$DMS_DRILL_EVIDENCE_KEYS" ] || { rm -rf -- "$stage"; echo "evidence: the record's key set differs from contract 4"; return 1; }
+  [ "$keys" = "$DMS_DRILL_EVIDENCE_KEYS" ] || { rm -rf -- "$stage"; echo "evidence: the record's key set differs from contract 5"; return 1; }
   # P5-5: the record, its signature and the staging directory reach the disk before the rename publishes them.
   if ! ssh-keygen -Y sign -f "$key" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" "${stage}/record" > /dev/null 2>&1 \
     || ! ssh-keygen -Y verify -f "$anchor" -I "$principal" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" -s "${stage}/record.sig" < "${stage}/record" > /dev/null 2>&1 \

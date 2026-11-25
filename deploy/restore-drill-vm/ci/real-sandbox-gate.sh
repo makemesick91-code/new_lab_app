@@ -220,8 +220,9 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
     printf 'DMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' \
       "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"
     printf 'DMS_DRILL_EVIDENCE_LIMITS=%s\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=%s\n' "$DMS_DRILL_EVIDENCE_LIMITS_D6" "$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS"
-    printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=2,rows=6,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1\n' "$h"
-    printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=ok,tables=2,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo\n' "${3:-$h}"
+    # F3 (contract 5): the expectation names the environment contract and its environment digest; the guest's is equal.
+    printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=2,rows=6,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,env_contract=%s,env=%s\n' "$h" "$(printf 'e%.0s' {1..64})" "$(printf 'f%.0s' {1..64})"
+    printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=ok,tables=2,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo,env=%s\n' "${3:-$h}" "$(printf 'f%.0s' {1..64})"
     printf 'DMS_DRILL_EVIDENCE_DECISION=%s\n' "$1"
   }
   # The runner identity (which only ever runs the installed orchestrator on a drill host) asks the signer.
@@ -231,7 +232,7 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   vrf() { sudo -n -u "$RUNR" -- sudo -n -u "$SIG" -- "$SCMD" verify 2>&1; }
   RUN1="$(dms_sandbox_unit_name)"
   r="$(req GO "$RUN1" | sign)"
-  check G8 "an outcome without an open STARTED record is refused (contract 4, R6C-3)" "$([ "${r#*no open STARTED}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
+  check G8 "an outcome without an open STARTED record is refused (contract 5, R6C-3)" "$([ "${r#*no open STARTED}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
   r="$(req STARTED "$RUN1" | sign)"; r2="$(req GO "$RUN1" | sign)"
   check G1 "through the runner identity: a STARTED record, then the run's witnessed GO, from a verified root install" "$([ "${r#RECORD }" != "$r" ] && [ "${r2#RECORD }" != "$r2" ] && [ "${r2#* witnessed}" != "$r2" ]; echo $?)" "$(printf '%s | %s' "${r:0:30}" "${r2:0:40}")"
   rec2="$(sudo cat /var/lib/dmsdrill-signer/store/000002/record 2> /dev/null)"

@@ -43,7 +43,7 @@ sudo install -d -o root -g root -m 0755 "$L" "$L/drill" "$L/drill/scripts" "$L/d
   "$L/signer" "$L/signer/lib" "$L/witness" "$L/witness/lib" "$L/qemu" "$L/qemu/lib" "$L/supervisor" "$L/supervisor/lib"
 sudo install -o root -g root -m 0755 "$REPO/scripts/restore-drill-vm.sh" "$L/drill/scripts/"
 sudo install -o root -g root -m 0644 "$REPO"/scripts/lib/trusted-path.sh "$REPO"/scripts/lib/restore-integrity.sh "$REPO"/scripts/lib/restore-sandbox.sh \
-  "$REPO"/scripts/lib/restore-manifest.sh "$REPO"/scripts/lib/restore-evidence.sh "$REPO"/scripts/lib/restore-vm.sh "$REPO"/scripts/lib/restore-archive.sh "$L/drill/scripts/lib/"
+  "$REPO"/scripts/lib/restore-manifest.sh "$REPO"/scripts/lib/restore-envcontract.sh "$REPO"/scripts/lib/restore-evidence.sh "$REPO"/scripts/lib/restore-vm.sh "$REPO"/scripts/lib/restore-archive.sh "$L/drill/scripts/lib/"
 sudo install -o root -g root -m 0644 "$REPO/deploy/production-host.conf" "$L/drill/deploy/"
 sudo install -o root -g root -m 0755 "$REPO/scripts/restore-drill-evidence-signer.sh" "$L/signer/"
 sudo install -o root -g root -m 0644 "$REPO/scripts/lib/trusted-path.sh" "$REPO/scripts/lib/restore-evidence.sh" "$L/signer/lib/"
@@ -89,6 +89,8 @@ if [ -n "$IMAGE_SRC" ]; then sudo install -o root -g root -m 0644 "$IMAGE_SRC" "
 
 # --- Configuration, root-owned ------------------------------------------------------------------------------------
 sudo install -d -o root -g root -m 0755 "$E"
+# F3: the image's properties (read from the image when it was built, bound to its sha256), root-owned.
+if [ -n "$IMAGE_SRC" ]; then sudo install -o root -g root -m 0644 "${IMAGE_SRC}.properties" /etc/dms-restore-drill/image.properties; fi
 conf() { sudo install -o root -g root -m 0644 /dev/stdin "$E/$1"; }
 # R6F-L22: this host is a disposable CI runner (the guest console of synthetic drills may be kept only here).
 printf 'GitHub-hosted disposable runner; synthetic data only\n' | sudo install -o root -g root -m 0644 /dev/stdin "$E/disposable-ci-runner"
@@ -109,7 +111,8 @@ printf '%s\n' "DMS_SUPERVISOR_CALLER=${R}" "DMS_SUPERVISOR_QEMU_USER=${Q}" "DMS_
 printf '%s\n' "DMS_DRILL_MANIFEST_ANCHOR=${E}/manifest-anchor" "DMS_DRILL_MANIFEST_REVOCATIONS=${E}/revocations" \
   "DMS_DRILL_EXTENSION_ALLOWLIST=none" "DMS_DRILL_SIGNER_USER=${S}" "DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh" \
   "DMS_DRILL_SUPERVISOR_COMMAND=${L}/supervisor/restore-drill-supervisor.sh" "DMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin" \
-  "DMS_DRILL_WORK_DIR=/var/lib/dms-restore-drill/runner" "DMS_DRILL_LOCALE=C.UTF-8" | conf drill.conf
+  "DMS_DRILL_WORK_DIR=/var/lib/dms-restore-drill/runner" "DMS_DRILL_LOCALE=C.UTF-8" \
+  "DMS_DRILL_IMAGE_PROPERTIES=${E}/image.properties" | conf drill.conf
 
 # --- Sudoers: exactly these rules (R6C-1: the operator has no route to the signer's sign) ---------------------------
 ORCH="$L/drill/scripts/restore-drill-vm.sh"; SIGN="$L/signer/restore-drill-evidence-signer.sh"

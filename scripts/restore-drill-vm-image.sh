@@ -72,5 +72,15 @@ virt-customize -a "$OUT" \
   --run-command '! dpkg-query -W -f="\${Status}" apport 2> /dev/null | grep -q "ok installed" && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
   --run-command 'systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service snapd.service unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer' \
   --run-command '/usr/lib/postgresql/16/bin/psql --version | grep -Eq "^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])"' \
+  --copy-in "$REPO/deploy/restore-drill-vm/image-facts.sh:/usr/local/lib/dms-restore-drill" \
+  --run-command 'bash /usr/local/lib/dms-restore-drill/image-facts.sh > /usr/local/lib/dms-restore-drill/image.facts' \
   --root-password disabled
+# F3: the image's own restore environment, read back from the finished image (never asserted by a guest at run
+# time) and bound to its sha256: "<image>.properties", installed root-owned on the drill host.
+command -v virt-cat > /dev/null || { echo "FATAL: needs virt-cat"; exit 2; }
+virt-cat -a "$OUT" /usr/local/lib/dms-restore-drill/image.facts > "$STAGE/image.facts"
+grep -qvE '^DMS_IMAGE_[A-Z_]+=[A-Za-z0-9_.@:, -]*$' "$STAGE/image.facts" && { echo "FATAL: unexpected image facts"; exit 2; }
+IMG_SHA="$(sha256sum -- "$OUT" | cut -d' ' -f1)"
+{ echo "DMS_IMAGE_SHA256=${IMG_SHA}"; cat -- "$STAGE/image.facts"; } > "${OUT}.properties"
+echo "image properties: ${OUT}.properties"
 sha256sum -- "$OUT" | cut -d' ' -f1

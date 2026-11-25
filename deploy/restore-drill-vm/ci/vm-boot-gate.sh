@@ -37,28 +37,62 @@ trap 'rm -rf -- "$W"' EXIT
 ssh-keygen -q -t ed25519 -N '' -C owner -f "$W/owner"
 echo "owner@ci $(cat "$W/owner.pub")" | sudo install -o root -g root -m 0644 /dev/stdin /etc/dms-restore-drill/manifest-anchor
 sudo install -o root -g root -m 0644 /dev/null /etc/dms-restore-drill/revocations
-manifest() { # <file> <id>
+# F3: a SYNTHETIC, production-like Restore Environment Compatibility Contract, signed by the same throwaway owner key.
+# Its exact properties come from the drill image's own properties (as an owner would copy production's after checking
+# they match); the session settings are a production-like profile. Extra arguments override "KEY=value" lines.
+IP=/etc/dms-restore-drill/image.properties
+prop() { sed -n "s/^$1=//p" "$IP" | head -n 1; }
+envcontract() { # <file> <id> [KEY=value …]
+  local f="$1" id="$2" kv k; shift 2
   {
-    printf 'DMS_ROLE_MANIFEST_CONTRACT=1\nDMS_ROLE_MANIFEST_ID=%s\nDMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner\n' "$2"
+    printf 'DMS_ENV_CONTRACT_VERSION=1\nDMS_ENV_CONTRACT_ID=%s\nDMS_ENV_CONTRACT_SOURCE=synthetic-ci\nDMS_ENV_CONTRACT_ISSUED_BY=owner@ci\n' "$id"
+    printf 'DMS_ENV_CONTRACT_ISSUED_AT=%s\nDMS_ENV_CONTRACT_NOT_AFTER=%s\n' "$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" "$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'DMS_ENV_PG_MAJOR=%s\nDMS_ENV_PG_MINOR=%s\nDMS_ENV_SERVER_ENCODING=UTF8\nDMS_ENV_LOCALE_PROVIDER=libc\n' "$(prop DMS_IMAGE_PG_MAJOR)" "$(prop DMS_IMAGE_PG_MINOR)"
+    printf 'DMS_ENV_DATCOLLATE=C.UTF-8\nDMS_ENV_DATCTYPE=C.UTF-8\nDMS_ENV_ICU_LOCALE=none\nDMS_ENV_COLLATION_VERSION=none\n'
+    printf 'DMS_ENV_GLIBC_VERSION=%s\nDMS_ENV_ICU_VERSION=%s\nDMS_ENV_TZDATA_VERSION=%s\nDMS_ENV_EXTENSIONS=none\n' "$(prop DMS_IMAGE_GLIBC_VERSION)" "$(prop DMS_IMAGE_ICU_VERSION)" "$(prop DMS_IMAGE_TZDATA_VERSION)"
+    printf 'DMS_ENV_SET_TIMEZONE=Asia/Makassar\nDMS_ENV_SET_DATESTYLE=ISO, MDY\nDMS_ENV_SET_INTERVALSTYLE=postgres\nDMS_ENV_SET_ARRAY_NULLS=on\n'
+    printf 'DMS_ENV_SET_LC_MONETARY=C.UTF-8\nDMS_ENV_SET_LC_NUMERIC=C.UTF-8\nDMS_ENV_SET_LC_TIME=C.UTF-8\nDMS_ENV_SET_EXTRA_FLOAT_DIGITS=1\n'
+    printf 'DMS_ENV_SET_BYTEA_OUTPUT=hex\nDMS_ENV_SET_XMLBINARY=base64\nDMS_ENV_SET_XMLOPTION=content\nDMS_ENV_SET_STANDARD_CONFORMING_STRINGS=on\n'
+    printf 'DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS=off\nDMS_ENV_SET_DEFAULT_TEXT_SEARCH_CONFIG=pg_catalog.english\nDMS_ENV_SET_TIMEZONE_ABBREVIATIONS=Default\n'
+  } > "$f"
+  for kv in "$@"; do k="${kv%%=*}"; sed -i "s|^${k}=.*|${kv}|" "$f"; done
+  ssh-keygen -q -Y sign -f "$W/owner" -n dms-restore-env-contract "$f" > /dev/null
+}
+envcontract "$W/env-contract" ci-env-contract-0001
+envcontract "$W/env-contract-nulls-off" ci-env-contract-0002 DMS_ENV_SET_ARRAY_NULLS=off
+envcontract "$W/env-contract-tz" ci-env-contract-0003 DMS_ENV_TZDATA_VERSION=1999a
+cp "$W/env-contract" "$W/env-contract-tampered"; cp "$W/env-contract.sig" "$W/env-contract-tampered.sig"
+sed -i 's/^DMS_ENV_SET_ARRAY_NULLS=.*/DMS_ENV_SET_ARRAY_NULLS=off/' "$W/env-contract-tampered"
+csha() { sha256sum "$1" | cut -d' ' -f1; }
+manifest() { # <file> <id> [environment contract file]
+  {
+    printf 'DMS_ROLE_MANIFEST_CONTRACT=2\nDMS_ROLE_MANIFEST_ID=%s\nDMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner\n' "$2"
     printf 'DMS_ROLE_MANIFEST_RUNTIME_ROLE=app_runtime\nDMS_ROLE_MANIFEST_R6_OWNER_ROLE=none\nDMS_ROLE_MANIFEST_ISSUED_BY=owner@ci\n'
+    printf 'DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256=%s\n' "$(csha "${3:-$W/env-contract}")"
     printf 'DMS_ROLE_MANIFEST_ISSUED_AT=%s\nDMS_ROLE_MANIFEST_NOT_AFTER=%s\n' "$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" "$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)"
   } > "$1"
   ssh-keygen -q -Y sign -f "$W/owner" -n dms-restore-role-manifest "$1" > /dev/null
 }
 manifest "$W/manifest" ci-manifest-0001
 manifest "$W/manifest-revoked" ci-manifest-0099
+manifest "$W/manifest-nulls-off" ci-manifest-0002 "$W/env-contract-nulls-off"
+manifest "$W/manifest-tz" ci-manifest-0003 "$W/env-contract-tz"
+manifest "$W/manifest-tampered-env" ci-manifest-0004 "$W/env-contract-tampered"
 cp "$W/manifest" "$W/manifest-tampered"; cp "$W/manifest.sig" "$W/manifest-tampered.sig"
 sed -i 's/^DMS_ROLE_MANIFEST_ROLES=.*/DMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner intruder/' "$W/manifest-tampered"
 printf -- '--\n-- PostgreSQL database dump\n--\n\nSELECT 1;\n' > "$W/plain.sql"
-for f in clean bomb vanish ext; do cp -- "$FX/$f.dump" "$W/$f.dump"; done
+for f in clean bomb vanish ext arrnull; do cp -- "$FX/$f.dump" "$W/$f.dump"; done
 # The inbox: the operator's files, group-readable by the runner, writable by nobody else.
-for f in manifest manifest.sig manifest-revoked manifest-revoked.sig manifest-tampered manifest-tampered.sig plain.sql clean.dump bomb.dump vanish.dump ext.dump; do
+for f in manifest manifest.sig manifest-revoked manifest-revoked.sig manifest-tampered manifest-tampered.sig plain.sql clean.dump bomb.dump vanish.dump ext.dump \
+  arrnull.dump manifest-nulls-off manifest-nulls-off.sig manifest-tz manifest-tz.sig manifest-tampered-env manifest-tampered-env.sig \
+  env-contract env-contract.sig env-contract-nulls-off env-contract-nulls-off.sig env-contract-tz env-contract-tz.sig env-contract-tampered env-contract-tampered.sig; do
   sudo install -o "$(id -un)" -g dmsdrill-inbox -m 0640 "$W/$f" "$INBOX/$f"
 done
 # The drill configuration is the provisioned one (provision-drill-host.sh), verified by the signer as part of the install.
 sudo test -f /etc/dms-restore-drill/drill.conf || { echo "vm-boot-gate: the drill host is not provisioned"; exit 2; }
 # shellcheck disable=SC2024  # the operator, not the runner, writes the transcript
-drill() { sudo -n -u "$RUNR" -- "$ORCH" "$@" > "$OUT/last.txt" 2>&1; echo $?; }
+# Every drill names an environment contract (F3); ENVC selects another one.
+drill() { sudo -n -u "$RUNR" -- "$ORCH" --env-contract "${ENVC:-$INBOX/env-contract}" "$@" > "$OUT/last.txt" 2>&1; echo $?; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 has() { grep -q -- "$2" "$OUT/$1.txt"; }
 recorded() { grep -Eq '^Evidence: started RECORD [0-9]{6} [0-9a-f]{64} witnessed' "$OUT/$1.txt" && grep -Eq '^Evidence: RECORD [0-9]{6} [0-9a-f]{64} witnessed' "$OUT/$1.txt"; }
@@ -113,6 +147,11 @@ dig() { printf '%s' "$1" | tr ',' '\n' | sed -n "s/^$2=//p"; }
 check V1-complete "the guest's per-table digest, table count and catalog shape equal the host's expectation (PR-5)" \
   "$([ -n "$(dig "$exp" per_table_digest)" ] && [ "$(dig "$exp" per_table_digest)" = "$(dig "$gst" per_table_digest)" ] && [ "$(dig "$exp" catalog_shape)" = "$(dig "$gst" catalog_shape)" ] && [ "$(dig "$exp" tables)" = "$(dig "$gst" tables)" ]; echo $?)" \
   "tables=$(dig "$gst" tables) shape=$(dig "$gst" catalog_shape) install=$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_INSTALL=//p' | head -c 24)"
+# F3: the GO was restored under the signed contract's environment: the guest's environment digest equals the one the
+# host computed from the contract, and the record names the contract the manifest names.
+check V1-env "the guest restored under the contract's environment: its environment digest equals the host's, the record names the contract (F3)" \
+  "$([ -n "$(dig "$exp" env)" ] && [ "$(dig "$exp" env)" = "$(dig "$gst" env)" ] && [ "$(dig "$exp" env_contract)" = "$(csha "$W/env-contract")" ]; echo $?)" \
+  "env=$(dig "$gst" env | head -c 16) contract=$(dig "$exp" env_contract | head -c 16)"
 clean_after V1
 
 # --- Refusals before any VM boots: each one is a signed record ----------------------------------------------------
@@ -138,7 +177,7 @@ clean_after V9
 
 # --- V11: forced termination while the VM runs: stopped, recorded as ABORTED, nothing left -----------------------------
 # shellcheck disable=SC2024  # the operator, not the runner, writes the transcript
-sudo -n -u "$RUNR" -- "$ORCH" --expected-sha256 "$(sha "$W/clean.dump")" --manifest "$INBOX/manifest" "$INBOX/clean.dump" > "$OUT/V11.txt" 2>&1 &
+sudo -n -u "$RUNR" -- "$ORCH" --env-contract "$INBOX/env-contract" --expected-sha256 "$(sha "$W/clean.dump")" --manifest "$INBOX/manifest" "$INBOX/clean.dump" > "$OUT/V11.txt" 2>&1 &
 ORCH_PID=$!
 for _ in $(seq 1 240); do grep -q 'VM boot' "$OUT/V11.txt" && pgrep -u "$QEU" > /dev/null && break; sleep 0.5; done
 sleep 5
@@ -146,6 +185,20 @@ kill -TERM "$ORCH_PID"
 wait "$ORCH_PID"; rc=$?
 check V11 "a drill interrupted while the VM runs is stopped and recorded as ABORTED" "$([ "$rc" = 143 ] && has V11 '^ABORTED: signal at stage vm' && recorded V11; echo $?)" "exit=$rc"
 clean_after V11
+
+# --- F3: the Restore Environment Compatibility Contract ----------------------------------------------------------------
+rc="$(ENVC="$INBOX/env-contract-tz" drill --expected-sha256 "$(sha "$W/clean.dump")" --manifest "$INBOX/manifest-tz" "$INBOX/clean.dump")"; cp "$OUT/last.txt" "$OUT/V16.txt"
+check V16 "a contract the drill image cannot match (tzdata) is refused before any VM boots, and recorded (F3, exact class)" "$([ "$rc" = 2 ] && has V16 'tzdata 1999a in production' && ! has V16 'VM boot' && recorded V16; echo $?)" "exit=$rc"
+rc="$(ENVC="$INBOX/env-contract-tampered" drill --expected-sha256 "$(sha "$W/clean.dump")" --manifest "$INBOX/manifest-tampered-env" "$INBOX/clean.dump")"; cp "$OUT/last.txt" "$OUT/V17.txt"
+check V17 "a contract changed after it was signed is refused before any VM boots, and recorded (F3)" "$([ "$rc" = 2 ] && has V17 'env contract: the signature does not verify' && ! has V17 'VM boot' && recorded V17; echo $?)" "exit=$rc"
+rc="$(ENVC="$INBOX/env-contract-nulls-off" drill --expected-sha256 "$(sha "$W/clean.dump")" --manifest "$INBOX/manifest" "$INBOX/clean.dump")"; cp "$OUT/last.txt" "$OUT/V18.txt"
+check V18 "a valid contract that the signed manifest does not name is refused, and recorded (F3 binding)" "$([ "$rc" = 2 ] && has V18 'not the one the signed manifest names' && ! has V18 'VM boot' && recorded V18; echo $?)" "exit=$rc"
+rc="$(ENVC="$INBOX/env-contract-nulls-off" drill --expected-sha256 "$(sha "$W/arrnull.dump")" --manifest "$INBOX/manifest-nulls-off" "$INBOX/arrnull.dump")"; cp "$OUT/last.txt" "$OUT/V19.txt"
+check V19 "production pinned to array_nulls=off: an array with a NULL element fails in the VM, as the real restore would (F3, pinned class)" "$([ "$rc" = 1 ] && has V19 '^Decision: FAIL:unit_exit_20 ' && recorded V19; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V19.txt" | head -c 50)"
+clean_after V19
+rc="$(drill --expected-sha256 "$(sha "$W/arrnull.dump")" --manifest "$INBOX/manifest" "$INBOX/arrnull.dump")"; cp "$OUT/last.txt" "$OUT/V20.txt"
+check V20 "the same archive under the contract with array_nulls=on is GO, restored under that environment (F3)" "$([ "$rc" = 0 ] && has V20 '^Decision: GO ' && has V20 '^ENV_CONTRACT=VERIFIED ' && recorded V20; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V20.txt" | head -c 40)"
+clean_after V20
 
 # --- V14: KVM belongs to the QEMU account only ------------------------------------------------------------------------
 if id -nG | tr ' ' '\n' | grep -qx kvm; then limit V14 "the CI user is in the kvm group on this runner image" "kvm_member"
@@ -167,7 +220,7 @@ check V13 "the operator verifies the exported store against the witness with the
 check V8 "the operator cannot read the signer's key" "$([ ! -r /var/lib/dmsdrill-signer/signing-key ]; echo $?)" "$(sudo stat -c '%U %a' /var/lib/dmsdrill-signer/signing-key 2> /dev/null)"
 for f in "$OUT"/evidence/store/*/record; do grep -h '^DMS_DRILL_EVIDENCE_\(SEQ\|RUN_ID\|INSTALL\|DECISION\)=' "$f" | tr '\n' ' '; echo; done > "$OUT/evidence/decisions.txt"
 starts="$(grep -c 'DECISION=STARTED' "$OUT/evidence/decisions.txt")"
-check V15 "every drill has a STARTED record and exactly one outcome (contract 4)" "$([ "$starts" = 9 ] && [ "$NREC" = 18 ]; echo $?)" "started=${starts} records=${NREC}"
+check V15 "every drill has a STARTED record and exactly one outcome (contract 5)" "$([ "$starts" = 14 ] && [ "$NREC" = 28 ]; echo $?)" "started=${starts} records=${NREC}"
 echo "TOTAL pass=${PASS} fail=${FAIL} limitation=${LIMIT}" >> "$RESULTS"
 cat "$RESULTS"
 [ "$FAIL" = 0 ]

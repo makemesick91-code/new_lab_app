@@ -28,7 +28,7 @@ function rdsrAvailable(): ?string
 }
 
 /** Restores one fixture archive through the guest agent (user mode) and decides on the host. */
-function rdsrDrill(string $fixture, string $extensions = 'none'): array
+function rdsrDrill(string $fixture, string $extensions = 'none', string $pins = 'none', string $expectEnv = ''): array
 {
     $dir = sys_get_temp_dir().'/rdsr-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700, true);
@@ -46,7 +46,7 @@ function rdsrDrill(string $fixture, string $extensions = 'none'): array
         PB=$(stat -c %s "$T/payload"); PS=$(sha256sum "$T/payload" | cut -d' ' -f1)
         read -r PK PIV < <(dms_vm_input_key_iv)
         declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [payload_key]=$PK [payload_iv]=$PIV
-          [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$EXTS" [locale]=C.UTF-8
+          [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$EXTS" [locale]=C.UTF-8 [env_pins]="$PINS"
           [tmpfs_mib]=256 [memory_mib]=768 [tasks]=64 [timeout_seconds]=300)
         dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
         head -c 65536 /dev/zero > "$T/output.raw"
@@ -55,13 +55,14 @@ function rdsrDrill(string $fixture, string $extensions = 'none'): array
         for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done
         echo "expected_digest=$ED"
         echo "expected_shape=$ES"
-        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET" "$ES")")"
+        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET" "$ES" "$EXPECT_ENV")")"
         echo "units_left=$(systemctl --user list-units --all --plain --no-legend "$RUN.service" | wc -l)"
 
         SH;
     $process = new Process(['bash', '-c', $script], null, [
         'LIB' => base_path('scripts/lib'), 'GUEST' => base_path('scripts/restore-drill-vm-guest.sh'), 'T' => $dir,
         'ARCHIVE' => base_path("tests/Fixtures/restore-drill/{$fixture}.dump"), 'EXTS' => $extensions, 'PATH' => getenv('PATH'),
+        'PINS' => $pins, 'EXPECT_ENV' => $expectEnv,
         'XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'),
     ]);
     $process->setTimeout(240);
@@ -169,4 +170,67 @@ it('fails an index whose expression goes through a value\'s text form: it can bu
     expect($facts['sandbox_replay_section'] ?? null)->toBe('post_data_environment', json_encode($facts))
         ->and($facts['sandbox_stage'] ?? null)->toBe('environment_dependent')
         ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_22');
+});
+
+/**
+ * F3: a production-like restore environment (the contract's pinned settings) and the digest the host computes for it
+ * (the canonical lines of dms_env_expected_digest, which RestoreDrillEnvContractTest checks against the library).
+ */
+function rdsrEnv(array $over = []): array
+{
+    $tz = 'unknown';
+    if (preg_match('/^# version ([0-9]{4}[a-z])$/m', (string) @file_get_contents('/usr/share/zoneinfo/tzdata.zi'), $m)) {
+        $tz = $m[1];
+    }
+    $pins = array_merge([
+        'TimeZone' => 'Asia/Makassar', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'array_nulls' => 'on',
+        'lc_monetary' => 'C.UTF-8', 'lc_numeric' => 'C.UTF-8', 'lc_time' => 'C.UTF-8', 'extra_float_digits' => '1',
+        'bytea_output' => 'hex', 'xmlbinary' => 'base64', 'xmloption' => 'content', 'standard_conforming_strings' => 'on',
+        'quote_all_identifiers' => 'off', 'default_text_search_config' => 'pg_catalog.english', 'timezone_abbreviations' => 'Default',
+    ], $over);
+    $lines = ['pg_major=16', 'server_encoding=UTF8', 'locale_provider=libc', 'datcollate=C.UTF-8', 'datctype=C.UTF-8', 'collation_version=none', "tzdata_version={$tz}"];
+    foreach ($pins as $k => $v) {
+        $lines[] = "{$k}={$v}";
+    }
+
+    return [
+        collect($pins)->map(fn (string $v, string $k): string => "{$k}={$v}")->implode(';'),
+        hash('sha256', implode("\n", $lines)."\n"),
+    ];
+}
+
+it('restores under the contract\'s pinned environment, and the guest\'s environment digest equals the host\'s (F3)', function () {
+    [$pins, $digest] = rdsrEnv();
+    $facts = rdsrDrill('clean', 'none', $pins, $digest);
+
+    expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
+        ->and($facts['sandbox_env_digest'] ?? null)->toBe($digest);
+});
+
+it('FAILs when the restore environment the guest observed is not the signed contract\'s (F3)', function () {
+    [$pins] = rdsrEnv();
+    [, $other] = rdsrEnv(['TimeZone' => 'UTC']);
+    $facts = rdsrDrill('clean', 'none', $pins, $other);
+
+    expect($facts['decision'] ?? null)->toBe('FAIL:env_mismatch', json_encode($facts));
+});
+
+it('reproduces production\'s restore outcome under its pinned settings: array_nulls=off fails the load as the real restore would, on is GO (F3)', function () {
+    [$off, $offDigest] = rdsrEnv(['array_nulls' => 'off']);
+    $failed = rdsrDrill('arrnull', 'none', $off, $offDigest);
+    [$on, $onDigest] = rdsrEnv();
+    $go = rdsrDrill('arrnull', 'none', $on, $onDigest);
+
+    expect($failed['decision'] ?? null)->toBe('FAIL:unit_exit_20', json_encode($failed))
+        ->and($failed['sandbox_replay_section'] ?? null)->toBe('data')
+        ->and($failed['sandbox_replay_sqlstate'] ?? null)->toBe('22P02')
+        ->and($go['decision'] ?? null)->toBe('GO', json_encode($go));
+});
+
+it('refuses pinned settings outside the fifteen it knows, inside the unit too (F3)', function () {
+    [$pins] = rdsrEnv();
+    $facts = rdsrDrill('clean', 'none', str_replace('timezone_abbreviations=Default', 'search_path=public', $pins));
+
+    expect($facts['sandbox_stage'] ?? null)->toBe('env_pins_invalid', json_encode($facts))
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_12');
 });

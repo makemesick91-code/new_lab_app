@@ -40,8 +40,10 @@ function rdmeSh(string $script, array $env = []): array
 function rdmeManifest(string $dir, array $overrides = [], string $key = 'owner', string $namespace = 'dms-restore-role-manifest', array $extraLines = []): string
 {
     $fields = array_merge([
-        'DMS_ROLE_MANIFEST_CONTRACT' => '1',
+        'DMS_ROLE_MANIFEST_CONTRACT' => '2',
         'DMS_ROLE_MANIFEST_ID' => 'manifest-0001',
+        // F3: the manifest names the signed environment contract the drill must restore under.
+        'DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256' => str_repeat('c', 64),
         'DMS_ROLE_MANIFEST_ROLES' => 'app_runtime dms_owner',
         'DMS_ROLE_MANIFEST_RUNTIME_ROLE' => 'app_runtime',
         'DMS_ROLE_MANIFEST_R6_OWNER_ROLE' => 'none',
@@ -115,7 +117,9 @@ it('refuses a correctly signed manifest whose content is invalid', function (arr
     'reserved role' => [['DMS_ROLE_MANIFEST_ROLES' => 'app_runtime drill_super'], [], "role name 'drill_super' is reserved"],
     'runtime not listed' => [['DMS_ROLE_MANIFEST_RUNTIME_ROLE' => 'other'], [], 'RUNTIME_ROLE is not one of ROLES'],
     'owner not listed' => [['DMS_ROLE_MANIFEST_R6_OWNER_ROLE' => 'ghost'], [], 'R6_OWNER_ROLE is neither none nor one of ROLES'],
-    'unsupported contract' => [['DMS_ROLE_MANIFEST_CONTRACT' => '2'], [], 'unsupported contract'],
+    'unsupported contract' => [['DMS_ROLE_MANIFEST_CONTRACT' => '1'], [], 'unsupported contract'],
+    'no environment contract named (F3)' => [['DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256' => null], [], 'ENV_CONTRACT_SHA256 is missing'],
+    'an environment contract digest that is not a sha256 (F3)' => [['DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256' => 'none'], [], 'ENV_CONTRACT_SHA256 is not a sha256'],
 ]);
 
 it('refuses a revoked manifest, or one issued before the revocation list\'s not-before (PR-9)', function (string $list, int $exit, string $message) {
@@ -139,7 +143,7 @@ it('refuses a revoked manifest, or one issued before the revocation list\'s not-
 });
 
 /** The facts the orchestrator verifies on the host (restore-evidence.sh), for a development install. */
-const RDME_HOST_VERIFIED = 'backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits';
+const RDME_HOST_VERIFIED = 'backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits,env_contract,env_compatibility';
 
 /** This host's name as the orchestrator and the signer write it. */
 function rdmeHost(): string
@@ -169,8 +173,9 @@ function rdmeRequest(array $over = []): string
         'DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h,
         'DMS_DRILL_EVIDENCE_LIMITS' => 'vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,tasks=64',
         'DMS_DRILL_EVIDENCE_HOST_VERIFIED' => RDME_HOST_VERIFIED,
-        'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1',
-        'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo',
+        // F3 (contract 5): the environment contract and digest expected; the guest's environment digest equal to it.
+        'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,env_contract='.str_repeat('c', 64).',env='.str_repeat('e', 64),
+        'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo,env='.str_repeat('e', 64),
         'DMS_DRILL_EVIDENCE_DECISION' => 'GO',
     ], $over);
 
@@ -240,7 +245,7 @@ it('publishes signed, chained records atomically and keeps an independent head l
     expect($run['exit'])->toBe(0, $run['out'])
         ->and($run['out'])->toStartWith('VERIFIED 3 head=')
         ->and($entries)->toBe(['000001', '000002', '000003'])
-        ->and($first)->toContain("DMS_DRILL_EVIDENCE_CONTRACT=4\nDMS_DRILL_EVIDENCE_SEQ=000001\nDMS_DRILL_EVIDENCE_PREV_SHA256=genesis\n")
+        ->and($first)->toContain("DMS_DRILL_EVIDENCE_CONTRACT=5\nDMS_DRILL_EVIDENCE_SEQ=000001\nDMS_DRILL_EVIDENCE_PREV_SHA256=genesis\n")
         ->and($first)->toContain("DMS_DRILL_EVIDENCE_SIGNER=drill-host@dms\nDMS_DRILL_EVIDENCE_CALLER=operator\nDMS_DRILL_EVIDENCE_INSTALL=unverified:development\nDMS_DRILL_EVIDENCE_STORE_ID=0123456789abcdef0123456789abcdef\n")
         ->and($second)->toContain('DMS_DRILL_EVIDENCE_PREV_SHA256='.hash('sha256', $first)."\n")
         ->and(substr_count($head, "\n"))->toBe(3)
@@ -313,8 +318,8 @@ it('refuses to sign a replayed run, an invalid request, or onto a store that doe
         ->and($entries)->toBe(['000001']);
 })->with([
     ['replayed run id', 'is already recorded (replay refused)'],
-    ['missing key', 'request keys differ from contract 4'],
-    ['signer key smuggled in', 'request keys differ from contract 4'],
+    ['missing key', 'request keys differ from contract 5'],
+    ['signer key smuggled in', 'request keys differ from contract 5'],
     ['shell text in a value', 'request has an invalid DMS_DRILL_EVIDENCE_DECISION'],
     ['tampered store', 'the store does not verify, nothing is appended'],
 ]);
@@ -433,7 +438,7 @@ it('never signs a contradictory or invented record: the signer checks the reques
         ->and($entries)->toBe([]);
 })->with(function () {
     $h = str_repeat('a', 64);
-    $guest = fn (string $replace, string $with) => str_replace($replace, $with, 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo');
+    $guest = fn (string $replace, string $with) => str_replace($replace, $with, 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo,env='.str_repeat('e', 64));
 
     return [
         'GO whose guest digest differs' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('per_table_digest='.$h, 'per_table_digest='.str_repeat('b', 64))], 'guest per_table_digest differs'],
@@ -441,6 +446,9 @@ it('never signs a contradictory or invented record: the signer checks the reques
         'GO with another catalog shape' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('catalog_shape=1:2:0:2:0:0:1', 'catalog_shape=0:2:0:2:0:0:1')], 'guest catalog_shape differs'],
         'GO with user code' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('user_code_executed=0', 'user_code_executed=3')], 'a GO with user code on a restore path'],
         'GO from a VM with a NIC' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('vm_ifaces=lo', 'vm_ifaces=lo:eth0')], 'a GO from a VM with a network interface'],
+        // F3: a GO only for the restore environment of the signed contract.
+        'GO under another restore environment (F3)' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('env='.str_repeat('e', 64), 'env='.str_repeat('d', 64))], 'restore environment differs from the signed environment contract'],
+        'GO whose guest reports no environment (F3)' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('env='.str_repeat('e', 64), 'env=none')], 'restore environment differs from the signed environment contract'],
         'other limits' => [['DMS_DRILL_EVIDENCE_LIMITS' => 'vcpu=64,memory_mib=2048,disk_gib=10,minutes=30,tasks=64'], 'LIMITS are not the D6 limits'],
         'invented host-verified facts' => [['DMS_DRILL_EVIDENCE_HOST_VERIFIED' => 'nothing'], 'HOST_VERIFIED is not the fixed fact list'],
         'another drill host' => [['DMS_DRILL_EVIDENCE_DRILL_HOST' => 'elsewhere'], "DRILL_HOST is not this signer's host"],
@@ -457,7 +465,7 @@ it('still records a FAIL whose guest facts differ from the expectation: a failur
     mkdir("{$dir}/store", 0700);
     rdmeSignerConf($dir);
     $signerPath = rdmeInstallSigner();
-    $run = rdmeSignRun($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:per_table_rows_mismatch', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=1,per_table_digest='.str_repeat('b', 64).',catalog_shape=1:1:0:1:0:0:1,user_code=0,user_code_executed=0,fidelity=0:1:1:0,vm_ifaces=lo']));
+    $run = rdmeSignRun($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:per_table_rows_mismatch', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=1,per_table_digest='.str_repeat('b', 64).',catalog_shape=1:1:0:1:0:0:1,user_code=0,user_code_executed=0,fidelity=0:1:1:0,vm_ifaces=lo,env='.str_repeat('e', 64)]));
     rdmeCleanup($dir);
     rdmeCleanup(dirname($signerPath, 2));
 
@@ -551,7 +559,7 @@ it('records refused and aborted drills as signed non-GO events, asserting nothin
 
     return [
         'a refusal at the manifest stage' => [rdmeRefusal('REFUSED:manifest'), 0, 'RECORD 000002 '],
-        'an abort during the VM' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h, 'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1']), 0, 'RECORD 000002 '],
+        'an abort during the VM' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h, 'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,env_contract='.str_repeat('c', 64).',env='.str_repeat('e', 64)]), 0, 'RECORD 000002 '],
         'a refusal that claims host-verified facts' => [rdmeRefusal('REFUSED:manifest', ['DMS_DRILL_EVIDENCE_HOST_VERIFIED' => RDME_HOST_VERIFIED]), 1, 'claims host-verified facts'],
         'an abort that carries guest facts' => [rdmeRefusal('ABORTED:vm', ['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo']), 1, 'carries guest facts'],
         'a refusal naming an image the signer does not pin' => [rdmeRefusal('REFUSED:vm', ['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => str_repeat('c', 64)]), 1, 'is not a drill image pinned'],
