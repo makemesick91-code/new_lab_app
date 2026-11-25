@@ -56,6 +56,7 @@ function rdecContract(string $dir, array $over = [], string $key = 'owner', stri
         'DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS' => 'off',
         'DMS_ENV_SET_DEFAULT_TEXT_SEARCH_CONFIG' => 'pg_catalog.english',
         'DMS_ENV_SET_TIMEZONE_ABBREVIATIONS' => 'Default',
+        'DMS_ENV_SET_TRANSFORM_NULL_EQUALS' => 'off',
     ], $over);
     $file = "{$dir}/contract-".bin2hex(random_bytes(4));
     $lines = collect($fields)->filter(fn ($v) => $v !== null)->map(fn (string $v, string $k): string => "{$k}={$v}")->values()->all();
@@ -129,6 +130,8 @@ it('refuses a contract that is unsigned, tampered, wrongly signed, out of date o
         'a malformed value' => rdecContract($dir, ['DMS_ENV_SET_DATESTYLE' => 'iso']),
         'a shell value' => rdecContract($dir, ['DMS_ENV_SET_TIMEZONE' => '$(reboot)']),
         'another contract version' => rdecContract($dir, ['DMS_ENV_CONTRACT_VERSION' => '2']),
+        'an xmloption the archive overrides' => rdecContract($dir, ['DMS_ENV_SET_XMLOPTION' => 'document']),
+        'standard_conforming_strings off' => rdecContract($dir, ['DMS_ENV_SET_STANDARD_CONFORMING_STRINGS' => 'off']),
     };
     $run = rdecSh('dms_env_contract_verify "$C" "$A"', ['C' => $c, 'A' => "{$dir}/anchor"]);
     (new Process(['rm', '-rf', '--', $dir]))->run();
@@ -149,6 +152,9 @@ it('refuses a contract that is unsigned, tampered, wrongly signed, out of date o
     ['a malformed value', 'DMS_ENV_SET_DATESTYLE has an invalid value'],
     ['a shell value', 'DMS_ENV_SET_TIMEZONE has an invalid value'],
     ['another contract version', 'DMS_ENV_CONTRACT_VERSION has an invalid value'],
+    // pg_restore's preamble sets both in every restore session, so no restore ever runs under another value.
+    ['an xmloption the archive overrides', 'DMS_ENV_SET_XMLOPTION has an invalid value'],
+    ['standard_conforming_strings off', 'DMS_ENV_SET_STANDARD_CONFORMING_STRINGS has an invalid value'],
 ]);
 
 it('refuses a revoked contract, by id or by the not-before date of the revocation list', function (string $list, string $message) {
@@ -187,7 +193,10 @@ it('accepts a contract the drill image matches, and refuses every incompatibilit
     'another tzdata' => [['DMS_ENV_TZDATA_VERSION' => '2024a'], [], 'none', 'tzdata 2024a in production'],
     'a locale the image lacks' => [['DMS_ENV_DATCOLLATE' => 'id_ID.UTF-8', 'DMS_ENV_DATCTYPE' => 'id_ID.UTF-8'], [], 'none', 'locale id_ID.UTF-8 is not available'],
     'a monetary locale the image lacks' => [['DMS_ENV_SET_LC_MONETARY' => 'id_ID.UTF-8'], [], 'none', 'locale id_ID.UTF-8 is not available'],
-    'the locale present in the image' => [['DMS_ENV_DATCOLLATE' => 'en_US.UTF-8', 'DMS_ENV_DATCTYPE' => 'en_US.UTF-8'], ['DMS_IMAGE_LOCALES' => 'C C.utf8 POSIX en_US.utf8'], 'none', null],
+    'the locale present in the image' => [['DMS_ENV_DATCOLLATE' => 'en_US.UTF-8', 'DMS_ENV_DATCTYPE' => 'en_US.UTF-8', 'DMS_ENV_COLLATION_VERSION' => '2.39'], ['DMS_IMAGE_LOCALES' => 'C C.utf8 POSIX en_US.utf8'], 'none', null],
+    // R6F-E13: the collation version a database recorded must be the one its locale has on the image's glibc.
+    'a stale collation version (glibc upgraded under production)' => [['DMS_ENV_DATCOLLATE' => 'en_US.UTF-8', 'DMS_ENV_DATCTYPE' => 'en_US.UTF-8', 'DMS_ENV_COLLATION_VERSION' => '2.35'], ['DMS_IMAGE_LOCALES' => 'C C.utf8 POSIX en_US.utf8'], 'none', 'recorded collation version 2.35'],
+    'a collation version on a C locale' => [['DMS_ENV_COLLATION_VERSION' => '2.39'], [], 'none', 'recorded collation version 2.39 is not the none'],
     'collate and ctype differ' => [['DMS_ENV_DATCTYPE' => 'C'], [], 'none', 'different collate and ctype'],
     'the ICU provider' => [['DMS_ENV_LOCALE_PROVIDER' => 'icu', 'DMS_ENV_ICU_LOCALE' => 'und'], [], 'none', 'only the libc locale provider'],
     'a non-UTF8 database' => [['DMS_ENV_SERVER_ENCODING' => 'LATIN1'], [], 'none', 'UTF8 databases only'],
@@ -217,11 +226,12 @@ it('derives the pinned settings and the expected environment digest canonically,
         'tzdata_version=2025b', 'TimeZone=Asia/Makassar', 'DateStyle=ISO, MDY', 'IntervalStyle=postgres', 'array_nulls=on', 'lc_monetary=C.UTF-8',
         'lc_numeric=C.UTF-8', 'lc_time=C.UTF-8', 'extra_float_digits=1', 'bytea_output=hex', 'xmlbinary=base64', 'xmloption=content',
         'standard_conforming_strings=on', 'quote_all_identifiers=off', 'default_text_search_config=pg_catalog.english', 'timezone_abbreviations=Default',
+        'transform_null_equals=off',
     ])."\n");
     [$pins, $digest] = explode("\n", $run['out']);
 
     expect($run['exit'])->toBe(0, $run['out'])
-        ->and($pins)->toBe('TimeZone=Asia/Makassar;DateStyle=ISO, MDY;IntervalStyle=postgres;array_nulls=on;lc_monetary=C.UTF-8;lc_numeric=C.UTF-8;lc_time=C.UTF-8;extra_float_digits=1;bytea_output=hex;xmlbinary=base64;xmloption=content;standard_conforming_strings=on;quote_all_identifiers=off;default_text_search_config=pg_catalog.english;timezone_abbreviations=Default')
+        ->and($pins)->toBe('TimeZone=Asia/Makassar;DateStyle=ISO, MDY;IntervalStyle=postgres;array_nulls=on;lc_monetary=C.UTF-8;lc_numeric=C.UTF-8;lc_time=C.UTF-8;extra_float_digits=1;bytea_output=hex;xmlbinary=base64;xmloption=content;standard_conforming_strings=on;quote_all_identifiers=off;default_text_search_config=pg_catalog.english;timezone_abbreviations=Default;transform_null_equals=off')
         ->and($digest)->toBe($expected);
 });
 
@@ -239,8 +249,14 @@ it('binds the contract into the drill: manifest contract 2 names it, the orchest
         ->and($evidence)->toContain('env_contract=[0-9a-f]{64},env=[0-9a-f]{64}$')
         ->and($evidence)->toContain('a GO whose restore environment differs from the signed environment contract')
         // Every restore session runs with the pins; the guest reports what a pinned session observes.
-        ->and($inner)->toContain('| PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-')
-        ->and($inner)->toContain('emit "env_digest=${envd}"');
+        ->and($inner)->toContain('| PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -At -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-')
+        // F3 review: the digest is measured at the end of EVERY restore session too, not only in a fresh one.
+        ->and($inner)->toContain('for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done')
+        ->and($inner)->toContain('[ "${#SECTION_ENV[@]}" -ge 3 ] || envd=inconsistent')
+        ->and($inner)->toContain('emit "env_digest=${envd}"')
+        // The image properties must describe the image QEMU is pinned to, checked before boot.
+        ->and($orch)->toContain('refuse "the image properties describe another image than the pinned drill image"')
+        ->and($orch)->toContain('dd if="$ENV_CONTRACT" iflag=nofollow,nonblock');
 });
 
 it('keeps the production collection procedure read-only and separate: it only prints a draft for the owner to sign (F3)', function () {
@@ -249,6 +265,9 @@ it('keeps the production collection procedure read-only and separate: it only pr
 
     expect($script)->toContain('default_transaction_read_only=on')
         ->and($script)->toContain('UNSIGNED DRAFT')
+        // stdout is exactly the draft (no comment lines), and the restore's own PGOPTIONS stay in effect.
+        ->and($script)->toContain('PGOPTIONS="${PGOPTIONS:-} -c default_transaction_read_only=on"')
+        ->and($script)->not->toMatch('/^echo "#/m')
         ->and($sql)->not->toMatch('/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\s/')
         ->and($script)->not->toContain('ssh-keygen -Y sign');
 });

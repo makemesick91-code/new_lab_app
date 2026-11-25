@@ -112,7 +112,18 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
       - **Operator.** It has no route to the signer at all, only to the witness `show`. The decision is shown only
         after it is recorded.
       - **Evidence.** The drill lock is taken before the start. The verifier replays contract 4.
-11. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
+11. **Restore Environment Compatibility Contract (F3, owner decision RECORD AND PIN; design §0.14):**
+    - A GO only under a contract the owner signed (`-n dms-restore-env-contract`), named by the role manifest
+      (contract 2, `DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256`), revocable, valid at most 90 days.
+    - Exact properties are checked against the drill image's own properties, which are read from the image at build
+      time, bound to its sha256 and covered by INSTALL. This happens before any VM boots.
+    - The sixteen pinned settings apply to the guard and every restore session. GO needs the guest's environment
+      digest, measured at the end of every restore session and in a fresh one, to equal the host's (evidence
+      contract 5). `xmloption` is `content` and `standard_conforming_strings` is `on` (the archive's preamble sets both).
+    - The recorded collation version must be the one the locale has on the image's glibc (`none` for C locales).
+    - Production values come only from the signed contract, never from the operator or the guest. Never collect them
+      from production without a separate owner authorization (read-only, `scripts/restore-env-contract-collect.sh`).
+12. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
    patient data and is removed with the run directory.
 
 ## Acceptance before A-1 may be reported for closure

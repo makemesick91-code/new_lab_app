@@ -53,7 +53,7 @@ envcontract() { # <file> <id> [KEY=value …]
     printf 'DMS_ENV_SET_TIMEZONE=Asia/Makassar\nDMS_ENV_SET_DATESTYLE=ISO, MDY\nDMS_ENV_SET_INTERVALSTYLE=postgres\nDMS_ENV_SET_ARRAY_NULLS=on\n'
     printf 'DMS_ENV_SET_LC_MONETARY=C.UTF-8\nDMS_ENV_SET_LC_NUMERIC=C.UTF-8\nDMS_ENV_SET_LC_TIME=C.UTF-8\nDMS_ENV_SET_EXTRA_FLOAT_DIGITS=1\n'
     printf 'DMS_ENV_SET_BYTEA_OUTPUT=hex\nDMS_ENV_SET_XMLBINARY=base64\nDMS_ENV_SET_XMLOPTION=content\nDMS_ENV_SET_STANDARD_CONFORMING_STRINGS=on\n'
-    printf 'DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS=off\nDMS_ENV_SET_DEFAULT_TEXT_SEARCH_CONFIG=pg_catalog.english\nDMS_ENV_SET_TIMEZONE_ABBREVIATIONS=Default\n'
+    printf 'DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS=off\nDMS_ENV_SET_DEFAULT_TEXT_SEARCH_CONFIG=pg_catalog.english\nDMS_ENV_SET_TIMEZONE_ABBREVIATIONS=Default\nDMS_ENV_SET_TRANSFORM_NULL_EQUALS=off\n'
   } > "$f"
   for kv in "$@"; do k="${kv%%=*}"; sed -i "s|^${k}=.*|${kv}|" "$f"; done
   ssh-keygen -q -Y sign -f "$W/owner" -n dms-restore-env-contract "$f" > /dev/null

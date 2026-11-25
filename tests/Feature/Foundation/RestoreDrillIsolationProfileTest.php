@@ -138,7 +138,7 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
         ->and(strpos($code, 'restore_part functions "$R/list.functions"'))->toBeLessThan(strpos($code, 'restore_part triggers "$R/list.triggers"'))
         ->and(strpos($code, 'restore_part triggers "$R/list.triggers"'))->toBeLessThan(strpos($code, 'restore_part acls "$R/list.acls"'))
         ->and($code)->toContain("re_fn='^[0-9]+; [0-9]+ [0-9]+ (FUNCTION [^ ]+ |(COMMENT|ACL) [^ ]+ FUNCTION )'")
-        ->and($code)->toContain('-U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-')
+        ->and($code)->toContain('-U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-')
         ->and($code)->toContain('restore_part pre_data "$R/list.schema" pre-data')
         ->and(strpos($code, 'restore_part pre_data "$R/list.schema" pre-data'))->toBeLessThan(strpos($code, '-d "$DB" -f "$GUARD"'))
         ->and(strpos($code, '-d "$DB" -f "$GUARD"'))->toBeLessThan(strpos($code, 'restore_part data "$R/list.schema" data'))

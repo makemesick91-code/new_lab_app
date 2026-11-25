@@ -128,6 +128,43 @@ the only supported way to replay a backup for a drill. Design and evidence:
   column or index names a function of the dump. The restore order keeps every dump function out of the database until
   the end, so no code from the backup can run (P5-1). For an honest schema, it means the schema uses its own
   functions outside triggers, which the drill does not accept.
+- **Restore Environment Compatibility Contract (F3, RECORD AND PIN).** A drill reports GO only for production's
+  restore environment as recorded in a contract the owner signed. Specification: `scripts/lib/restore-envcontract.sh`.
+  - **Collect** production's values read-only with `scripts/restore-env-contract-collect.sh <database>`. Only with a
+    separate owner authorization, on the production database host, as the account and connection settings of the
+    real restore. It prints an UNSIGNED DRAFT and changes nothing.
+  - **Review** every line. Fill in the id (8–64 of `a-z0-9-`), the issuing principal and the validity window (at most
+    90 days).
+  - **Sign** offline with the owner key: `ssh-keygen -Y sign -f <owner key> -n dms-restore-env-contract <file>`.
+    Never edit the file after signing; a signature on another namespace is refused.
+  - **Bind:** the next role manifest (contract 2) names the contract's sha256 in
+    `DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256`. Copy both, with their `.sig` files, into the inbox.
+  - **Classes, checked before any VM boots:**
+    - exact, against the drill image's properties: PG major, UTF8, libc provider, collate = ctype, collation version,
+      glibc, ICU, tzdata, extensions, locales present;
+    - compatible: same major, image minor 16.15 or later;
+    - pinned: sixteen restore-session settings, applied to every restore session. The guest measures the environment
+      at the end of every restore session and once more in a fresh one; any difference reports `inconsistent`.
+    - `xmloption` must be `content` and `standard_conforming_strings` must be `on`: pg_restore's own preamble sets
+      both in every restore session, in production as in the drill. The collector notes another server value on
+      stderr; the verifier refuses it.
+    - collation version: `none` for C, POSIX and C.* locales; otherwise the image's glibc version. A database that
+      recorded another (stale) version is refused before boot.
+  - **Evidence store:** records of evidence contract 5 carry the environment contract. A store holding records of an
+    earlier contract cannot be extended; start a new store (new store id) and keep the old one, with its witness
+    copies, for reference.
+  - **Retention:** keep every signed role manifest and environment contract, with its `.sig`, for as long as a record
+    naming its sha256 is kept. An independent verifier needs them to check a record.
+  - **When production changes** (PostgreSQL minor or major, OS packages, locale, server or role settings), collect and
+    sign a new contract. Revoke the old one in the revocation list (`revoked <id>`). If the drill image no longer
+    matches, rebuild it so its properties do.
+- **Reading an environment refusal or FAIL:**
+  - `REFUSED:env_contract`: the contract is missing, unsigned, expired, revoked, or not the one the manifest names.
+  - `REFUSED:env_compatibility`: the drill image cannot reproduce production's environment (the message names the
+    property). Rebuild the image or record a new contract.
+  - `FAIL:env_mismatch`: the guest did not report the contract's environment, or a restore session ended in another
+    one (`inconsistent`: the archive itself changed a pinned setting).
+  - `FAIL:image_properties_mismatch`: the booted image is not the one whose properties were checked.
 - **Reading a load-guard refusal (`FAIL:unit_exit_21`) or `environment_dependent` (`FAIL:unit_exit_22`):** a CHECK,
   generated column, partition key or index of the schema depends on the session or the cluster. Examples are the
   clock, the role, an XML expression, a value converted through its text form, or an object-id type such as
@@ -137,7 +174,8 @@ the only supported way to replay a backup for a drill. Design and evidence:
 ```bash
 # On the ISOLATED DRILL HOST only (never on production), as the operator, with both files in the inbox:
 sudo -n -u dmsdrill-runner -- /usr/local/lib/dms-restore-drill/drill/scripts/restore-drill-vm.sh \
-  --expected-sha256 <hex> --manifest /var/lib/dms-restore-drill/inbox/<manifest> /var/lib/dms-restore-drill/inbox/<archive.dump>
+  --expected-sha256 <hex> --manifest /var/lib/dms-restore-drill/inbox/<manifest> \
+  --env-contract /var/lib/dms-restore-drill/inbox/<environment contract> /var/lib/dms-restore-drill/inbox/<archive.dump>
 # The witness log, to copy off the host after every drill (one line per evidence record; the last line is the head):
 sudo -n -u dmsdrill-witness -- /usr/local/lib/dms-restore-drill/witness/restore-drill-evidence-witness.sh show
 # Only after the signer reported a record published but not witnessed (root, as the signer account):

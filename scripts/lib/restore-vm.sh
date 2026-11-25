@@ -45,8 +45,8 @@ _dms_vm_input_value_ok() {
     runtime_role) [[ "$2" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] ;;
     extension_allowlist) [[ "$2" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] ;;
     locale) [[ "$2" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] ;;
-    # F3: the contract's pinned restore-session settings, all fifteen, or none.
-    env_pins) [[ "$2" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14})$ ]] ;;
+    # F3: the contract's pinned restore-session settings, all sixteen, or none.
+    env_pins) [[ "$2" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){15})$ ]] ;;
     tmpfs_mib | memory_mib | tasks | timeout_seconds) [[ "$2" =~ ^[1-9][0-9]{0,6}$ ]] ;;
     *) return 1 ;;
   esac

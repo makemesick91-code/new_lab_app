@@ -186,7 +186,7 @@ it('pins the orchestrator to D6, refuses the production host (D1), and keeps hos
         ->and($code)->toContain('[ "$(hostname)" != "$PROD_HOSTNAME" ]')
         ->and($code)->toContain('[ ! -e "$PROD_APP_DIR" ]')
         // PR-7, VR-10: verified in this shell from one private copy; PR-9: revocation.
-        ->and($code)->toContain('cat -- "$MANIFEST" > "$WORK/manifest"')
+        ->and($code)->toContain('dd if="$MANIFEST" iflag=nofollow,nonblock bs=8192 count=1 status=none > "$WORK/manifest"')
         ->and($code)->toContain('dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify"')
         ->and($code)->not->toContain('$(dms_restore_manifest_verify')
         ->and($code)->toContain('dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS]}"')
