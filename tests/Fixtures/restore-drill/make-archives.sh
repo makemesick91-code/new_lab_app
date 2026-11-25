@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb (.dump).
+# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb, agebomb, aclbomb (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -152,7 +152,15 @@ dump rd_regconst regconst
 base rd_idxbomb
 q -U app_runtime -d rd_idxbomb -c "CREATE INDEX items_ftext ON items (((id::double precision / 3)::text))"
 dump rd_idxbomb idxbomb
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# Second fix verification (R6F-P5, R6F-P6): age() reads TimeZone; ACL items hold cluster-assigned role ids.
+base rd_agebomb
+q -U app_runtime -d rd_agebomb -c "CREATE TABLE subs (starts_at timestamptz, ends_at timestamptz, CONSTRAINT subs_month CHECK (age(ends_at, starts_at) < interval '1 mon'))" \
+  -c "SET TimeZone = 'UTC'" -c "INSERT INTO subs VALUES ('2026-01-31 17:00+00', '2026-02-28 17:00+00')"
+dump rd_agebomb agebomb
+base rd_aclbomb
+q -U app_runtime -d rd_aclbomb -c "CREATE TABLE grants (acl aclitem)" -c "INSERT INTO grants VALUES ('app_runtime=r/app_runtime')"
+dump rd_aclbomb aclbomb
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb rd_agebomb rd_aclbomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do

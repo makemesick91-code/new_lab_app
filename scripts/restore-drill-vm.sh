@@ -206,7 +206,7 @@ RECORDABLE=1
 [ -n "$BACKUP_FILE" ] || refuse "the backup file is required"
 WORK=""; VM_PID=""; INSPECT_UNIT=""
 # vm_idle: the supervisor's QEMU unit is not running (a status query; any account may ask).
-vm_idle() { case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in inactive | failed | '') return 0 ;; *) return 1 ;; esac; }
+vm_idle() { case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in inactive | failed) return 0 ;; *) return 1 ;; esac; }
 # stop_vm: TERM first, which timeout forwards to sudo and sudo relays to the supervisor; the supervisor stops the QEMU
 # unit at once (R6F-L1). KILL only if that did not end it within 30 s; then wait until the unit itself has stopped.
 stop_vm() {
@@ -353,6 +353,9 @@ timeout --kill-after=30 "$((MINUTES * 60 + 300))" sudo -n -- "${C[DMS_DRILL_SUPE
 VM_PID=$!
 wait "$VM_PID"
 VM_PID=""
+# R6F-E7: once the VM has ended, its outcome is decided and recorded without interruption (an abort here would let an
+# operator who watches the unit replace an outcome with ABORTED).
+trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
 rm -f -- "$WORK/input.raw"
 LAUNCH="$(grep -a -E '^(QEMU_LAUNCH|SUPERVISOR) ' "$WORK/vm.status" | tail -n 1 | head -c 200 | tr -cd '[:print:]')"
 QEMU_EXIT=x

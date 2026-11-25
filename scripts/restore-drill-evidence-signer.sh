@@ -118,8 +118,10 @@ install_state() {
   [ -n "$an" ] && [ -n "$rv" ] || { echo "unverified:trust_roots_unknown"; return 0; }
   local -a roots=()
   for f in "$an" "$rv"; do [ -e "$f" ] && roots+=("$f"); done
-  [ -r /etc/sudoers.d/dms-restore-drill ] || { echo "unverified:sudoers_unreadable"; return 0; }
-  cfg+=("${roots[@]}" /etc/sudoers.d/dms-restore-drill)
+  # The rules themselves live in /etc/dms-restore-drill/sudoers (root 0444), which the fixed drop-in
+  # /etc/sudoers.d/dms-restore-drill only @includes (/etc/sudoers.d is not readable by other accounts).
+  [ -r /etc/dms-restore-drill/sudoers ] || { echo "unverified:sudoers_unreadable"; return 0; }
+  cfg+=("${roots[@]}" /etc/dms-restore-drill/sudoers)
   # R6C-8: the orchestrator's own library directory must be there in full, not only "enough files".
   for f in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
     [ -f "$o/scripts/lib/$f" ] || { echo "unverified:install_incomplete"; return 0; }
@@ -141,7 +143,17 @@ install_state() {
     && grep -qx "DMS_DRILL_SUPERVISOR_COMMAND=${sv}" /etc/dms-restore-drill/drill.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
   # R6F-E4: the supervisor starts the very launcher this digest covers and checks the very store this signer keeps.
   grep -qx "DMS_SUPERVISOR_QEMU_LAUNCHER=${q}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null \
-    && grep -qx "DMS_SUPERVISOR_SIGNER_STORE=${STORE}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
+    && grep -qx "DMS_SUPERVISOR_SIGNER_STORE=${STORE}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null \
+    && grep -qx "DMS_SUPERVISOR_PG_BINDIR=${pb}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
+  # R6F-E8: the evidence store and the witness log live on file systems that no world-writable directory shares, so
+  # filling a disk can never stop a publication half way.
+  local sd wd wl p
+  wl="$(sed -n 's/^DMS_WITNESS_LOG=//p' /etc/dms-restore-drill/witness.conf 2> /dev/null | head -n 1)"
+  sd="$(stat -c %d -- "$STORE" 2> /dev/null)"; wd="$(stat -c %d -- "$(dirname -- "${wl:-/nonexistent/x}")" 2> /dev/null)"
+  [ -n "$sd" ] && [ -n "$wd" ] || { echo "unverified:evidence_filesystem_unknown"; return 0; }
+  for p in /tmp /var/tmp /dev/shm; do
+    [ "$(stat -c %d -- "$p")" != "$sd" ] && [ "$(stat -c %d -- "$p")" != "$wd" ] || { echo "unverified:evidence_on_shared_filesystem"; return 0; }
+  done
   for f in "${files[@]}"; do lines+=("$(sha256sum -- "$f")"); done
   code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
   lines=()
@@ -166,9 +178,18 @@ dms_trusted_canonical "$HEADLOG" || { echo "SIGNER: the head log path is not can
 why="$(dms_trusted_dir "head log directory" "$(dirname -- "$HEADLOG")" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 [ ! -L "$HEADLOG" ] && { [ ! -e "$HEADLOG" ] || [ "$(stat -c '%u' -- "$HEADLOG")" = "$(id -u)" ]; } || { echo "SIGNER: the head log is not the signer's"; exit 2; }
 [ -e "$HEADLOG" ] || : > "$HEADLOG"
+# R6F-E6: on a drill host no caller limit on processes, CPU time or address space reaches the signer (sudo pins them;
+# this is the signer's own check): a lowered limit could make it fail between publication and the witness.
+if [ "$PROFILE" = drill-host ]; then
+  for o in u t v; do
+    ulimit -S "-$o" unlimited 2> /dev/null
+    [ "$(ulimit -H "-$o")" = unlimited ] && [ "$(ulimit -S "-$o")" = unlimited ] || { echo "SIGNER: refused: a process, CPU or memory limit is set (ulimit -$o)"; exit 1; }
+  done
+fi
 # R6C-2: no relayed or terminal signal stops the signer half way (sudo relays every catchable signal to it).
 trap '' INT TERM HUP QUIT USR1 USR2 ALRM PIPE TSTP TTIN TTOU
-TMP="$(mktemp -d)"
+# R6F-E8: working files in the signer's own directory, never in a shared /tmp another identity can fill.
+TMP="$(mktemp -d "$(dirname -- "$HEADLOG")/.signer-tmp.XXXXXX")" || { echo "SIGNER: cannot create its working directory"; exit 1; }
 trap 'rm -rf -- "$TMP"' EXIT
 
 # --- sign: only a sudo caller on the allowlist, never the signer itself; the request is read BEFORE the store lock
@@ -280,8 +301,8 @@ fi
 if [ "${bind%% *}" = open ] && [ "$PROFILE" = drill-host ]; then
   # R6F-E1: never close a run whose VM may still be running.
   case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in
-    inactive | failed | '') : ;;
-    *) unlock; echo "SIGNER: refused: a drill VM is still running; its run is not closed"; exit 1 ;;
+    inactive | failed) : ;;
+    *) unlock; echo "SIGNER: refused: a drill VM may still be running; its run is not closed"; exit 1 ;;
   esac
 fi
 if [ "${bind%% *}" = open ]; then

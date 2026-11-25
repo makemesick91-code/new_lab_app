@@ -388,12 +388,20 @@ DECLARE
   problem text;
   r record;
   regt text;
+  sens text;
+  tf text := ':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) ';
 BEGIN
-  -- R6F-P2: the object-id types (and their arrays), whose values the RESTORING cluster assigns.
+  -- R6F-P2, R6F-P6: the types (and arrays) whose values the RESTORING cluster assigns: object ids, and ACL items (role
+  -- ids). R6F-P7: the types whose text form depends on session settings (time zone, styles, float digits, bytea and
+  -- XML output); a conversion through the text form is refused only when one of them is involved.
   SELECT string_agg(t.oid::text, '|') INTO regt FROM pg_type t
    WHERE t.typnamespace = 'pg_catalog'::regnamespace
      AND ltrim(t.typname, '_') = ANY (ARRAY['regclass', 'regtype', 'regproc', 'regprocedure', 'regoper', 'regoperator',
-       'regrole', 'regnamespace', 'regcollation', 'regconfig', 'regdictionary']);
+       'regrole', 'regnamespace', 'regcollation', 'regconfig', 'regdictionary', 'aclitem']);
+  SELECT string_agg(t.oid::text, '|') INTO sens FROM pg_type t
+   WHERE t.typnamespace = 'pg_catalog'::regnamespace
+     AND ltrim(t.typname, '_') = ANY (ARRAY['float4', 'float8', 'bytea', 'time', 'timetz', 'interval', 'timestamptz',
+       'timestamp', 'date', 'money', 'xml', 'point', 'lseg', 'path', 'box', 'polygon', 'line', 'circle', 'record']);
   WITH ext AS (
     SELECT classid, objid FROM pg_depend WHERE deptype = 'e'
   ), expr AS (
@@ -461,24 +469,29 @@ BEGIN
     -- R6F-P1: IMMUTABLE by PostgreSQL's label, yet the result depends on session settings (TimeZone, extra_float_digits,
     -- bytea_output, IntervalStyle, xmlbinary …): an XML expression, a conversion through a value's text form, a domain
     -- coercion, or a call of such an output or XML function. Refused in the dump's own objects.
-    SELECT e.what || ' uses an XML expression, a text-form conversion or a domain coercion (session-dependent)'
-      FROM expr e WHERE e.uoid >= 16384 AND e.tree ~ '[{](XMLEXPR|COERCEVIAIO|COERCETODOMAIN) '
+    SELECT e.what || ' uses an XML expression, a domain coercion, or a text-form conversion of a session-dependent value'
+      FROM expr e
+     WHERE e.uoid >= 16384
+       AND (e.tree ~ '[{](XMLEXPR|COERCETODOMAIN) '
+            OR (e.tree ~ '[{]COERCEVIAIO ' AND (e.tree ~ (tf || '(' || sens || ')[ }]') OR e.tree ~ ':varattno 0 ' OR e.tree ~ '[{]ROWEXPR ')))
     UNION ALL
     SELECT f.what || ' calls ' || p.oid::regprocedure::text || ' (its result depends on session settings)'
       FROM fns f JOIN pg_proc p ON p.oid = f.fn
      WHERE f.uoid >= 16384 AND p.pronamespace = 'pg_catalog'::regnamespace
        AND (p.proname = ANY (ARRAY['float4out', 'float8out', 'byteaout', 'time_out', 'timetz_out', 'box_out', 'circle_out',
               'line_out', 'lseg_out', 'path_out', 'point_out', 'poly_out'])
-            OR p.prorettype = 'pg_catalog.xml'::regtype OR 'pg_catalog.xml'::regtype = ANY (p.proargtypes::oid[]))
+            OR p.prorettype = 'pg_catalog.xml'::regtype OR 'pg_catalog.xml'::regtype = ANY (p.proargtypes::oid[])
+            -- R6F-P5: labelled IMMUTABLE, yet age() reads TimeZone and quote_ident() quote_all_identifiers.
+            OR p.oid = ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::regprocedure, 'pg_catalog.quote_ident(text)'::regprocedure]::oid[]))
     UNION ALL
     -- R6F-P2: an object id (regclass …) in an expression or as a column: the restoring cluster assigns it, so a check
     -- over it can hold in the drill's fresh cluster and fail in a real restore.
-    SELECT e.what || ' uses an object-id type (its value is assigned by the restoring cluster)'
+    SELECT e.what || ' uses an object-id or ACL type (its value is assigned by the restoring cluster)'
       FROM expr e
      WHERE e.uoid >= 16384 AND regt IS NOT NULL
-       AND e.tree ~ (':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) (' || regt || ')[ }]')
+       AND e.tree ~ (tf || '(' || regt || ')[ }]')
     UNION ALL
-    SELECT format('column %s.%I', a.attrelid::regclass, a.attname) || ' has an object-id type ' || format_type(a.atttypid, NULL) || ' (its values are assigned by the restoring cluster)'
+    SELECT format('column %s.%I', a.attrelid::regclass, a.attname) || ' has an object-id or ACL type ' || format_type(a.atttypid, NULL) || ' (its values are assigned by the restoring cluster)'
       FROM pg_attribute a JOIN pg_class cl ON cl.oid = a.attrelid
      WHERE cl.oid >= 16384 AND cl.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
        AND regt IS NOT NULL AND a.atttypid::text ~ ('^(' || regt || ')$')

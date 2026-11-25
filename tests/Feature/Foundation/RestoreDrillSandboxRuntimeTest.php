@@ -156,7 +156,7 @@ it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-
 it('refuses a CHECK that depends on the session or the clock: it would hold in the drill and fail in a real restore (R6B-1)', function () {
     // R6F-P1, R6F-P2 (fix verification of round 6): IMMUTABLE by label yet session-dependent (TimeZone through XML,
     // extra_float_digits through a text cast), and object ids the restoring cluster assigns (a column, a constant).
-    foreach (['rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst'] as $fixture) {
+    foreach (['rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'agebomb', 'aclbomb'] as $fixture) {
         $facts = rdsrDrill($fixture);
         expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', $fixture.' '.json_encode($facts))
             ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');

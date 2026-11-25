@@ -87,7 +87,8 @@ case "$MODE" in
     [[ " ${C[DMS_WITNESS_SHOW_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not read"; exit 1; }
     # R6F-E1: no lock at all. The log is only ever replaced by a rename, so one read is a whole, consistent version;
     # readers can never queue ahead of the signer's append.
-    snap="$(mktemp)" || { echo "WITNESS: cannot read"; exit 1; }
+    # R6F-E8: the snapshot is kept in the witness's own directory, never in a shared /tmp another identity can fill.
+    snap="$(mktemp "$(dirname -- "$LOG")/.snapshot.XXXXXX")" || { echo "WITNESS: cannot read"; exit 1; }
     trap 'rm -f -- "$snap"' EXIT
     cat -- "$LOG" > "$snap" || { echo "WITNESS: cannot read"; exit 1; }
     log_ok "$snap" || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }

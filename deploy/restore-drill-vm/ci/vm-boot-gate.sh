@@ -151,7 +151,7 @@ sudo -n -u "$WIT" -- "$L/witness/restore-drill-evidence-witness.sh" show > "$OUT
 sudo sh -c "cp /var/lib/dmsdrill-qemu/console/*.log /var/lib/dmsdrill-qemu/console/*.stderr '$OUT/evidence/'" 2> /dev/null || true
 sudo chown -R "$(id -un):" "$OUT/evidence"
 cp -- "$PINNED" "$OUT/evidence/pinned-anchor"
-r="$(bash -c '. "$1/scripts/lib/restore-evidence.sh"; dms_evidence_verify_store "$2/store" "$2/pinned-anchor" "$2/head.log" "$2/witness.log"' _ "$REPO" "$OUT/evidence" 2>&1)"
+r="$(bash -c '. "$1/scripts/lib/restore-evidence.sh"; dms_evidence_verify_store "$2/store" "$2/pinned-anchor" "$2/head.log" "$2/witness.log" 1' _ "$REPO" "$OUT/evidence" 2>&1)"
 check V13 "the operator verifies the exported store against the witness with the key pinned before any record (R6C-5)" "$(case "$r" in "VERIFIED ${NREC} head="*) echo 0 ;; *) echo 1 ;; esac)" "$r"
 check V8 "the operator cannot read the signer's key" "$([ ! -r /var/lib/dmsdrill-signer/signing-key ]; echo $?)" "$(sudo stat -c '%U %a' /var/lib/dmsdrill-signer/signing-key 2> /dev/null)"
 for f in "$OUT"/evidence/store/*/record; do grep -h '^DMS_DRILL_EVIDENCE_\(SEQ\|RUN_ID\|INSTALL\|DECISION\)=' "$f" | tr '\n' ' '; echo; done > "$OUT/evidence/decisions.txt"

@@ -168,12 +168,13 @@ dms_vm_qemu_args() {
 # Fix verification of round 6 (R6F-L2, R6F-L3, R6F-L4): no io_uring (it opens sockets past RestrictAddressFamilies) and
 # no namespaces, mounts, keyrings or other privileged system calls; a private /dev/shm, no POSIX queues, IPC removed
 # with the unit, the journal and D-Bus sockets unreachable, other users' processes invisible; CPU, I/O and file size
-# bounded.
+# bounded. R6F-L13: no socket of any address family (QEMU here needs none): an AF_UNIX socket would reach host daemons
+# such as systemd-resolved, which forwards names to the network outside the unit's namespace.
 dms_vm_qemu_unit_properties() {
   local user="${1:?user}" work="${2:?work dir}" minutes="${3:?minutes}" console="${4:-none}"
   printf '%s\n' "--uid=${user}" "--gid=${user}" -p SupplementaryGroups=kvm -p Type=exec \
     -p "RuntimeMaxSec=$((minutes * 60 + 120))" -p KillMode=control-group -p TimeoutStopSec=20 -p SendSIGKILL=yes \
-    -p NoNewPrivileges=yes -p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX \
+    -p NoNewPrivileges=yes -p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=none \
     -p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0 \
     -p ProtectSystem=strict -p ProtectHome=yes -p PrivateIPC=yes -p "ReadWritePaths=${work}" \
     -p "TemporaryFileSystem=/tmp:size=64M,mode=1777,nosuid,nodev,noexec" -p "TemporaryFileSystem=/var/tmp:size=64M,mode=1777,nosuid,nodev,noexec" \
