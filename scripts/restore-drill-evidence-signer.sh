@@ -15,7 +15,14 @@
 # Configuration: DMS_SIGNER_CONF (default /etc/dms-restore-drill/signer.conf), owned by the signer or root, not
 # writable by others, outside any checkout. Keys: DMS_SIGNER_KEY, DMS_SIGNER_PRINCIPAL, DMS_SIGNER_ANCHOR,
 # DMS_SIGNER_STORE, DMS_SIGNER_HEAD_LOG, DMS_SIGNER_ALLOWED_CALLERS (space-separated user names),
-# DMS_SIGNER_IMAGE_SHA256 (space-separated sha256 digests of the drill images this host may report).
+# DMS_SIGNER_IMAGE_SHA256 (space-separated sha256 digests of the drill images this host may report),
+# DMS_SIGNER_PROFILE (drill-host | development), DMS_SIGNER_WITNESS_USER and DMS_SIGNER_WITNESS_COMMAND (the witness
+# identity and entrypoint; `none` in development), DMS_SIGNER_ORCHESTRATOR_DIR and DMS_SIGNER_QEMU_LAUNCHER (the
+# installed drill code the signer verifies itself and records as INSTALL; `none` in development).
+#   drill-host   the configuration is root-owned; every record is witnessed by a separate identity; the signer verifies
+#                that the orchestrator, the QEMU launcher, the witness and itself are root-owned installs nobody else
+#                can change, records their digest (INSTALL=root:<sha256>), and refuses a GO from any other install.
+#   development  local tests only: no witness, INSTALL=unverified:development on every record (never acceptance).
 # The sudoers rule must not allow SETENV or keep DMS_SIGNER_CONF; sudo's env_reset then always selects the default.
 # Exit: 0 done, 1 refused or failed, 2 misconfigured.
 set -uo pipefail
@@ -58,7 +65,7 @@ case "$MODE" in sign | verify | recover-head) : ;; *) echo "usage: restore-drill
 CONF="$DMS_SIGNER_CONF"
 why="$(dms_trusted_file "signer configuration" "$CONF" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 declare -A C=()
-KEYS="DMS_SIGNER_KEY DMS_SIGNER_PRINCIPAL DMS_SIGNER_ANCHOR DMS_SIGNER_STORE DMS_SIGNER_HEAD_LOG DMS_SIGNER_ALLOWED_CALLERS DMS_SIGNER_IMAGE_SHA256"
+KEYS="DMS_SIGNER_KEY DMS_SIGNER_PRINCIPAL DMS_SIGNER_ANCHOR DMS_SIGNER_STORE DMS_SIGNER_HEAD_LOG DMS_SIGNER_ALLOWED_CALLERS DMS_SIGNER_IMAGE_SHA256 DMS_SIGNER_PROFILE DMS_SIGNER_WITNESS_USER DMS_SIGNER_WITNESS_COMMAND DMS_SIGNER_ORCHESTRATOR_DIR DMS_SIGNER_QEMU_LAUNCHER"
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
   [[ "$line" =~ ^(DMS_SIGNER_[A-Z0-9_]+)=([A-Za-z0-9_./@:\ -]{1,255})$ ]] || { echo "SIGNER: unexpected line in ${CONF}"; exit 2; }
@@ -68,6 +75,53 @@ done < "$CONF"
 for k in $KEYS; do [ -n "${C[$k]:-}" ] || { echo "SIGNER: ${k} is missing"; exit 2; }; done
 [[ "${C[DMS_SIGNER_PRINCIPAL]}" =~ ^[A-Za-z0-9._@-]{1,64}$ ]] || { echo "SIGNER: bad principal"; exit 2; }
 [[ "${C[DMS_SIGNER_IMAGE_SHA256]}" =~ ^[0-9a-f]{64}(\ [0-9a-f]{64}){0,15}$ ]] || { echo "SIGNER: DMS_SIGNER_IMAGE_SHA256 must be 1-16 sha256 digests"; exit 2; }
+PROFILE="${C[DMS_SIGNER_PROFILE]}"
+case "$PROFILE" in
+  drill-host)
+    # Phase 3: only root may change what the signer trusts on a drill host.
+    dms_trusted_file "signer configuration" "$CONF" 0 "$(cd "$HERE/.." && pwd)" > /dev/null || { echo "SIGNER: a drill-host configuration must be owned by root"; exit 2; }
+    [[ "${C[DMS_SIGNER_WITNESS_USER]}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "SIGNER: a drill host needs a witness identity"; exit 2; }
+    WITNESS_UID="$(id -u -- "${C[DMS_SIGNER_WITNESS_USER]}" 2> /dev/null)" || { echo "SIGNER: the witness account does not exist"; exit 2; }
+    [ "$WITNESS_UID" != "$(id -u)" ] && [ "$WITNESS_UID" != 0 ] || { echo "SIGNER: the witness must be a separate, unprivileged identity"; exit 2; }
+    w="${C[DMS_SIGNER_WITNESS_COMMAND]}"
+    [ -f "$w" ] && [ ! -L "$w" ] && dms_trusted_canonical "$w" && [ "$(stat -c '%u' -- "$w")" = 0 ] && [ $(( 8#$(stat -c '%a' -- "$w") & 8#022 )) -eq 0 ] \
+      || { echo "SIGNER: the witness entrypoint is not a root-owned install"; exit 2; }
+    ;;
+  development)
+    [ "${C[DMS_SIGNER_WITNESS_USER]}" = none ] && [ "${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" = none ] || { echo "SIGNER: the development profile has no witness and no install"; exit 2; }
+    ;;
+  *) echo "SIGNER: DMS_SIGNER_PROFILE must be drill-host or development"; exit 2 ;;
+esac
+# install_state: the signer's OWN verification of the installed drill code (P5-4, Phase 3; never the caller's word).
+# Every file must be a root-owned regular file nobody else can write, in root-owned directories nobody else can write
+# (no sticky exception). Prints root:<sha256 over "<sha256>  <path>" lines> or unverified:<reason>.
+install_state() {
+  [ "$PROFILE" = drill-host ] || { echo "unverified:development"; return 0; }
+  local -a files=() lines=()
+  local f d st o="${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" q="${C[DMS_SIGNER_QEMU_LAUNCHER]}" w="${C[DMS_SIGNER_WITNESS_COMMAND]}"
+  shopt -s nullglob
+  files=("$o/scripts/restore-drill-vm.sh" "$o"/scripts/lib/*.sh "$o/deploy/production-host.conf" "$q" "$(dirname -- "$q")"/lib/*.sh \
+    "$w" "$(dirname -- "$w")"/lib/*.sh "$HERE/$(basename "${BASH_SOURCE[0]}")" "$HERE"/lib/*.sh)
+  shopt -u nullglob
+  [ "${#files[@]}" -ge 8 ] || { echo "unverified:install_incomplete"; return 0; }
+  for f in "${files[@]}"; do
+    [ -f "$f" ] && [ ! -L "$f" ] && dms_trusted_canonical "$f" || { echo "unverified:install_not_canonical"; return 0; }
+    st="$(stat -c '%u %a' -- "$f")"
+    [ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#022 )) -eq 0 ] || { echo "unverified:install_not_root_owned"; return 0; }
+    d="$(dirname -- "$f")"
+    while :; do
+      st="$(stat -c '%u %a' -- "$d")"
+      [ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#022 )) -eq 0 ] || { echo "unverified:install_directory_writable"; return 0; }
+      [ "$d" = / ] && break
+      d="$(dirname -- "$d")"
+    done
+    lines+=("$(sha256sum -- "$f")")
+  done
+  echo "root:$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+}
+# The witness (Phase 3): its log is read for every verification and extended after every publication.
+witness_show() { sudo -n -u "${C[DMS_SIGNER_WITNESS_USER]}" -- "${C[DMS_SIGNER_WITNESS_COMMAND]}" show; }
+witness_append() { sudo -n -u "${C[DMS_SIGNER_WITNESS_USER]}" -- "${C[DMS_SIGNER_WITNESS_COMMAND]}" append "$1" "$2"; }
 for k in DMS_SIGNER_KEY DMS_SIGNER_ANCHOR; do
   why="$(dms_trusted_file "$k" "${C[$k]}" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 done
@@ -93,6 +147,11 @@ if [ "$MODE" = sign ]; then
   why="$(dms_evidence_request_parse "$REQ")" || { echo "SIGNER: refused: ${why}"; exit 1; }
   dms_evidence_request_parse "$REQ" > /dev/null
   why="$(dms_evidence_request_policy "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "${C[DMS_SIGNER_IMAGE_SHA256]}" "$(date -u +%s)")" || { echo "SIGNER: refused: ${why}"; exit 1; }
+  INSTALL="$(install_state)"
+  # Phase 3: a GO from a drill host stands only on a verified, root-owned install of the drill code.
+  if [ "$PROFILE" = drill-host ] && [ "${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]}" = GO ] && [ "${INSTALL%%:*}" != root ]; then
+    echo "SIGNER: refused: a GO from an install the signer could not verify (${INSTALL})"; exit 1
+  fi
 fi
 
 exec {lock_fd}>> "${C[DMS_SIGNER_STORE]}/.lock"
@@ -100,7 +159,13 @@ flock -w 30 "$lock_fd" || { echo "SIGNER: the store is locked"; exit 1; }
 
 case "$MODE" in
   verify)
-    dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG"
+    if [ "$PROFILE" = drill-host ]; then
+      WLOG="$(mktemp)"; trap 'rm -f -- "$WLOG"' EXIT
+      witness_show > "$WLOG" || { echo "FAIL the witness log could not be read"; exit 1; }
+      dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$WLOG"
+    else
+      dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG"
+    fi
     exit $?
     ;;
   recover-head)
@@ -119,10 +184,32 @@ case "$MODE" in
       rm -f -- "$tmp"; echo "SIGNER: the head log could not be replaced"; exit 1
     fi
     echo "SIGNER: head log recovered to $(printf '%06d' "$n")"
+    if [ "$PROFILE" = drill-host ]; then
+      # The same crash window for the witness: it may be exactly one record behind the store, never more.
+      WLOG="$(mktemp)"; trap 'rm -f -- "$WLOG"' EXIT
+      witness_show > "$WLOG" || { echo "SIGNER: the witness log could not be read"; exit 1; }
+      if [ "$(wc -l < "$WLOG")" = $((10#$n - 1)) ]; then
+        witness_append "$(printf '%06d' "$n")" "${v##*head=}" || { echo "SIGNER: the witness refused the catch-up"; exit 1; }
+      fi
+    fi
     exit 0
     ;;
 esac
 
 # --- sign: publication runs with interrupts ignored, so a relayed signal cannot stop it half way (P4V-5) ------------
 trap '' INT TERM HUP QUIT
-dms_evidence_publish "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_KEY]}" "${C[DMS_SIGNER_PRINCIPAL]}" "$SUDO_USER" "$HEADLOG" "${C[DMS_SIGNER_ANCHOR]}"
+WLOG=""
+if [ "$PROFILE" = drill-host ]; then
+  # Before anything is added: the store, the head log and EVERY witnessed digest agree (no rollback, no truncation).
+  WLOG="$(mktemp)"; trap 'rm -f -- "$REQ" "$WLOG"' EXIT
+  witness_show > "$WLOG" || { echo "SIGNER: refused: the witness log could not be read"; exit 1; }
+  v="$(dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$WLOG")" || { echo "SIGNER: refused: the store does not match its witness (${v})"; exit 1; }
+fi
+OUT="$(dms_evidence_publish "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_KEY]}" "${C[DMS_SIGNER_PRINCIPAL]}" "$SUDO_USER" "$HEADLOG" "${C[DMS_SIGNER_ANCHOR]}" "$INSTALL")" || { echo "$OUT"; exit 1; }
+if [ "$PROFILE" = drill-host ]; then
+  read -r _ SEQ SHA <<< "$OUT"
+  witness_append "$SEQ" "$SHA" > /dev/null || { echo "SIGNER: ${OUT} was published but NOT witnessed; run recover-head"; exit 1; }
+  echo "${OUT} witnessed"
+else
+  echo "$OUT"
+fi

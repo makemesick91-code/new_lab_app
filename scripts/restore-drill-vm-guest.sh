@@ -32,8 +32,10 @@ WORK="$(mktemp -d)" || exit 2
 LINES="$WORK/lines"
 : > "$LINES"
 fact() { printf '%s=%s\n' "$1" "$2" >> "$LINES"; }
+ARCH=""
 finish() {
   dms_vm_output_write "$OUTPUT" "$LINES" || true
+  if [ -n "$ARCH" ]; then umount -- "$ARCH" 2> /dev/null; rmdir -- "$ARCH" 2> /dev/null; fi
   rm -rf -- "$WORK"
 }
 trap finish EXIT
@@ -66,13 +68,24 @@ if [ "$MODE" = system ] && getent passwd "$RUN_ID" > /dev/null 2>&1; then
 fi
 # The archive, decrypted once into this agent's private directory, and the load guard under a fresh tag (D5). Both are
 # bound read-only into the unit; the unit reads nothing else from this agent.
-dms_vm_input_payload "$INPUT" "$BYTES" "$KEY" "$IV" > "$WORK/archive.dump"
-[ "$(sha256sum < "$WORK/archive.dump" | cut -d' ' -f1)" = "${DMS_VM_INPUT[payload_sha256]}" ] || { fact guest_stage archive_digest_mismatch; exit 1; }
+# Phase 3 (plaintext at rest): in the VM (system mode) the plaintext archive lives only on a size-capped RAM tmpfs that
+# this agent mounts; it never reaches the root overlay, which is a file on the drill host's disk. (User mode, used only
+# by the local test harness with synthetic archives, has no mount right and keeps it in its private directory.)
+if [ "$MODE" = system ]; then
+  ARCH="$(mktemp -d -p /run dmsarchive.XXXXXX)" || { fact guest_stage archive_tmpfs_failed; exit 1; }
+  mount -t tmpfs -o "size=$(( BYTES / 1048576 + 16 ))m,mode=0700,noexec,nosuid,nodev" tmpfs "$ARCH" \
+    || { fact guest_stage archive_tmpfs_failed; exit 1; }
+  ADIR="$ARCH"
+else
+  ADIR="$WORK"
+fi
+dms_vm_input_payload "$INPUT" "$BYTES" "$KEY" "$IV" > "$ADIR/archive.dump"
+[ "$(sha256sum < "$ADIR/archive.dump" | cut -d' ' -f1)" = "${DMS_VM_INPUT[payload_sha256]}" ] || { fact guest_stage archive_digest_mismatch; exit 1; }
 TAG="g$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 dms_restore_load_guard_sql "$TAG" > "$WORK/guard.sql" && printf 'SELECT pg_temp.dms_restore_guard_%s();\n' "$TAG" >> "$WORK/guard.sql" || { fact guest_stage guard_build_failed; exit 1; }
 # systemd binds these as root, so the directory stays 0700; the unit's identity only needs the files readable.
-chmod 0644 "$WORK/archive.dump" "$WORK/guard.sql"
-mapfile -t PROPS < <(dms_sandbox_properties "$MODE" "$RUN_ID" "${DMS_VM_INPUT[tmpfs_mib]}" "${DMS_VM_INPUT[memory_mib]}" "${DMS_VM_INPUT[tasks]}" "${DMS_VM_INPUT[timeout_seconds]}" "$INNER" "$WORK/archive.dump" "$WORK/guard.sql")
+chmod 0644 "$ADIR/archive.dump" "$WORK/guard.sql"
+mapfile -t PROPS < <(dms_sandbox_properties "$MODE" "$RUN_ID" "${DMS_VM_INPUT[tmpfs_mib]}" "${DMS_VM_INPUT[memory_mib]}" "${DMS_VM_INPUT[tasks]}" "${DMS_VM_INPUT[timeout_seconds]}" "$INNER" "$ADIR/archive.dump" "$WORK/guard.sql")
 if [ "${#PROPS[@]}" -lt 40 ]; then
   fact guest_stage profile_build_failed
   exit 1

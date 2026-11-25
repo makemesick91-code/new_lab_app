@@ -138,7 +138,7 @@ dms_archive_verify_copy() {
 # "ERROR <reason>" and exits 1.
 dms_archive_count_program() {
   cat << 'AWK'
-BEGIN { inblk = 0; started = 0; ended = 0; n = 0; failed = 0 }
+BEGIN { inblk = 0; started = 0; ended = 0; n = 0; failed = 0; total = 0 }
 function fail(why) { print "ERROR " why; failed = 1; exit 1 }
 # P4P-4: count the columns of a COPY column list outside double quotes ("a, b", "total(idr)" and "x""y" are one each).
 function ncols(s,    i, ch, q, k) {
@@ -151,7 +151,7 @@ inblk {
   # A row of one empty text value is an empty line: one field, not zero (P4P-4).
   nf = ($0 == "") ? 1 : split($0, f, "\t")
   if (nf != cols) fail("row field count differs from the COPY column list in " tbl)
-  rows++; next
+  rows++; total += length($0) + 1; next
 }
 {
   n++
@@ -177,6 +177,8 @@ END {
   if (failed) exit 1
   if (inblk) fail("unterminated COPY block in " tbl)
   if (!ended) fail("data stream does not close with \\unrestrict")
+  # Phase 3: the UNCOMPRESSED size of every row, for the working-space limit (written only when asked for).
+  if (bytes_out != "") print total > bytes_out
 }
 AWK
 }
@@ -206,7 +208,8 @@ dms_archive_digest() {
 # network, read-only system, /etc, /mnt, /media and the cgroup tree hidden (P4V-3: no way to lift its own limits or move
 # out of the unit), a private /dev/shm, the archive bound read-only, every writable mount a capped noexec tmpfs, nothing
 # but the PostgreSQL binaries, bash, awk, head and wc executable, 512 MiB, 300 s. The caller names the unit so that it
-# can stop it on an interrupt (P4V-10). Writes <out>/toc.txt and <out>/counts.txt. A TOC or a count list above its
+# can stop it on an interrupt (P4V-10). Writes <out>/toc.txt, <out>/counts.txt and <out>/bytes.txt (the uncompressed
+# size of all rows). A TOC or a count list above its
 # limit is REFUSED, never truncated (P4P-2), and the stream must end with its end marker.
 dms_archive_inspect() {
   local archive="${1:?archive}" out="${2:?out}" bindir="${3:?bindir}" unit="${4:-}" awk_bin raw_size
@@ -217,13 +220,14 @@ dms_archive_inspect() {
   dms_archive_count_program > "${out}/count.awk"
   local script='set -o pipefail
 "$B/pg_restore" -l /opt/dmsinspect/archive.dump > /srv/toc.txt 2> /dev/null || { echo "INSPECT pg_restore_list_failed"; exit 1; }
-"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - /opt/dmsinspect/archive.dump 2> /dev/null | "$AWK" -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
+"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - /opt/dmsinspect/archive.dump 2> /dev/null | "$AWK" -v bytes_out=/srv/bytes.txt -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
 t=$(/usr/bin/wc -c < /srv/toc.txt) && c=$(/usr/bin/wc -c < /srv/counts.txt) || { echo "INSPECT size_unknown"; exit 1; }
 [ "$t" -le "$TOC_MAX" ] || { echo "INSPECT toc_too_large"; exit 1; }
 [ "$c" -le "$COUNTS_MAX" ] || { echo "INSPECT counts_too_large"; exit 1; }
 echo "INSPECT ok"
 printf "@@TOC\n"; /usr/bin/head -c "$TOC_MAX" /srv/toc.txt
 printf "@@COUNTS\n"; /usr/bin/head -c "$COUNTS_MAX" /srv/counts.txt
+printf "@@BYTES\n"; /usr/bin/head -c 32 /srv/bytes.txt
 printf "@@END\n"'
   local cap=$((DMS_ARCHIVE_TOC_MAX_BYTES + DMS_ARCHIVE_COUNTS_MAX_BYTES + 4096))
   systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
@@ -252,8 +256,10 @@ printf "@@END\n"'
   raw_size="$(stat -c %s -- "${out}/inspect.raw")"
   # P4P-2: never act on a cut stream: it must fit and end with the end marker.
   [ "$raw_size" -le "$cap" ] && [ "$(tail -n 1 "${out}/inspect.raw")" = "@@END" ] || { _dms_archive_fail "the inspection output is incomplete or too large; nothing is decided from a truncated TOC"; rm -f -- "${out}/inspect.raw"; return 1; }
-  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } /^@@END$/ { s = 3; next } s == 1' "${out}/inspect.raw" > "${out}/toc.txt"
-  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } /^@@END$/ { s = 3; next } s == 2' "${out}/inspect.raw" > "${out}/counts.txt"
+  local split='/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } /^@@BYTES$/ { s = 3; next } /^@@END$/ { s = 4; next }'
+  awk "${split} s == 1" "${out}/inspect.raw" > "${out}/toc.txt"
+  awk "${split} s == 2" "${out}/inspect.raw" > "${out}/counts.txt"
+  awk "${split} s == 3" "${out}/inspect.raw" > "${out}/bytes.txt"
   rm -f -- "${out}/inspect.raw"
   [ "$(stat -c %s -- "${out}/toc.txt")" -le "$DMS_ARCHIVE_TOC_MAX_BYTES" ] && [ "$(stat -c %s -- "${out}/counts.txt")" -le "$DMS_ARCHIVE_COUNTS_MAX_BYTES" ] \
     || { _dms_archive_fail "the inspection output exceeds its limits"; return 1; }

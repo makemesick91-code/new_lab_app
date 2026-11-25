@@ -332,6 +332,8 @@ esac
 # above, and never creates, replays, counts or drops anything here.
 echo "VERIFIED (read-only, on this host): ${INTEGRITY} from ${INTEGRITY_SOURCE}; pinned client ${PSQL_CLIENT#PSQL_CLIENT=}; owner roles present (D-Q6-a); runtime ownership gate (P5) passed."
 echo "REFUSED: this host never replays a backup (finding A-1). The drill runs only in a disposable VM on an isolated drill host:"
-echo "  scripts/restore-drill-vm.sh --expected-sha256 ${EXPECTED_SHA256} --manifest <signed role manifest> <backup file>"
+echo "  scripts/restore-drill-vm.sh --expected-sha256 <the archive's trusted sha256> --manifest <signed role manifest> <archive.dump>"
+echo "  The drill accepts only a pg_dump 16 custom-format archive (pg_dump -Fc, PR-6); the plain-SQL backup verified above"
+echo "  (sha256 ${EXPECTED_SHA256}) is refused there. See docs/architecture/r6-b6-backup-format-transition-plan.md."
 echo "Nothing was created, replayed or dropped. No drill evidence is written by this script."
 exit 3

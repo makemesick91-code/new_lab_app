@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 #
 # R6-B6 isolated restore drill — authenticated, tamper-evident drill evidence (owner directive D10; review findings
-# VR-1, VR-4, PR-9). Contract 2.
+# VR-1, VR-4, PR-9; Phase 3). Contract 3: the signer records the install it verified itself (INSTALL); refused and
+# aborted drills are records too (DECISION REFUSED:<stage> / ABORTED:<stage>); every published record is also
+# appended to an independent WITNESS log (scripts/restore-drill-evidence-witness.sh) that the signer cannot rewrite.
 #
 # Identities (VR-4): the drill operator (who runs the orchestrator and QEMU) never holds the signing key and cannot
 # write the store. It sends an unsigned REQUEST to the SIGNER, a separate identity, through one narrow command
@@ -27,10 +29,10 @@ DMS_RESTORE_EVIDENCE_LOADED=1
 DMS_DRILL_EVIDENCE_NAMESPACE="dms-restore-drill-evidence"
 DMS_DRILL_EVIDENCE_MAX_BYTES=8192
 # Keys the SIGNER fills, then keys the operator's request carries, in record order.
-DMS_DRILL_EVIDENCE_SIGNER_KEYS="DMS_DRILL_EVIDENCE_CONTRACT DMS_DRILL_EVIDENCE_SEQ DMS_DRILL_EVIDENCE_PREV_SHA256 DMS_DRILL_EVIDENCE_SIGNER DMS_DRILL_EVIDENCE_CALLER DMS_DRILL_EVIDENCE_SIGNED_AT"
+DMS_DRILL_EVIDENCE_SIGNER_KEYS="DMS_DRILL_EVIDENCE_CONTRACT DMS_DRILL_EVIDENCE_SEQ DMS_DRILL_EVIDENCE_PREV_SHA256 DMS_DRILL_EVIDENCE_SIGNER DMS_DRILL_EVIDENCE_CALLER DMS_DRILL_EVIDENCE_INSTALL DMS_DRILL_EVIDENCE_SIGNED_AT"
 DMS_DRILL_EVIDENCE_REQUEST_KEYS="DMS_DRILL_EVIDENCE_RUN_ID DMS_DRILL_EVIDENCE_DRILL_HOST DMS_DRILL_EVIDENCE_STARTED_AT DMS_DRILL_EVIDENCE_COMPLETED_AT DMS_DRILL_EVIDENCE_BACKUP_SHA256 DMS_DRILL_EVIDENCE_BACKUP_BYTES DMS_DRILL_EVIDENCE_DIGEST_SOURCE DMS_DRILL_EVIDENCE_MANIFEST_ID DMS_DRILL_EVIDENCE_MANIFEST_SHA256 DMS_DRILL_EVIDENCE_IMAGE_SHA256 DMS_DRILL_EVIDENCE_LIMITS DMS_DRILL_EVIDENCE_HOST_VERIFIED DMS_DRILL_EVIDENCE_EXPECTED DMS_DRILL_EVIDENCE_GUEST_ASSERTED DMS_DRILL_EVIDENCE_DECISION"
 DMS_DRILL_EVIDENCE_KEYS="${DMS_DRILL_EVIDENCE_SIGNER_KEYS} ${DMS_DRILL_EVIDENCE_REQUEST_KEYS}"
-# What the orchestrator verifies on the host before the VM boots (VR-1); the request adds ",install=root|operator".
+# What the orchestrator verifies on the host before the VM boots (VR-1). GO and FAIL records carry exactly this list.
 DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS="backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits"
 # The D6 limits, fixed: a record never states others.
 DMS_DRILL_EVIDENCE_LIMITS_D6="vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,tasks=64"
@@ -42,14 +44,15 @@ DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_tab
 _dms_evidence_value_ok() {
   local k="$1" v="$2"
   case "$k" in
-    DMS_DRILL_EVIDENCE_CONTRACT) [ "$v" = 2 ] ;;
+    DMS_DRILL_EVIDENCE_CONTRACT) [ "$v" = 3 ] ;;
     DMS_DRILL_EVIDENCE_SEQ) [[ "$v" =~ ^[0-9]{6}$ ]] ;;
     DMS_DRILL_EVIDENCE_PREV_SHA256) [ "$v" = genesis ] || [[ "$v" =~ ^[0-9a-f]{64}$ ]] ;;
     DMS_DRILL_EVIDENCE_RUN_ID) [[ "$v" =~ ^dmsdrill-[0-9a-f]{12}$ ]] ;;
-    DMS_DRILL_EVIDENCE_BACKUP_SHA256 | DMS_DRILL_EVIDENCE_MANIFEST_SHA256 | DMS_DRILL_EVIDENCE_IMAGE_SHA256) [[ "$v" =~ ^[0-9a-f]{64}$ ]] ;;
+    DMS_DRILL_EVIDENCE_BACKUP_SHA256 | DMS_DRILL_EVIDENCE_MANIFEST_SHA256 | DMS_DRILL_EVIDENCE_IMAGE_SHA256) [[ "$v" =~ ^([0-9a-f]{64}|none)$ ]] ;;
+    DMS_DRILL_EVIDENCE_INSTALL) [[ "$v" =~ ^(root:[0-9a-f]{64}|unverified:[a-z0-9_]{1,60})$ ]] ;;
     DMS_DRILL_EVIDENCE_STARTED_AT | DMS_DRILL_EVIDENCE_COMPLETED_AT | DMS_DRILL_EVIDENCE_SIGNED_AT) [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ;;
     DMS_DRILL_EVIDENCE_BACKUP_BYTES) [[ "$v" =~ ^[0-9]{1,15}$ ]] ;;
-    DMS_DRILL_EVIDENCE_DECISION) [ "$v" = GO ] || [[ "$v" =~ ^FAIL:[a-z0-9_]{1,60}$ ]] ;;
+    DMS_DRILL_EVIDENCE_DECISION) [ "$v" = GO ] || [[ "$v" =~ ^(FAIL|REFUSED|ABORTED):[a-z0-9_]{1,60}$ ]] ;;
     DMS_DRILL_EVIDENCE_SIGNER | DMS_DRILL_EVIDENCE_CALLER) [[ "$v" =~ ^[A-Za-z0-9._@-]{1,64}$ ]] ;;
     *) [[ "$v" =~ ^[A-Za-z0-9_.:,=@/-]{1,300}$ ]] ;;
   esac
@@ -71,7 +74,7 @@ dms_evidence_request_parse() {
     DMS_EVIDENCE_REQUEST[$k]="$v"
     order="${order}${order:+ }${k}"
   done < "$req"
-  [ "$order" = "$DMS_DRILL_EVIDENCE_REQUEST_KEYS" ] || { echo "evidence: request keys differ from contract 2"; DMS_EVIDENCE_REQUEST=(); return 1; }
+  [ "$order" = "$DMS_DRILL_EVIDENCE_REQUEST_KEYS" ] || { echo "evidence: request keys differ from contract 3"; DMS_EVIDENCE_REQUEST=(); return 1; }
 }
 
 # _dms_evidence_field <comma list of key=value> <key> — prints the value of <key>, or nothing.
@@ -96,41 +99,54 @@ _dms_evidence_field() {
 # A caller that controls the operator identity can still state a consistent GO it did not run (QEMU runs as the
 # operator: residual VR-4); this bounds what it can state and keeps every record self-consistent.
 dms_evidence_request_policy() {
-  local host="${1:?host}" images=" ${2:?images} " now="${3:?now}" started completed hv exp guest e g
+  local host="${1:?host}" images=" ${2:?images} " now="${3:?now}" started completed hv exp guest e g kind k
   local -n R=DMS_EVIDENCE_REQUEST
+  kind="${R[DMS_DRILL_EVIDENCE_DECISION]%%:*}"
   [ "${R[DMS_DRILL_EVIDENCE_DRILL_HOST]:-}" = "$host" ] || { echo "evidence: DRILL_HOST is not this signer's host"; return 1; }
-  [[ "$images" == *" ${R[DMS_DRILL_EVIDENCE_IMAGE_SHA256]:-x} "* ]] || { echo "evidence: IMAGE_SHA256 is not a drill image pinned in the signer's configuration"; return 1; }
   [ "${R[DMS_DRILL_EVIDENCE_LIMITS]:-}" = "$DMS_DRILL_EVIDENCE_LIMITS_D6" ] || { echo "evidence: LIMITS are not the D6 limits"; return 1; }
-  [[ "${R[DMS_DRILL_EVIDENCE_EXPECTED]:-}" =~ $DMS_DRILL_EVIDENCE_EXPECTED_RE ]] || { echo "evidence: EXPECTED is not the fixed key list"; return 1; }
-  [[ "${R[DMS_DRILL_EVIDENCE_GUEST_ASSERTED]:-}" =~ $DMS_DRILL_EVIDENCE_GUEST_RE ]] || { echo "evidence: GUEST_ASSERTED is not the fixed key list"; return 1; }
-  hv="${R[DMS_DRILL_EVIDENCE_HOST_VERIFIED]:-}"
-  [ "$hv" = "${DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS},install=root" ] || [ "$hv" = "${DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS},install=operator" ] \
-    || { echo "evidence: HOST_VERIFIED is not the fixed fact list"; return 1; }
   started="$(date -u -d "${R[DMS_DRILL_EVIDENCE_STARTED_AT]:-x}" +%s 2> /dev/null)" && completed="$(date -u -d "${R[DMS_DRILL_EVIDENCE_COMPLETED_AT]:-x}" +%s 2> /dev/null)" \
     || { echo "evidence: the drill times do not parse"; return 1; }
   [ "$started" -le "$completed" ] && [ "$completed" -le $((now + 60)) ] && [ $((now - started)) -le 7200 ] \
     || { echo "evidence: the drill times are out of order or not recent (STARTED_AT <= COMPLETED_AT <= now, within 2 hours)"; return 1; }
-  [ "${R[DMS_DRILL_EVIDENCE_DECISION]:-}" = GO ] || return 0
-  exp="${R[DMS_DRILL_EVIDENCE_EXPECTED]:-}"; guest="${R[DMS_DRILL_EVIDENCE_GUEST_ASSERTED]:-}"
+  hv="${R[DMS_DRILL_EVIDENCE_HOST_VERIFIED]:-}"; exp="${R[DMS_DRILL_EVIDENCE_EXPECTED]:-}"; guest="${R[DMS_DRILL_EVIDENCE_GUEST_ASSERTED]:-}"
+  if [ "$kind" = REFUSED ] || [ "$kind" = ABORTED ]; then
+    # Phase 3: a refused or aborted drill is evidence too. It asserts nothing about a restore: no host-verified facts
+    # and no guest facts; an unknown digest is `none`, a known one is valid (and the image, if named, is pinned).
+    [ "$hv" = none ] || { echo "evidence: a ${kind} record claims host-verified facts"; return 1; }
+    [ "$guest" = none ] || { echo "evidence: a ${kind} record carries guest facts"; return 1; }
+    [ "$exp" = none ] || [[ "$exp" =~ $DMS_DRILL_EVIDENCE_EXPECTED_RE ]] || { echo "evidence: EXPECTED is not none or the fixed key list"; return 1; }
+    [ "${R[DMS_DRILL_EVIDENCE_IMAGE_SHA256]}" = none ] || [[ "$images" == *" ${R[DMS_DRILL_EVIDENCE_IMAGE_SHA256]} "* ]] \
+      || { echo "evidence: IMAGE_SHA256 is not a drill image pinned in the signer's configuration"; return 1; }
+    return 0
+  fi
+  # GO and FAIL: the VM ran, so every input fact is established.
+  for k in DMS_DRILL_EVIDENCE_BACKUP_SHA256 DMS_DRILL_EVIDENCE_MANIFEST_SHA256 DMS_DRILL_EVIDENCE_IMAGE_SHA256; do
+    [[ "${R[$k]}" =~ ^[0-9a-f]{64}$ ]] || { echo "evidence: a ${kind} record without ${k#DMS_DRILL_EVIDENCE_}"; return 1; }
+  done
+  [ "${R[DMS_DRILL_EVIDENCE_MANIFEST_ID]}" != none ] || { echo "evidence: a ${kind} record without a manifest"; return 1; }
+  [[ "$images" == *" ${R[DMS_DRILL_EVIDENCE_IMAGE_SHA256]} "* ]] || { echo "evidence: IMAGE_SHA256 is not a drill image pinned in the signer's configuration"; return 1; }
+  [ "$hv" = "$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS" ] || { echo "evidence: HOST_VERIFIED is not the fixed fact list"; return 1; }
+  [[ "$exp" =~ $DMS_DRILL_EVIDENCE_EXPECTED_RE ]] || { echo "evidence: EXPECTED is not the fixed key list"; return 1; }
+  [[ "$guest" =~ $DMS_DRILL_EVIDENCE_GUEST_RE ]] || { echo "evidence: GUEST_ASSERTED is not the fixed key list"; return 1; }
+  [ "$kind" = GO ] || return 0
   [ "$(_dms_evidence_field "$guest" restore)" = ok ] || { echo "evidence: a GO without restore=ok"; return 1; }
   for e in tables per_table_digest catalog_shape; do
     g="$(_dms_evidence_field "$guest" "$e")"
     [ -n "$g" ] && [ "$g" = "$(_dms_evidence_field "$exp" "$e")" ] || { echo "evidence: a GO whose guest ${e} differs from the expected one"; return 1; }
   done
-  [[ "$(_dms_evidence_field "$exp" per_table_digest)" =~ ^[0-9a-f]{64}$ ]] && [[ "$(_dms_evidence_field "$exp" catalog_shape)" =~ ^[0-9]{1,9}(:[0-9]{1,9}){6}$ ]] \
-    || { echo "evidence: a GO without a valid expected digest and catalog shape"; return 1; }
   [ "$(_dms_evidence_field "$guest" user_code)" = 0 ] && [ "$(_dms_evidence_field "$guest" user_code_executed)" = 0 ] \
     || { echo "evidence: a GO with user code on a restore path"; return 1; }
   [ "$(_dms_evidence_field "$guest" vm_ifaces)" = lo ] || { echo "evidence: a GO from a VM with a network interface"; return 1; }
 }
 
-# dms_evidence_verify_store <store> <allowed_signers anchor> [head log]
+# dms_evidence_verify_store <store> <allowed_signers anchor> [head log] [witness log]
 # Verifies every published record in sequence: signature (principal = its SIGNER, namespace above), exact key set and
 # order, valid values, SEQ equal to its directory, PREV equal to the previous record's sha256 (genesis first). With a
 # head log, the store's head must equal the log's last entry. Prints "VERIFIED <n> head=<sha256|genesis>" or the first
 # failure. Staging directories (.stage-*) are not records and are ignored.
 dms_evidence_verify_store() {
-  local store="${1:?store}" anchor="${2:?anchor}" headlog="${3:-}" n=0 prev=genesis d f line k v signer keys last
+  local store="${1:?store}" anchor="${2:?anchor}" headlog="${3:-}" witness="${4:-}" n=0 prev=genesis d f line k v signer keys last
+  local -a shas=()
   shopt -s nullglob
   local dirs=("$store"/[0-9][0-9][0-9][0-9][0-9][0-9])
   shopt -u nullglob
@@ -160,6 +176,7 @@ dms_evidence_verify_store() {
     [ "${seen[DMS_DRILL_EVIDENCE_SEQ]}" = "$(printf '%06d' "$n")" ] || { echo "FAIL $(basename "$d"): SEQ does not match its directory"; return 1; }
     [ "${seen[DMS_DRILL_EVIDENCE_PREV_SHA256]}" = "$prev" ] || { echo "FAIL $(basename "$d"): chain broken (PREV does not match the previous record)"; return 1; }
     prev="$(sha256sum -- "$f" | cut -d' ' -f1)"
+    shas+=("$prev")
     unset seen
   done
   if [ -n "$headlog" ]; then
@@ -171,15 +188,28 @@ dms_evidence_verify_store() {
       [ "$last" = "$(printf '%06d' "$n") ${prev}" ] || { echo "FAIL the store head $(printf '%06d' "$n") ${prev} is not the head log's last entry '${last}' (records were dropped or added)"; return 1; }
     fi
   fi
+  if [ -n "$witness" ]; then
+    # Phase 3: EVERY witnessed digest must match the record at that sequence number, and every record is witnessed:
+    # a rollback, a truncation or a rewrite of the store after the fact is visible against the witness's own log.
+    [ -f "$witness" ] && [ ! -L "$witness" ] || { echo "FAIL the witness log ${witness} is missing"; return 1; }
+    local wn=0 wseq wsha
+    while IFS=' ' read -r wseq wsha; do
+      wn=$((wn + 1))
+      [ "$wseq" = "$(printf '%06d' "$wn")" ] || { echo "FAIL the witness log has a gap at line ${wn}"; return 1; }
+      [ "$wn" -le "$n" ] || { echo "FAIL the witness saw record ${wseq}, which the store no longer has (rollback or truncation)"; return 1; }
+      [ "$wsha" = "${shas[$((wn - 1))]}" ] || { echo "FAIL record ${wseq} differs from the digest the witness recorded"; return 1; }
+    done < "$witness"
+    [ "$wn" = "$n" ] || { echo "FAIL the store has ${n} records and the witness ${wn}: a record was published without the witness"; return 1; }
+  fi
   echo "VERIFIED ${n} head=${prev}"
 }
 
-# dms_evidence_publish <store> <signing key> <principal> <caller> <head log> <anchor>
+# dms_evidence_publish <store> <signing key> <principal> <caller> <head log> <anchor> <install>
 # Signer side, after dms_evidence_request_parse, under the store lock. Verifies the store and head log, refuses a
 # run id already recorded (replay), builds and signs the record in a staging directory, publishes it with ONE rename,
 # then appends the new head to the head log. Prints "RECORD <seq> <sha256>".
 dms_evidence_publish() {
-  local store="${1:?store}" key="${2:?key}" principal="${3:?principal}" caller="${4:?caller}" headlog="${5:?head log}" anchor="${6:?anchor}"
+  local store="${1:?store}" key="${2:?key}" principal="${3:?principal}" caller="${4:?caller}" headlog="${5:?head log}" anchor="${6:?anchor}" install="${7:?install}"
   local verdict n prev seq stage k v rec_sha d rec keys tmp
   # A brand-new store starts with an empty head log; a missing log beside a non-empty store then fails verification.
   [ -e "$headlog" ] || : > "$headlog"
@@ -198,8 +228,9 @@ dms_evidence_publish() {
   shopt -u nullglob
   seq="$(printf '%06d' $((10#$n + 1)))"
   rec="$(
-    printf 'DMS_DRILL_EVIDENCE_CONTRACT=2\nDMS_DRILL_EVIDENCE_SEQ=%s\nDMS_DRILL_EVIDENCE_PREV_SHA256=%s\n' "$seq" "$prev"
-    printf 'DMS_DRILL_EVIDENCE_SIGNER=%s\nDMS_DRILL_EVIDENCE_CALLER=%s\nDMS_DRILL_EVIDENCE_SIGNED_AT=%s\n' "$principal" "$caller" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'DMS_DRILL_EVIDENCE_CONTRACT=3\nDMS_DRILL_EVIDENCE_SEQ=%s\nDMS_DRILL_EVIDENCE_PREV_SHA256=%s\n' "$seq" "$prev"
+    printf 'DMS_DRILL_EVIDENCE_SIGNER=%s\nDMS_DRILL_EVIDENCE_CALLER=%s\nDMS_DRILL_EVIDENCE_INSTALL=%s\n' "$principal" "$caller" "$install"
+    printf 'DMS_DRILL_EVIDENCE_SIGNED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     for k in $DMS_DRILL_EVIDENCE_REQUEST_KEYS; do printf '%s=%s\n' "$k" "${DMS_EVIDENCE_REQUEST[$k]}"; done
   )"
   rec="${rec}"$'\n'
@@ -214,7 +245,7 @@ dms_evidence_publish() {
     _dms_evidence_value_ok "${v%%=*}" "${v#*=}" || { rm -rf -- "$stage"; echo "evidence: invalid value for ${v%%=*}"; return 1; }
     keys="${keys}${keys:+ }${v%%=*}"
   done < "${stage}/record"
-  [ "$keys" = "$DMS_DRILL_EVIDENCE_KEYS" ] || { rm -rf -- "$stage"; echo "evidence: the record's key set differs from contract 2"; return 1; }
+  [ "$keys" = "$DMS_DRILL_EVIDENCE_KEYS" ] || { rm -rf -- "$stage"; echo "evidence: the record's key set differs from contract 3"; return 1; }
   # P5-5: the record, its signature and the staging directory reach the disk before the rename publishes them.
   if ! ssh-keygen -Y sign -f "$key" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" "${stage}/record" > /dev/null 2>&1 \
     || ! ssh-keygen -Y verify -f "$anchor" -I "$principal" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" -s "${stage}/record.sig" < "${stage}/record" > /dev/null 2>&1 \
