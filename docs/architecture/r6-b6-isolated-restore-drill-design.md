@@ -1,6 +1,6 @@
 ---
 kb_status: unverified
-kb_verified_against: 674e10e9
+kb_verified_against: 0b490069
 kb_updated: 2026-11-25
 ---
 
@@ -12,7 +12,9 @@ Isolation Validation & Final Security Closure", 2026-11-25), on top of version 3
 - Finding A-1 (HIGH) stays **OPEN**. This document does not close it. Closure needs the implementation, system-mode
   tests and an independent review of the implemented isolation controls.
 - R6-B6-F1 (the rehearsal swallows a failed drop) stays **OPEN** as a separate issue.
-- No production change, no push, no restore or drill was run on any shared or production system.
+- No production change, and no restore or drill on any shared or production system. Pushes went only to the
+  dedicated validation branch `validation/r6-b6-real-isolation` (owner directive "R6-B6 — Phase 3"); PR #695 and the
+  base branch are untouched.
 
 Source directive: "G6 — R6-B6 STRUCTURAL SECURITY REDESIGN" (owner, 2026-11-25). The PR #695 head and every local
 remediation commit up to `039a7f59` are kept unchanged.
@@ -402,6 +404,76 @@ from the backup: the P5-1 restore order held under every attack tried.
 | R6B-3, R6B-4, R6B-5, R6A I4/I6/I8 | INFO | An honest DEFAULT or CHECK naming an app function fails with 42883 (fail-closed; the app has none); the drill's locale must equal production's; whitespace in TOC names; console directory; environment markers; q35 built-in devices. | **Recorded** (runbook notes: locale, 42883). |
 
 Round 6 fixes were validated in CI and then had an independent fix-verification review (§0.13).
+
+### 0.13 Fix verification of round 6 (R6F-*) and the real-isolation CI runs
+
+The three round 6 reviewers checked their own findings against the fixes in five rounds. Each round started from the
+newest commit: `d021281b`, then `d79b69a3`, `b4c2c24d`, `19864365` and `2252c335`. The final code is `0b490069`. Every HIGH finding was fixed and
+then verified again by an independent reviewer. A HIGH is CLOSED only on that reviewer's verdict.
+
+**Round 6 HIGH findings:**
+
+| ID | Verdict | Basis |
+|---|---|---|
+| R6A-1 (everything bounding QEMU ran under its uid) | **CLOSED** on `d021281b` | The system unit is killed whole; the supervisor has no lock file; it refuses a busy unit and stops the unit at once on every signal (R6F-L1, reproduced and fixed). |
+| R6A-2 (QEMU account had host networking) | **CLOSED** for IP on `d021281b`, and for every socket on `19864365` | R6F-L13 below. |
+| R6C-1 (operator could get a signed GO) | **CLOSED** on `d021281b` | Only the runner calls `sign`; since `d79b69a3` the operator has no route to the signer at all. |
+| R6B-1 (session- or clock-dependent CHECKs) | **CLOSED** on `b4c2c24d`, confirmed on `19864365` and `2252c335` | It was NOT CLOSED twice (R6F-P1/P2, then P5/P6), each time reproduced to a false GO. It closed once a structural differential (R6F-P8) was added under the guard's list. |
+
+**New findings of the fix-verification rounds:**
+
+| ID | Sev. | Finding (reproduced unless marked) | Fix |
+|---|---|---|---|
+| R6F-P1 | MEDIUM | IMMUTABLE-labelled but session-dependent CHECKs: XML expressions (TimeZone), `float8::text`, `bytea::text`. | Guard and post-data check refuse XML expressions, domain coercions, session-dependent output and XML functions, and text-form conversions of session-dependent types. |
+| R6F-P2, P6, P14 | MEDIUM | `reg*` and `aclitem` values resolve to cluster-assigned ids. Built-in text search ids are cluster-assigned too: they depend on the locales present at initdb (13213 against 13212). | All are refused as columns and in expressions. The `regconfig`/`regdictionary` exemption of `2252c335` (R6F-P13) was reverted in `0b490069`, so full-text expressions are a false NO-GO. |
+| R6F-P3, P4 | LOW | Dump domain constraints were not compiled; lock exhaustion at about 11,000 CHECKs. | Domain constraints refused; probes run in rolled-back subtransactions (12,000 CHECKs pass). |
+| R6F-P5 | MEDIUM | `age(timestamptz,timestamptz)` and `quote_ident()` are labelled IMMUTABLE but read TimeZone and quoting. | Refused by oid. |
+| R6F-P7 | LOW | Over-broad text-conversion refusal (false NO-GO). | Narrowed to session-dependent types. |
+| R6F-P8..P12, P15 | MEDIUM (P12) / LOW | The differential, and gaps in it: float constants re-printed; generated columns compared without their type; partial and NULLS NOT DISTINCT indexes; a planted shadow index answering its queries (0 violations against 2000 read sequentially); index keys evaluated before an expensive predicate. | After post-data, before any dump function exists, every CHECK, generated column and expression or partial index is re-evaluated on the restored rows. This runs under five session profiles (time zones including a half-hour DST zone, interval styles, float digits, bytea and XML output, identifier quoting). The queries are written under fixed settings and read every row (no index, no constraint exclusion). Keys are evaluated only where the predicate holds. Any difference FAILs (`unit_exit_22`); parallel plans honour the profile. |
+| R6F-L1 | MEDIUM | A TERM did not stop the VM; the abort was recorded while the VM ran on. | Interruptible wait; every catchable signal; busy unit refused; the orchestrator waits for the unit to stop. |
+| R6F-L2, L3 | MEDIUM | io_uring opened sockets past the address-family filter; host `/dev/shm`, journal and D-Bus were reachable. | System-call filter (no io_uring, namespaces, mounts, keyrings, privileged calls), private `/dev/shm`, RemoveIPC, inaccessible journal/D-Bus sockets, ProtectProc. |
+| R6F-L13 | **HIGH** | DNS exfiltration: an AF_UNIX socket to systemd-resolved resolves names outside the namespace (connection reproduced). The first fix (`RestrictAddressFamilies=none`) was rejected by systemd-run, so no unit could start (CI run 12). | `socket()` refused in the system-call filter (EPERM), and `process_vm_*` too. **CLOSED** on `19864365`: every socket path tried failed (all families, raw syscall, x32, i386 `socketcall`, io_uring, socket paths, inherited fds). The real KVM boot was GO. |
+| R6F-L4..L12, L14..L22 | LOW / INFO | Disk, CPU and I/O bounds; a one-shot boot marker; a bounded STARTED read; one inspection and one VM at a time; CoredumpFilter; no swap; trusted launcher and pg_restore; console directory; `/run/lock` (L18); probes that passed with no unit (L20); work-directory repair; ancestors; console only on CI. | Fixed; gates Q6–Q11 prove each probe ran inside the unit. |
+| R6F-E1 | MEDIUM | The operator could hold the store lock and suppress an outcome after seeing it. | The decision is shown only once recorded; outcome signing retries; witness `show` is lock-free; the operator has no signer rule; the drill lock is taken before STARTED; no auto-close while a VM runs; `ABORTED:unclosed_after_boot`; sudo rlimits pinned. |
+| R6F-E2..E11 | LOW / INFO | Signal gaps; the verifier ignored contract 4; INSTALL gaps; disk fill; a blocked `show`; a signal after the VM ended; lowered limits. | Fixed: the verifier replays contract 4; INSTALL covers the trust roots, the sudoers rules (`/etc/dms-restore-drill/sudoers`, 0444) and the binaries; evidence state on dedicated mounts; the outcome is uninterruptible once the VM has ended. |
+
+**Real-isolation CI** (GitHub-hosted runners, branch `validation/r6-b6-real-isolation`, synthetic data only):
+
+| Run | Code | System mode | VM boot | Note |
+|---|---|---|---|---|
+| 45551432122 | `4406544a` (before round 6) | 82/0/0 | 19/0 | first green run |
+| 45557635189 | `6b8fee92` | 83/3/1 | 11/10 | drill.conf not provisioned; runner staging used runuser |
+| 45560109106 | `d021281b` | 86/0/1 | 16/5 | console directory read-only in the unit |
+| 45566079293 | `d79b69a3` | 87/3/1 | 13/8 | /etc/sudoers.d unreadable; supervisor launcher check |
+| 45569618843 | `b4c2c24d` | 87/4/1 | 14/7 | `RestrictAddressFamilies=none` rejected (R6F-L13) |
+| 45572202382 | `19864365` | 92/0/1 | 20/1 | first KVM boot with the final filter; sampler defect |
+| 45574497538 | `2252c335` | 92/0/1 | 21/0 | all gates green; QEMU holds `/dev/kvm` |
+| 45575622618 | `0b490069` | 92/0/1 | 21/0 | **final code: all gates green** (KVM boot, `/dev/kvm` held, GO) |
+
+The one LIMIT in system mode (G0) is the CI operator's passwordless root. On CI the identity checks prove the
+mechanism, not a boundary against the operator.
+
+**Residuals, which are owner decisions and not closed here:**
+- **R6B-1 environment residual.** The drill cannot see the real restore's session settings (production's
+  `postgresql.conf`, role and database settings, PGOPTIONS), its locale, or its ICU, glibc and tzdata versions. Two
+  examples were reproduced: `array_nulls=off` and `lc_monetary` change how data loads. Only recording production's
+  restore-session settings and locale with the backup evidence, and pinning them in every drill, closes this.
+- **The guard's list.** The guard refuses every session-dependent builtin known to the reviewers. The differential
+  catches the rest on the actual data. It cannot catch a difference that no profile and no row triggers.
+- **False NO-GO costs:** exclusion constraints over expressions, text conversions mixed with date or time values,
+  full-text expressions (text search ids), dump functions used outside triggers (42883), and user domains. The application schema has none of these; its full
+  schema is GO (186/186 tables).
+- **Trust in the runner.** A compromised runner (the orchestrator's account) can open starts and feed any input.
+  VR-1 still holds: a GO is never stronger than the guest's integrity.
+- **CI identity.** CI proves identity separation as a mechanism only (G0). A drill host provisioned by the owner,
+  with real partitions for the work directory and the evidence state, is not built.
+
+**Verdict on the final code `0b490069`:**
+- All real-isolation gates are green (run 45575622618: system mode 92/0/1, VM boot 21/0).
+- Every HIGH is CLOSED on an independent reviewer's verdict, and no CRITICAL was found.
+- A-1 stays **OPEN** and PR #695 **BLOCKED** until the owner reviews the evidence (Evidence Pack 52) and decides the
+  environment residual. The R6-B6 controls are **GO for owner review**. Production use is **NO-GO** until a drill
+  host is provisioned and production takes custom-format backups.
 
 ## 1. Problem and objective
 
