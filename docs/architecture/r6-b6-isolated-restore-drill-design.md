@@ -6,8 +6,9 @@ kb_updated: 2026-11-25
 
 # R6-B6 isolated restore drill: structural redesign (finding A-1)
 
-**Status: version 3, phase 2 hardening implemented LOCALLY (§0.4–§0.8, directive "R6-B6 — APPROVED TO PROCEED",
-2026-11-25) on top of version 2 (owner decisions D1–D10, §0); not published, not deployed.**
+**Status: version 4, Phase 3 hardening and real-isolation validation (§0.10–§0.12, directive "R6-B6 — Phase 3 Real
+Isolation Validation & Final Security Closure", 2026-11-25), on top of version 3 (phase 2, §0.4–§0.9) and version 2
+(D1–D10, §0). Not deployed; validated on disposable GitHub-hosted runners from the dedicated validation branch.**
 - Finding A-1 (HIGH) stays **OPEN**. This document does not close it. Closure needs the implementation, system-mode
   tests and an independent review of the implemented isolation controls.
 - R6-B6-F1 (the rehearsal swallows a failed drop) stays **OPEN** as a separate issue.
@@ -192,7 +193,7 @@ The proposal is `deploy/restore-drill-vm/ci/restore-drill-real-sandbox.workflow-
 | KVM | GitHub documents hardware acceleration on its Linux runners, including 2-vCPU runners since 2024-04-02. The udev rule that opens `/dev/kvm` is community-documented, not official. The job checks `test -r /dev/kvm && test -w /dev/kvm`, and the orchestrator refuses without KVM, so a runner without KVM fails rather than skips or emulates. **UNVERIFIED until the first run.** |
 | Network | The runner has internet for the packages. The drill VM has no NIC. The gates' decoys listen only on 127.0.0.1, `/dev/shm` and an abstract socket inside the runner. |
 | Data | Synthetic only: `tests/Fixtures/restore-drill` and archives built from the gates' own decoy clusters. No production host, backup, credential or patient data. |
-| Privilege | `sudo` is used on the throwaway runner only. `provision-signer.sh` refuses without `GITHUB_ACTIONS` and on the production hostname. **LIMIT:** the CI operator (`runner`) has passwordless root, so in CI the signer separation proves the mechanism (sudo rule, file modes, caller checks), not a boundary. On the drill host the operator must have no other sudo right (runbook). |
+| Privilege | `sudo` is used on the throwaway runner only. `provision-drill-host.sh` (formerly `provision-signer.sh`) refuses without `GITHUB_ACTIONS` and on the production hostname. **LIMIT:** the CI operator (`runner`) has passwordless root, so in CI the signer separation proves the mechanism (sudo rule, file modes, caller checks), not a boundary. On the drill host the operator must have no other sudo right (runbook). |
 | Artifacts | Only the gates' result files and transcripts, with synthetic data. |
 
 ### 0.6 Phase 3: real isolation gates (prepared; NOT RUN)
@@ -299,6 +300,69 @@ An independent reviewer verified the round 3 fixes on `e0e64389`. Result: 15 HOL
 
 Round 5 fixes are verified by tests and by the fixture runs (pack 51). They have not had a further independent review:
 any closure review must include them.
+
+### 0.10 Version 4: Phase 3 hardening (directive "R6-B6 — Phase 3")
+
+**Identities: four, each with one job.**
+
+| Identity | Holds | Can reach |
+|---|---|---|
+| drill operator | the run directory (staged archive, encrypted input disk), the per-user manager that inspects the archive | the signer (`sign`, `verify`), the QEMU launcher (`run`), the witness (`show`), each through one sudoers rule |
+| QEMU (`scripts/restore-drill-qemu-launcher.sh`) | the pinned drill image, the QEMU binaries, `/dev/kvm`, the VM work directory | nothing: no sudoers rule, no access to the operator's, signer's or witness's files |
+| signer (`scripts/restore-drill-evidence-signer.sh`) | the signing key, the evidence store, its head log | the witness (`append`, `show`) |
+| witness (`scripts/restore-drill-evidence-witness.sh`) | the append-only log of every record digest | nothing |
+
+- **QEMU identity (mandatory hardening 1).**
+  - The launcher builds the QEMU command line itself, from its own root-owned configuration (image, digest, binaries,
+    work directory) and the fixed D6 limits. The QEMU identity cannot change that configuration, so an escape cannot
+    re-pin the next run.
+  - The operator sends only the encrypted input disk (stdin, bounded) and the run id. It receives the fixed-size output
+    disk (stdout) and one status line. A relayed TERM stops QEMU and removes every VM file.
+- **Independent chain heads.**
+  - The witness keeps `<NNNNNN> <sha256>` for every published record. It accepts only the next sequence number,
+    exactly once, and only from the signer.
+  - `dms_evidence_verify_store` checks EVERY witnessed digest against the store. Rollback, truncation, rewrite and
+    unwitnessed publication are all detected, even if the signer's own identity did them.
+  - The CI gate exports the store and the witness log as an artifact (off-host retention). On a drill host, the owner
+    keeps the printed head off the host.
+- **Refused and aborted drills are records.**
+  - Once the drill configuration is trusted, every refusal is signed as `REFUSED:<stage>` and every interrupt as
+    `ABORTED:<stage>`.
+  - Such a record carries no host-verified and no guest facts; an unknown digest is `none`.
+  - A refusal before the configuration is trusted (bad arguments, the production host, an untrusted configuration)
+    has no trusted path and is printed only.
+- **Verified install, never stated.**
+  - The signer's `drill-host` profile requires a root-owned configuration and a separate witness. It verifies that the
+    orchestrator, the QEMU launcher, the witness and the signer itself are root-owned, in root-owned directories, and
+    records `INSTALL=root:<sha256 of their digests>`. It refuses a GO from any other install.
+  - The `development` profile, for local tests only, records `INSTALL=unverified:development`. It can never be
+    acceptance evidence.
+  - Limit: the signer verifies the install, not which copy the caller ran. A compromised operator could run a modified
+    copy; with QEMU under its own identity, that compromise is now outside QEMU's reach.
+- **Plaintext at rest.** In the VM, the guest agent decrypts the archive onto a RAM tmpfs it mounts. The plaintext never
+  reaches the root overlay, which is a file on the drill host.
+- **Decompression limit.** The inspection unit counts the uncompressed bytes of every row. The working space is sized
+  from the larger of 8 × the archive and 4 × the data, and refused above the 1024 MiB D6 ceiling, so a small but very
+  compressible archive is refused up front.
+- **Kept:** the structural restore order of P5-1 (§0.9); the fail-closed refusals for oversized, malformed and
+  over-limit archives; invalid or revoked manifests; resource exhaustion.
+
+### 0.11 The guest trust boundary (explicit)
+
+- **Host-verified:** what the operator's host checks itself before the VM boots. Recorded as
+  `HOST_VERIFIED=backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits`.
+  - The TOC facts are the host's reading of the archive through `pg_restore` in a hardened, network-less unit
+    (P4V-12).
+  - The image digest is reported by the QEMU launcher, which verified it against its own root-owned pin.
+- **Guest-asserted:** everything the disposable guest reports. Recorded as `GUEST_ASSERTED=…`: the restore result,
+  table count, per-table digest, catalog shape, user code reachable or executed, fidelity, interfaces.
+  - The host COMPARES these with its own expectations, but cannot verify how the guest produced them.
+  - A compromised guest root can assert anything (VR-1).
+- **A GO therefore means:** host-verified inputs AND a guest assertion that matched the host's independent expectation,
+  from a guest that never held a network interface and ran no backup code before verification (P5-1). It is never
+  stronger than the guest's integrity.
+- **Never** is a guest assertion presented as host evidence: the record keeps the two in separate fields, and the
+  signer refuses a record that mixes them.
 
 ## 1. Problem and objective
 
