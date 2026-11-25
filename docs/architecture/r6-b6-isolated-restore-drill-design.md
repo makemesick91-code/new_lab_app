@@ -6,7 +6,7 @@ kb_updated: 2026-11-25
 
 # R6-B6 isolated restore drill: structural redesign (finding A-1)
 
-**Status: version 4, Phase 3 hardening and real-isolation validation (§0.10–§0.12, directive "R6-B6 — Phase 3 Real
+**Status: version 4, Phase 3 hardening and real-isolation validation (§0.10–§0.13, directive "R6-B6 — Phase 3 Real
 Isolation Validation & Final Security Closure", 2026-11-25), on top of version 3 (phase 2, §0.4–§0.9) and version 2
 (D1–D10, §0). Not deployed; validated on disposable GitHub-hosted runners from the dedicated validation branch.**
 - Finding A-1 (HIGH) stays **OPEN**. This document does not close it. Closure needs the implementation, system-mode
@@ -363,6 +363,45 @@ any closure review must include them.
   stronger than the guest's integrity.
 - **Never** is a guest assertion presented as host evidence: the record keeps the two in separate fields, and the
   signer refuses a record that mixes them.
+
+### 0.12 Review round 6 (Phase 3): findings and dispositions
+
+Round 6 had three independent reviewers on `23abd183`:
+- Linux/systemd/QEMU and UID separation (R6A-*);
+- PostgreSQL restore and P5-1 (R6B-*);
+- evidence, key custody and the CI supply chain (R6C-*).
+
+They found **4 HIGH**, all fixed in `6b8fee92` with regression tests. The PostgreSQL reviewer found no way to run code
+from the backup: the P5-1 restore order held under every attack tried.
+
+**Architecture after round 6 (supersedes the identity table in §0.10):**
+
+| Component | Runs as | Reached by |
+|---|---|---|
+| operator | a person's account | places the backup and the signed manifest in the inbox (group `dmsdrill-inbox`, 2770); may start only the installed orchestrator, as the runner; may read the witness and verify the store |
+| orchestrator (`restore-drill-vm.sh`) | `dmsdrill-runner` | the operator, through `sudo` of exactly the installed script. It is the only caller of the signer's `sign` and of the supervisor. |
+| supervisor (`restore-drill-supervisor.sh`) | root | the runner only. Two fixed modes: `inspect` (a DynamicUser system unit, archive on stdin) and `vm` (QEMU in `dmsqemu.service`) |
+| QEMU launcher | `dmsdrill-qemu`, inside `dmsqemu.service` | the supervisor only. No sudo; KVM through the `kvm` group; `/dev/kvm` is root:kvm 0660 |
+| signer | `dmsdrill-signer` | the runner (`sign`, `verify`), the operator (`verify`) |
+| witness | `dmsdrill-witness` | the signer (`append`, `show`); the runner and the operator (`show`) |
+
+| ID | Sev. | Finding | Disposition |
+|---|---|---|---|
+| R6C-1 | HIGH (proved) | The operator could sudo to the signer and obtain a signed, witnessed GO for a drill that never ran. | **Fixed:** only the runner identity may call `sign`, and the operator can only start the root-owned orchestrator as the runner. The signer refuses any other caller (CI G2). |
+| R6A-1 | HIGH | Everything that bounded QEMU shared its uid: an escape could kill its timeout, outlive the run, keep the lock and see the next run. | **Fixed:** QEMU runs in the supervisor's system unit. The cgroup is killed whole at `RuntimeMaxSec`; stale run files are removed by root; there is no lock file; the unit's name gives exclusivity (CI Q6). |
+| R6A-2 | HIGH | The QEMU account had host networking. | **Fixed:** `PrivateNetwork`, `IPAddressDeny=any`, AF_UNIX only (CI Q5, V1-qemu network namespace). |
+| R6B-1 | HIGH (proved) | CHECKs depending on the session or the clock (`CURRENT_USER`, `CURRENT_TIMESTAMP`, `'now'::date`) passed the guard: GO in the drill, FAIL in a real restore. | **Fixed:** the guard tests every CHECK with PostgreSQL's own immutability check (as an index expression on a temporary copy; 42P17 refuses) and denies `SQLVALUEFUNCTION`. Restore role and database names are random per run. Fixtures `rolebomb` and `timebomb`. |
+| R6A-3 / R6C-7 | MEDIUM | The AppArmor user-namespace grant was host-wide in effect. | **Fixed:** the inspection runs in a DynamicUser system unit, which needs no user namespace; the grant is removed. |
+| R6C-3 / R6A-5 | MEDIUM | Outcomes could go unrecorded: lock holding, SIGKILL, uncaught signals, a VM booted directly. | **Fixed:** contract 4. A signed STARTED record opens every attempt; an outcome closes only the newest open start; a start that never closed is closed by the signer as `ABORTED:unclosed`; the supervisor boots a VM only for the open run; all catchable signals are recorded aborts. |
+| R6C-2 | MEDIUM | Published but unwitnessed, the store wedged; signals and lock holding could force that. | **Fixed:** the witness is appended before the head log; `recover-head` repairs every window, verifying each earlier digest; publication runs in the signer's own shell; signals are ignored; outputs are printed after the locks are released. |
+| R6A-4 / R6C-4 | MEDIUM | Long guest values, or no guest output, made a FAIL unrecordable. | **Fixed:** limits for the two lists; a FAIL may carry no guest facts (tests). |
+| R6C-5 / R6C-6 | MEDIUM | V13 trusted the signer's own anchor; the verifier did not re-check consistency; the witness parser dropped a last line without a newline. | **Fixed:** the signer key is pinned before any record; every record is re-checked at verification and must carry the same store id; the witness log must be exact lines. |
+| R6A-6 | MEDIUM | Plaintext-equivalent data could reach swap, core dumps or sudo I/O logs. | **Fixed:** `MemorySwapMax=0`, no core dumps, `dump-guest-core=off`, disks on the unit's RAM runtime directory, the runner's work directory on tmpfs (CI; runbook), sudoers `!log_input !log_output !use_pty`. |
+| R6A-7..11, R6C-8..12 | LOW | Free space and cgroup limits for QEMU; LC_ALL for byte counting; root-only launcher code; use_pty; KVM separation; INSTALL covering configuration and configured paths; fixed values; package provenance; store identity; self-hosted runners. | **Fixed** (see the commit). The offline image packages must match the image's own package index. |
+| R6B-2 | LOW | With an extension on the allowlist, a table added to the extension vanishes from every backup. | **Residual (condition):** the allowlist is `none`. Widening it requires a production-side check first (runbook). |
+| R6B-3, R6B-4, R6B-5, R6A I4/I6/I8 | INFO | An honest DEFAULT or CHECK naming an app function fails with 42883 (fail-closed; the app has none); the drill's locale must equal production's; whitespace in TOC names; console directory; environment markers; q35 built-in devices. | **Recorded** (runbook notes: locale, 42883). |
+
+Round 6 fixes were validated in CI and then had an independent fix-verification review (§0.13).
 
 ## 1. Problem and objective
 
