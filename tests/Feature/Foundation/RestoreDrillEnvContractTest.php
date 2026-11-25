@@ -188,6 +188,7 @@ it('accepts a contract the drill image matches, and refuses every incompatibilit
     'a newer image minor (compatible)' => [[], ['DMS_IMAGE_PG_MINOR' => '17'], 'none', null],
     'another PostgreSQL major' => [['DMS_ENV_PG_MAJOR' => '17'], [], 'none', 'PostgreSQL 17 in production, 16 in the drill image'],
     'an image below 16.15' => [[], ['DMS_IMAGE_PG_MINOR' => '9'], 'none', 'below 16.15'],
+    'an image older than production\'s minor' => [['DMS_ENV_PG_MINOR' => '17'], ['DMS_IMAGE_PG_MINOR' => '16'], 'none', 'older 16.16 in the drill image'],
     'another glibc (collation)' => [['DMS_ENV_GLIBC_VERSION' => '2.35'], [], 'none', 'glibc 2.35 in production'],
     'another ICU' => [['DMS_ENV_ICU_VERSION' => '70.1'], [], 'none', 'ICU 70.1 in production'],
     'another tzdata' => [['DMS_ENV_TZDATA_VERSION' => '2024a'], [], 'none', 'tzdata 2024a in production'],

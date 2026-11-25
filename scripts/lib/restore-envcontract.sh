@@ -199,6 +199,9 @@ dms_env_compatibility_check() {
   [ -n "${C[DMS_ENV_CONTRACT_ID]:-}" ] && [ -n "${I[DMS_IMAGE_SHA256]:-}" ] || { echo "env compatibility: contract or image properties not verified"; return 1; }
   [ "${C[DMS_ENV_PG_MAJOR]}" = "${I[DMS_IMAGE_PG_MAJOR]}" ] || { echo "env compatibility: PostgreSQL ${C[DMS_ENV_PG_MAJOR]} in production, ${I[DMS_IMAGE_PG_MAJOR]} in the drill image (exact major required)"; return 1; }
   [ "${I[DMS_IMAGE_PG_MINOR]}" -ge 15 ] || { echo "env compatibility: the drill image's PostgreSQL minor is below 16.15"; return 1; }
+  # Compatible class: the image may be newer than production within the major, never older (a newer production minor
+  # can carry fixes the image lacks; fix verification, F2 item 6).
+  [ "${I[DMS_IMAGE_PG_MINOR]}" -ge "${C[DMS_ENV_PG_MINOR]}" ] || { echo "env compatibility: PostgreSQL 16.${C[DMS_ENV_PG_MINOR]} in production, older 16.${I[DMS_IMAGE_PG_MINOR]} in the drill image (the image must not be older)"; return 1; }
   [ "${C[DMS_ENV_SERVER_ENCODING]}" = UTF8 ] || { echo "env compatibility: the drill restores UTF8 databases only (contract: ${C[DMS_ENV_SERVER_ENCODING]})"; return 1; }
   [ "${C[DMS_ENV_LOCALE_PROVIDER]}" = libc ] && [ "${C[DMS_ENV_ICU_LOCALE]}" = none ] || { echo "env compatibility: only the libc locale provider is supported by the drill (contract: ${C[DMS_ENV_LOCALE_PROVIDER]})"; return 1; }
   [ "${C[DMS_ENV_DATCOLLATE]}" = "${C[DMS_ENV_DATCTYPE]}" ] || { echo "env compatibility: different collate and ctype locales are not supported by the drill"; return 1; }
