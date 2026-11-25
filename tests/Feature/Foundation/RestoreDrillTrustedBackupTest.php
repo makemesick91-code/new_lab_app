@@ -525,6 +525,8 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'a CHECK calling float8out directly' => ["CREATE TABLE rdtb_o (f float8, CONSTRAINT rdtb_ocheck CHECK (textin(float8out(f)) <> ''));", 'float8out(double precision)'],
     'a regclass column (cluster-assigned object ids)' => ['CREATE TABLE rdtb_r (r regclass);', 'object-id or ACL type regclass'],
     'a CHECK over a regclass constant' => ["CREATE TABLE rdtb_c (n int, CONSTRAINT rdtb_ccheck CHECK (n < ('pg_class'::regclass)::integer));", 'uses an object-id or ACL type'],
+    // R6F-P14: even built-in text search ids depend on the host's locales at initdb (refused, a false NO-GO).
+    'a CHECK on a text search configuration id' => ["CREATE TABLE rdtb_ts (n int, CONSTRAINT rdtb_tscheck CHECK (n <> (('english'::regconfig)::oid)::integer));", 'uses an object-id or ACL type'],
     'a domain constraint of the dump' => ['CREATE DOMAIN rdtb_pos AS int CONSTRAINT rdtb_pos_check CHECK (VALUE > 0);', 'domain constraint rdtb_pos_check'],
     // R6F-P5, R6F-P6 (second fix verification): mislabelled builtins and ACL items.
     'a CHECK on age() (TimeZone)' => ["CREATE TABLE rdtb_a (s timestamptz, e timestamptz, CONSTRAINT rdtb_acheck CHECK (age(e, s) < interval '1 mon'));", 'age(timestamp with time zone,timestamp with time zone)'],
@@ -538,7 +540,7 @@ it('lets text conversions of values whose text form never depends on the session
     $call = rdtbGuard();
 
     expect(fn () => DB::transaction(function () use ($call) {
-        DB::unprepared("CREATE TABLE rdtb_ok (n int, u uuid, d json, CONSTRAINT rdtb_ok_n CHECK (length(n::text) <= 9), CONSTRAINT rdtb_ok_u CHECK (u::text ~ '^[0-9a-f-]{36}$'), CONSTRAINT rdtb_ok_d CHECK (jsonb_typeof(d::jsonb) = 'object'), CONSTRAINT rdtb_ok_t CHECK (to_tsvector('simple', u::text) IS NOT NULL))");
+        DB::unprepared("CREATE TABLE rdtb_ok (n int, u uuid, d json, CONSTRAINT rdtb_ok_n CHECK (length(n::text) <= 9), CONSTRAINT rdtb_ok_u CHECK (u::text ~ '^[0-9a-f-]{36}$'), CONSTRAINT rdtb_ok_d CHECK (jsonb_typeof(d::jsonb) = 'object')");
         DB::select($call);
     }))->not->toThrow(Throwable::class);
 })->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
@@ -603,6 +605,8 @@ it('never fails an honest schema in the differential: constants, rounding genera
     'a float constant in a CHECK, read back with few digits' => ["CREATE TABLE rdtb_h1 (rate float8, CONSTRAINT rdtb_h1c CHECK (rate <= '0.35'::float8)); INSERT INTO rdtb_h1 VALUES (0.35);", 'SET LOCAL extra_float_digits = -15;'],
     'a generated numeric(10,2) column that rounds' => ['CREATE TABLE rdtb_h2 (a numeric, r numeric(10,2) GENERATED ALWAYS AS (a * 1.005) STORED); INSERT INTO rdtb_h2 (a) VALUES (3.333);', "SET LOCAL TimeZone = 'Pacific/Kiritimati';"],
     'a generated point column (no equality operator)' => ['CREATE TABLE rdtb_h3 (a float8, p point GENERATED ALWAYS AS (point(a, a)) STORED); INSERT INTO rdtb_h3 (a) VALUES (0.1);', 'SET LOCAL extra_float_digits = -15;'],
+    // R6F-P15: an expensive predicate is still evaluated before the keys (the key would not parse on this row).
+    'a partial expression index with an expensive predicate' => ["CREATE TABLE rdtb_h5 (kind text, payload jsonb); INSERT INTO rdtb_h5 VALUES ('txt', '{\"n\": \"abc\"}'), ('num', '{\"n\": \"4\"}'); CREATE INDEX rdtb_h5i ON rdtb_h5 (((payload->>'n')::numeric)) WHERE to_tsvector('simple', kind) @@ 'num'::tsquery;", "SET LOCAL TimeZone = 'Asia/Makassar';"],
     'a unique index with NULLS NOT DISTINCT and a NULL key' => ['CREATE TABLE rdtb_h4 (k int, v text); INSERT INTO rdtb_h4 VALUES (NULL, \'a\'); CREATE UNIQUE INDEX rdtb_h4u ON rdtb_h4 ((lower(v))) NULLS NOT DISTINCT;', 'SET LOCAL quote_all_identifiers = on;'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
