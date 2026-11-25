@@ -58,7 +58,7 @@ virt-customize -a "$OUT" \
   --run-command 'systemctl enable dms-restore-drill-guest.service' \
   --run-command 'apt-get purge -y apport apport-symptoms whoopsie || true' \
   --copy-in "$REPO/deploy/restore-drill-vm/prune-extensions.sh:/usr/local/lib/dms-restore-drill" \
-  --run-command "/usr/local/lib/dms-restore-drill/prune-extensions.sh /usr/share/postgresql/16/extension ${EXT_ALLOW}" \
+  --run-command "bash /usr/local/lib/dms-restore-drill/prune-extensions.sh /usr/share/postgresql/16/extension ${EXT_ALLOW}" \
   --write '/etc/sysctl.d/90-dms-drill-no-core.conf:kernel.core_pattern=|/bin/false' \
   --run-command 'test ! -e /usr/share/apport && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
   --run-command 'systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service snapd.service unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer' \
