@@ -109,33 +109,40 @@ dms_sandbox_properties() {
     -p "NoExecPaths=/ /tmp /var/tmp" \
     -p "ExecPaths=${DMS_SANDBOX_PG_BINDIR} ${DMS_SANDBOX_PG_BINDIR%/bin}/lib /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/bin/bash /usr/bin/dash" \
     -p "MemoryMax=${mem}M" -p MemorySwapMax=0 -p "TasksMax=${tasks}" -p CPUQuota=100% -p Nice=10 \
-    -p OOMPolicy=stop -p OOMScoreAdjust=800 -p "RuntimeMaxSec=${timeout}" -p KillMode=control-group -p TimeoutStopSec=10 \
+    -p OOMPolicy=stop -p OOMScoreAdjust=800 -p KillMode=control-group -p TimeoutStopSec=10 \
+    -p Type=oneshot -p "TimeoutStartSec=${timeout}" \
     --setenv=TMPDIR=/srv "--setenv=DRILL_PG_BINDIR=${DMS_SANDBOX_PG_BINDIR}"
   if [ "$mode" = system ]; then
     printf '%s\n' --setenv=DRILL_EXPECT_DYNAMIC_UID=1
   fi
 }
 
-# dms_sandbox_run <mode> <unit name> <raw result file> <stderr file> <roles> <locale> <property args…>
+# PR-1: Type=oneshot, because a Type=simple main process killed by SIGTERM counts as success (exit 0); under oneshot
+# every terminating signal is a failure (exit 255, proven). RuntimeMaxSec does not apply to oneshot units (proven), so
+# the wall-clock limit is TimeoutStartSec.
+#
+# dms_sandbox_run <mode> <unit name> <raw result file> <stderr file> <roles> <locale> <runtime role> <property args…>
 # Runs the inner script in a transient unit; stdin is the restricted replay stream. The unit's stdout (the result
-# channel) is read up to DMS_SANDBOX_MAX_RESULT_BYTES into <raw result file>, its stderr up to
+# channel) is read up to DMS_SANDBOX_MAX_RESULT_BYTES + 1 into <raw result file> (one byte more than allowed, so an
+# overflow is visible to dms_sandbox_parse: VR-5), its stderr up to
 # DMS_SANDBOX_MAX_STDERR_BYTES into <stderr file> (DR-14). Prints nothing; returns the unit's exit status.
 dms_sandbox_run() {
-  local mode="${1:?mode}" unit="${2:?unit}" raw="${3:?raw}" err="${4:?err}" roles="${5-}" locale="${6:?locale}"
-  shift 6
+  local mode="${1:?mode}" unit="${2:?unit}" raw="${3:?raw}" err="${4:?err}" roles="${5-}" locale="${6:?locale}" runtime="${7-}"
+  shift 7
   local -a scope=()
   [ "$mode" = user ] && scope=(--user)
   local r
   for r in $roles; do dms_sandbox_role_name_ok "$r" || { _dms_sandbox_err "bad role name"; return 2; }; done
   [[ "$locale" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || { _dms_sandbox_err "bad locale"; return 2; }
+  [ -z "$runtime" ] || dms_sandbox_role_name_ok "$runtime" || { _dms_sandbox_err "bad runtime role"; return 2; }
   local status_file
   status_file="$(mktemp)" || return 2
   {
     systemd-run "${scope[@]}" --wait --pipe --collect --quiet --unit="${unit}" "$@" \
-      "--setenv=DRILL_ROLES=${roles}" "--setenv=DRILL_LOCALE=${locale}" \
+      "--setenv=DRILL_ROLES=${roles}" "--setenv=DRILL_LOCALE=${locale}" "--setenv=DRILL_RUNTIME_ROLE=${runtime}" \
       -- /usr/bin/bash "$DMS_SANDBOX_INNER_TARGET" 2> >(head -c "$DMS_SANDBOX_MAX_STDERR_BYTES" > "$err")
     echo $? > "$status_file"
-  } | head -c "$DMS_SANDBOX_MAX_RESULT_BYTES" > "$raw"
+  } | head -c $((DMS_SANDBOX_MAX_RESULT_BYTES + 1)) > "$raw"
   local st
   st="$(cat "$status_file" 2> /dev/null)"
   rm -f -- "$status_file"
@@ -178,17 +185,24 @@ dms_sandbox_dump_counts() {
 }
 
 # dms_sandbox_parse <raw result file>
-# Strict parse of the result channel: only `DRILL <key>=<value>` lines with a bounded key and charset, at most
+# Strict parse of the result channel: no more than DMS_SANDBOX_MAX_RESULT_BYTES and no NUL byte; only `DRILL
+# <key>=<value>` lines with a bounded key and charset, at most
 # DMS_SANDBOX_MAX_RESULT_LINES, each key at most once. Fills DMS_SANDBOX_RESULT[key]=value and sets
 # DMS_SANDBOX_DUPLICATES and DMS_SANDBOX_REJECTED. Nothing from the raw file is ever printed.
 declare -gA DMS_SANDBOX_RESULT=()
 DMS_SANDBOX_DUPLICATES=0
 DMS_SANDBOX_REJECTED=0
 dms_sandbox_parse() {
-  local raw="${1:?raw}" line n=0
+  local raw="${1:?raw}" line n=0 size clean
   DMS_SANDBOX_RESULT=()
   DMS_SANDBOX_DUPLICATES=0
   DMS_SANDBOX_REJECTED=0
+  # VR-5: a result larger than the window, or carrying NUL bytes (which `read` would silently drop), is a forgery
+  # attempt (padding that pushes the honest lines out of the window): it counts as rejected, so the decision FAILs.
+  size="$(stat -c %s -- "$raw" 2> /dev/null || echo 0)"
+  clean="$(tr -d '\000' < "$raw" | wc -c)"
+  [ "$size" -le "$DMS_SANDBOX_MAX_RESULT_BYTES" ] || DMS_SANDBOX_REJECTED=$((DMS_SANDBOX_REJECTED + 1))
+  [ "$clean" = "$size" ] || DMS_SANDBOX_REJECTED=$((DMS_SANDBOX_REJECTED + 1))
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^DRILL\ ([a-z0-9_]{1,40})=([A-Za-z0-9_.:-]{0,80})$ ]]; then
       if [ -n "${DMS_SANDBOX_RESULT[${BASH_REMATCH[1]}]+x}" ]; then
@@ -221,6 +235,9 @@ dms_sandbox_decide() {
   [ "${DMS_SANDBOX_RESULT[bootstrap_superuser]:-}" = nologin ] || { echo "FAIL:superuser_not_locked"; return 0; }
   [ "${DMS_SANDBOX_RESULT[result]:-}" = GO ] || { echo "FAIL:sandbox_${DMS_SANDBOX_RESULT[stage]:-no_result}"; return 0; }
   [ "${DMS_SANDBOX_RESULT[migrations_table]:-}" = 1 ] || { echo "FAIL:no_migrations_table"; return 0; }
+  # PR-2: a GO means no user code sits on a restore path (index expressions or predicates, materialized views, user
+  # operators in constraints), where it would run during a real restore and could behave differently there.
+  [ "${DMS_SANDBOX_RESULT[user_code_reachable]:-}" = 0 ] || { echo "FAIL:user_code_in_restore_path"; return 0; }
   [ "${DMS_SANDBOX_RESULT[base_table_count]:-}" = "$exp_tables" ] || { echo "FAIL:table_count_mismatch"; return 0; }
   [ "${DMS_SANDBOX_RESULT[rows_total]:-}" = "$exp_rows" ] || { echo "FAIL:row_count_mismatch"; return 0; }
   echo GO

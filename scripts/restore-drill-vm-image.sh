@@ -6,6 +6,9 @@
 #
 # Usage: restore-drill-vm-image.sh <ubuntu-24.04 cloud image> <its sha256 from Ubuntu's signed SHA256SUMS> <output.qcow2>
 # Prints the output image's sha256: the owner pins it as DMS_DRILL_IMAGE_SHA256 in the drill configuration.
+# Hardening baked in (review VR-6): apport purged and kernel.core_pattern neutralised (no root crash handler fed by the
+# sandbox). The input payload is encrypted per run, so udev/blkid probing the drill disks only ever sees the host's
+# header and random-looking bytes; a probe-suppression udev rule is to be validated on the real image (phase 3).
 set -euo pipefail
 SRC="${1:?ubuntu cloud image}"; SRC_SHA="${2:?its sha256}"; OUT="${3:?output qcow2}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +34,9 @@ virt-customize -a "$OUT" \
   --copy-in "$REPO/deploy/restore-drill-vm/dms-restore-drill-guest.service:/etc/systemd/system" \
   --run-command 'chown -R root:root /usr/local/lib/dms-restore-drill && chmod -R go-w /usr/local/lib/dms-restore-drill' \
   --run-command 'systemctl enable dms-restore-drill-guest.service' \
+  --run-command 'apt-get purge -y apport apport-symptoms whoopsie || true' \
+  --write '/etc/sysctl.d/90-dms-drill-no-core.conf:kernel.core_pattern=|/bin/false' \
+  --run-command 'test ! -e /usr/share/apport && grep -qx "kernel.core_pattern=|/bin/false" /etc/sysctl.d/90-dms-drill-no-core.conf' \
   --run-command 'systemctl mask ssh.service ssh.socket systemd-networkd.service systemd-resolved.service cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service snapd.service unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer' \
   --run-command '/usr/lib/postgresql/16/bin/psql --version | grep -Eq "^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])"' \
   --root-password disabled

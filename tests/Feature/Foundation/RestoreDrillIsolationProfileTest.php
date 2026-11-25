@@ -66,7 +66,9 @@ it('requires every isolation property of the sandbox unit, in system and in user
         'RestrictAddressFamilies=AF_UNIX', 'PrivateNetwork=yes', 'IPAddressDeny=any',
         'NoExecPaths=/ /tmp /var/tmp',
         'ExecPaths=/usr/lib/postgresql/16/bin /usr/lib/postgresql/16/lib /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/bin/bash /usr/bin/dash',
-        'MemoryMax=1536M', 'MemorySwapMax=0', 'TasksMax=64', 'OOMPolicy=stop', 'RuntimeMaxSec=1500', 'KillMode=control-group',
+        'MemoryMax=1536M', 'MemorySwapMax=0', 'TasksMax=64', 'OOMPolicy=stop', 'KillMode=control-group',
+        // PR-1: a signal-killed main process is a failure only under oneshot; its time limit is TimeoutStartSec.
+        'Type=oneshot', 'TimeoutStartSec=1500',
     ];
     foreach ($required as $property) {
         expect($props)->toContain($property);
@@ -205,7 +207,7 @@ it('decides GO only from host-checkable facts, and names the first failing one',
 
     expect(trim($run['out']))->toBe($decision);
 })->with(function () {
-    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'base_table_count' => '2', 'rows_total' => '3'];
+    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'user_code_reachable' => '0', 'base_table_count' => '2', 'rows_total' => '3'];
 
     return [
         'all facts hold' => [$good, '0 0 100 100 2 3', 'GO'],
@@ -218,11 +220,26 @@ it('decides GO only from host-checkable facts, and names the first failing one',
         'tables differ' => [array_merge($good, ['base_table_count' => '1']), '0 0 100 100 2 3', 'FAIL:table_count_mismatch'],
         'rows lost' => [array_merge($good, ['rows_total' => '2']), '0 0 100 100 2 3', 'FAIL:row_count_mismatch'],
         'no migrations table' => [array_merge($good, ['migrations_table' => '0']), '0 0 100 100 2 3', 'FAIL:no_migrations_table'],
+        'user code on a restore path' => [array_merge($good, ['user_code_reachable' => '1']), '0 0 100 100 2 3', 'FAIL:user_code_in_restore_path'],
+        'user code not reported' => [array_diff_key($good, ['user_code_reachable' => 1]), '0 0 100 100 2 3', 'FAIL:user_code_in_restore_path'],
     ];
 });
 
+it('fails the decision when the result channel overflows its window or carries NUL padding (VR-5)', function (string $padding) {
+    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL base_table_count=2\nDRILL rows_total=3\n";
+    $file = rdipTemp($lines.$padding);
+    $run = rdipLib('dms_sandbox_parse "$F"; echo "rej=$DMS_SANDBOX_REJECTED"; dms_sandbox_decide 0 0 1 1 2 3', ['F' => $file]);
+    unlink($file);
+
+    expect($run['out'])->not->toContain('rej=0')
+        ->and(trim(collect(explode("\n", trim($run['out'])))->last()))->toStartWith('FAIL:');
+})->with([
+    'NUL padding' => [str_repeat("\0", 100)],
+    'beyond 8 KiB' => [str_repeat("DRILL pad=x\n", 800)],
+]);
+
 it('fails the decision when the result channel carried a duplicate or a rejected line (forgery)', function (string $extra, string $decision) {
-    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL base_table_count=2\nDRILL rows_total=3\n".$extra;
+    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL user_code_reachable=0\nDRILL base_table_count=2\nDRILL rows_total=3\n".$extra;
     $file = rdipTemp($lines);
     $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide 0 0 1 1 2 3', ['F' => $file]);
     unlink($file);

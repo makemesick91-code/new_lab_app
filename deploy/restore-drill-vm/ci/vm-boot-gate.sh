@@ -76,7 +76,7 @@ check V3 "a tampered manifest is refused before any VM boots" "$([ "$rc" = 2 ] &
 dump "$W/hostile.sql" "COPY (SELECT 1) TO PROGRAM 'id';"
 rc="$(drill --expected-sha256 "$(sha256sum "$W/hostile.sql" | cut -d' ' -f1)" --manifest "$W/manifest" "$W/hostile.sql")"
 cp "$OUT/last.txt" "$OUT/V4.txt"
-check V4 "a hostile dump boots the VM and ends FAIL, recorded" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:' "$OUT/V4.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V4.txt")"
+check V4 "a hostile dump boots the VM, the replay itself refuses it (not a boot failure), recorded" "$([ "$rc" = 1 ] && grep -qx 'Decision: FAIL:sandbox_replay' "$OUT/V4.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V4.txt")"
 v="$(dms_evidence_verify_store "$W/store" "$W/evidence-anchor" "$(sha256sum "$W/store/000002.evidence" 2> /dev/null | cut -d' ' -f1)")"
 check V5 "the evidence chain verifies with both records and the expected head" "$(case "$v" in "VERIFIED 2 head="*) echo 0 ;; *) echo 1 ;; esac)" "$v"
 cp -- "$W"/store/*.evidence "$OUT/" 2> /dev/null || true

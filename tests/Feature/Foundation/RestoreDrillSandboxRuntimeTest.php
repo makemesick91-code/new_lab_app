@@ -41,7 +41,8 @@ function rdsrDrill(string $dump, bool $restricted = true): array
           cp "$T/dump.sql" "$T/payload"
         fi
         PB=$(stat -c %s "$T/payload"); PS=$(sha256sum "$T/payload" | cut -d' ' -f1)
-        declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [roles]=app_runtime [locale]=C.UTF-8
+        read -r PK PIV < <(dms_vm_input_key_iv)
+        declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [payload_key]=$PK [payload_iv]=$PIV [roles]=app_runtime [runtime_role]=app_runtime [locale]=C.UTF-8
           [tmpfs_mib]=256 [memory_mib]=768 [tasks]=64 [timeout_seconds]=300)
         dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
         head -c 65536 /dev/zero > "$T/output.raw"
@@ -122,3 +123,30 @@ it('refuses superuser-only statements planted in the dump: the replay role is no
     'CREATE ROLE intruder SUPERUSER;',
     "SELECT pg_catalog.lo_import('/etc/passwd');",
 ]);
+
+it('refuses GO when user code sits on a restore path, such as an index expression that could act differently in a real restore (PR-2)', function () {
+    $bomb = "CREATE FUNCTION public.zz_norm(t text) RETURNS text LANGUAGE sql IMMUTABLE AS \$\$ SELECT lower(t) \$\$;\nALTER FUNCTION public.zz_norm(text) OWNER TO app_runtime;\nCREATE INDEX items_norm ON public.items USING btree (public.zz_norm(label));\n";
+    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$bomb}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
+    $facts = rdsrDrill($dump);
+
+    expect($facts['sandbox_replay'] ?? null)->toBe('ok', json_encode($facts))
+        ->and($facts['sandbox_user_code_reachable'] ?? null)->not->toBe('0')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:user_code_in_restore_path');
+});
+
+it('counts runtime-owned objects from the restored catalog, whatever a function body hides from the text scan (PR-3)', function () {
+    $hidden = "CREATE FUNCTION public.a_helper() RETURNS void LANGUAGE plpgsql AS \$\$\nBEGIN\nCOPY x FROM stdin;\nEND \$\$;\nALTER FUNCTION public.a_helper() OWNER TO app_runtime;\n";
+    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$hidden}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
+    $facts = rdsrDrill($dump);
+
+    expect((int) ($facts['sandbox_runtime_owned_objects'] ?? -1))->toBeGreaterThan(2, json_encode($facts));
+});
+
+it('never runs row-security policy code during verification: the policy makes verification fail instead (PR-5)', function () {
+    $policy = "CREATE FUNCTION public.p_hook() RETURNS boolean LANGUAGE plpgsql AS \$\$ BEGIN INSERT INTO public.migrations VALUES (99, 'planted'); RETURN true; END \$\$;\nALTER FUNCTION public.p_hook() OWNER TO app_runtime;\nALTER TABLE public.items ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.items FORCE ROW LEVEL SECURITY;\nCREATE POLICY p ON public.items USING (public.p_hook());\n";
+    $dump = str_replace("\n--\n-- PostgreSQL database dump complete", "\n{$policy}--\n-- PostgreSQL database dump complete", RDSR_DUMP);
+    $facts = rdsrDrill($dump);
+
+    expect($facts['decision'] ?? null)->toStartWith('FAIL:')
+        ->and($facts['sandbox_stage'] ?? null)->toBe('verify');
+});

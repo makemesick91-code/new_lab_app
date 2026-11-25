@@ -33,20 +33,22 @@ function rdvmDir(): string
 const RDVM_BUILD = <<<'SH'
     printf 'SELECT 1;\n' > "$T/payload"
     declare -A IN=([run_id]=dmsdrill-0123456789ab [payload_bytes]=$(stat -c %s "$T/payload") [payload_sha256]=$(sha256sum "$T/payload" | cut -d' ' -f1)
-      [roles]="app_runtime dms_owner" [locale]=C.UTF-8 [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
+      [payload_key]=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef [payload_iv]=00112233445566778899aabbccddeeff
+      [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [locale]=C.UTF-8 [tmpfs_mib]=1024 [memory_mib]=1536 [tasks]=64 [timeout_seconds]=1500)
     dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
 
     SH;
 
 it('builds an input disk without privileges and parses it back exactly (D1)', function () {
     $dir = rdvmDir();
-    $run = rdvmSh(RDVM_BUILD.'dms_vm_input_parse "$T/input.raw" && for k in $DMS_VM_INPUT_KEYS; do echo "$k=${DMS_VM_INPUT[$k]}"; done; dms_vm_input_payload "$T/input.raw" "${DMS_VM_INPUT[payload_bytes]}"; echo; stat -c %s "$T/input.raw"', ['T' => $dir]);
+    $run = rdvmSh(RDVM_BUILD.'dms_vm_input_parse "$T/input.raw" && for k in $DMS_VM_INPUT_KEYS; do echo "$k=${DMS_VM_INPUT[$k]}"; done; dms_vm_input_payload "$T/input.raw" "${DMS_VM_INPUT[payload_bytes]}" "${DMS_VM_INPUT[payload_key]}" "${DMS_VM_INPUT[payload_iv]}"; echo; stat -c %s "$T/input.raw"; grep -c "SELECT 1" "$T/input.raw" || true', ['T' => $dir]);
     (new Process(['rm', '-rf', '--', $dir]))->run();
 
     expect($run['exit'])->toBe(0, $run['err'])
         ->and($run['out'])->toContain("run_id=dmsdrill-0123456789ab\npayload_bytes=10\n")
         ->and($run['out'])->toContain('roles=app_runtime dms_owner')
-        ->and($run['out'])->toContain("SELECT 1;\n\n4608");
+        // The payload round-trips through AES-256-CTR, and the plaintext never appears on the disk (VR-6).
+        ->and($run['out'])->toContain("SELECT 1;\n\n4608\n0");
 });
 
 it('refuses an input header that is malformed, incomplete or carries an unknown or unsafe value', function (string $mutation) {
@@ -83,7 +85,7 @@ it('parses the VM output strictly and decides only from facts the host can check
     expect($run['out'])->toBe($decision);
 })->with(function () {
     $sha = str_repeat('a', 64);
-    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nfeed_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_base_table_count=2\nsandbox_rows_total=3\nguest_stage=done\n";
+    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nfeed_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_user_code_reachable=0\nsandbox_base_table_count=2\nsandbox_rows_total=3\nguest_stage=done\n";
 
     return [
         'all facts hold' => [$good, 0, 'GO'],
@@ -107,22 +109,66 @@ it('treats an output disk without the frame as no result at all', function () {
     expect($run['out'])->toBe('frame=1');
 });
 
-it('boots the VM with KVM, no network device, a read-only input disk, QEMU\'s own sandbox and the D6 size', function () {
+it('boots the VM with KVM, no network device, read-only input, QEMU\'s own sandbox, the D6 size and a narrow CPU (VR-3a, VR-7)', function () {
     $run = rdvmSh('dms_vm_qemu_args /w/root.qcow2 /w/input.raw /w/output.raw 1 2048');
     $args = explode("\n", $run['out']);
 
-    expect($args)->toContain('-nic')
-        ->and($args[array_search('-nic', $args, true) + 1])->toBe('none')
+    expect($args[array_search('-nic', $args, true) + 1])->toBe('none')
         ->and($args[array_search('-smp', $args, true) + 1])->toBe('1')
         ->and($args[array_search('-m', $args, true) + 1])->toBe('2048')
+        ->and($args[array_search('-machine', $args, true) + 1])->toBe('q35,accel=kvm,vmport=off,hpet=off,smm=off')
+        ->and($args[array_search('-cpu', $args, true) + 1])->toBe('host,-vmx,-svm,pmu=off')
         ->and($args)->toContain('-nodefaults')
         ->and($args)->toContain('-sandbox')
         ->and($args)->toContain('on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny')
-        ->and($args)->toContain('if=virtio,file=/w/input.raw,format=raw,readonly=on,serial=dmsdrill-input')
+        ->and($args)->toContain('if=none,id=dmsin,file=/w/input.raw,format=raw,readonly=on')
+        ->and($args)->toContain('virtio-blk-pci,drive=dmsin,serial=dmsdrill-input')
+        ->and($args)->toContain('virtio-blk-pci,drive=dmsout,serial=dmsdrill-output')
+        // `-drive …,serial=` was removed in QEMU 3.0: the serial is a device property only.
+        ->and(collect($args)->filter(fn (string $a): bool => str_contains($a, 'file=') && str_contains($a, 'serial='))->all())->toBe([])
         ->and($run['out'])->not->toContain('netdev')
         ->and($run['out'])->not->toContain('virtfs')
         ->and($run['out'])->not->toContain('-chardev');
 });
+
+it('reads qemu-img info with a JSON parser, as QEMU 8 prints it with a children array first (VR-3b)', function (string $json, int $exit, string $out) {
+    $dir = rdvmDir();
+    file_put_contents("{$dir}/info.json", $json);
+    $run = rdvmSh('dms_vm_image_info_ok "$T/info.json" 10737418240', ['T' => $dir]);
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+
+    expect($run['exit'])->toBe($exit)
+        ->and($run['out'].$run['err'])->toContain($out);
+})->with(function () {
+    $child = '"children": [{"name": "file", "info": {"format": "file", "virtual-size": 1234, "filename": "x"}}]';
+
+    return [
+        'a 10 GiB qcow2' => ['{'.$child.', "virtual-size": 10737418240, "filename": "x", "format": "qcow2", "format-specific": {"type": "qcow2", "data": {}}}', 0, '10737418240'],
+        'larger than 10 GiB' => ['{'.$child.', "virtual-size": 10737418241, "format": "qcow2"}', 1, 'exceeds the limit'],
+        'raw image' => ['{'.$child.', "virtual-size": 100, "format": "raw"}', 1, 'not qcow2'],
+        'backing file' => ['{'.$child.', "virtual-size": 100, "format": "qcow2", "backing-filename": "/etc/x"}', 1, 'backing file'],
+        'external data file' => ['{'.$child.', "virtual-size": 100, "format": "qcow2", "format-specific": {"type": "qcow2", "data": {"data-file": "/dev/sda"}}}', 1, 'external data file'],
+    ];
+});
+
+it('kills QEMU itself, not only its timeout wrapper, when the drill is interrupted (VR-2)', function () {
+    $run = rdvmSh('timeout --kill-after=5 600 sleep 4243 & P=$!; read -rt 0.5 < <(sleep 1) || true; pgrep -f "^sleep 4243$" > /dev/null && echo before=running; dms_vm_kill_group "$P"; wait "$P" 2> /dev/null; read -rt 0.5 < <(sleep 1) || true; pgrep -f "^sleep 4243$" > /dev/null && echo after=running || echo after=gone');
+
+    expect($run['out'])->toContain('before=running')
+        ->and($run['out'])->toContain('after=gone');
+});
+
+it('keeps every FAIL reason inside the evidence schema, so a guest-chosen reason cannot block the record (VR-8)', function (string $in, string $out) {
+    $run = rdvmSh('dms_vm_decision_safe "$D"', ['D' => $in]);
+
+    expect($run['out'])->toBe($out);
+})->with([
+    ['GO', 'GO'],
+    ['FAIL:vm_exit_124', 'FAIL:vm_exit_124'],
+    ['FAIL:guest_Payload.Digest-Mismatch', 'FAIL:guest_invalid_value'],
+    ['FAIL:sandbox_'.str_repeat('x', 80), 'FAIL:guest_invalid_value'],
+    ['go', 'FAIL:guest_invalid_value'],
+]);
 
 it('pins the orchestrator to the D6 limits, one drill at a time, and refuses on the production host (D1)', function () {
     $code = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
@@ -132,7 +178,16 @@ it('pins the orchestrator to the D6 limits, one drill at a time, and refuses on 
         ->and($code)->toContain('timeout --kill-after=10 "$((MINUTES * 60))"')
         ->and($code)->toContain('[ "$(hostname)" != "$PROD_HOSTNAME" ]')
         ->and($code)->toContain('[ ! -e "$PROD_APP_DIR" ]')
-        ->and($code)->toContain('dms_restore_manifest_verify "$MANIFEST"')
+        // VR-10: the manifest is copied once into the private run directory and verified, parsed and hashed there.
+        ->and($code)->toContain('cat -- "$MANIFEST" > "$WORK/manifest"')
+        // PR-7: verified in the orchestrator's own shell, so the parsed manifest survives; P5 from the catalog (PR-3).
+        ->and($code)->toContain('dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify"')
+        ->and($code)->not->toContain('$(dms_restore_manifest_verify')
+        ->and($code)->toContain('DECISION="FAIL:p5_runtime_owned_objects"')
+        // VR-4, VR-11: never as root, and with a fixed environment.
+        ->and($code)->toContain('exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin')
+        ->and($code)->toContain('never as root (VR-4)')
+        ->and($code)->toContain('dms_vm_kill_group "$QEMU_PID"')
         ->and($code)->toContain('dms_evidence_write')
         // The configuration is parsed, never sourced; nothing connects to production PostgreSQL (D3).
         ->and($code)->not->toMatch('/^\s*(\.|source)\s+"?\$CONF/m')

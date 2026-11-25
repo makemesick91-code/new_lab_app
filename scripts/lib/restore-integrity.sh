@@ -380,7 +380,7 @@ dms_restore_load_guard_sql() {
   [[ "$tag" =~ ^g[0-9a-f]{16,}$ ]] || { _dms_restore_err "the load-guard tag is not g<hex>"; return 1; }
   cat <<SQL
 CREATE FUNCTION pg_temp.dms_restore_guard_${tag}() RETURNS void
-LANGUAGE plpgsql SET search_path = pg_catalog AS \$${tag}\$
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS \$${tag}\$
 DECLARE
   problem text;
 BEGIN

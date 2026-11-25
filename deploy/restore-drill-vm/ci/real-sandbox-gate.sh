@@ -139,8 +139,10 @@ drill() { # <label> <dump text> <restricted 1|0> [tmpfs MiB] [timeout s] -> prin
     cp "$d/dump.sql" "$d/payload"
   fi
   pb="$(stat -c %s "$d/payload")"; ps="$(sha256sum "$d/payload" | cut -d' ' -f1)"
+  local pk piv
+  read -r pk piv < <(dms_vm_input_key_iv)
   # shellcheck disable=SC2034
-  declare -A IN=([run_id]="$run" [payload_bytes]="$pb" [payload_sha256]="$ps" [roles]=app_runtime [locale]=C.UTF-8
+  declare -A IN=([run_id]="$run" [payload_bytes]="$pb" [payload_sha256]="$ps" [payload_key]="$pk" [payload_iv]="$piv" [roles]=app_runtime [runtime_role]=app_runtime [locale]=C.UTF-8
     [tmpfs_mib]="$tmpfs" [memory_mib]=768 [tasks]=64 [timeout_seconds]="$timeout")
   dms_vm_input_build "$d/input.raw" "$d/payload" IN
   head -c "$DMS_VM_OUTPUT_BYTES" /dev/zero > "$d/output.raw"
@@ -187,7 +189,7 @@ d="$(drill X-time "${DUMP_OK/--
 -- PostgreSQL database dump complete/SELECT pg_catalog.pg_sleep(600);
 --
 -- PostgreSQL database dump complete}" 1 256 20)"
-check X-time "an endless statement ends at RuntimeMaxSec as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 60 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
+check X-time "an endless statement ends at the unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 60 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
 
 # --- C: nothing left behind --------------------------------------------------------------------------------------------
 nap 1

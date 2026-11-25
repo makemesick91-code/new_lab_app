@@ -17,6 +17,14 @@
 # Exit: 0 GO, 1 FAIL (evidence written when the VM ran), 2 refused before anything ran.
 set -uo pipefail
 umask 077
+# VR-11: run with a fixed, minimal environment (no LD_PRELOAD, QEMU_* or PATH from the caller). Only the
+# configuration path is carried over.
+if [ "${DMS_DRILL_CLEAN_ENV:-}" != 1 ]; then
+  exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 HOME="${HOME:-/nonexistent}" DMS_DRILL_CLEAN_ENV=1 \
+    DMS_RESTORE_DRILL_CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}" bash "$0" "$@"
+fi
+# VR-4: QEMU runs as the identity of this script. It must never be root: a device-model escape would be host root.
+if [ "$(id -u)" = 0 ]; then echo "REFUSED: run the drill as the unprivileged drill operator, never as root (VR-4). Nothing ran."; exit 2; fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -93,27 +101,41 @@ done
 [ -r /dev/kvm ] && [ -w /dev/kvm ] || refuse "/dev/kvm is not usable by $(id -un): the drill needs a hardware-isolated VM (D1)"
 IMAGE_SHA="$(sha256sum -- "${C[DMS_DRILL_IMAGE]}" | cut -d' ' -f1)"
 [ "$IMAGE_SHA" = "${C[DMS_DRILL_IMAGE_SHA256]}" ] || refuse "the drill image digest ${IMAGE_SHA} is not the pinned ${C[DMS_DRILL_IMAGE_SHA256]}"
-IMAGE_INFO="$("${C[DMS_DRILL_QEMU_IMG]}" info --output=json -- "${C[DMS_DRILL_IMAGE]}" 2> /dev/null)" || refuse "cannot inspect the drill image"
-IMAGE_VSIZE="$(printf '%s' "$IMAGE_INFO" | sed -n 's/.*"virtual-size": *\([0-9]*\).*/\1/p' | head -n 1)"
-IMAGE_FORMAT="$(printf '%s' "$IMAGE_INFO" | sed -n 's/.*"format": *"\([a-z0-9]*\)".*/\1/p' | head -n 1)"
-[ "$IMAGE_FORMAT" = qcow2 ] || refuse "the drill image is not qcow2"
-[[ "$IMAGE_VSIZE" =~ ^[0-9]+$ ]] && [ "$IMAGE_VSIZE" -le $((DISK_GIB * 1024 * 1024 * 1024)) ] || refuse "the drill image's virtual size exceeds ${DISK_GIB} GiB (D6)"
-printf '%s' "$IMAGE_INFO" | grep -q '"backing-filename"' && refuse "the drill image must not have a backing file"
+"${C[DMS_DRILL_QEMU_IMG]}" info -f qcow2 --output=json -- "${C[DMS_DRILL_IMAGE]}" > "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" 2> /dev/null || refuse "cannot inspect the drill image as qcow2"
+IMAGE_VSIZE="$(dms_vm_image_info_ok "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" $((DISK_GIB * 1024 * 1024 * 1024)) 2>&1)" || refuse "${IMAGE_VSIZE} (D6)"
+rm -f -- "${C[DMS_DRILL_WORK_DIR]}/.image-info.json"
 
-# --- D3: the signed role manifest -----------------------------------------------------------------------------------
-MANIFEST_SHA="$(dms_restore_manifest_verify "$MANIFEST" "${C[DMS_DRILL_MANIFEST_ANCHOR]}")" || refuse "$MANIFEST_SHA"
-
-# --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
+# --- The run directory; stale runs; free space (VR-9) -----------------------------------------------------------
+# Under the lock, any earlier run directory is a leftover of an interrupted drill and may hold a plaintext dump.
+shopt -s nullglob
+for stale in "${C[DMS_DRILL_WORK_DIR]}"/dmsdrill-*; do
+  [ -d "$stale" ] && [ ! -L "$stale" ] && [ "$(stat -c '%u %a' -- "$stale")" = "$(id -u) 700" ] && rm -rf -- "$stale"
+done
+shopt -u nullglob
+BACKUP_GUESS="$(stat -c %s -- "$BACKUP_FILE" 2> /dev/null || echo 0)"
+FREE_KIB="$(df -Pk -- "${C[DMS_DRILL_WORK_DIR]}" | awk 'NR == 2 { print $4 }')"
+NEED_KIB=$(( (DISK_GIB * 1024 * 1024) + (BACKUP_GUESS * 3 / 1024) + 1048576 ))
+[[ "$FREE_KIB" =~ ^[0-9]+$ ]] && [ "$FREE_KIB" -ge "$NEED_KIB" ] || refuse "the work directory has ${FREE_KIB:-?} KiB free; a drill needs ${NEED_KIB} KiB (overlay, input disk, margin)"
 RUN_ID="$(dms_sandbox_unit_name)" || refuse "cannot draw a run id"
 WORK="${C[DMS_DRILL_WORK_DIR]}/${RUN_ID}"
 mkdir -m 0700 -- "$WORK" || refuse "cannot create ${WORK}"
 QEMU_PID=""
 cleanup() {
-  [ -n "$QEMU_PID" ] && kill -KILL "$QEMU_PID" 2> /dev/null
+  dms_vm_kill_group "$QEMU_PID"
   rm -rf -- "$WORK"
 }
 trap cleanup EXIT
 trap 'exit 143' TERM HUP INT
+
+# --- D3: the signed role manifest, read once into the run directory (VR-10) ----------------------------------------
+[ ! -L "$MANIFEST" ] && [ -f "$MANIFEST" ] && [ ! -L "${MANIFEST}.sig" ] && [ -f "${MANIFEST}.sig" ] || refuse "the manifest or its .sig is missing or a symlink"
+cat -- "$MANIFEST" > "$WORK/manifest" && cat -- "${MANIFEST}.sig" > "$WORK/manifest.sig" || refuse "cannot copy the manifest"
+# PR-7: verified in THIS shell (a $(…) subshell would lose DMS_ROLE_MANIFEST); its first output line is the sha256.
+dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify" || refuse "$(head -c 300 "$WORK/manifest.verify")"
+MANIFEST_SHA="$(head -n 1 "$WORK/manifest.verify")"
+[[ "$MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]] && [ -n "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]:-}" ] || refuse "the manifest did not verify in this shell"
+
+# --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
 dms_restore_check_source "$BACKUP_FILE" "$(id -un)" || refuse "the backup file failed its source checks"
 STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")" || refuse "could not stage a private copy"
 INTEGRITY="$(dms_restore_verify_copy "$STAGED" "$EXPECTED_SHA256")" || refuse "the backup does not match the expected digest"
@@ -132,9 +154,12 @@ dms_restore_restricted_stream "$STAGED" "$KEY" "$TAG" > "$WORK/payload" || refus
 rm -f -- "$STAGED"
 PAYLOAD_BYTES="$(stat -c %s -- "$WORK/payload")"
 PAYLOAD_SHA="$(sha256sum -- "$WORK/payload" | cut -d' ' -f1)"
+read -r PAYLOAD_KEY PAYLOAD_IV < <(dms_vm_input_key_iv) || refuse "cannot draw the payload key"
 # shellcheck disable=SC2034  # passed by name to dms_vm_input_build
 declare -A IN=([run_id]="$RUN_ID" [payload_bytes]="$PAYLOAD_BYTES" [payload_sha256]="$PAYLOAD_SHA"
-  [roles]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" [locale]="${C[DMS_DRILL_LOCALE]}" [tmpfs_mib]="$TMPFS_MIB"
+  [payload_key]="$PAYLOAD_KEY" [payload_iv]="$PAYLOAD_IV"
+  [roles]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" [runtime_role]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}"
+  [locale]="${C[DMS_DRILL_LOCALE]}" [tmpfs_mib]="$TMPFS_MIB"
   [memory_mib]="$UNIT_MEMORY_MIB" [tasks]="$TASKS" [timeout_seconds]="$UNIT_TIMEOUT")
 dms_vm_input_build "$WORK/input.raw" "$WORK/payload" IN || refuse "cannot build the input disk"
 rm -f -- "$WORK/payload"
@@ -156,7 +181,12 @@ if dms_vm_output_parse "$WORK/output.raw"; then
   DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$PAYLOAD_BYTES" "$EXPECT_TABLES" "$EXPECT_ROWS")"
   # D1: the VM had no network interface but loopback (the guest kernel's own view).
   if [ "$DECISION" = GO ] && [ "${DMS_VM_OUTPUT[vm_net_ifaces]:-}" != lo ]; then DECISION="FAIL:vm_has_network_interface"; fi
+  # P5 from the restored catalog (PR-3): after R6, no object may be owned by the runtime role.
+  if [ "$DECISION" = GO ] && [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_R6_OWNER_ROLE]}" != none ] \
+    && [ "${DMS_VM_OUTPUT[sandbox_runtime_owned_objects]:-x}" != 0 ]; then DECISION="FAIL:p5_runtime_owned_objects"; fi
 fi
+# VR-8: a reason built from guest text must still fit the evidence schema, or the FAIL would go unrecorded.
+DECISION="$(dms_vm_decision_safe "$DECISION")"
 # shellcheck disable=SC2034  # passed by name to dms_evidence_write
 declare -A EV=([DMS_DRILL_EVIDENCE_RUN_ID]="$RUN_ID" [DMS_DRILL_EVIDENCE_DRILL_HOST]="$(hostname | tr -cd 'A-Za-z0-9._-')"
   [DMS_DRILL_EVIDENCE_SIGNER]="${C[DMS_DRILL_EVIDENCE_SIGNER]}" [DMS_DRILL_EVIDENCE_STARTED_AT]="$STARTED_AT"
@@ -166,7 +196,7 @@ declare -A EV=([DMS_DRILL_EVIDENCE_RUN_ID]="$RUN_ID" [DMS_DRILL_EVIDENCE_DRILL_H
   [DMS_DRILL_EVIDENCE_IMAGE_SHA256]="$IMAGE_SHA"
   [DMS_DRILL_EVIDENCE_LIMITS]="vcpu=${VCPU},memory_mib=${MEMORY_MIB},disk_gib=${DISK_GIB},minutes=${MINUTES},tasks=${TASKS}"
   [DMS_DRILL_EVIDENCE_EXPECTED]="tables=${EXPECT_TABLES},rows=${EXPECT_ROWS}"
-  [DMS_DRILL_EVIDENCE_OBSERVED]="tables=${DMS_VM_OUTPUT[sandbox_base_table_count]:-none},rows=${DMS_VM_OUTPUT[sandbox_rows_total]:-none}"
+  [DMS_DRILL_EVIDENCE_OBSERVED]="guest-asserted:tables=${DMS_VM_OUTPUT[sandbox_base_table_count]:-none},rows=${DMS_VM_OUTPUT[sandbox_rows_total]:-none}"
   [DMS_DRILL_EVIDENCE_FIDELITY]="${DMS_VM_OUTPUT[sandbox_fidelity_trg_con_fn_idx]:-none}" [DMS_DRILL_EVIDENCE_DECISION]="$DECISION")
 RECORD="$(dms_evidence_write "${C[DMS_DRILL_EVIDENCE_STORE]}" "${C[DMS_DRILL_EVIDENCE_KEY]}" EV)" || { echo "FATAL: could not write signed evidence; decision ${DECISION} is unrecorded."; exit 1; }
 echo "${INTEGRITY}"

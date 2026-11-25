@@ -45,13 +45,30 @@ _dms_manifest_epoch() {
 # Verifies the signature, then the content. Fills DMS_ROLE_MANIFEST and prints the manifest's sha256. Returns 0, or 1
 # with the reason on stdout. Never trusts a value before the signature has verified.
 dms_restore_manifest_verify() {
-  local manifest="${1:?manifest}" anchor="${2:?trust anchor}" now="${3:-}" sig size line key value principal
+  local src="${1:?manifest}" anchor="${2:?trust anchor}" now="${3:-}" f tmp rc
   DMS_ROLE_MANIFEST=()
-  sig="${manifest}.sig"
   [ -n "$now" ] || now="$(date -u +%s)"
-  for f in "$manifest" "$sig" "$anchor"; do
+  for f in "$src" "${src}.sig" "$anchor"; do
     if [ -L "$f" ] || [ ! -f "$f" ]; then echo "manifest: ${f} is missing, a symlink or not a regular file"; return 1; fi
   done
+  # PR-4: read the manifest and its signature ONCE into a private copy; size, signature, values and sha256 all come
+  # from that copy, so swapping the file between the reads cannot slip unsigned values in.
+  tmp="$(mktemp -d)" || return 1
+  if ! head -c $((DMS_ROLE_MANIFEST_MAX_BYTES + 1)) -- "$src" > "${tmp}/m" \
+    || ! head -c $((DMS_ROLE_MANIFEST_MAX_SIG_BYTES + 1)) -- "${src}.sig" > "${tmp}/m.sig"; then
+    rm -rf -- "$tmp"
+    echo "manifest: cannot read it"
+    return 1
+  fi
+  _dms_manifest_verify_copy "${tmp}/m" "$anchor" "$now"
+  rc=$?
+  rm -rf -- "$tmp"
+  return "$rc"
+}
+
+_dms_manifest_verify_copy() {
+  local manifest="$1" anchor="$2" now="$3" sig size line key value principal
+  sig="${manifest}.sig"
   size="$(stat -c %s -- "$manifest")" || return 1
   [ "$size" -le "$DMS_ROLE_MANIFEST_MAX_BYTES" ] || { echo "manifest: larger than ${DMS_ROLE_MANIFEST_MAX_BYTES} bytes"; return 1; }
   size="$(stat -c %s -- "$sig")" || return 1
