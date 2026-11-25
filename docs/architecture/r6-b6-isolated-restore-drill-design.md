@@ -1,6 +1,6 @@
 ---
 kb_status: unverified
-kb_verified_against: 0b490069
+kb_verified_against: 8f7e2807
 kb_updated: 2026-11-25
 ---
 
@@ -74,7 +74,7 @@ The in-place superuser replay is **retired**: `scripts/rollout-restore-drill.sh`
 | 2 | VM isolation from production | vm-boot gate V1–V5; guest reports `lo` only | **NOT RUN.** No hypervisor is usable on this workstation (no QEMU, not in the kvm group, no Hyper-V rights). |
 | 3 | No production file, socket or network access | real-sandbox gate P-* (user mode): decoys reachable from outside, refused inside (files, sockets, TCP, IPv6, netlink, vsock, io_uring, metadata) | **PROVEN in user mode** (55/0/3). VM layer NOT RUN. |
 | 4 | Trusted backup and manifest verification | #695 integrity suites; manifest/evidence suite (real ssh-keygen); orchestrator refusals | **PROVEN locally** (Pest) |
-| 5 | Non-superuser replay | runtime suite + gate S-su1..5 (42501), S-super (NOLOGIN), PR-2/3/5 cases | **PROVEN in user mode** |
+| 5 | Non-superuser replay | runtime suite (Pest, user mode: laundering refused with 42501; bootstrap superuser NOLOGIN), PR-2/3/5 cases; the gate has no S-su checks (corrected in §0.14: the CI gates are S-launder, S-dangling, S-vanish, refused earlier with 42883 under the P5-1 order) | **PROVEN in user mode** |
 | 6 | End-to-end restore fidelity | the full application schema through the guest/host protocol: GO, 186/186 tables, 238/238 rows, fidelity `22:1045:5:968`, no user code on a restore path | **PROVEN without the hypervisor.** The VM boot is NOT RUN. |
 | 7 | Resource exhaustion resistance | gate X-disk, X-time; prototype memory and fork bombs | **PROVEN in user mode.** VM-level D6 is NOT RUN. |
 | 8 | Reliable cleanup | gate C-*; VR-2 process-group test; stale-run sweep | **PROVEN locally.** VM is NOT RUN. |
@@ -390,7 +390,7 @@ from the backup: the P5-1 restore order held under every attack tried.
 | ID | Sev. | Finding | Disposition |
 |---|---|---|---|
 | R6C-1 | HIGH (proved) | The operator could sudo to the signer and obtain a signed, witnessed GO for a drill that never ran. | **Fixed:** only the runner identity may call `sign`, and the operator can only start the root-owned orchestrator as the runner. The signer refuses any other caller (CI G2). |
-| R6A-1 | HIGH | Everything that bounded QEMU shared its uid: an escape could kill its timeout, outlive the run, keep the lock and see the next run. | **Fixed:** QEMU runs in the supervisor's system unit. The cgroup is killed whole at `RuntimeMaxSec`; stale run files are removed by root; there is no lock file; the unit's name gives exclusivity (CI Q6). |
+| R6A-1 | HIGH | Everything that bounded QEMU shared its uid: an escape could kill its timeout, outlive the run, keep the lock and see the next run. | **Fixed:** QEMU runs in the supervisor's system unit. The cgroup is killed whole at `RuntimeMaxSec`; stale run files are removed by root; the supervisor has no lock file (the orchestrator's `drill.lock` belongs to the runner, outside QEMU's reach; corrected in §0.14); the unit's name gives exclusivity (CI Q6). |
 | R6A-2 | HIGH | The QEMU account had host networking. | **Fixed:** `PrivateNetwork`, `IPAddressDeny=any`, AF_UNIX only (CI Q5, V1-qemu network namespace). |
 | R6B-1 | HIGH (proved) | CHECKs depending on the session or the clock (`CURRENT_USER`, `CURRENT_TIMESTAMP`, `'now'::date`) passed the guard: GO in the drill, FAIL in a real restore. | **Fixed:** the guard tests every CHECK with PostgreSQL's own immutability check (as an index expression on a temporary copy; 42P17 refuses) and denies `SQLVALUEFUNCTION`. Restore role and database names are random per run. Fixtures `rolebomb` and `timebomb`. |
 | R6A-3 / R6C-7 | MEDIUM | The AppArmor user-namespace grant was host-wide in effect. | **Fixed:** the inspection runs in a DynamicUser system unit, which needs no user namespace; the grant is removed. |
@@ -474,6 +474,123 @@ mechanism, not a boundary against the operator.
 - A-1 stays **OPEN** and PR #695 **BLOCKED** until the owner reviews the evidence (Evidence Pack 52) and decides the
   environment residual. The R6-B6 controls are **GO for owner review**. Production use is **NO-GO** until a drill
   host is provisioned and production takes custom-format backups.
+
+### 0.14 Final acceptance closure (directive "R6-B6 — Final Acceptance Closure", owner decision CONDITIONAL GO)
+
+**F3: Restore Environment Compatibility Contract** (owner decision RECORD AND PIN). It closes the R6B-1 environment
+residual of §0.13 as a mechanism. Production's own contract does not exist yet.
+
+**The contract and its binding:**
+- **What it is:** a versioned key=value file the owner signs (`scripts/lib/restore-envcontract.sh`).
+  - Namespace `dms-restore-env-contract`.
+  - At most 4096 bytes; valid at most 90 days; revocable by id.
+- **What it records:** production's restore environment, collected read-only by
+  `scripts/restore-env-contract-collect.sh`. That collection needs a separate owner authorization.
+- **Binding:**
+  - The signed role manifest (contract 2) names the contract's sha256.
+  - The orchestrator refuses a drill without it (`REFUSED:env_contract`).
+
+**Classes, checked on the host before any VM boots** (`REFUSED:env_compatibility`):
+- **Exact**, against the drill image's properties. Those are recorded inside the image at build time, root-owned and
+  covered by the INSTALL digest; their image digest must equal the pinned QEMU image. The class covers:
+  - the PostgreSQL major, UTF8, the libc provider, and collate = ctype;
+  - the collation version (`none` for C locales, otherwise the image's glibc);
+  - glibc, ICU and tzdata;
+  - extensions at their versions;
+  - every locale used.
+- **Compatible:** the same major, with an image minor of 16.15 or later and never older than production's.
+- **Pinned:** sixteen restore-session settings:
+  - TimeZone, DateStyle, IntervalStyle and array_nulls;
+  - lc_monetary, lc_numeric and lc_time;
+  - extra_float_digits, bytea_output and xmlbinary;
+  - xmloption = content and standard_conforming_strings = on, which pg_restore's preamble sets itself;
+  - quote_all_identifiers, default_text_search_config, timezone_abbreviations and transform_null_equals.
+
+**How the pins are applied and checked:**
+- The pins become PGOPTIONS of the load guard and of every restore session.
+- The guest computes one environment digest at the end of each of the six restore sessions, behind a per-session
+  nonce that the archive cannot forge (R6F-E14), and once more in a fresh session. Any difference reports
+  `inconsistent`.
+- The host computes the expected digest from the signed contract only.
+- GO requires the two digests to be equal; otherwise the drill reports `FAIL:env_mismatch`.
+- The record (evidence contract 5) carries the contract's sha256 and both digests.
+- The reported environment is a guest assertion (VR-1), never production evidence.
+
+**Reviews.** All reviewers are independent AI reviewer agents with no shared context. Their transcripts are in
+Evidence Pack 53.
+
+**F2: final PostgreSQL review of `3bfaacc2`.**
+- No HIGH or CRITICAL. P5-1 was re-proven.
+- R6B-1 is closed in its conditional form by F3 pinning, plus:
+  - the guard and the post-data check now refuse JSON constructors and the zone-name variants of `timezone()`,
+    `date_trunc()`, `date_add()` and `date_subtract()`. These are all of PostgreSQL 16's IMMUTABLE zone-name
+    functions usable there.
+  - the differential also FAILs a generated `varchar`/`bpchar` value that would be too long under another profile
+    (R6F-P17). COPY raises on such a value; an explicit cast silently truncates.
+- Fix verification (`46288184`) reproduced and closed every item except one LOW: the length check missed
+  `varchar(n)[]` elements and `bit`/`varbit(n)` lengths (R6F-P18). Fixed in `000e6612`.
+- The second verification closed that, and the marker hardening. It found arrays of `bit`/`varbit` still masked,
+  which `8f7e2807` fixed. These are the last types whose explicit cast differs from COPY's assignment.
+- The third verification closed R6F-P18 completely. On 16.15, `pg_cast` lists `bpchar`, `varchar`, `bit` and `varbit`
+  as the only length coercions whose explicit and assignment forms differ.
+- One INFO remains: a length coercion buried in an expression is re-parsed as an explicit cast, so it is masked. An
+  example is a generated composite column whose field is `varchar(n)`. Reaching it needs a session-dependent source
+  that the guard does not refuse, and the pinned load would raise the error itself. It is accepted as a heuristic
+  limit.
+- The image minor must be at least production's. This is an accepted heuristic: a newer minor can differ in
+  behaviour, so a GO carries over only to a restore on a minor at least the image's (runbook). Both minors are bound in the record: production's through the contract's sha256, the image's through
+  `image_sha256` and the INSTALL digest.
+
+**F3 evidence review of `3bfaacc2`.**
+- No CRITICAL, HIGH or MEDIUM. Its LOW items were fixed in `46288184`:
+  - per-session digests;
+  - the sixteenth pin;
+  - the collation pre-check;
+  - the early image check;
+  - non-blocking copies;
+  - the collector output.
+- Fix verification closed seven of eight. The eighth, a marker the archive could forge (R6F-E14, LOW, reproduced),
+  was fixed in `f4180294` and verified CLOSED by reproduction: a forged or swallowed marker reads as missing.
+
+**Real-isolation CI.**
+
+| Run | Code | System mode | VM boot |
+|---|---|---|---|
+| 45590026144 | `46288184` | 92/0/1 | 29/0 |
+| 45591988291 | `000e6612` | 92/0/1 | 29/0 |
+| 45593398043 | `8f7e2807` (final code) | **92/0/1** | **29/0** |
+
+- VM boot includes V1-env: the image's properties and a pinned GO.
+- It also includes V16–V20:
+  - an incompatible, tampered, or unbound contract is refused before boot;
+  - `array_nulls=off` fails in the VM as the real restore would;
+  - `on` is GO.
+
+**Local evidence on `8f7e2807`.** The full application schema under the sixteen pins, and the same schema as a
+custom-format backup made by `scripts/backup-custom-format.sh` (F5): both GO, 186/186 tables, 238/238 rows,
+environment digests equal.
+
+**Residuals (owner decisions; not closed here):**
+- **Production's contract.** Collection needs a separate read-only authorization. Until a signed contract exists, no
+  drill of a production archive can be GO.
+- **G0.** Nothing protects against root or a malicious administrator of the drill host. CI proves the mechanisms only.
+- **Heuristics.** The guard's list and the differential remain heuristics. A difference that no profile and no row
+  triggers stays invisible. A setting the archive sets and resets within one session is not seen, though production's
+  restore runs the same statements.
+- **Caps not exercised.** Memory, task and CPU caps are configured, not exercised. No CI check asserts that the
+  restore role is not a superuser; that is proven in user mode only.
+- **Forced NO-GO.** An archive dumped with `standard_conforming_strings=off` is always NO-GO (`inconsistent`). This is
+  fail-closed and a denial of service only.
+
+**Verdict on the final code `8f7e2807`.** These are three separate decisions:
+- **A-1 implementation and security acceptance:** ready for owner review. A-1 stays **OPEN** until the owner
+  approves.
+- **PR #695 merge readiness:** **BLOCKED.** The integration plan is in Evidence Pack 53 §16, and it needs explicit
+  owner approval.
+- **Production operational readiness:** **NO-GO** until all of these are done:
+  - the drill host is provisioned;
+  - production's contract is signed;
+  - production takes custom-format backups.
 
 ## 1. Problem and objective
 

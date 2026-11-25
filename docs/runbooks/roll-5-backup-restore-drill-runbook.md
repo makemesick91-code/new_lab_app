@@ -144,7 +144,9 @@ the only supported way to replay a backup for a drill. Design and evidence:
   - **Classes, checked before any VM boots:**
     - exact, against the drill image's properties: PG major, UTF8, libc provider, collate = ctype, collation version,
       glibc, ICU, tzdata, extensions, locales present;
-    - compatible: same major, image minor 16.15 or later;
+    - compatible: same major, image minor 16.15 or later and never older than production's. A GO carries over only
+      to a restore on a PostgreSQL minor at least the drill image's: before a recovery relies on a drill GO, patch
+      the target to that minor, or drill on an image of the target's exact minor.
     - pinned: sixteen restore-session settings, applied to every restore session. The guest measures the environment
       at the end of each of the six restore sessions (behind a per-session nonce the archive cannot forge) and once
       more in a fresh one; any difference reports `inconsistent`. A setting the archive changes and resets within one

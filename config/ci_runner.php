@@ -2091,6 +2091,11 @@ return [
         // R6-B6 phase 2 (PR-6, PR-5, PR-8): the structured custom-format archive, its strict TOC and data-section
         // validation and the per-table counts, over committed synthetic fixtures (no PostgreSQL binary needed).
         'tests/Feature/Foundation/RestoreDrillArchiveTest.php',
+        // R6-B6 F3 (owner decision RECORD AND PIN): the signed Restore Environment Compatibility Contract, its
+        // refusals, revocation, the exact/compatible/pinned classes checked before boot, the canonical environment
+        // digest and the read-only production collector. Selected by the `RestoreDrill` token in BOTH critical
+        // variants; declared so a rename cannot drop it (needs ssh-keygen only, no PostgreSQL binary).
+        'tests/Feature/Foundation/RestoreDrillEnvContractTest.php',
     ],
 
     /*
