@@ -23,6 +23,8 @@ P=0; F=0
 ok() { if [ "$2" = 0 ]; then P=$((P + 1)); echo "PASS $1 ${3:-}"; else F=$((F + 1)); echo "FAIL $1 ${3:-}"; fi; }
 q() { psql -X -q -At -v ON_ERROR_STOP=1 -d "$1" -c "$2"; }
 sha() { sha256sum | cut -d' ' -f1; }
+# the first lines of a tool's stderr, folded onto one line (synthetic data only), so a CI failure explains itself
+errtail() { [ -s "$1" ] && printf ' | stderr: %s' "$(head -n 6 "$1" | tr '\n' ' ')"; return 0; }
 
 # --- keys: the source holds only the PUBLIC key; the private key lives in a separate keyring (offline custody) ------
 gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key 'cab-synthetic <synthetic@example.invalid>' ed25519 sign never 2> /dev/null
@@ -57,6 +59,8 @@ printf '%s\t%s\t%s\t%s\t%s\n' \
   upload durable 1 - "SELECT disk, path, sha, branch_id FROM upload" > "$MAP"
 STATE="$W/state"; STORE="$W/store"; OFF="$W/offhost"
 
+echo "ENV client='$(pg_dump --version)' server='$(q postgres 'SHOW server_version')'"
+
 # --- C1 first snapshot, verify, integrity --------------------------------------------------------------------------
 out="$(bash "$B" snapshot --storage "$S" --roots "$ROOTS" --state "$STATE" --store "$STORE" --recipient "$FPR")"; rc=$?
 ok C1-snapshot "$rc" "$(echo "$out" | cut -c1-140)"
@@ -85,8 +89,9 @@ for i in 31 32; do p="handwritings/1/${i}/handwriting_p1_${i}.png"; put "clinica
 put "clinical-evidence-private/handwritings/2/99/handwriting_p1_uncommitted.png" 2048   # an upload whose row never committed
 out="$(bash "$B" snapshot --storage "$S" --roots "$ROOTS" --state "$STATE" --store "$STORE" --recipient "$FPR")"; ok C4-snapshot-after-T $? "$(echo "$out" | grep -o 'files=[0-9]*.*new_objects=[0-9]*')"
 # restore both sides into isolation: the database at T, the files from the first snapshot after T
-q postgres "CREATE DATABASE ${REST}"; pg_restore -d "$REST" --no-owner "$W/db-at-T.dump" 2> /dev/null
-out="$(bash "$B" restore --store "$STORE" --target "$W/restored" --storage "$S")"; ok C4-restore-isolated $? "$out"
+q postgres "CREATE DATABASE ${REST}"; pg_restore -d "$REST" --no-owner "$W/db-at-T.dump" 2> "$W/c4-restore.err"; r4=$?
+out="$(bash "$B" restore --store "$STORE" --target "$W/restored" --storage "$S")"; rc=$?
+[ "$rc" = 0 ] && [ "$r4" = 0 ]; ok C4-restore-isolated $? "${out}; database at T: pg_restore exit ${r4}$(errtail "$W/c4-restore.err")"
 out="$(PGDATABASE="$REST" bash "$R" --map "$MAP" --out "$W/rec2" --tree "$W/restored")"; rc=$?
 [ "$rc" = 1 ] && grep -q '^ASSET ktp .*missing=1' "$W/rec2/report.txt" && grep -q '^MISSING_RECOVERABLE_BY_SHA 1' "$W/rec2/report.txt"
 ok C4-db-file-inconsistency-detected $? "$(grep -E '^(ASSET ktp|ROOT clinical|VERDICT)' "$W/rec2/report.txt" | tr '\n' ' ')"
@@ -176,7 +181,7 @@ PGDATABASE="${TAG}_bk2" bash "$R" --map "$MAP" --out "$W/rec7" --storage "$W/bk2
 same=1; cmp -s <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec6/report.txt") <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec7/report.txt") && same=0
 cp "$W/rec7/report.txt" "$W/bk2-report.txt" 2> /dev/null
 [ -e "$W/bk2/x/app/backups" ]; nb=$?
-[ "$rr" = 0 ] && [ "$same" = 0 ] && [ "$nb" = 1 ]; ok C11-bk2-shaped-package-reconciles-like-live "$?" "pg_restore (no --create) exit ${rr}; reports identical: $([ "$same" = 0 ] && echo yes || echo no); backups/ left out: $([ "$nb" = 1 ] && echo yes || echo no)"
+[ "$rr" = 0 ] && [ "$same" = 0 ] && [ "$nb" = 1 ]; ok C11-bk2-shaped-package-reconciles-like-live "$?" "pg_restore (no --create) exit ${rr}; reports identical: $([ "$same" = 0 ] && echo yes || echo no); backups/ left out: $([ "$nb" = 1 ] && echo yes || echo no)$(errtail "$W/bk2/restore.err")"
 
 echo "TOTAL pass=${P} fail=${F}"
 [ "$F" = 0 ]
