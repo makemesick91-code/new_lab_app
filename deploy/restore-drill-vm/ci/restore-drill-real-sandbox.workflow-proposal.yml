@@ -73,7 +73,9 @@ jobs:
       - name: KVM (required, never emulated); QEMU, libguestfs, PostgreSQL 16 client
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm && sudo udevadm settle || true
+          echo "cpu virtualization flags: $(grep -c -E 'vmx|svm' /proc/cpuinfo)"; ls -l /dev/kvm || true
+          if [ -c /dev/kvm ]; then sudo chmod 0666 /dev/kvm; fi
           test -r /dev/kvm && test -w /dev/kvm || { echo "KVM is not available on this runner: the drill never falls back to emulation"; exit 1; }
           sudo apt-get update -q
           sudo apt-get install -y -q qemu-system-x86 qemu-utils libguestfs-tools ubuntu-cloudimage-keyring postgresql-16
