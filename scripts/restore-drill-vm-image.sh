@@ -39,8 +39,10 @@ if [ "$PKG_MODE" = host-apt ]; then
   qemu-img convert -O qcow2 "$SRC" "$STAGE/sim.qcow2"
   virt-customize -a "$STAGE/sim.qcow2" --no-network --run-command 'apt-get install -s -y postgresql-16 > /var/tmp/dms-sim.txt 2>&1 || true'
   virt-cat -a "$STAGE/sim.qcow2" /var/tmp/dms-sim.txt > "$STAGE/sim.txt"
-  mapfile -t PKGS < <(awk '/^Inst /{ print $2 }' "$STAGE/sim.txt")
-  [ "${#PKGS[@]}" -ge 1 ] && printf '%s\n' "${PKGS[@]}" | grep -qx postgresql-16 || { echo "FATAL: the package simulation did not resolve postgresql-16"; cat "$STAGE/sim.txt"; exit 2; }
+  # Exactly the versions the IMAGE's own apt resolved ("Inst <pkg> (<version> <origin> [arch])"): pkg=version, so the
+  # host never substitutes a version from another repository it may have configured.
+  mapfile -t PKGS < <(awk '/^Inst / { v = $3; sub(/^\(/, "", v); print $2 "=" v }' "$STAGE/sim.txt")
+  [ "${#PKGS[@]}" -ge 1 ] && printf '%s\n' "${PKGS[@]}" | grep -q '^postgresql-16=16\.' || { echo "FATAL: the package simulation did not resolve postgresql-16"; cat "$STAGE/sim.txt"; exit 2; }
   mkdir -p "$STAGE/debs"
   (cd "$STAGE/debs" && apt-get download "${PKGS[@]}")
   echo "offline packages: ${PKGS[*]}"
