@@ -501,9 +501,13 @@ it('keeps root confined to the supervisor: two fixed modes, root-owned code, the
         ->and($vm)->toContain('-p "InaccessiblePaths=-/dev/mqueue -/run/systemd/journal -/run/dbus"')
         ->and($vm)->toContain('-p CPUQuota=150% -p IOWeight=10 -p LimitFSIZE=12G')
         // R6A-1, R6A-2, R6A-6, R6A-11: the unit's bounds are outside QEMU's reach.
-        // R6F-L13: no socket of any family (an AF_UNIX socket reaches systemd-resolved, which resolves names outside).
-        ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=none')
-        ->and($vm)->not->toContain('RestrictAddressFamilies=AF_UNIX')
+        // R6F-L13: no socket at all: socket() itself is refused (an AF_UNIX socket reaches systemd-resolved, which
+        // resolves names outside); systemd-run rejects RestrictAddressFamilies=none, so it is never used.
+        ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX')
+        ->and($vm)->toContain('io_uring_register socket process_vm_readv process_vm_writev')
+        ->and($vm)->not->toContain('RestrictAddressFamilies=none')
+        // R6F-L18: /run read-only (nothing left in /run/lock).
+        ->and($vm)->toContain('-p "ReadOnlyPaths=/run"')
         ->and($code)->toContain('flock -n "$vlock" || refuse vm_busy')
         ->and($vm)->toContain('-p KillMode=control-group')
         ->and($vm)->toContain('-p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0')
@@ -588,4 +592,47 @@ it('stops the supervised unit at once when the supervisor is signalled, not when
         ->and($p->getExitCode())->toBe(143)
         ->and($elapsed)->toBeLessThan(15.0)
         ->and($after)->toBeIn(['inactive', 'failed', '']);
+});
+
+it('starts the QEMU unit\'s exact properties under systemd, with no socket, no io_uring and a read-only /run (R6F-L13, L18)', function () {
+    $rt = (string) getenv('XDG_RUNTIME_DIR');
+    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
+        test()->markTestSkipped('no per-user systemd manager on this host');
+    }
+    $p = new Process(['bash', '-c', '. "$1"; dms_vm_qemu_unit_properties x /nonexistent 1', 'x', base_path('scripts/lib/restore-vm.sh')]);
+    $p->mustRun();
+    $lines = explode("\n", trim($p->getOutput()));
+    // Only what a per-user manager cannot apply is dropped (accounts, devices, IP accounting, system paths).
+    $props = [];
+    for ($i = 0; $i < count($lines); $i++) {
+        if ($lines[$i] === '-p') {
+            $v = $lines[++$i];
+            if (! preg_match('/^(SupplementaryGroups|DevicePolicy|DeviceAllow|IPAddressDeny|ReadWritePaths|RuntimeDirectory|RuntimeDirectoryMode|CPUQuota|IOWeight)=/', $v)) {
+                array_push($props, '-p', $v);
+            }
+        }
+    }
+    $probe = implode("\n", [
+        'import ctypes, socket',
+        'try:',
+        '    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); print("SOCKET_OPENED")',
+        'except OSError as e:',
+        '    print("SOCKET_REFUSED errno=%d" % e.errno)',
+        'l = ctypes.CDLL(None, use_errno=True); b = ctypes.create_string_buffer(120)',
+        'print("IOURING_OK" if l.syscall(425, 4, b) >= 0 else "IOURING_DENIED errno=%d" % ctypes.get_errno())',
+        'try:',
+        '    open("/run/lock/dmsl13probe", "w"); print("RUNLOCK_WRITTEN")',
+        'except OSError as e:',
+        '    print("RUNLOCK_REFUSED errno=%d" % e.errno)',
+    ]);
+    $unit = 'dmsl13probe-'.bin2hex(random_bytes(4));
+    $run = new Process(array_merge(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', "--unit={$unit}", '-p', 'PrivateUsers=yes'], $props, ['--', '/usr/bin/python3', '-I', '-c', $probe]), null, ['XDG_RUNTIME_DIR' => $rt, 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'), 'PATH' => (string) getenv('PATH')]);
+    $run->setInput('');
+    $run->run();
+    @unlink('/run/lock/dmsl13probe');
+
+    expect($run->getExitCode())->toBe(0, $run->getErrorOutput())
+        ->and($run->getOutput())->toContain('SOCKET_REFUSED errno=1')
+        ->and($run->getOutput())->toContain('IOURING_DENIED errno=1')
+        ->and($run->getOutput())->toContain('RUNLOCK_REFUSED errno=30');
 });

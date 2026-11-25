@@ -208,35 +208,63 @@ restore_part data "$R/list.schema" data
 restore_part post_data "$R/list.schema" post-data
 # R6F-P8: the restored rows under DIFFERENT session settings, before any function of the dump exists (P5-1), so only
 # builtins are evaluated. Every table CHECK must still hold, every stored generated column must equal its expression,
-# and every unique expression index must stay unique, under each profile (time zones far apart, every interval style,
+# and every expression or partial index must build and, if unique, stay unique, under each profile (time zones far
+# apart and a half-hour daylight-saving one, every interval style,
 # float digits from -15 to 3, both bytea and XML binary outputs, identifier quoting on and off). A schema whose
 # result depends on the session can hold in the drill and fail in a real restore: such a drill FAILs. This is the
 # safety net under the guard's list of known session-dependent builtins (age(), quote_ident() …), on the actual data.
 # (Held in a variable: only the PostgreSQL binaries, bash, awk, head and wc may run in this unit.)
 read -r -d '' DIFF_SQL <<'SQL'
 DO $dmsdiff$
-DECLARE r record; n bigint; total bigint := 0; keys text; nn text;
+DECLARE
+  r record; n bigint; total bigint := 0; keys text; nn text; q text[] := '{}'; i int;
+  s_tz text := pg_catalog.current_setting('TimeZone'); s_is text := pg_catalog.current_setting('IntervalStyle');
+  s_fd text := pg_catalog.current_setting('extra_float_digits'); s_bo text := pg_catalog.current_setting('bytea_output');
+  s_xb text := pg_catalog.current_setting('xmlbinary'); s_qa text := pg_catalog.current_setting('quote_all_identifiers');
 BEGIN
+  -- R6F-P9: every query is written under FIXED settings (a constant printed with too few digits, or in another style,
+  -- would be another constant), then run under this session's profile.
+  PERFORM pg_catalog.set_config('TimeZone', 'UTC', true), pg_catalog.set_config('IntervalStyle', 'postgres', true),
+    pg_catalog.set_config('extra_float_digits', '3', true), pg_catalog.set_config('bytea_output', 'hex', true),
+    pg_catalog.set_config('xmlbinary', 'base64', true), pg_catalog.set_config('quote_all_identifiers', 'off', true);
   FOR r IN SELECT c.conrelid::pg_catalog.regclass AS rel, pg_catalog.pg_get_expr(c.conbin, c.conrelid) AS ex
              FROM pg_catalog.pg_constraint c
             WHERE c.contype OPERATOR(pg_catalog.=) 'c' AND c.conrelid OPERATOR(pg_catalog.<>) 0 AND c.oid OPERATOR(pg_catalog.>=) 16384 LOOP
-    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE NOT (%s)', r.rel, r.ex) INTO n;
-    total := total OPERATOR(pg_catalog.+) n;
+    q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE NOT (%s)', r.rel, r.ex);
   END LOOP;
-  FOR r IN SELECT a.attrelid::pg_catalog.regclass AS rel, pg_catalog.quote_ident(a.attname::pg_catalog.text) AS col, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS ex
+  -- R6F-P10: a generated column equals its expression cast to the column's own type, compared by binary image.
+  FOR r IN SELECT a.attrelid::pg_catalog.regclass AS rel, pg_catalog.quote_ident(a.attname::pg_catalog.text) AS col,
+                  pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS ex, pg_catalog.format_type(a.atttypid, a.atttypmod) AS ty
              FROM pg_catalog.pg_attrdef d JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) d.adrelid AND a.attnum OPERATOR(pg_catalog.=) d.adnum
             WHERE a.attgenerated OPERATOR(pg_catalog.<>) '' AND d.oid OPERATOR(pg_catalog.>=) 16384 LOOP
-    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE %s IS DISTINCT FROM (%s)', r.rel, r.col, r.ex) INTO n;
-    total := total OPERATOR(pg_catalog.+) n;
+    q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE NOT pg_catalog.record_image_eq(ROW(%s), ROW(CAST((%s) AS %s)))', r.rel, r.col, r.ex, r.ty);
   END LOOP;
-  FOR r IN SELECT i.indrelid::pg_catalog.regclass AS rel, i.indexrelid AS idx, i.indnkeyatts AS k, pg_catalog.pg_get_expr(i.indpred, i.indrelid) AS pr
+  -- R6F-P11: every index with an expression or a predicate: its keys are evaluated (an error in a real build shows
+  -- here), and a unique one stays unique (NULL keys distinct unless NULLS NOT DISTINCT).
+  FOR r IN SELECT i.indrelid::pg_catalog.regclass AS rel, i.indexrelid AS idx, i.indnkeyatts AS k, i.indisunique AS u,
+                  i.indnullsnotdistinct AS nnd, pg_catalog.pg_get_expr(i.indpred, i.indrelid) AS pr
              FROM pg_catalog.pg_index i
-            WHERE i.indisunique AND i.indexprs IS NOT NULL AND i.indexrelid OPERATOR(pg_catalog.>=) 16384 LOOP
+            WHERE (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL) AND i.indexrelid OPERATOR(pg_catalog.>=) 16384 LOOP
     SELECT pg_catalog.string_agg('(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(r.idx, g, true) OPERATOR(pg_catalog.||) ')', ', ' ORDER BY g),
            pg_catalog.string_agg('(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(r.idx, g, true) OPERATOR(pg_catalog.||) ') IS NOT NULL', ' AND ' ORDER BY g)
       INTO keys, nn FROM pg_catalog.generate_series(1, r.k::pg_catalog.int4) AS g;
-    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM (SELECT 1 FROM ONLY %s WHERE %s%s GROUP BY %s HAVING pg_catalog.count(*) OPERATOR(pg_catalog.>) 1) AS x',
-      r.rel, CASE WHEN r.pr IS NULL THEN '' ELSE '(' OPERATOR(pg_catalog.||) r.pr OPERATOR(pg_catalog.||) ') AND ' END, nn, keys) INTO n;
+    q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) OPERATOR(pg_catalog.*) 0 FROM ONLY %s WHERE %s pg_catalog.num_nulls(%s) OPERATOR(pg_catalog.>=) 0',
+      r.rel, CASE WHEN r.pr IS NULL THEN '' ELSE '(' OPERATOR(pg_catalog.||) r.pr OPERATOR(pg_catalog.||) ') AND ' END, keys);
+    IF r.u THEN
+      q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM (SELECT 1 FROM ONLY %s WHERE %s GROUP BY %s HAVING pg_catalog.count(*) OPERATOR(pg_catalog.>) 1) AS x',
+        r.rel, pg_catalog.concat_ws(' AND ', CASE WHEN r.pr IS NULL THEN NULL ELSE '(' OPERATOR(pg_catalog.||) r.pr OPERATOR(pg_catalog.||) ')' END,
+          CASE WHEN r.nnd THEN NULL ELSE nn END, 'true'), keys);
+    END IF;
+  END LOOP;
+  -- R6F-P11: an exclusion constraint over an expression or with a predicate is not re-checked here, so it is refused.
+  SELECT pg_catalog.count(*) INTO n FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_index i ON i.indexrelid OPERATOR(pg_catalog.=) c.conindid
+   WHERE c.contype OPERATOR(pg_catalog.=) 'x' AND c.oid OPERATOR(pg_catalog.>=) 16384 AND (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL);
+  total := total OPERATOR(pg_catalog.+) n;
+  PERFORM pg_catalog.set_config('TimeZone', s_tz, true), pg_catalog.set_config('IntervalStyle', s_is, true),
+    pg_catalog.set_config('extra_float_digits', s_fd, true), pg_catalog.set_config('bytea_output', s_bo, true),
+    pg_catalog.set_config('xmlbinary', s_xb, true), pg_catalog.set_config('quote_all_identifiers', s_qa, true);
+  FOR i IN 1 .. COALESCE(pg_catalog.array_length(q, 1), 0) LOOP
+    EXECUTE q[i] INTO n;
     total := total OPERATOR(pg_catalog.+) n;
   END LOOP;
   IF total OPERATOR(pg_catalog.>) 0 THEN
@@ -250,7 +278,8 @@ for profile in \
   "TimeZone=UTC IntervalStyle=postgres extra_float_digits=1 bytea_output=hex xmlbinary=base64 quote_all_identifiers=off" \
   "TimeZone=Asia/Makassar IntervalStyle=iso_8601 extra_float_digits=0 bytea_output=escape xmlbinary=hex quote_all_identifiers=on" \
   "TimeZone=Etc/GMT+12 IntervalStyle=sql_standard extra_float_digits=-15 bytea_output=hex xmlbinary=hex quote_all_identifiers=off" \
-  "TimeZone=Pacific/Kiritimati IntervalStyle=postgres_verbose extra_float_digits=3 bytea_output=escape xmlbinary=base64 quote_all_identifiers=on"; do
+  "TimeZone=Pacific/Kiritimati IntervalStyle=postgres_verbose extra_float_digits=3 bytea_output=escape xmlbinary=base64 quote_all_identifiers=on" \
+  "TimeZone=Australia/Lord_Howe IntervalStyle=postgres extra_float_digits=1 bytea_output=hex xmlbinary=base64 quote_all_identifiers=off"; do
   opts="-c search_path=pg_catalog -c row_security=off -c default_transaction_read_only=on -c local_preload_libraries= -c statement_timeout=0"
   for kv in $profile; do opts="${opts} -c ${kv}"; done
   if ! PGOPTIONS="$opts" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -c "$DIFF_SQL" > /dev/null 2> "$R/differential.err" 3>&-; then

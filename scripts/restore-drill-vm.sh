@@ -227,7 +227,16 @@ cleanup() {
 trap cleanup EXIT
 # Phase 3: an interrupted drill is stopped and RECORDED as aborted, never left unrecorded; installed before the start
 # is recorded (R6F-E2), and the drill cannot be suspended (a relayed TSTP would hold the lock and the run directory).
-on_abort() { trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF; echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143; }
+on_abort() {
+  trap '' TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
+  # R6F-E7: a VM that has already ended (its status line is written) is not aborted: its outcome is decided and
+  # recorded as usual, so watching the unit end and signalling cannot replace an outcome with ABORTED.
+  if [ "$STAGE" = vm ] && [ -n "$WORK" ] && grep -aqE '^QEMU_LAUNCH exit=[0-9]{1,3} image_sha256=[0-9a-f]{64}$' -- "$WORK/vm.status" 2> /dev/null; then
+    echo "NOTICE: a signal arrived after the VM had ended; its outcome is recorded"
+    return 0
+  fi
+  echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143
+}
 # R6A-5: every catchable terminating signal is an abort, recorded (SIGKILL is closed at the next start: R6C-3).
 trap on_abort TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF
 trap '' TSTP TTIN TTOU
@@ -248,6 +257,14 @@ why="$(dms_sandbox_limits_check "$VCPU" "$MEMORY_MIB" "$DISK_GIB" "$MINUTES" "$T
 UNIT_MEMORY_MIB=1536; TMPFS_MAX_MIB=1024; UNIT_TIMEOUT=$(( (MINUTES - 5) * 60 ))
 # R6F-L8: on a drill host the run directory (staged copy, input disk) must never reach a swap device.
 if [ "$TRUST_UID" = 0 ] && [ "$(tail -n +2 /proc/swaps | grep -c .)" != 0 ]; then refuse "swap is active on the drill host (the run directory could be swapped out)"; fi
+# R6F-E10: on a drill host no caller limit on processes, CPU time or address space reaches the drill (sudo pins them;
+# this is the orchestrator's own check): a lowered limit could stop it at an arbitrary point.
+if [ "$TRUST_UID" = 0 ]; then
+  for o in u t v; do
+    ulimit -S "-$o" unlimited 2> /dev/null
+    [ "$(ulimit -H "-$o")" = unlimited ] && [ "$(ulimit -S "-$o")" = unlimited ] || refuse "a process, CPU or memory limit is set (ulimit -${o})"
+  done
+fi
 
 # --- The pinned PostgreSQL client ----------------------------------------------------------------------------------
 # The pinned PostgreSQL 16.15+ client that inspects the archive (pg_restore, never through PATH).
@@ -351,7 +368,12 @@ echo "== drill ${RUN_ID}: VM boot in the supervised QEMU unit (1 vCPU, ${MEMORY_
 timeout --kill-after=30 "$((MINUTES * 60 + 300))" sudo -n -- "${C[DMS_DRILL_SUPERVISOR_COMMAND]}" vm "$RUN_ID" \
   < "$WORK/input.raw" > "$WORK/output.raw" 2> "$WORK/vm.status" &
 VM_PID=$!
-wait "$VM_PID"
+# A returning trap (the VM had already ended, R6F-E7) interrupts `wait`; the VM's process is then waited for again.
+while :; do
+  wait "$VM_PID"; vmw=$?
+  [ "$vmw" -gt 128 ] && kill -0 "$VM_PID" 2> /dev/null && continue
+  break
+done
 VM_PID=""
 # R6F-E7: once the VM has ended, its outcome is decided and recorded without interruption (an abort here would let an
 # operator who watches the unit replace an outcome with ABORTED).

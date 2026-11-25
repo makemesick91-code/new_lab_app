@@ -145,15 +145,13 @@ install_state() {
   grep -qx "DMS_SUPERVISOR_QEMU_LAUNCHER=${q}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null \
     && grep -qx "DMS_SUPERVISOR_SIGNER_STORE=${STORE}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null \
     && grep -qx "DMS_SUPERVISOR_PG_BINDIR=${pb}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
-  # R6F-E8: the evidence store and the witness log live on file systems that no world-writable directory shares, so
-  # filling a disk can never stop a publication half way.
-  local sd wd wl p
+  # R6F-E8: the signer's state (store, head log, working files) and the witness log each live on a file system of
+  # their own, so no other identity can fill them and stop a publication half way.
+  local wl hd
   wl="$(sed -n 's/^DMS_WITNESS_LOG=//p' /etc/dms-restore-drill/witness.conf 2> /dev/null | head -n 1)"
-  sd="$(stat -c %d -- "$STORE" 2> /dev/null)"; wd="$(stat -c %d -- "$(dirname -- "${wl:-/nonexistent/x}")" 2> /dev/null)"
-  [ -n "$sd" ] && [ -n "$wd" ] || { echo "unverified:evidence_filesystem_unknown"; return 0; }
-  for p in /tmp /var/tmp /dev/shm; do
-    [ "$(stat -c %d -- "$p")" != "$sd" ] && [ "$(stat -c %d -- "$p")" != "$wd" ] || { echo "unverified:evidence_on_shared_filesystem"; return 0; }
-  done
+  hd="$(dirname -- "$HEADLOG")"
+  [ -n "$wl" ] && mountpoint -q -- "$hd" && mountpoint -q -- "$(dirname -- "$wl")" \
+    && [ "$(dirname -- "$STORE")" = "$hd" ] || { echo "unverified:evidence_not_on_dedicated_filesystems"; return 0; }
   for f in "${files[@]}"; do lines+=("$(sha256sum -- "$f")"); done
   code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
   lines=()
