@@ -47,6 +47,18 @@ it('refuses, fail closed, every archive outside the structure the application pr
     'a table name with a newline' => ['weirdname', 'app_runtime dms_owner', '', "TABLE name 'we ird' is not a plain lowercase identifier"],
     'an extension outside the allowlist (PR-8)' => ['ext', 'app_runtime', '', "extension 'pgcrypto', which is not in the allowlist (PR-8)"],
     'an owner the manifest does not list (D-Q6-a)' => ['r6owner', 'app_runtime', '', "makes 'dms_owner' an owner and the manifest does not list it (D-Q6-a)"],
+    'a table owned by pg_database_owner (P4P-3)' => ['dbowner', 'app_runtime dms_owner', '', 'makes pg_database_owner the owner of a TABLE'],
+]);
+
+it('takes the catalog shape the guest must reproduce from the TOC (P4P-1)', function (string $fixture, string $exts, string $shape) {
+    $run = rdaLib('dms_archive_toc_validate "$FX/'.$fixture.'.toc" "app_runtime dms_owner" "'.$exts.'" > /dev/null && echo "$DMS_ARCHIVE_SHAPE"');
+
+    expect($run['out'])->toBe($shape);
+})->with([
+    ['clean', '', '1:2:0:2:0:0:1'],
+    ['bomb', '', '2:2:1:2:0:0:1'],
+    ['dangling', '', '3:3:0:2:0:0:1'],
+    ['launder', 'pgcrypto', '4:3:1:2:0:0:1'],
 ]);
 
 it('accepts an allowlisted extension and records both owners of a two-owner archive', function () {
@@ -67,6 +79,9 @@ it('refuses a TOC that is malformed, not custom format, not from PostgreSQL 16, 
         'table without data' => $toc."9998; 1259 99999 TABLE public ghost app_runtime\n",
         'duplicate data' => $toc.preg_replace('/^.*TABLE DATA public items.*$/m', '$0', (string) collect(explode("\n", $toc))->first(fn ($l) => str_contains($l, 'TABLE DATA public items')))."\n",
         'non-printable' => $toc."9997; 0 0 COMMENT public TABLE items \x1b[31m app_runtime\n",
+        'default privileges' => $toc."9996; 0 0 DEFAULT ACL - DEFAULT PRIVILEGES FOR TABLES app_runtime\n",
+        'partition attach' => $toc."9995; 0 0 TABLE ATTACH public items_p1 app_runtime\n",
+        'pg_database_owner on a function' => $toc."9994; 1255 99998 FUNCTION public planted() pg_database_owner\n",
     });
     $run = rdaLib('dms_archive_toc_validate "$F" "app_runtime" ""', ['F' => $file]);
     unlink($file);
@@ -81,6 +96,9 @@ it('refuses a TOC that is malformed, not custom format, not from PostgreSQL 16, 
     ['table without data', 'table public.ghost has no data entry'],
     ['duplicate data', 'data for public.items appears twice'],
     ['non-printable', 'is not printable'],
+    ['default privileges', 'entry type outside the allowlist: DEFAULT ACL'],
+    ['partition attach', 'entry type outside the allowlist: TABLE ATTACH'],
+    ['pg_database_owner on a function', 'makes pg_database_owner the owner of a FUNCTION'],
 ]);
 
 it('counts every table\'s rows from the data section, whatever the values look like (PR-5, PR-6)', function () {
@@ -89,6 +107,34 @@ it('counts every table\'s rows from the data section, whatever the values look l
 
     expect($run['exit'])->toBe(0, $run['out'])
         ->and($run['out'])->toBe("public.items\t4\npublic.migrations\t2");
+});
+
+it('counts honest dumps whatever the column names or values are: quoted names, parentheses, an empty value (P4P-4)', function () {
+    $data = "--\n-- PostgreSQL database dump\n--\n\n\\restrict k1\n\nSET statement_timeout = 0;\n\n"
+        ."COPY public.odd (\"a, b\", \"total(idr)\", \"x\"\"y\") FROM stdin;\n1\t2\t3\n4\t5\t6\n\\.\n\n"
+        ."COPY public.single (v) FROM stdin;\n\nx\n\\.\n\n\\unrestrict k1\n";
+    $file = rdaTemp($data);
+    $run = rdaLib('dms_archive_count_program > "$W"; awk -f "$W" "$F"', ['F' => $file, 'W' => tempnam(sys_get_temp_dir(), 'rdaw')]);
+    unlink($file);
+
+    expect($run['exit'])->toBe(0, $run['out'])
+        ->and($run['out'])->toBe("public.odd\t2\npublic.single\t2");
+});
+
+it('verifies the staged copy as a custom-format archive: digest first, then the PGDMP magic (P4V-2, PR-6)', function () {
+    $clean = base_path('tests/Fixtures/restore-drill/clean.dump');
+    $plain = rdaTemp("--\n-- PostgreSQL database dump\n--\nSELECT 1;\n");
+    $ok = rdaLib('dms_archive_verify_copy "$F" "$H"', ['F' => $clean, 'H' => hash_file('sha256', $clean)]);
+    $sql = rdaLib('dms_archive_verify_copy "$F" "$H"', ['F' => $plain, 'H' => hash_file('sha256', $plain)]);
+    $bad = rdaLib('dms_archive_verify_copy "$F" "$H"', ['F' => $clean, 'H' => str_repeat('a', 64)]);
+    unlink($plain);
+
+    expect($ok['exit'])->toBe(0)
+        ->and($ok['out'])->toBe('RESTORE_INTEGRITY=VERIFIED sha256='.hash_file('sha256', $clean).' format=custom')
+        ->and($sql['exit'])->toBe(1)
+        ->and($sql['out'])->toContain('is not a pg_dump custom-format archive (no PGDMP header); a custom-format archive is required (PR-6)')
+        ->and($bad['exit'])->toBe(1)
+        ->and($bad['out'])->toContain('DIGEST MISMATCH');
 });
 
 it('refuses a data section that is not exactly pg_restore\'s framing', function (string $mutation, string $message) {
@@ -132,12 +178,42 @@ it('inspects the untrusted archive only inside a hardened, network-less unit', f
         ->and($code)->toContain('-p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M')
         ->and($code)->toContain('BindReadOnlyPaths=${archive}:/opt/dmsinspect/archive.dump')
         ->and($code)->toContain('-p "NoExecPaths=/ /tmp /var/tmp"')
-        ->and($code)->toContain('| head -c 12582912 >');
+        // P4V-3: no way to lift its own limits or leave the unit, no host /dev/shm, /etc hidden.
+        ->and($code)->toContain('-p ProtectControlGroups=yes -p "InaccessiblePaths=/sys/fs/cgroup"')
+        ->and($code)->toContain('"TemporaryFileSystem=/dev/shm:size=1M,mode=1777,noexec,nosuid,nodev"')
+        ->and($code)->toContain('-p "TemporaryFileSystem=/etc:ro"')
+        ->and($code)->toContain('-p "CapabilityBoundingSet="')
+        // P4P-2: a TOC or count list above its limit is refused inside the unit, and a cut stream is never used.
+        ->and($code)->toContain('[ "$t" -le "$TOC_MAX" ] || { echo "INSPECT toc_too_large"; exit 1; }')
+        ->and($code)->toContain('[ "$(tail -n 1 "${out}/inspect.raw")" = "@@END" ]')
+        // P4V-9: optional library directories cannot fail the unit; awk is bound by its real path.
+        ->and($code)->toContain('-/usr/lib64')
+        ->and($code)->toContain('awk_bin="$(readlink -f /usr/bin/awk)"');
+});
+
+it('refuses, never truncates, a TOC above its limit, in the real inspection unit (P4P-2)', function () {
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
+    $probe->run();
+    if ($probe->getExitCode() !== 0 || ! is_executable('/usr/lib/postgresql/16/bin/pg_restore')) {
+        $this->markTestSkipped('no per-user systemd manager or PostgreSQL 16 here (covered by the real-sandbox CI gate)');
+    }
+    $out = sys_get_temp_dir().'/rda-insp-'.bin2hex(random_bytes(6));
+    mkdir($out, 0700);
+    $script = 'u="dmsinspect-$(od -An -N6 -tx1 /dev/urandom | tr -d " \n")"; dms_archive_inspect "$FX/clean.dump" "$O" /usr/lib/postgresql/16/bin "$u" > "$O/r1"; echo "full=$?"; '
+        .'DMS_ARCHIVE_TOC_MAX_BYTES=600; u="dmsinspect-$(od -An -N6 -tx1 /dev/urandom | tr -d " \n")"; dms_archive_inspect "$FX/clean.dump" "$O" /usr/lib/postgresql/16/bin "$u"; echo "small=$?"; '
+        .'dms_archive_inspect "$FX/clean.dump" "$O" /usr/lib/postgresql/16/bin "not-a-unit"; echo "badname=$?"';
+    $run = rdaLib($script, ['O' => $out, 'XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS')]);
+    (new Process(['rm', '-rf', '--', $out]))->run();
+
+    expect($run['out'])->toContain('full=0')
+        ->and($run['out'])->toContain('archive: the sandboxed inspection failed (INSPECT toc_too_large)')
+        ->and($run['out'])->toContain('small=1')
+        ->and($run['out'])->toContain('badname=1');
 });
 
 it('ships the fixture archives with their generator and digests (synthetic data only)', function () {
     $sums = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/SHA256SUMS'));
-    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner'] as $f) {
+    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner'] as $f) {
         $file = base_path("tests/Fixtures/restore-drill/{$f}.dump");
         expect($sums)->toContain(hash_file('sha256', $file)."  {$f}.dump");
     }

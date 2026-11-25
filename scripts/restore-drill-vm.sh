@@ -20,10 +20,11 @@ umask 077
 # VR-11: run with a fixed, minimal environment (no LD_PRELOAD, QEMU_* or PATH from the caller). Only the
 # configuration path is carried over.
 # The operator's per-user manager (it runs the sandboxed archive inspection) is reached through XDG_RUNTIME_DIR and the
-# session bus; both are kept, as absolute paths only.
+# session bus. P4V-8: only the operator's OWN manager is accepted (/run/user/<uid> and its bus); anything else is
+# dropped, and the inspection then refuses (systemd-run does not authenticate the manager it talks to).
 if [ "${DMS_DRILL_CLEAN_ENV:-}" != 1 ]; then
-  xdg="${XDG_RUNTIME_DIR:-}"; [[ "$xdg" =~ ^/[A-Za-z0-9/._-]+$ ]] || xdg=""
-  bus="${DBUS_SESSION_BUS_ADDRESS:-}"; [[ "$bus" =~ ^unix:path=/[A-Za-z0-9/._-]+$ ]] || bus=""
+  xdg="${XDG_RUNTIME_DIR:-}"; [ "$xdg" = "/run/user/$(id -u)" ] || xdg=""
+  bus="${DBUS_SESSION_BUS_ADDRESS:-}"; [ -n "$xdg" ] && [ "$bus" = "unix:path=${xdg}/bus" ] || bus=""
   exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 HOME="${HOME:-/nonexistent}" DMS_DRILL_CLEAN_ENV=1 \
     XDG_RUNTIME_DIR="$xdg" DBUS_SESSION_BUS_ADDRESS="$bus" \
     DMS_RESTORE_DRILL_CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}" bash "$0" "$@"
@@ -31,13 +32,32 @@ fi
 # VR-4: QEMU runs as the identity of this script. It must never be root: a device-model escape would be host root.
 if [ "$(id -u)" = 0 ]; then echo "REFUSED: run the drill as the unprivileged drill operator, never as root (VR-4). Nothing ran."; exit 2; fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+# P4V-4, P4P-5: the TRUST OWNER is the owner of this script: root for an installed drill host (the operator, and so an
+# escaped QEMU, can then change neither the code nor any trusted input), or the operator for a development checkout
+# (which already lets the operator change everything). Every library, every directory above them and every trusted
+# input (configuration, image, manifest anchor, revocation list, signer entrypoint, QEMU, PostgreSQL client) must
+# belong to root or to that owner and be writable by nobody else. The evidence records which install it was.
+TRUST_UID="$(stat -c '%u' -- "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")")"
+if [ "$TRUST_UID" = 0 ]; then INSTALL=root; elif [ "$TRUST_UID" = "$(id -u)" ]; then INSTALL=operator; else
+  echo "FATAL: this script is owned by uid ${TRUST_UID}, neither root nor the operator. Nothing ran."; exit 2
+fi
+d="${SCRIPT_DIR}/lib"
+while :; do
+  st="$(stat -c '%u %a' -- "$d")"
+  # A root-owned sticky directory (/tmp) is accepted: only an entry's owner may rename or remove it.
+  { { [ "${st% *}" = 0 ] || [ "${st% *}" = "$TRUST_UID" ]; } && [ $(( 8#${st#* } & 8#022 )) -eq 0 ]; } \
+    || { [ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#1000 )) -ne 0 ]; } \
+    || { echo "FATAL: ${d} is not owned by root or uid ${TRUST_UID}, or is writable by another identity. Nothing ran."; exit 2; }
+  [ "$d" = / ] && break
+  d="$(dirname -- "$d")"
+done
 for lib in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
   node="${SCRIPT_DIR}/lib/${lib}"
-  if [ -L "$node" ] || [ ! -f "$node" ] || [ "$(stat -c '%u' -- "$node")" != "$(id -u)" ] \
+  if [ -L "$node" ] || [ ! -f "$node" ] || { [ "$(stat -c '%u' -- "$node")" != "$TRUST_UID" ] && [ "$(stat -c '%u' -- "$node")" != 0 ]; } \
     || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
-    echo "FATAL: ${node} is missing, a symlink, not owned by $(id -un), or writable by another identity. Nothing ran."
+    echo "FATAL: ${node} is missing, a symlink, not owned by root or uid ${TRUST_UID}, or writable by another identity. Nothing ran."
     exit 2
   fi
   # shellcheck source=/dev/null
@@ -69,7 +89,7 @@ PROD_APP_DIR="$(sed -n 's/^DMS_PRODUCTION_APP_DIR=//p' "$PROD_CONF" 2> /dev/null
 
 # --- Trusted configuration (parsed, never sourced) -------------------------------------------------------------------
 CONF="${DMS_RESTORE_DRILL_CONF:-/etc/dms-restore-drill/drill.conf}"
-why="$(dms_trusted_file "drill configuration" "$CONF" "$(id -u)" "$REPO_DIR")" || refuse "$why"
+why="$(dms_trusted_file "drill configuration" "$CONF" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 # VR-4: the signing key, the evidence store and its head log belong to the SIGNER identity, never to this operator.
 DRILL_CONF_KEYS="DMS_DRILL_IMAGE DMS_DRILL_IMAGE_SHA256 DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_EXTENSION_ALLOWLIST DMS_DRILL_SIGNER_USER DMS_DRILL_SIGNER_COMMAND DMS_DRILL_PG_BINDIR DMS_DRILL_WORK_DIR DMS_DRILL_LOCALE DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG"
 declare -A C=()
@@ -87,8 +107,8 @@ SIGNER_UID="$(id -u -- "${C[DMS_DRILL_SIGNER_USER]}" 2> /dev/null)" || refuse "t
 [ "$SIGNER_UID" != "$(id -u)" ] && [ "$SIGNER_UID" != 0 ] || refuse "the signer must be a separate, unprivileged identity (VR-4)"
 [[ "${C[DMS_DRILL_EXTENSION_ALLOWLIST]}" =~ ^(none|[a-z_][a-z0-9_]{0,62}(,[a-z_][a-z0-9_]{0,62}){0,15})$ ]] || refuse "DMS_DRILL_EXTENSION_ALLOWLIST must be none or a comma-separated list"
 EXTENSIONS="${C[DMS_DRILL_EXTENSION_ALLOWLIST]//,/ }"
-for k in DMS_DRILL_IMAGE DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND; do
-  why="$(dms_trusted_file "$k" "${C[$k]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
+for k in DMS_DRILL_IMAGE DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG; do
+  why="$(dms_trusted_file "$k" "${C[$k]}" "$TRUST_UID" "$REPO_DIR")" || refuse "$why"
 done
 why="$(dms_trusted_dir DMS_DRILL_WORK_DIR "${C[DMS_DRILL_WORK_DIR]}" "$(id -u)" "$REPO_DIR")" || refuse "$why"
 
@@ -102,18 +122,9 @@ UNIT_MEMORY_MIB=1536; TMPFS_MAX_MIB=1024; UNIT_TIMEOUT=$(( (MINUTES - 5) * 60 ))
 exec {lock_fd}>> "${C[DMS_DRILL_WORK_DIR]}/drill.lock"
 flock -n "$lock_fd" || refuse "another drill holds ${C[DMS_DRILL_WORK_DIR]}/drill.lock (one drill at a time, D6)"
 
-# --- Hypervisor and image -------------------------------------------------------------------------------------------
-for k in DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG; do
-  [ -x "${C[$k]}" ] && [ ! -L "${C[$k]}" ] || refuse "${k} ${C[$k]} is missing or not an executable regular file"
-done
-[ -r /dev/kvm ] && [ -w /dev/kvm ] || refuse "/dev/kvm is not usable by $(id -un): the drill needs a hardware-isolated VM (D1)"
-IMAGE_SHA="$(sha256sum -- "${C[DMS_DRILL_IMAGE]}" | cut -d' ' -f1)"
-[ "$IMAGE_SHA" = "${C[DMS_DRILL_IMAGE_SHA256]}" ] || refuse "the drill image digest ${IMAGE_SHA} is not the pinned ${C[DMS_DRILL_IMAGE_SHA256]}"
-"${C[DMS_DRILL_QEMU_IMG]}" info -f qcow2 --output=json -- "${C[DMS_DRILL_IMAGE]}" > "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" 2> /dev/null || refuse "cannot inspect the drill image as qcow2"
-IMAGE_VSIZE="$(dms_vm_image_info_ok "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" $((DISK_GIB * 1024 * 1024 * 1024)) 2>&1)" || refuse "${IMAGE_VSIZE} (D6)"
-rm -f -- "${C[DMS_DRILL_WORK_DIR]}/.image-info.json"
+# --- The pinned PostgreSQL client ----------------------------------------------------------------------------------
 # The pinned PostgreSQL 16.15+ client that inspects the archive (pg_restore, never through PATH).
-why="$(dms_restore_pg_client_check "${C[DMS_DRILL_PG_BINDIR]}" "$(id -u)" "$REPO_DIR" 2>&1)" || refuse "the PostgreSQL client directory failed its checks: ${why}"
+why="$(dms_restore_pg_client_check "${C[DMS_DRILL_PG_BINDIR]}" "$TRUST_UID" "$REPO_DIR" 2>&1)" || refuse "the PostgreSQL client directory failed its checks: ${why}"
 [ -x "${C[DMS_DRILL_PG_BINDIR]}/pg_restore" ] && [ ! -L "${C[DMS_DRILL_PG_BINDIR]}/pg_restore" ] || refuse "pg_restore is missing from the pinned client directory"
 why="$(dms_restore_psql_version_check "$("${C[DMS_DRILL_PG_BINDIR]}/psql" --version 2> /dev/null | head -n 1)")" || refuse "the pinned client is not PostgreSQL 16.15 or later"
 
@@ -132,8 +143,10 @@ RUN_ID="$(dms_sandbox_unit_name)" || refuse "cannot draw a run id"
 WORK="${C[DMS_DRILL_WORK_DIR]}/${RUN_ID}"
 mkdir -m 0700 -- "$WORK" || refuse "cannot create ${WORK}"
 QEMU_PID=""
+INSPECT_UNIT=""
 cleanup() {
   dms_vm_kill_group "$QEMU_PID"
+  dms_archive_inspect_stop "$INSPECT_UNIT"
   rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -152,14 +165,21 @@ why="$(dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS
 # --- Integrity chain from #695: source checks, private staged copy, trusted digest ---------------------------------
 dms_restore_check_source "$BACKUP_FILE" "$(id -un)" || refuse "the backup file failed its source checks"
 STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")" || refuse "could not stage a private copy"
-INTEGRITY="$(dms_restore_verify_copy "$STAGED" "$EXPECTED_SHA256")" || refuse "the backup does not match the expected digest"
+# P4V-2: the digest, then the custom-format magic (a plain-SQL dump is refused here, PR-6).
+INTEGRITY="$(dms_archive_verify_copy "$STAGED" "$EXPECTED_SHA256")" || refuse "$INTEGRITY"
 # --- PR-6: the structured archive, inspected in a sandbox; PR-5/PR-8/D-Q6-a/P5 from its structure ------------------
+[ -n "${XDG_RUNTIME_DIR:-}" ] && [ "$(stat -c '%u %a' -- "$XDG_RUNTIME_DIR" 2> /dev/null)" = "$(id -u) 700" ] \
+  || refuse "the operator's own per-user service manager (/run/user/$(id -u), lingering) is required: the archive is inspected in a per-user unit (P4V-8)"
 mkdir -m 0700 -- "$WORK/inspect" || refuse "cannot create the inspection directory"
-why="$(dms_archive_inspect "$STAGED" "$WORK/inspect" "${C[DMS_DRILL_PG_BINDIR]}")" || refuse "${why} (a pg_dump 16 custom-format archive is required, PR-6)"
+INSPECT_UNIT="dmsinspect-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+why="$(dms_archive_inspect "$STAGED" "$WORK/inspect" "${C[DMS_DRILL_PG_BINDIR]}" "$INSPECT_UNIT")" || refuse "${why} (a pg_dump 16 custom-format archive is required, PR-6)"
+INSPECT_UNIT=""
 why="$(dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS")" || refuse "$why"
 dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS" > /dev/null
 why="$(dms_archive_counts_check "$WORK/inspect/counts.txt")" || refuse "$why"
 EXPECT_TABLES="${#DMS_ARCHIVE_DATA_TABLES[@]}"
+EXPECT_SHAPE="$DMS_ARCHIVE_SHAPE"
+[[ "$EXPECT_SHAPE" =~ ^[0-9]{1,9}(:[0-9]{1,9}){6}$ ]] || refuse "the archive's catalog shape could not be computed"
 EXPECT_DIGEST="$(dms_archive_digest "$WORK/inspect/counts.txt")"
 EXPECT_ROWS="$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$WORK/inspect/counts.txt")"
 if [ "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_R6_OWNER_ROLE]}" != none ] && [ -n "${DMS_ARCHIVE_OWNERS[${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}]:-}" ]; then
@@ -169,6 +189,16 @@ BACKUP_BYTES="$(stat -c %s -- "$STAGED")"
 TMPFS_MIB=$(( BACKUP_BYTES * 8 / 1048576 + 256 ))
 [ "$TMPFS_MIB" -le "$TMPFS_MAX_MIB" ] || refuse "the archive needs about ${TMPFS_MIB} MiB of working space, above the pilot limit ${TMPFS_MAX_MIB} MiB (D6)"
 
+# --- Hypervisor and image (only after every input check, P4V-2) ----------------------------------------------
+for k in DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG; do
+  [ -x "${C[$k]}" ] || refuse "${k} ${C[$k]} is not executable"
+done
+[ -r /dev/kvm ] && [ -w /dev/kvm ] || refuse "/dev/kvm is not usable by $(id -un): the drill needs a hardware-isolated VM (D1)"
+IMAGE_SHA="$(sha256sum -- "${C[DMS_DRILL_IMAGE]}" | cut -d' ' -f1)"
+[ "$IMAGE_SHA" = "${C[DMS_DRILL_IMAGE_SHA256]}" ] || refuse "the drill image digest ${IMAGE_SHA} is not the pinned ${C[DMS_DRILL_IMAGE_SHA256]}"
+"${C[DMS_DRILL_QEMU_IMG]}" info -f qcow2 --output=json -- "${C[DMS_DRILL_IMAGE]}" > "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" 2> /dev/null || refuse "cannot inspect the drill image as qcow2"
+IMAGE_VSIZE="$(dms_vm_image_info_ok "${C[DMS_DRILL_WORK_DIR]}/.image-info.json" $((DISK_GIB * 1024 * 1024 * 1024)) 2>&1)" || refuse "${IMAGE_VSIZE} (D6)"
+rm -f -- "${C[DMS_DRILL_WORK_DIR]}/.image-info.json"
 # --- The disks and the VM (the restore, with restricted mode and the load guard, happens inside: D5) ------------------
 mv -- "$STAGED" "$WORK/payload" || refuse "cannot move the staged archive"
 PAYLOAD_BYTES="$(stat -c %s -- "$WORK/payload")"
@@ -199,7 +229,7 @@ COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # --- Decision from host-checkable facts, then signed evidence (D10) -------------------------------------------------
 DECISION="FAIL:vm_output_unreadable"
 if dms_vm_output_parse "$WORK/output.raw"; then
-  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$EXPECT_DIGEST" "$EXPECT_TABLES")"
+  DECISION="$(dms_vm_decide "$QEMU_EXIT" "$RUN_ID" "$PAYLOAD_SHA" "$EXPECT_DIGEST" "$EXPECT_TABLES" "$EXPECT_SHAPE")"
   # D1: the VM had no network interface but loopback (the guest kernel's own view).
   if [ "$DECISION" = GO ] && [ "${DMS_VM_OUTPUT[vm_net_ifaces]:-}" != lo ]; then DECISION="FAIL:vm_has_network_interface"; fi
   # P5 from the restored catalog (PR-3): after R6, no object may be owned by the runtime role.
@@ -221,11 +251,14 @@ GUEST_DIGEST="${DMS_VM_OUTPUT[sandbox_table_digest]:-none}"
   printf 'DMS_DRILL_EVIDENCE_MANIFEST_ID=%s\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\n' "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ID]}" "$MANIFEST_SHA"
   printf 'DMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' "$IMAGE_SHA"
   printf 'DMS_DRILL_EVIDENCE_LIMITS=vcpu=%s,memory_mib=%s,disk_gib=%s,minutes=%s,tasks=%s\n' "$VCPU" "$MEMORY_MIB" "$DISK_GIB" "$MINUTES" "$TASKS"
-  printf 'DMS_DRILL_EVIDENCE_HOST_VERIFIED=backup_sha256,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,image_sha256,no_nic_by_construction,limits\n'
-  printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=%s,rows=%s,per_table_digest=%s\n' "$EXPECT_TABLES" "$EXPECT_ROWS" "$EXPECT_DIGEST"
-  printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=%s,tables=%s,per_table_digest=%s,fidelity=%s,vm_ifaces=%s\n' \
+  printf 'DMS_DRILL_EVIDENCE_HOST_VERIFIED=%s,install=%s\n' "$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS" "$INSTALL"
+  printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=%s,rows=%s,per_table_digest=%s,catalog_shape=%s\n' "$EXPECT_TABLES" "$EXPECT_ROWS" "$EXPECT_DIGEST" "$EXPECT_SHAPE"
+  printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=%s,tables=%s,per_table_digest=%s,catalog_shape=%s,user_code=%s,user_code_executed=%s,fidelity=%s,vm_ifaces=%s\n' \
     "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_replay]:-none}" | tr -cd 'a-z_' | head -c 20)" \
     "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_base_table_count]:-none}" | tr -cd '0-9a-z' | head -c 12)" "$GUEST_DIGEST" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_catalog_shape]:-none}" | tr -cd '0-9:a-z' | head -c 80)" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_user_code_reachable]:-none}" | tr -cd '0-9a-z' | head -c 12)" \
+    "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_user_code_executed]:-none}" | tr -cd '0-9a-z' | head -c 12)" \
     "$(printf '%s' "${DMS_VM_OUTPUT[sandbox_fidelity_trg_con_fn_idx]:-none}" | tr -cd '0-9:a-z' | head -c 40)" \
     "$(printf '%s' "${DMS_VM_OUTPUT[vm_net_ifaces]:-none}" | tr -cd 'a-z0-9:' | head -c 40)"
   printf 'DMS_DRILL_EVIDENCE_DECISION=%s\n' "$DECISION"

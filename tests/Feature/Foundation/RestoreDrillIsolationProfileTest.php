@@ -132,7 +132,7 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
 
     expect(preg_match('/(^|[;|&(]\s*|\$\(\s*)(cat|sed|awk|grep|rm|mkdir|sleep|head|tail|cut|tr|date|id|ls|cp|mv|chmod|env|python3?|perl|sh)\s/m', $code))->toBe(0)
         // PR-6 + D5: pg_restore emits each section under a fresh restricted-mode key; psql runs it as the restore role (D4).
-        ->and($code)->toContain('"$PGBIN/pg_restore" --section="$section" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-')
+        ->and($code)->toContain('"$PGBIN/pg_restore" --section="$section" -L "$R/restore.list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-')
         ->and($code)->toContain('-U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-')
         ->and($code)->toContain('restore_section pre-data')
         ->and(strpos($code, 'restore_section pre-data'))->toBeLessThan(strpos($code, '-d "$DB" -f "$GUARD"'))
@@ -150,6 +150,19 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
         // PR-5: the per-table digest; PR-8: the extension allowlist.
         ->and($code)->toContain('emit "table_digest=$tdigest"')
         ->and($code)->toContain('emit "extensions_outside_allowlist=$extbad"')
+        // P4P-1: function calls tracked by a superuser-only setting, flushed per section; the catalog shape; user code
+        // decided from the dependency graph, including references that no longer resolve.
+        ->and($code)->toContain('-c track_functions=all')
+        ->and($code)->toContain("'SELECT pg_catalog.pg_stat_force_next_flush();'")
+        ->and($code)->toContain('emit "user_code_executed=$ucalls"')
+        ->and($code)->toContain('emit "catalog_shape=$shape"')
+        ->and($code)->toContain("'pg_catalog.pg_attrdef'::pg_catalog.regclass")
+        ->and($code)->toContain('NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE p.oid OPERATOR(pg_catalog.=) refs.id)')
+        // P4P-1(b): allowlisted extensions are created by the bootstrap superuser before the backup is read; the
+        // archive's EXTENSION entries never reach the restore.
+        ->and($code)->toContain('CREATE EXTENSION IF NOT EXISTS :"e" WITH SCHEMA public;')
+        ->and(strpos($code, 'CREATE EXTENSION IF NOT EXISTS'))->toBeLessThan(strpos($code, "<<< 'ALTER ROLE :\"r\" NOLOGIN;'"))
+        ->and($code)->toContain('-L "$R/restore.list"')
         // DR-3: the effective profile is attested before any input.
         ->and($code)->toContain('fail profile_exec_writable_mount 13')
         ->and($code)->toContain('fail profile_writable_persistent_fs 13')
@@ -192,22 +205,28 @@ it('decides GO only when every fact holds, including the per-table digest the ho
     expect(trim($run['out']))->toBe($decision);
 })->with(function () {
     $d = str_repeat('a', 64);
-    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'user_code_reachable' => '0', 'extensions_outside_allowlist' => '0', 'base_table_count' => '2', 'table_digest' => $d];
+    $sh = '1:2:0:2:0:0:1';
+    $good = ['profile' => 'attested', 'bootstrap_superuser' => 'nologin', 'result' => 'GO', 'migrations_table' => '1', 'user_code_reachable' => '0', 'user_code_executed' => '0', 'catalog_shape' => $sh, 'extensions_outside_allowlist' => '0', 'base_table_count' => '2', 'table_digest' => $d];
 
     return [
-        'all facts hold' => [$good, "0 {$d} 2", 'GO'],
-        'unit failed' => [$good, "20 {$d} 2", 'FAIL:unit_exit_20'],
-        'profile not attested' => [array_merge($good, ['profile' => 'no']), "0 {$d} 2", 'FAIL:profile_not_attested'],
-        'superuser not locked' => [array_diff_key($good, ['bootstrap_superuser' => 1]), "0 {$d} 2", 'FAIL:superuser_not_locked'],
-        'sandbox said FAIL' => [array_merge($good, ['result' => 'FAIL', 'stage' => 'replay']), "0 {$d} 2", 'FAIL:sandbox_replay'],
-        'no migrations table' => [array_merge($good, ['migrations_table' => '0']), "0 {$d} 2", 'FAIL:no_migrations_table'],
-        'user code on a restore path' => [array_merge($good, ['user_code_reachable' => '1']), "0 {$d} 2", 'FAIL:user_code_in_restore_path'],
-        'user code not reported' => [array_diff_key($good, ['user_code_reachable' => 1]), "0 {$d} 2", 'FAIL:user_code_in_restore_path'],
-        'extension outside the allowlist' => [array_merge($good, ['extensions_outside_allowlist' => '1']), "0 {$d} 2", 'FAIL:extension_outside_allowlist'],
-        'tables differ' => [array_merge($good, ['base_table_count' => '1']), "0 {$d} 2", 'FAIL:table_count_mismatch'],
-        'one table lost rows (digest differs)' => [array_merge($good, ['table_digest' => str_repeat('b', 64)]), "0 {$d} 2", 'FAIL:per_table_rows_mismatch'],
-        'no digest reported' => [array_diff_key($good, ['table_digest' => 1]), "0 {$d} 2", 'FAIL:per_table_rows_mismatch'],
-        'host digest malformed' => [$good, '0 nodigest 2', 'FAIL:per_table_rows_mismatch'],
+        'all facts hold' => [$good, "0 {$d} 2 {$sh}", 'GO'],
+        'unit failed' => [$good, "20 {$d} 2 {$sh}", 'FAIL:unit_exit_20'],
+        'profile not attested' => [array_merge($good, ['profile' => 'no']), "0 {$d} 2 {$sh}", 'FAIL:profile_not_attested'],
+        'superuser not locked' => [array_diff_key($good, ['bootstrap_superuser' => 1]), "0 {$d} 2 {$sh}", 'FAIL:superuser_not_locked'],
+        'sandbox said FAIL' => [array_merge($good, ['result' => 'FAIL', 'stage' => 'replay']), "0 {$d} 2 {$sh}", 'FAIL:sandbox_replay'],
+        'no migrations table' => [array_merge($good, ['migrations_table' => '0']), "0 {$d} 2 {$sh}", 'FAIL:no_migrations_table'],
+        'user code on a restore path' => [array_merge($good, ['user_code_reachable' => '1']), "0 {$d} 2 {$sh}", 'FAIL:user_code_in_restore_path'],
+        'user code not reported' => [array_diff_key($good, ['user_code_reachable' => 1]), "0 {$d} 2 {$sh}", 'FAIL:user_code_in_restore_path'],
+        'extension outside the allowlist' => [array_merge($good, ['extensions_outside_allowlist' => '1']), "0 {$d} 2 {$sh}", 'FAIL:extension_outside_allowlist'],
+        'user code ran during the restore (P4P-1)' => [array_merge($good, ['user_code_executed' => '1']), "0 {$d} 2 {$sh}", 'FAIL:user_code_executed_in_restore'],
+        'function calls not reported (P4P-1)' => [array_diff_key($good, ['user_code_executed' => 1]), "0 {$d} 2 {$sh}", 'FAIL:user_code_executed_in_restore'],
+        'a function was dropped (catalog shape, P4P-1)' => [array_merge($good, ['catalog_shape' => '0:2:0:2:0:0:1']), "0 {$d} 2 {$sh}", 'FAIL:catalog_shape_mismatch'],
+        'no catalog shape reported' => [array_diff_key($good, ['catalog_shape' => 1]), "0 {$d} 2 {$sh}", 'FAIL:catalog_shape_mismatch'],
+        'host shape malformed' => [$good, "0 {$d} 2 noshape", 'FAIL:catalog_shape_mismatch'],
+        'tables differ' => [array_merge($good, ['base_table_count' => '1']), "0 {$d} 2 {$sh}", 'FAIL:table_count_mismatch'],
+        'one table lost rows (digest differs)' => [array_merge($good, ['table_digest' => str_repeat('b', 64)]), "0 {$d} 2 {$sh}", 'FAIL:per_table_rows_mismatch'],
+        'no digest reported' => [array_diff_key($good, ['table_digest' => 1]), "0 {$d} 2 {$sh}", 'FAIL:per_table_rows_mismatch'],
+        'host digest malformed' => [$good, "0 nodigest 2 {$sh}", 'FAIL:per_table_rows_mismatch'],
     ];
 });
 
@@ -225,9 +244,9 @@ it('fails the decision when the result channel overflows its window or carries N
 ]);
 
 it('fails the decision when the result channel carried a duplicate or a rejected line (forgery)', function (string $extra, string $decision) {
-    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL user_code_reachable=0\nDRILL extensions_outside_allowlist=0\nDRILL base_table_count=2\nDRILL table_digest=".str_repeat('a', 64)."\n".$extra;
+    $lines = "DRILL profile=attested\nDRILL bootstrap_superuser=nologin\nDRILL result=GO\nDRILL migrations_table=1\nDRILL user_code_reachable=0\nDRILL user_code_executed=0\nDRILL catalog_shape=1:2:0:2:0:0:1\nDRILL extensions_outside_allowlist=0\nDRILL base_table_count=2\nDRILL table_digest=".str_repeat('a', 64)."\n".$extra;
     $file = rdipTemp($lines);
-    $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide 0 '.str_repeat('a', 64).' 2', ['F' => $file]);
+    $run = rdipLib('dms_sandbox_parse "$F"; dms_sandbox_decide 0 '.str_repeat('a', 64).' 2 1:2:0:2:0:0:1', ['F' => $file]);
     unlink($file);
 
     expect(trim($run['out']))->toBe($decision);

@@ -1,12 +1,13 @@
 ---
 kb_status: unverified
-kb_verified_against: 96e874e9
+kb_verified_against: 674e10e9
 kb_updated: 2026-11-25
 ---
 
 # R6-B6 isolated restore drill: structural redesign (finding A-1)
 
-**Status: version 2, implemented LOCALLY per owner decisions D1–D10 (§0); not published, not deployed.**
+**Status: version 3, phase 2 hardening implemented LOCALLY (§0.4–§0.8, directive "R6-B6 — APPROVED TO PROCEED",
+2026-11-25) on top of version 2 (owner decisions D1–D10, §0); not published, not deployed.**
 - Finding A-1 (HIGH) stays **OPEN**. This document does not close it. Closure needs the implementation, system-mode
   tests and an independent review of the implemented isolation controls.
 - R6-B6-F1 (the rehearsal swallows a failed drop) stays **OPEN** as a separate issue.
@@ -15,9 +16,11 @@ kb_updated: 2026-11-25
 Source directive: "G6 — R6-B6 STRUCTURAL SECURITY REDESIGN" (owner, 2026-11-25). The PR #695 head and every local
 remediation commit up to `039a7f59` are kept unchanged.
 
-The design went through two independent adversarial review rounds: round 1 on the prototype (DR-1 to DR-19, §11), and
-round 2 on the implementation by two reviewers, Linux/systemd/VM and PostgreSQL restore security (VR-1..12 and PR-1..9,
-§0.2).
+The design went through three independent adversarial review rounds:
+- round 1 on the prototype (DR-1 to DR-19, §11);
+- round 2 on the implementation by two reviewers, Linux/systemd/VM and PostgreSQL restore security (VR-1..12 and
+  PR-1..9, §0.2);
+- round 3 on the phase 2 hardening, by two new reviewers on the same two specialties (§0.7).
 
 ## 0. Version 2: owner decisions D1–D10 and the implemented architecture
 
@@ -41,17 +44,22 @@ Owner directive "OWNER DESIGN DIRECTIVE — R6-B6 ISOLATED RESTORE DRILL" (2026-
 The in-place superuser replay is **retired**: `scripts/rollout-restore-drill.sh` verifies read-only and exits 3.
 
 ```
- ISOLATED DRILL HOST (never the production VPS; unprivileged operator, never root)
+ ISOLATED DRILL HOST (never the production VPS; unprivileged operator, never root)       [version 3]
    restore-drill-vm.sh: fixed env -> trusted config -> D6 limits + flock -> pinned image (JSON check)
-     -> signed manifest (one private copy) -> #695 integrity chain -> trailer + host counts
-     -> restricted stream + load guard -> AES-256-CTR input disk -> QEMU/KVM in its own process group
-     -> output disk (strict parse) -> decision -> signed, chained evidence -> cleanup (kill group, rm run dir)
+     -> signed manifest (one private copy) + revocation list -> #695 integrity chain (staged copy, digest)
+     -> custom-format archive inspected by pg_restore in a hardened per-user unit (no network, capped output)
+     -> TOC allowlist (types, schema, owners, names, extensions) + per-table row counts -> canonical digest
+     -> AES-256-CTR input disk -> QEMU/KVM in its own process group -> output disk (strict parse)
+     -> decision (host-verified facts) -> evidence REQUEST -> sudo -> SIGNER identity (key, store, head log)
+     -> cleanup (kill group, rm run dir)
         |  -nic none, -nodefaults, -sandbox on, -cpu host,-vmx,-svm,pmu=off, vmport/hpet/smm off
         v
  DISPOSABLE VM (one boot, root disk = overlay on the pinned image, deleted after)
-   guest agent (root): parse header, decrypt, verify sha256, run the unit, write result lines, power off
-     systemd SYSTEM unit, Type=oneshot, DynamicUser, the §5 profile (+ review fixes)
-       disposable PG16 -> drill_restore (NOSUPERUSER) replays; read-only verification
+   guest agent (root): parse header, decrypt to a private file, verify sha256, write the guard, run the unit
+     systemd SYSTEM unit, Type=oneshot, DynamicUser, the §5 profile (+ review fixes), archive + guard read-only
+       disposable PG16 -> pg_restore --section=pre-data | psql -> guard -> data -> post-data, as drill_restore
+       (NOSUPERUSER, restricted mode, fresh restrict key) -> read-only verification: per-table digest, user code
+       on restore paths, extensions outside the allowlist, runtime-owned objects
 ```
 
 ### 0.1 Security acceptance (directive: configuration-only claims are insufficient)
@@ -97,6 +105,180 @@ The in-place superuser replay is **retired**: `scripts/rollout-restore-drill.sh`
   - a re-review of the result.
 - **PR #695: BLOCKED.** It must not be published as an A-1 fix while A-1 is OPEN. Publishing it as work in progress
   would be a separate owner decision.
+
+### 0.4 Version 3: phase 2 hardening (directive "R6-B6 — APPROVED TO PROCEED", 2026-11-25)
+
+**§0.2 and §0.3 are kept as the round 2 record. Where they differ, §0.4–§0.8 supersede them.**
+
+- **PR-6, structured backup format.**
+  - The drill accepts only a pg_dump 16 custom-format archive (`pg_dump -Fc`). A plain-SQL backup is refused before
+    anything runs.
+  - The host never parses the archive itself. A pinned `pg_restore` (16.15 or later) lists the TOC and renders only the
+    data section, inside a hardened per-user unit (`dms_archive_inspect`):
+    - no network, AF_UNIX only;
+    - no exec outside an allowlist;
+    - MemoryMax 512M, a 300 s timeout;
+    - the archive bound read-only;
+    - output capped at 12 MiB.
+  - `dms_archive_toc_validate` accepts only a header that says custom format, dumped from PostgreSQL 16 by pg_dump 16.
+    Every entry must be of a type the application produces: ACL, COMMENT, CONSTRAINT, DEFAULT, FK CONSTRAINT,
+    FUNCTION, INDEX, SEQUENCE, SEQUENCE OWNED BY, SEQUENCE SET, TABLE, TABLE DATA, TRIGGER, and EXTENSION when
+    allowlisted. Further checks:
+    - the only schema is `public`;
+    - every owner is in the signed manifest (D-Q6-a);
+    - table and sequence names are plain lowercase identifiers;
+    - every line is printable;
+    - every TABLE has exactly one TABLE DATA entry.
+  - Inside the unit, the restore is `pg_restore --section=<s> --restrict-key=<fresh>` into restricted psql for
+    pre-data, then the load guard, then data, then post-data.
+  - No text heuristic over COPY data remains: the trailer check and the text counter are removed.
+- **PR-5, per-table completeness.**
+  - The host counts each TABLE DATA block's rows with a strict state machine, `dms_archive_count_program`. It checks
+    the framing, the field count of every row, and the order against the TOC.
+  - The host builds a canonical digest: sha256 over `schema<TAB>table<TAB>rows<LF>`, in C order.
+  - The guest computes the same digest in SQL over the restored database. It verifies read-only, with
+    `search_path=pg_catalog` and `row_security=off`.
+  - GO needs the two digests and the two table counts to be equal.
+  - A row-level security policy is refused at the TOC. If one reaches the unit anyway, verification fails instead of
+    running policy code.
+- **PR-8, extension allowlist.** `DMS_DRILL_EXTENSION_ALLOWLIST` is `none` or a list, enforced three times:
+  - in the TOC;
+  - after the restore (`extensions_outside_allowlist=0`, else `FAIL:extension_outside_allowlist`);
+  - in the image, where `deploy/restore-drill-vm/prune-extensions.sh` removes every extension control file outside
+    the list.
+- **PR-9, revocation and atomic evidence.**
+  - Manifest revocation: a trusted list with `revoked <id>` and `not-before <ISO time>` lines, parsed strictly and
+    fail closed.
+  - Evidence contract 2: each record is a directory `store/NNNNNN/{record,record.sig}`, staged in `.stage-*` and
+    published by one `mv -T -n`.
+  - A head log of `NNNNNN sha256` lines.
+  - The signer verifies the whole store against the head log before every write and refuses a run id it has already
+    recorded.
+  - `recover-head` repairs only the one crash window, a head log exactly one record behind a store that verifies. It
+    does not rebuild a lost head log.
+  - Every record prints its head digest so the operator can keep it outside the drill host.
+- **VR-4, separate signer identity.**
+  - `scripts/restore-drill-evidence-signer.sh` runs as its own account through one sudoers rule (`sign`, `verify`).
+  - The operator, and therefore QEMU, holds no key, store or head log.
+  - The signer:
+    - refuses a caller with its own uid or one outside its allowlist;
+    - reads only its trusted configuration;
+    - validates the request schema;
+    - fills the contract, sequence, previous digest, signer, caller and time itself.
+- **VR-1, explicit guest trust boundary.**
+  - Every record separates `HOST_VERIFIED`: the backup digest, manifest signature, revocation, archive TOC, owners,
+    extensions, per-table counts, image digest, the no-NIC construction and the limits.
+  - It sets that apart from `GUEST_ASSERTED`: the restore result, table count, per-table digest, fidelity and
+    interfaces as the guest reported them.
+  - The output says so: the restore result is asserted by the disposable guest, and a GO is never stronger than the
+    guest's integrity.
+
+**Residual (VR-4, owner choice).** QEMU still runs as the operator's uid. A device-model escape could therefore ask
+the signer for a record through sudo. It cannot read the key, rewrite or truncate the history, or replay a run id. A
+dedicated QEMU uid is an option for the drill host (§0.8).
+
+### 0.5 Phase 1: CI readiness audit (the workflow stays INACTIVE)
+
+The proposal is `deploy/restore-drill-vm/ci/restore-drill-real-sandbox.workflow-proposal.yml`. It is not in
+`.github/workflows/`, so nothing runs.
+
+| Area | Finding |
+|---|---|
+| Trigger | `pull_request` and `workflow_dispatch`, never `pull_request_target`. A fork's code runs only on its own disposable runner, with a read-only token. |
+| Permissions | `contents: read` only. `persist-credentials: false`. No repository secret, environment or OIDC token. |
+| Actions | Pinned by full commit SHA, checked against the tags with `gh api` on 2026-11-25: `actions/checkout` v4.4.0 = `11d5960a…` (published 2026-07-20) and `actions/upload-artifact` v4.6.2 = `ea165f8d…` (2025-03-19). |
+| Dependencies | Ubuntu archive packages through signed apt. The Ubuntu 24.04 cloud image is checked against `SHA256SUMS`, verified with `gpgv` and `ubuntu-cloudimage-keyring`. psql must be 16.15 or later, or the job fails. |
+| KVM | GitHub documents hardware acceleration on its Linux runners, including 2-vCPU runners since 2024-04-02. The udev rule that opens `/dev/kvm` is community-documented, not official. The job checks `test -r /dev/kvm && test -w /dev/kvm`, and the orchestrator refuses without KVM, so a runner without KVM fails rather than skips or emulates. **UNVERIFIED until the first run.** |
+| Network | The runner has internet for the packages. The drill VM has no NIC. The gates' decoys listen only on 127.0.0.1, `/dev/shm` and an abstract socket inside the runner. |
+| Data | Synthetic only: `tests/Fixtures/restore-drill` and archives built from the gates' own decoy clusters. No production host, backup, credential or patient data. |
+| Privilege | `sudo` is used on the throwaway runner only. `provision-signer.sh` refuses without `GITHUB_ACTIONS` and on the production hostname. **LIMIT:** the CI operator (`runner`) has passwordless root, so in CI the signer separation proves the mechanism (sudo rule, file modes, caller checks), not a boundary. On the drill host the operator must have no other sudo right (runbook). |
+| Artifacts | Only the gates' result files and transcripts, with synthetic data. |
+
+### 0.6 Phase 3: real isolation gates (prepared; NOT RUN)
+
+No authorized isolated runner exists. The workstation has no sudo without a password, no QEMU, no kvm group and no
+Hyper-V rights, and activating the workflow needs separate owner approval. Every gate below is **NOT RUN**, never PASS.
+
+| Gate | Prepared in | Status |
+|---|---|---|
+| System-mode DynamicUser identity separation (P-uid, P-private, P-signal, P-proc) | `real-sandbox-gate.sh system` | **NOT RUN** |
+| An actual QEMU/KVM boot (V1) | `vm-boot-gate.sh` | **NOT RUN** |
+| An end-to-end isolated restore in the VM (V1, V6) | `vm-boot-gate.sh` | **NOT RUN** (the same guest code ran end to end without a hypervisor; §0.8) |
+| Production file, socket, credential and network isolation (P-*) | `real-sandbox-gate.sh` | user mode **PASS** (see §0.8); system mode and VM **NOT RUN** |
+| Resource exhaustion (X-disk, X-time) | `real-sandbox-gate.sh` | user mode **PASS**; system mode and VM **NOT RUN** |
+| Forced termination and cleanup (C-*) | `real-sandbox-gate.sh` | user mode **PASS**; VM **NOT RUN** |
+| Evidence forgery, tampering, truncation, replay (G1–G6, V7, V8) | both gates | Pest (real ssh-keygen) **PASS**; the separate signer account **NOT RUN** |
+| Per-table completeness and catalog shape (S-*, V1, V9) | `real-sandbox-gate.sh`, Pest | user mode **PASS**; VM **NOT RUN** |
+
+The user-mode gate at the final head gives 58 passed, 0 failed and 3 LIMIT. The three LIMITs are P-uid, P-private and
+P-signal: the same uid, which only system mode can separate.
+
+### 0.7 Review round 3 (phase 4): findings and dispositions
+
+Two new independent reviewers reviewed the phase 2 head `674e10e9`, on the same specialties as round 2.
+- **Linux/systemd/VM and signer (P4V-*):** 1 HIGH, 5 MEDIUM, 4 LOW, 3 INFO.
+- **PostgreSQL restore and evidence (P4P-*):** 2 HIGH, 2 MEDIUM, 2 LOW, 2 INFO.
+
+Every fix below has an adversarial regression test. Experiments used synthetic data only.
+
+| ID | Sev. | Finding (proved by the reviewer unless marked) | Disposition and evidence |
+|---|---|---|---|
+| P4P-1 | HIGH | A generated column folds an immutable call at `CREATE TABLE`, so user code runs in pre-data, before the guard. It can drop its own function, or add it to a trusted extension, and the drill still said GO. | **Fixed**, with four independent layers (each tested): (1) the guard refuses a reference that no longer resolves (fixture `dangling`); (2) user code is decided from `pg_depend` and the stored trees of constraints, generated columns, indexes, partition keys, rules and types, including dangling references; (3) `track_functions=all` plus a per-section flush, so any user function that ran fails the drill (`execbomb`); (4) the guest's catalog shape must equal the host's TOC shape. Allowlisted extensions are created by the bootstrap superuser, and the archive's EXTENSION entries are left out, so laundering fails with 42501 (`launder`). With the guard disabled, layers 2–4 still fail `dangling` (user code 2, 1 call, shape 2 vs 3 functions) and `checkgen` (pack 51). |
+| P4P-2 | HIGH | The host cut the TOC at 8 MiB without failing, which hid refused entry types. | **Fixed:** the unit refuses a TOC above 8 MiB or a count list above 4 MiB; the stream must end with `@@END` and fit its cap; sizes are re-checked on the host. A real-unit test runs with a small limit. |
+| P4V-1 | HIGH | `user_code_reachable` ignored CHECK constraints and generated columns. | **Fixed** by P4P-1 layer 2. The guard already refused these in the drill (fixture `checkgen`: FAIL at the load guard). |
+| P4V-2 | MEDIUM | The orchestrator applied a plain-text header check, so it refused every custom-format archive. | **Fixed:** `dms_archive_verify_copy` (digest, then the `PGDMP` magic). Inputs are checked before the hypervisor. A behavioural test drives the installed orchestrator with real archives through integrity, sandboxed inspection and the TOC, up to the hypervisor stage. |
+| P4V-3 | MEDIUM | The inspection unit could lift its own cgroup limits, move out of its cgroup, and write the host's `/dev/shm`. | **Fixed:** `ProtectControlGroups`, cgroupfs hidden, private `/dev/shm`, `/etc` hidden, kernel and clock protections, and an empty capability bounding set. Re-probed with bash builtins: cgroupfs hidden, `memory.max` denied, move denied, nothing written to the host's `/dev/shm`. |
+| P4V-4, P4P-5 | MEDIUM | The signer signed any well-formed GO, including contradictory ones. Trust roots could be owned by the operator. | **Fixed:** `dms_evidence_request_policy`, with 11 refusal tests. It checks the host name, a pinned image digest, the D6 limits, the fixed HOST_VERIFIED list, time order and recency, and for a GO: equal digests, shapes and tables, restore=ok, no user code, `lo` only. The orchestrator's trust owner is the owner of its own script: in a root-owned install, every library, ancestor and trusted input must be root-owned; the record states `install=root\|operator`. **Residual (VR-4):** QEMU runs as the operator, so a QEMU escape can still state a *consistent* GO. |
+| P4V-5 | MEDIUM | A caller's file-size limit or a full disk truncated a signed record, or bricked the head log. The lock could be held from stdin. | **Fixed:** the signer refuses unless `ulimit -f` is unlimited (test); the written record must equal the built one and pass the key-set check; the signature is verified before publication; the head log is replaced atomically (copy, append, `sync`, rename); stdin is read with a 30 s deadline before the lock; signals are ignored during publication; stale staging directories are removed under the lock. |
+| P4V-6 | MEDIUM (cond.) | `#!/usr/bin/env bash` found bash through the caller's PATH. | **Fixed:** `#!/bin/bash`, and the clean re-exec runs `/usr/bin/env -i … /bin/bash`. |
+| P4P-3 | MEDIUM | Objects owned by `pg_database_owner` bypassed D-Q6-a and P5. | **Fixed:** accepted only on the public schema's ACL or comment (fixture `dbowner`, TOC tests, orchestrator test). |
+| P4V-7 | LOW | The signer did not check its own code, its key's read bits, or its head-log path. | **Fixed:** this script, its libraries and every ancestor must be owned by root or the signer and not writable by others; the key must be the signer's, mode 0600 or 0400; the head log must be canonical, in a trusted directory. `DMS_SIGNER_CONF` is still honoured, so **the sudoers rule must not allow SETENV** (runbook). |
+| P4V-8 | LOW | Any XDG_RUNTIME_DIR or bus could be used, and a fake manager could forge the inspection. | **Fixed:** only `/run/user/<uid>` (owned by the operator, 0700) and its own bus are kept; a missing manager is reported as such. |
+| P4V-9 | LOW | A missing optional `ExecPaths=` entry failed every inspection. | **Fixed:** `-` prefixes, and awk bound by its real path (the alternatives link lives in the hidden `/etc`). |
+| P4V-10 | LOW | An interrupted orchestrator left the inspection unit running. | **Fixed:** the unit name is tracked and stopped in the cleanup trap; the behavioural test asserts that no `dmsinspect-*` unit is left. |
+| P4P-4 | LOW | The counter refused honest dumps: an empty value, a column name with `, ` or parentheses. | **Fixed:** quote-aware column count, and an empty line is one field (test). **Residual:** the tmpfs is sized from the archive's size, so a very compressible honest archive can still end FAIL (disk full). Fail-closed. |
+| P4P-6 | LOW (reasoned) | A refusal before the VM boots leaves no signed record. | **OPEN (owner choice):** refusals are printed to the operator and exit 2. No false GO is possible. Recording them needs a FAIL request shape without VM facts. |
+| P4P-7, P4P-8 | INFO | Compound types were read by prefix; `ucode` ignored `classid`. | **Fixed:** `TABLE ATTACH`, `INDEX ATTACH` and `DEFAULT ACL` are refused by name (tests); `classid` is matched. |
+| P4V-11 | INFO | The head log has the signer's uid and adds no independent protection. | **Residual (owner choice):** the head digest printed with each record must be copied off the drill host (runbook). An append-only or off-host head store is a separate decision. |
+| P4V-12 | INFO | HOST_VERIFIED TOC facts are only as strong as the sandboxed `pg_restore`. | **Recorded:** they are the host's reading of the archive through a hardened, network-less unit, not an independent proof. |
+| P4V-13 | INFO | The design doc cited §0.7 and §0.8 before they existed. | **Fixed** (these sections). |
+
+### 0.8 Closure matrix, D1–D10 acceptance, verdict (final head; see the sprint record for the commit)
+
+**Security findings named by the phase 2 directive:**
+
+| Finding | Status | Basis |
+|---|---|---|
+| VR-1 guest trust boundary | **RESOLVED as an explicit boundary**; residual inherent | HOST_VERIFIED vs GUEST_ASSERTED; the signer refuses inconsistent GO records; a GO is never stronger than the guest's (and the operator's) integrity |
+| VR-4 separate signer, protected interface | **PARTLY RESOLVED** | Separate account, one sudoers rule, self-checking signer, request policy. **NOT RUN:** real sudo separation (system-mode gate G1–G6). **Residual:** QEMU under the operator uid. |
+| PR-5 per-table completeness | **RESOLVED locally** | Per-table digest plus catalog shape; full application schema GO, 186/186, shape `5:186:631:337:623:22:177`. VM NOT RUN. |
+| PR-6 structured format, strict validation, limits | **RESOLVED locally** | Custom format only; TOC allowlist; sandboxed inspection; refused-not-truncated limits (P4P-2); P4V-2 path fixed |
+| PR-8 fail-closed extension allowlist | **RESOLVED locally** | TOC, inner unit, after the restore, image pruning; extensions owned by the bootstrap superuser |
+| PR-9 revocation, atomic publication, chain head | **PARTLY RESOLVED** | Revocation, atomic directory publication, robust writes, head log. **Residual:** independent retention of the head is manual (P4V-11). |
+| Round 3 HIGH (P4P-1, P4P-2, P4V-1) | **FIXED**, regression-tested | §0.7 |
+| Round 3 MEDIUM | **FIXED**, except the VR-4 residual | §0.7 |
+
+**D1–D10 acceptance (real evidence only; a configuration-only claim is not acceptance):**
+
+| Decision | Status |
+|---|---|
+| D1 disposable VM, never on production | Implemented; the production-host refusal is tested. **VM boot NOT RUN.** |
+| D2 system unit, DynamicUser | Implemented. **System mode NOT RUN.** User mode PASS, with the same-uid LIMIT. |
+| D3 authenticated manifest | **PROVEN locally:** real ssh-keygen, revocation, and the orchestrator behavioural test with a signed manifest |
+| D4 non-superuser replay | **PROVEN in user mode:** the bootstrap superuser is NOLOGIN; laundering fails with 42501 |
+| D5 restricted mode and load guard | **PROVEN in user mode** (metabody, dangling, checkgen) |
+| D6 limits | Constants and the limits check tested; unit-level exhaustion PASS in user mode. **VM-level NOT RUN.** |
+| D7 local #695 branch, history preserved | **DONE:** fast-forward only |
+| D8 real-sandbox CI gate on disposable infrastructure | **Prepared**; the workflow is INACTIVE. **NOT RUN.** |
+| D9 two independent reviews | **DONE:** rounds 2 and 3 (two reviewers each). The fix-verification review of round 3 is in §0.9. |
+| D10 authenticated, tamper-evident evidence; readiness separate | **PROVEN locally** (Pest, real ssh-keygen). The separate-account path is **NOT RUN**. Readiness is not wired. |
+
+**Verdict: NO-GO for A-1 closure.** A-1 stays **OPEN**, PR #695 stays **BLOCKED**, and R6-B6 is **WATCH**. Closure needs:
+- the system-mode gate and the vm-boot gate run on authorized disposable infrastructure (owner approval to activate
+  the workflow);
+- owner decisions on the residuals: a QEMU uid separate from the operator, off-host head retention, and recording
+  refusals (P4P-6);
+- a re-review of the gate evidence.
 
 ## 1. Problem and objective
 

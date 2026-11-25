@@ -79,14 +79,14 @@ it('makes the guest refuse a payload whose digest differs, before it starts any 
 it('parses the VM output strictly and decides from the host\'s own expectations (VR-1: the guest only asserts)', function (string $lines, int $qemu, string $decision) {
     $dir = rdvmDir();
     file_put_contents("{$dir}/lines", $lines);
-    $run = rdvmSh('dms_vm_output_write "$T/output.raw" "$T/lines"; dms_vm_output_parse "$T/output.raw"; dms_vm_decide '.$qemu.' dmsdrill-0123456789ab '.str_repeat('a', 64).' '.str_repeat('d', 64).' 2', ['T' => $dir]);
+    $run = rdvmSh('dms_vm_output_write "$T/output.raw" "$T/lines"; dms_vm_output_parse "$T/output.raw"; dms_vm_decide '.$qemu.' dmsdrill-0123456789ab '.str_repeat('a', 64).' '.str_repeat('d', 64).' 2 1:2:0:2:0:0:1', ['T' => $dir]);
     (new Process(['rm', '-rf', '--', $dir]))->run();
 
     expect($run['out'])->toBe($decision);
 })->with(function () {
     $sha = str_repeat('a', 64);
     $dg = str_repeat('d', 64);
-    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_user_code_reachable=0\nsandbox_extensions_outside_allowlist=0\nsandbox_base_table_count=2\nsandbox_table_digest={$dg}\nguest_stage=done\n";
+    $good = "run_id=dmsdrill-0123456789ab\npayload_sha256={$sha}\nunit_exit=0\nresult_duplicates=0\nresult_rejected=0\nsandbox_profile=attested\nsandbox_bootstrap_superuser=nologin\nsandbox_result=GO\nsandbox_migrations_table=1\nsandbox_user_code_reachable=0\nsandbox_user_code_executed=0\nsandbox_catalog_shape=1:2:0:2:0:0:1\nsandbox_extensions_outside_allowlist=0\nsandbox_base_table_count=2\nsandbox_table_digest={$dg}\nguest_stage=done\n";
 
     return [
         'all facts hold' => [$good, 0, 'GO'],
@@ -95,6 +95,8 @@ it('parses the VM output strictly and decides from the host\'s own expectations 
         'other payload' => [str_replace($sha, str_repeat('b', 64), $good), 0, 'FAIL:vm_payload_digest_mismatch'],
         'guest stopped early' => [str_replace('guest_stage=done', 'guest_stage=archive_digest_mismatch', $good), 0, 'FAIL:guest_archive_digest_mismatch'],
         'one table lost rows' => [str_replace($dg, str_repeat('e', 64), $good), 0, 'FAIL:per_table_rows_mismatch'],
+        'a function vanished (P4P-1)' => [str_replace('sandbox_catalog_shape=1:2:0:2:0:0:1', 'sandbox_catalog_shape=0:2:0:2:0:0:1', $good), 0, 'FAIL:catalog_shape_mismatch'],
+        'user code ran (P4P-1)' => [str_replace('sandbox_user_code_executed=0', 'sandbox_user_code_executed=2', $good), 0, 'FAIL:user_code_executed_in_restore'],
         'forged duplicate' => [$good."sandbox_result=GO\n", 0, 'FAIL:vm_output_malformed'],
         'injected noise' => [$good."\x1b]0;owned\x07\n", 0, 'FAIL:vm_output_malformed'],
     ];
@@ -205,14 +207,39 @@ it('pins the orchestrator to D6, refuses the production host (D1), and keeps hos
         ->and($code)->not->toContain('psql -');
 });
 
+/**
+ * Installs the orchestrator, its libraries and the production identity file into a fresh directory, as a drill host
+ * would (P4V-4: the orchestrator refuses to run from a directory another identity can write).
+ */
+function rdvmInstall(): string
+{
+    $root = sys_get_temp_dir().'/rdvm-inst-'.bin2hex(random_bytes(6));
+    foreach (['', '/scripts', '/scripts/lib', '/deploy'] as $d) {
+        @mkdir($root.$d, 0755, true);
+        chmod($root.$d, 0755);
+    }
+    copy(base_path('scripts/restore-drill-vm.sh'), "{$root}/scripts/restore-drill-vm.sh");
+    chmod("{$root}/scripts/restore-drill-vm.sh", 0755);
+    foreach (glob(base_path('scripts/lib/*.sh')) as $lib) {
+        copy($lib, "{$root}/scripts/lib/".basename($lib));
+        chmod("{$root}/scripts/lib/".basename($lib), 0644);
+    }
+    copy(base_path('deploy/production-host.conf'), "{$root}/deploy/production-host.conf");
+    chmod("{$root}/deploy/production-host.conf", 0644);
+
+    return $root;
+}
+
 function rdvmOrchestrate(string $dir, array $args, array $env = []): array
 {
-    $process = new Process(array_merge(['bash', base_path('scripts/restore-drill-vm.sh')], $args), null, array_merge([
+    $root = rdvmInstall();
+    $process = new Process(array_merge(['bash', "{$root}/scripts/restore-drill-vm.sh"], $args), null, array_merge([
         'PATH' => getenv('PATH'),
         'DMS_RESTORE_DRILL_CONF' => "{$dir}/drill.conf",
     ], $env));
-    $process->setTimeout(60);
+    $process->setTimeout(120);
     $process->run();
+    (new Process(['rm', '-rf', '--', $root]))->run();
 
     return ['exit' => (int) $process->getExitCode(), 'out' => $process->getOutput().$process->getErrorOutput()];
 }
@@ -270,6 +297,94 @@ it('refuses before anything runs when its inputs or its environment are not trus
     ['signer is the operator', 'the signer must be a separate, unprivileged identity (VR-4)'],
     ['no hypervisor', 'DMS_DRILL_QEMU'],
 ]);
+
+/** A complete, trusted drill configuration with a signed synthetic manifest; QEMU is a stub that never runs. */
+function rdvmTrustedSetup(string $dir, string $fixture): array
+{
+    (new Process(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'owner', '-f', "{$dir}/owner"]))->mustRun();
+    file_put_contents("{$dir}/anchor", 'owner@ci '.file_get_contents("{$dir}/owner.pub"));
+    $manifest = "DMS_ROLE_MANIFEST_CONTRACT=1\nDMS_ROLE_MANIFEST_ID=test-manifest-0001\nDMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner\n"
+        ."DMS_ROLE_MANIFEST_RUNTIME_ROLE=app_runtime\nDMS_ROLE_MANIFEST_R6_OWNER_ROLE=none\nDMS_ROLE_MANIFEST_ISSUED_BY=owner@ci\n"
+        .'DMS_ROLE_MANIFEST_ISSUED_AT='.gmdate('Y-m-d\TH:i:s\Z', time() - 60)."\nDMS_ROLE_MANIFEST_NOT_AFTER=".gmdate('Y-m-d\TH:i:s\Z', time() + 86400)."\n";
+    file_put_contents("{$dir}/manifest", $manifest);
+    (new Process(['ssh-keygen', '-q', '-Y', 'sign', '-f', "{$dir}/owner", '-n', 'dms-restore-role-manifest', "{$dir}/manifest"]))->mustRun();
+    foreach (['image.qcow2' => "x\n", 'revocations' => '', 'qemu' => "#!/bin/sh\nexit 1\n", 'qemu-img' => "#!/bin/sh\nexit 1\n"] as $f => $content) {
+        file_put_contents("{$dir}/{$f}", $content);
+        chmod("{$dir}/{$f}", 0700);
+    }
+    foreach (['anchor', 'manifest', 'manifest.sig'] as $f) {
+        chmod("{$dir}/{$f}", 0600);
+    }
+    @mkdir("{$dir}/work", 0700);
+    copy(base_path("tests/Fixtures/restore-drill/{$fixture}"), "{$dir}/backup.dump");
+    chmod("{$dir}/backup.dump", 0600);
+    file_put_contents("{$dir}/drill.conf", "DMS_DRILL_IMAGE={$dir}/image.qcow2\nDMS_DRILL_IMAGE_SHA256=".str_repeat('a', 64)."\nDMS_DRILL_MANIFEST_ANCHOR={$dir}/anchor\nDMS_DRILL_MANIFEST_REVOCATIONS={$dir}/revocations\nDMS_DRILL_EXTENSION_ALLOWLIST=none\nDMS_DRILL_SIGNER_USER=nobody\nDMS_DRILL_SIGNER_COMMAND={$dir}/qemu\nDMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin\nDMS_DRILL_WORK_DIR={$dir}/work\nDMS_DRILL_LOCALE=C.UTF-8\nDMS_DRILL_QEMU={$dir}/qemu\nDMS_DRILL_QEMU_IMG={$dir}/qemu-img\n");
+    chmod("{$dir}/drill.conf", 0600);
+
+    return ['--expected-sha256', hash_file('sha256', "{$dir}/backup.dump"), '--manifest', "{$dir}/manifest", "{$dir}/backup.dump"];
+}
+
+it('drives the orchestrator through integrity, sandboxed inspection and the TOC with real archives, up to the hypervisor (P4V-2)', function (string $fixture, string $message) {
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
+    $probe->run();
+    if ($probe->getExitCode() !== 0 || ! is_executable('/usr/lib/postgresql/16/bin/pg_restore') || getenv('XDG_RUNTIME_DIR') !== '/run/user/'.getmyuid()) {
+        $this->markTestSkipped('no per-user systemd manager or PostgreSQL 16 here (covered by the vm-boot CI gate)');
+    }
+    $dir = rdvmDir();
+    $args = rdvmTrustedSetup($dir, $fixture);
+    $run = rdvmOrchestrate($dir, $args, ['XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS')]);
+    $workLeft = array_values(array_diff(scandir("{$dir}/work"), ['.', '..', 'drill.lock']));
+    $units = (new Process(['systemctl', '--user', 'list-units', '--all', '--plain', '--no-legend', 'dmsinspect-*']));
+    $units->run();
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+
+    expect($run['exit'])->toBe(2, $run['out'])
+        ->and($run['out'])->toMatch('/'.$message.'/')
+        ->and($workLeft)->toBe([])
+        ->and(trim($units->getOutput()))->toBe('');
+})->with([
+    // A valid archive passes every input check and stops only where this host has no usable hypervisor or image.
+    'the clean archive reaches the hypervisor stage' => ['clean.dump', '\/dev\/kvm is not usable|the drill image digest'],
+    'an index-expression bomb also passes the host checks (the guest decides)' => ['bomb.dump', '\/dev\/kvm is not usable|the drill image digest'],
+    'pg_database_owner as an owner is refused at the TOC (P4P-3)' => ['dbowner.dump', 'makes pg_database_owner the owner of a TABLE'],
+    'a second schema is refused at the TOC' => ['otherschema.dump', 'entry type outside the allowlist: SCHEMA'],
+]);
+
+it('refuses a plain-SQL backup that matches its digest: a custom-format archive is required (P4V-2, PR-6)', function () {
+    $dir = rdvmDir();
+    $args = rdvmTrustedSetup($dir, 'clean.dump');
+    file_put_contents("{$dir}/backup.dump", "--\n-- PostgreSQL database dump\n--\nSELECT 1;\n");
+    $args[1] = hash_file('sha256', "{$dir}/backup.dump");
+    $run = rdvmOrchestrate($dir, $args);
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+
+    expect($run['exit'])->toBe(2, $run['out'])
+        ->and($run['out'])->toContain('is not a pg_dump custom-format archive (no PGDMP header); a custom-format archive is required (PR-6)');
+});
+
+it('runs only from an install nobody else can change, and accepts only its own per-user manager (P4V-4, P4V-8)', function () {
+    $code = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
+
+    expect($code)->toContain('TRUST_UID="$(stat -c \'%u\' -- "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")")"')
+        ->and($code)->toContain('for k in DMS_DRILL_IMAGE DMS_DRILL_MANIFEST_ANCHOR DMS_DRILL_MANIFEST_REVOCATIONS DMS_DRILL_SIGNER_COMMAND DMS_DRILL_QEMU DMS_DRILL_QEMU_IMG; do')
+        ->and($code)->toContain('xdg="${XDG_RUNTIME_DIR:-}"; [ "$xdg" = "/run/user/$(id -u)" ] || xdg=""')
+        ->and($code)->toContain('[ "$bus" = "unix:path=${xdg}/bus" ] || bus=""')
+        ->and($code)->toContain('dms_archive_inspect_stop "$INSPECT_UNIT"')
+        ->and($code)->toContain('printf \'DMS_DRILL_EVIDENCE_HOST_VERIFIED=%s,install=%s\\n\'')
+        ->and(strpos($code, 'dms_archive_toc_validate "$WORK/inspect/toc.txt"'))->toBeLessThan(strpos($code, '[ -r /dev/kvm ] && [ -w /dev/kvm ]'));
+});
+
+it('refuses to run from a directory another identity can write (P4V-4)', function () {
+    $root = rdvmInstall();
+    chmod("{$root}/scripts/lib", 0777);
+    $process = new Process(['bash', "{$root}/scripts/restore-drill-vm.sh", '--expected-sha256', str_repeat('a', 64), '--manifest', '/nonexistent', '/nonexistent'], null, ['PATH' => getenv('PATH')]);
+    $process->run();
+    chmod("{$root}/scripts/lib", 0755);
+    (new Process(['rm', '-rf', '--', $root]))->run();
+
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getOutput())->toContain('is writable by another identity. Nothing ran.');
+});
 
 it('retires the in-place replay of the production-side drill script (finding A-1)', function () {
     $code = (string) file_get_contents(base_path('scripts/rollout-restore-drill.sh'));

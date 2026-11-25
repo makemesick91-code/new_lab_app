@@ -38,6 +38,9 @@ function rdsrDrill(string $fixture, string $extensions = 'none'): array
         dms_archive_count_program > "$T/count.awk"
         "$B/pg_restore" --section=data --restrict-key=hostk -f - "$ARCHIVE" | awk -f "$T/count.awk" > "$T/counts" || exit 7
         ET=$(wc -l < "$T/counts"); ED=$(dms_archive_digest "$T/counts")
+        "$B/pg_restore" -l "$ARCHIVE" > "$T/toc"
+        TE=""; [ "$EXTS" = none ] || TE="$EXTS"
+        dms_archive_toc_validate "$T/toc" "app_runtime dms_owner" "$TE" > /dev/null; ES="$DMS_ARCHIVE_SHAPE"
         RUN=$(dms_sandbox_unit_name)
         cp -- "$ARCHIVE" "$T/payload"
         PB=$(stat -c %s "$T/payload"); PS=$(sha256sum "$T/payload" | cut -d' ' -f1)
@@ -51,7 +54,8 @@ function rdsrDrill(string $fixture, string $extensions = 'none'): array
         dms_vm_output_parse "$T/output.raw" || exit 8
         for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done
         echo "expected_digest=$ED"
-        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET")")"
+        echo "expected_shape=$ES"
+        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET" "$ES")")"
         echo "units_left=$(systemctl --user list-units --all --plain --no-legend "$RUN.service" | wc -l)"
 
         SH;
@@ -88,6 +92,9 @@ it('restores the synthetic archive section by section as the restore role and de
         ->and($facts['sandbox_bootstrap_superuser'] ?? null)->toBe('nologin')
         ->and($facts['sandbox_table_digest'] ?? null)->toBe($facts['expected_digest'] ?? 'x')
         ->and($facts['sandbox_base_table_count'] ?? null)->toBe('2')
+        ->and($facts['sandbox_user_code_executed'] ?? null)->toBe('0')
+        ->and($facts['sandbox_catalog_shape'] ?? null)->toBe($facts['expected_shape'] ?? 'x')
+        ->and($facts['expected_shape'] ?? null)->toBe('1:2:0:2:0:0:1')
         ->and($facts['units_left'] ?? null)->toBe('0');
 });
 
@@ -114,13 +121,46 @@ it('keeps a backslash line inside a function body as text: no meta-command runs 
         ->and($facts['sandbox_replay'] ?? null)->toBe('ok');
 });
 
-it('enforces the extension allowlist after the restore too (PR-8)', function () {
+it('enforces the extension allowlist inside the unit too, with allowlisted extensions owned by the bootstrap superuser (PR-8, P4P-1(b))', function () {
     $allowed = rdsrDrill('ext', 'pgcrypto');
     $refused = rdsrDrill('ext', 'none');
 
     expect($allowed['decision'] ?? null)->toBe('GO', json_encode($allowed))
-        ->and($refused['sandbox_extensions_outside_allowlist'] ?? null)->toBe('1')
-        ->and($refused['decision'] ?? null)->toBe('FAIL:extension_outside_allowlist');
+        ->and($allowed['sandbox_extensions_outside_allowlist'] ?? null)->toBe('0')
+        ->and($refused['sandbox_stage'] ?? null)->toBe('extension_not_allowlisted', json_encode($refused))
+        ->and($refused['decision'] ?? null)->toBe('FAIL:unit_exit_20');
+});
+
+it('refuses a CHECK constraint or generated column that calls user code during the load (P4V-1)', function () {
+    $facts = rdsrDrill('checkgen');
+
+    expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', json_encode($facts))
+        ->and($facts['sandbox_stage'] ?? null)->toBe('load_guard')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+});
+
+it('refuses pre-data code that drops the function it was called from: the dangling reference is caught (P4P-1)', function () {
+    $facts = rdsrDrill('dangling');
+
+    expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', json_encode($facts))
+        ->and($facts['sandbox_stage'] ?? null)->toBe('load_guard')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+});
+
+it('never lets the restore role add its own code to an allowlisted extension (P4P-1(b))', function () {
+    $facts = rdsrDrill('launder', 'pgcrypto');
+
+    expect($facts['sandbox_replay_section'] ?? null)->toBe('pre_data', json_encode($facts))
+        ->and($facts['sandbox_replay_sqlstate'] ?? null)->toBe('42501')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_20');
+});
+
+it('counts every user function that ran during the restore (track_functions) and refuses GO (P4P-1)', function () {
+    $facts = rdsrDrill('execbomb');
+
+    expect((int) ($facts['sandbox_user_code_executed'] ?? 0))->toBeGreaterThan(0, json_encode($facts))
+        ->and($facts['sandbox_user_code_reachable'] ?? null)->not->toBe('0')
+        ->and($facts['decision'] ?? null)->toStartWith('FAIL:user_code_');
 });
 
 it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-3)', function () {

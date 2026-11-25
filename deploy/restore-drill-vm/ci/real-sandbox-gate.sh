@@ -107,11 +107,15 @@ FX="$REPO/tests/Fixtures/restore-drill"
 # shellcheck source=/dev/null
 . "$REPO/scripts/lib/restore-archive.sh"
 drill() { # <label> <archive> [extension allowlist] [tmpfs MiB] [timeout s] -> prints decision; facts in $OUT/<label>.facts
-  local label="$1" archive="$2" exts="${3:-none}" tmpfs="${4:-256}" timeout="${5:-300}" d et ed run ps pb pk piv
+  local label="$1" archive="$2" exts="${3:-none}" tmpfs="${4:-256}" timeout="${5:-300}" d et ed es run ps pb pk piv te
   d="$(mktemp -d)"; chmod 0755 "$d"; DRILL_DIRS+=("$d")
   dms_archive_count_program > "$d/count.awk"
   "$PGBIN/pg_restore" --section=data --restrict-key=gatek -f - "$archive" | awk -f "$d/count.awk" > "$d/counts" || { echo "FAIL:host_count"; return 0; }
   et="$(wc -l < "$d/counts")"; ed="$(dms_archive_digest "$d/counts")"
+  # P4P-1: the catalog shape from the TOC (an archive the host would refuse still drives the guest here: inner layer).
+  "$PGBIN/pg_restore" -l "$archive" > "$d/toc"
+  te=""; [ "$exts" = none ] || te="$exts"
+  dms_archive_toc_validate "$d/toc" "app_runtime dms_owner" "$te" > /dev/null; es="$DMS_ARCHIVE_SHAPE"
   run="$(dms_sandbox_unit_name)"
   cp -- "$archive" "$d/payload"
   pb="$(stat -c %s "$d/payload")"; ps="$(sha256sum "$d/payload" | cut -d' ' -f1)"
@@ -126,7 +130,7 @@ drill() { # <label> <archive> [extension allowlist] [tmpfs MiB] [timeout s] -> p
   "${RUNNER[@]}" bash "$REPO/scripts/restore-drill-vm-guest.sh" "$d/input.raw" "$d/output.raw" "$MODE" > /dev/null 2>&1
   dms_vm_output_parse "$d/output.raw" || true
   for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done | sort > "$OUT/${label}.facts"
-  dms_vm_decision_safe "$(dms_vm_decide 0 "$run" "$ps" "$ed" "$et")"
+  dms_vm_decision_safe "$(dms_vm_decide 0 "$run" "$ps" "$ed" "$et" "$es")"
   "${RUNNER[@]}" rm -rf -- "$d"
 }
 fact() { sed -n "s/^$2=//p" "$OUT/$1.facts" | head -n 1; }
@@ -139,7 +143,17 @@ check S-rls "row-security policy code never runs during verification; verificati
 d="$(drill S-meta "$FX/metabody.dump")"
 check S-meta "a backslash line inside a function body stays text (D5)" "$(is "$d" GO)" "$d"
 d="$(drill S-ext-no "$FX/ext.dump")"
-check S-ext "an extension outside the allowlist fails the drill after the restore too (PR-8)" "$(is "$d" FAIL:extension_outside_allowlist)" "$d"
+check S-ext "an extension outside the allowlist is refused inside the unit too (PR-8)" "$([ "$(fact S-ext-no sandbox_stage)" = extension_not_allowlisted ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+d="$(drill S-ext-yes "$FX/ext.dump" pgcrypto)"
+check S-ext-ok "an allowlisted extension is created by the bootstrap superuser and the drill is GO (P4P-1(b))" "$(is "$d" GO)" "$d"
+d="$(drill S-checkgen "$FX/checkgen.dump")"
+check S-checkgen "a CHECK or generated column calling user code is refused by the load guard (P4V-1)" "$([ "$(fact S-checkgen sandbox_stage)" = load_guard ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+d="$(drill S-dangling "$FX/dangling.dump")"
+check S-dangling "pre-data code that drops its own function leaves a dangling reference, refused (P4P-1)" "$([ "$(fact S-dangling sandbox_stage)" = load_guard ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+d="$(drill S-launder "$FX/launder.dump" pgcrypto)"
+check S-launder "the restore role cannot add its code to an allowlisted extension (P4P-1(b))" "$([ "$(fact S-launder sandbox_replay_sqlstate)" = 42501 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+d="$(drill S-execbomb "$FX/execbomb.dump")"
+check S-execbomb "user functions that ran during the restore are counted (track_functions) and refuse GO (P4P-1)" "$([ "$(fact S-execbomb sandbox_user_code_executed)" -gt 0 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d executed=$(fact S-execbomb sandbox_user_code_executed)"
 d="$(drill S-r6 "$FX/r6owner.dump")"
 check S-r6 "runtime-owned objects are counted from the restored catalog (P5, PR-3)" "$([ "$(fact S-r6 sandbox_runtime_owned_objects)" -gt 0 ]; echo $?)" "runtime_owned=$(fact S-r6 sandbox_runtime_owned_objects)"
 
@@ -173,10 +187,22 @@ check X-time "an endless restore step ends at the unit time limit (TimeoutStartS
 if [ "$MODE" = system ] && [ -n "${DMS_GATE_SIGNER_USER:-}" ]; then
   # shellcheck source=/dev/null
   . "$REPO/scripts/lib/restore-evidence.sh"
-  req() { printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=gate\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\nDMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\nDMS_DRILL_EVIDENCE_LIMITS=vcpu=1\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=gate\nDMS_DRILL_EVIDENCE_EXPECTED=gate\nDMS_DRILL_EVIDENCE_GUEST_ASSERTED=gate\nDMS_DRILL_EVIDENCE_DECISION=GO\n' \
-    "$(dms_sandbox_unit_name)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"; }
+  # A request consistent with the signer's policy (P4V-4); its image digest is the one provision-signer.sh pinned.
+  req() { # [guest per-table digest]
+    local h; h="$(printf 'd%.0s' {1..64})"
+    printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=%s\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\nDMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' \
+      "$(dms_sandbox_unit_name)" "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"
+    printf 'DMS_DRILL_EVIDENCE_LIMITS=%s\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=%s,install=operator\n' "$DMS_DRILL_EVIDENCE_LIMITS_D6" "$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS"
+    printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=2,rows=6,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1\n' "$h"
+    printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=ok,tables=2,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo\n' "${1:-$h}"
+    printf 'DMS_DRILL_EVIDENCE_DECISION=GO\n'
+  }
   r="$(req | sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" sign 2>&1)"
   check G1 "the operator obtains a record only through sudo to the signer identity" "$(starts "$r" "RECORD ")" "$(printf '%s' "$r" | head -c 80)"
+  r="$(req "$(printf 'e%.0s' {1..64})" | sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" sign 2>&1)"
+  check G5 "the signer refuses a contradictory GO (guest digest differs from the expected one, P4V-4)" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  r="$(req | bash -c 'ulimit -f 1; exec sudo -n -u "$0" -- "$1" sign' "$DMS_GATE_SIGNER_USER" "$DMS_GATE_SIGNER_COMMAND" 2>&1)"
+  check G6 "no record is written under a caller's file-size limit (P4V-5)" "$([ "${r#RECORD }" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(req | DMS_SIGNER_CONF="$DMS_GATE_SIGNER_CONF" bash "$DMS_GATE_SIGNER_COMMAND" sign 2>&1)"
   check G2 "calling the signer directly as the operator is refused" "$([ "${r#*refused}" != "$r" ] || [ "${r#*SIGNER: }" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   check G3 "the operator cannot read the signer's key" "$([ ! -r "$DMS_GATE_SIGNER_KEY" ]; echo $?)" "$(stat -c '%U %a' "$DMS_GATE_SIGNER_KEY" 2> /dev/null)"

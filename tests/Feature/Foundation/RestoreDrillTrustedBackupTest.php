@@ -313,7 +313,7 @@ it('verifies the staged copy even when the backup is replaced after the check, a
         ->and($run['tmp_left'])->toBe(0)
         ->and(collect($run['log'])->contains(fn (string $l): bool => str_contains($l, 'foundation:backup-verify')))->toBeTrue()
         // The VM drill streams only the staged copy, never the live file.
-        ->and(strpos($vm, 'STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")"'))->toBeLessThan(strpos($vm, 'dms_restore_verify_copy "$STAGED"'))
+        ->and(strpos($vm, 'STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")"'))->toBeLessThan(strpos($vm, 'dms_archive_verify_copy "$STAGED"'))
         ->and($vm)->not->toContain('< "$BACKUP_FILE"');
 });
 

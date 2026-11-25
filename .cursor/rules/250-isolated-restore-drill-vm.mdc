@@ -1,6 +1,6 @@
 ---
-description: R6-B6 isolated restore drill (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1–D10, 2026-11-25) — a backup is replayed for a drill only in a disposable VM on an isolated drill host, never on the production kernel; inside the VM in a systemd system unit under DynamicUser, as a non-superuser role, with psql restricted mode and the load guard; role names from a signed manifest; GO only from host-checkable facts; signed, hash-chained evidence. The in-place superuser replay is retired.
-globs: scripts/restore-drill-vm.sh, scripts/restore-drill-vm-guest.sh, scripts/restore-drill-vm-image.sh, scripts/restore-drill-sandbox-inner.sh, scripts/lib/restore-sandbox.sh, scripts/lib/restore-vm.sh, scripts/lib/restore-manifest.sh, scripts/lib/restore-evidence.sh, scripts/rollout-restore-drill.sh, deploy/restore-drill-vm/**
+description: R6-B6 isolated restore drill (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1–D10, 2026-11-25) — a backup is replayed for a drill only in a disposable VM on an isolated drill host, never on the production kernel; inside the VM in a systemd system unit under DynamicUser, as a non-superuser role, with psql restricted mode and the load guard; role names from a signed, revocable manifest; a pg_dump 16 custom-format archive validated by its TOC (types, schema, owners, extension allowlist); GO only from host-checkable facts including a per-table row digest; evidence signed by a separate signer account, atomic and hash-chained. The in-place superuser replay is retired.
+globs: scripts/restore-drill-vm.sh, scripts/restore-drill-vm-guest.sh, scripts/restore-drill-evidence-signer.sh, scripts/lib/restore-archive.sh, scripts/restore-drill-vm-image.sh, scripts/restore-drill-sandbox-inner.sh, scripts/lib/restore-sandbox.sh, scripts/lib/restore-vm.sh, scripts/lib/restore-manifest.sh, scripts/lib/restore-evidence.sh, scripts/rollout-restore-drill.sh, deploy/restore-drill-vm/**
 alwaysApply: false
 ---
 
@@ -34,15 +34,48 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
 6. **D3:** role names come only from a manifest signed with `ssh-keygen -Y sign -n dms-restore-role-manifest`,
    verified against the drill host's root-owned trust anchor. D-Q6-a and P5 are decided against that manifest, never
    against a live production cluster.
-7. **GO** needs every host-checkable fact:
+7. **The backup is a pg_dump 16 custom-format archive (PR-6), never plain SQL.**
+   - The host reads it only through a pinned `pg_restore`, inside a hardened per-user unit (`dms_archive_inspect`).
+   - Its TOC must pass `dms_archive_toc_validate`:
+     - an entry-type allowlist and the `public` schema only;
+     - owners from the manifest;
+     - plain lowercase names;
+     - extensions from `DMS_DRILL_EXTENSION_ALLOWLIST` (PR-8; enforced again after the restore and by pruning the
+       image).
+   - The guest restores section by section (pre-data, the guard, data, post-data). Never add a text heuristic over
+     COPY data.
+   - The inspection unit refuses, and never truncates, a TOC or count list above its limit (P4P-2). It hides the
+     cgroup tree, `/etc` and the host's `/dev/shm` (P4V-3).
+   - Allowlisted extensions are created by the bootstrap superuser before the backup is read, and the archive's
+     EXTENSION entries are left out of the restore, so the restore role never owns an extension (P4P-1).
+   - `pg_database_owner` may own only the public schema's ACL or comment (P4P-3).
+8. **GO** needs every host-checkable fact:
    - VM exit 0; the echoed run id and payload digest;
-   - feeder and unit exit 0;
+   - unit exit 0;
    - no duplicate or rejected result line;
    - an attested profile, the superuser locked out;
-   - restored base tables and rows equal to the counts the host took from the dump, and the pg_dump trailer present.
-8. **D10:** every drill writes a record signed with `ssh-keygen -Y sign -n dms-restore-drill-evidence` and chained by
-   sha256. The readiness service is not wired to it without a separate change.
-9. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
+   - no user code on a restore path, decided from `pg_depend` and the stored expressions, including references that no
+     longer resolve; no extension outside the allowlist;
+   - no user function ran during the restore (`track_functions=all`, flushed per section) (P4P-1);
+   - the guest's per-table digest, table count and catalog shape equal to those the host computed from the archive
+     (PR-5, P4P-1).
+9. **D10, VR-4, PR-9, evidence:**
+   - Records are signed by a SEPARATE signer account reached only through one sudoers rule. The operator, and
+     therefore QEMU, never holds the key, the store or the head log.
+   - Records are published atomically (directory `mv -T -n`) and chained by sha256, with a head log. The signer
+     verifies before every write and refuses replayed run ids.
+   - A revoked manifest is never used.
+   - Each record keeps `HOST_VERIFIED` apart from `GUEST_ASSERTED` (VR-1): a GO is never stronger than the guest's
+     integrity.
+   - The signer signs only a request consistent with itself (`dms_evidence_request_policy`): its own host, a pinned
+     image digest, the D6 limits and the fixed fact list. A GO also needs equal digests, shapes and tables.
+   - The signer refuses to run under a file-size limit, or from code, a key or a head-log directory that another
+     identity can change. It uses `/bin/bash` by absolute path.
+   - The sudoers rule must not allow SETENV.
+   - The orchestrator trusts only inputs owned by root or by the owner of its own script, and records `install=root`
+     or `install=operator`. Acceptance needs a root-owned install.
+   - The readiness service is not wired to it without a separate change.
+10. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
    patient data and is removed with the run directory.
 
 ## Acceptance before A-1 may be reported for closure
@@ -59,4 +92,5 @@ Each item needs real evidence; a configuration-only claim is not enough:
 - two independent adversarial reviews (Linux/systemd/VM, and PostgreSQL restore security).
 
 Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-boot-gate.sh`, on disposable
-infrastructure only (workflow proposal, inactive until the owner decides).
+infrastructure only (workflow proposal, inactive until the owner decides). A gate that did not run is NOT RUN, never
+PASS. `provision-signer.sh` runs only on a disposable CI runner.

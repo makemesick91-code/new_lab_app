@@ -84,7 +84,7 @@ fact unit_exit "$?"
 dms_sandbox_parse "$WORK/raw"
 fact result_duplicates "$DMS_SANDBOX_DUPLICATES"
 fact result_rejected "$DMS_SANDBOX_REJECTED"
-for k in profile bootstrap_superuser roles_created replay replay_section replay_exit replay_sqlstate stage table_count migrations_table base_table_count rows_total table_digest fidelity_trg_con_fn_idx user_code_reachable extensions_outside_allowlist runtime_owned_objects result; do
+for k in profile bootstrap_superuser roles_created replay replay_section replay_exit replay_sqlstate stage table_count migrations_table base_table_count rows_total table_digest fidelity_trg_con_fn_idx user_code_reachable user_code_executed catalog_shape extensions_outside_allowlist runtime_owned_objects result; do
   [ -n "${DMS_SANDBOX_RESULT[$k]+x}" ] && fact "sandbox_${k}" "${DMS_SANDBOX_RESULT[$k]}"
 done
 fact guest_stage "done"

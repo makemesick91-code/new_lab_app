@@ -52,18 +52,40 @@ the only supported way to replay a backup for a drill. Design and evidence:
   systemd system unit under DynamicUser (D2), as a non-superuser role (D4), in psql restricted mode with the load
   guard (D5).
 - **Inputs:**
-  - the backup;
+  - the backup, which must be a **pg_dump 16 custom-format archive** (`pg_dump -Fc`). A plain-SQL backup is refused
+    (PR-6). Its TOC must hold only the object types the application produces, the `public` schema, owners from the
+    manifest and allowlisted extensions;
   - its SHA-256 from an independent record;
   - a role manifest signed with `ssh-keygen -Y sign -n dms-restore-role-manifest` by a principal of the drill host's
-    trust anchor (D3). The VM never connects to production PostgreSQL.
-- **Output:** a signed, hash-chained evidence record in the drill host's evidence store (D10), verifiable with
-  `dms_evidence_verify_store`. It is not ROLL-5-1A JSON, and the readiness service does not read it yet (a separate
-  change), so `restore_drill_evidence` stays at WATCH until then.
+    trust anchor (D3), and not listed in the drill host's revocation list. The VM never connects to production
+    PostgreSQL.
+- **Output:** a record signed by the drill host's **separate signer account** (VR-4), published atomically and chained
+  by sha256 with a head log (D10, PR-9). The drill prints the record's head digest: copy it to a store outside the
+  drill host. Verify with `sudo -n -u <signer> <signer entrypoint> verify`. A record is not ROLL-5-1A JSON. The
+  readiness service does not read it yet (a separate change), so `restore_drill_evidence` stays at WATCH until then.
+- **Drill host provisioning (owner; not automated).** Never on the production host.
+  - The drill scripts installed **root-owned** outside any checkout, in directories no other identity can write. The
+    orchestrator then accepts only root-owned trusted inputs and records `install=root`. A run from an operator-owned
+    checkout records `install=operator` and is not acceptance evidence.
+  - An unprivileged operator account with a lingering user manager (`loginctl enable-linger`; XDG_RUNTIME_DIR
+    `/run/user/<uid>`). It runs QEMU and the archive inspection, and holds no other sudo right.
+  - A separate signer account owning the signing key, `allowed_signers`, the store, the head log and its
+    configuration (`/etc/dms-restore-drill/signer.conf`, mode 0600).
+  - The signer entrypoint and its two libraries installed root-owned outside any checkout.
+  - One sudoers rule: the operator may run exactly `<entrypoint> sign` and `<entrypoint> verify` as the signer, with
+    no SETENV, and `secure_path` set.
+  - In the signer configuration, `DMS_SIGNER_IMAGE_SHA256` lists the digests of the drill images this host may
+    report. The signer refuses a record for any other image, another host, other limits, or a contradictory GO.
+  - The trusted drill configuration (`/etc/dms-restore-drill/drill.conf`): image and pinned digest, manifest trust
+    anchor, revocation list, extension allowlist, signer account and entrypoint, pinned PostgreSQL 16.15+ client
+    directory, work directory.
+  - The image built by `scripts/restore-drill-vm-image.sh` with the same extension allowlist.
+  - `deploy/restore-drill-vm/ci/provision-signer.sh` shows the layout but runs only on a disposable CI runner.
 
 ```bash
 # On the ISOLATED DRILL HOST only (never on production). Configuration: a trusted file, by default
-# /etc/dms-restore-drill/drill.conf (image path and pinned digest, trust anchors, evidence key, store, work directory).
-bash scripts/restore-drill-vm.sh --expected-sha256 <hex> --manifest <signed role manifest> <backup_file.sql>
+# /etc/dms-restore-drill/drill.conf (see the provisioning list above). The operator account runs it, never root.
+bash scripts/restore-drill-vm.sh --expected-sha256 <hex> --manifest <signed role manifest> <backup_file.dump>
 # Production-side verification only (no replay; exit 3 by design):
 bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>
 ```

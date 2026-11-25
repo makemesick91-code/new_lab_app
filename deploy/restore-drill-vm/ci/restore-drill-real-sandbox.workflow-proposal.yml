@@ -46,7 +46,7 @@ jobs:
           sudo pg_dropcluster --stop 16 main || true
           /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
       - name: Separate evidence signer identity (VR-4), installed outside the checkout
-        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner
+        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner "$(printf 'c%.0s' {1..64})"
       - name: Real sandbox, system mode (DynamicUser) + signer separation
         env:
           DMS_GATE_SIGNER_USER: dmsdrill-signer
@@ -82,8 +82,6 @@ jobs:
           sudo loginctl enable-linger "$(id -un)"
           for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
           test -S "/run/user/$(id -u)/bus"
-      - name: Separate evidence signer identity (VR-4), installed outside the checkout
-        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner
       - name: Ubuntu 24.04 cloud image, verified against Ubuntu's signed SHA256SUMS; drill image built
         run: |
           base=https://cloud-images.ubuntu.com/releases/noble/release
@@ -93,6 +91,8 @@ jobs:
           curl -fsSLO "$base/$img"
           sha="$(grep " \*$img\$" SHA256SUMS | cut -d' ' -f1)"
           bash scripts/restore-drill-vm-image.sh "$img" "$sha" "$RUNNER_TEMP/drill.qcow2" none
+      - name: Separate evidence signer identity (VR-4), pinned to the built drill image (P4V-4)
+        run: bash deploy/restore-drill-vm/ci/provision-signer.sh runner "$(sha256sum "$RUNNER_TEMP/drill.qcow2" | cut -d' ' -f1)"
       - name: VM boot gate
         env:
           DMS_GATE_SIGNER_USER: dmsdrill-signer

@@ -197,12 +197,12 @@ dms_vm_decision_safe() {
   if [ "$d" = GO ] || [[ "$d" =~ ^FAIL:[a-z0-9_]{1,60}$ ]]; then printf '%s\n' "$d"; else printf 'FAIL:guest_invalid_value\n'; fi
 }
 
-# dms_vm_decide <qemu exit> <run id> <payload sha256> <expected per-table digest> <expected tables>
+# dms_vm_decide <qemu exit> <run id> <payload sha256> <expected per-table digest> <expected tables> <expected catalog shape>
 # Host side, after dms_vm_output_parse. Prints GO or FAIL:<reason>. The VM's own facts must echo what the host sent;
 # then the sandbox result must pass dms_sandbox_decide against the per-table digest the host computed from the archive.
 # Everything read here is GUEST-ASSERTED (VR-1); the evidence records it as such.
 dms_vm_decide() {
-  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" exp_digest="${4:-}" exp_tables="${5:-}" k
+  local qemu_exit="${1:-x}" run="${2:-}" sha="${3:-}" exp_digest="${4:-}" exp_tables="${5:-}" exp_shape="${6:-}" k
   [ "$qemu_exit" = 0 ] || { echo "FAIL:vm_exit_${qemu_exit}"; return 0; }
   [ "$DMS_VM_OUTPUT_DUPLICATES" = 0 ] && [ "$DMS_VM_OUTPUT_REJECTED" = 0 ] || { echo "FAIL:vm_output_malformed"; return 0; }
   [ "${DMS_VM_OUTPUT[run_id]:-}" = "$run" ] || { echo "FAIL:vm_run_id_mismatch"; return 0; }
@@ -217,5 +217,5 @@ dms_vm_decide() {
   DMS_SANDBOX_DUPLICATES="${DMS_VM_OUTPUT[result_duplicates]:-x}"
   # shellcheck disable=SC2034
   DMS_SANDBOX_REJECTED="${DMS_VM_OUTPUT[result_rejected]:-x}"
-  dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "$exp_digest" "$exp_tables"
+  dms_sandbox_decide "${DMS_VM_OUTPUT[unit_exit]:-x}" "$exp_digest" "$exp_tables" "$exp_shape"
 }

@@ -201,12 +201,12 @@ dms_sandbox_parse() {
   done < "$raw"
 }
 
-# dms_sandbox_decide <unit exit> <expected per-table digest> <expected table count>
+# dms_sandbox_decide <unit exit> <expected per-table digest> <expected table count> <expected catalog shape>
 # Prints GO, or FAIL:<reason>. GO only when every condition holds. The per-table digest (PR-5) must equal the digest of
 # the row counts the HOST took from the archive's data section before the drill: a forged or partial result cannot
 # match it unless it knows and reproduces every table's count, and even then it remains a guest assertion (VR-1).
 dms_sandbox_decide() {
-  local unit_exit="${1:-x}" exp_digest="${2:-x}" exp_tables="${3:-x}"
+  local unit_exit="${1:-x}" exp_digest="${2:-x}" exp_tables="${3:-x}" exp_shape="${4:-x}"
   [ "$unit_exit" = 0 ] || { echo "FAIL:unit_exit_${unit_exit}"; return 0; }
   [ "$DMS_SANDBOX_DUPLICATES" = 0 ] || { echo "FAIL:duplicate_result_keys"; return 0; }
   [ "$DMS_SANDBOX_REJECTED" = 0 ] || { echo "FAIL:rejected_result_lines"; return 0; }
@@ -218,6 +218,11 @@ dms_sandbox_decide() {
   # operators in constraints), where it would run during a real restore and could behave differently there.
   [ "${DMS_SANDBOX_RESULT[user_code_reachable]:-}" = 0 ] || { echo "FAIL:user_code_in_restore_path"; return 0; }
   [ "${DMS_SANDBOX_RESULT[extensions_outside_allowlist]:-}" = 0 ] || { echo "FAIL:extension_outside_allowlist"; return 0; }
+  # P4P-1: no user function ran at all during the restore (track_functions), and the restored catalog has exactly the
+  # functions, tables, indexes, constraints, triggers and sequences the archive's TOC creates (nothing dropped, added or
+  # swapped by code that ran while the schema was created).
+  [ "${DMS_SANDBOX_RESULT[user_code_executed]:-}" = 0 ] || { echo "FAIL:user_code_executed_in_restore"; return 0; }
+  [[ "$exp_shape" =~ ^[0-9]{1,9}(:[0-9]{1,9}){6}$ ]] && [ "${DMS_SANDBOX_RESULT[catalog_shape]:-}" = "$exp_shape" ] || { echo "FAIL:catalog_shape_mismatch"; return 0; }
   [ "${DMS_SANDBOX_RESULT[base_table_count]:-}" = "$exp_tables" ] || { echo "FAIL:table_count_mismatch"; return 0; }
   [[ "$exp_digest" =~ ^[0-9a-f]{64}$ ]] && [ "${DMS_SANDBOX_RESULT[table_digest]:-}" = "$exp_digest" ] || { echo "FAIL:per_table_rows_mismatch"; return 0; }
   echo GO

@@ -96,7 +96,7 @@ GUARD=/opt/dmsdrill/guard.sql
 # --- Trusted setup (no backup byte has been read yet) -----------------------------------------------------------
 "$PGBIN/initdb" -D "$R/data" -U "$SU" --auth=trust -E UTF8 --locale="$LOCALE" > "$R/initdb.log" 2>&1 3>&- || fail initdb 10
 "$PGBIN/postgres" -D "$R/data" -k "$R/data" -c listen_addresses= -c unix_socket_permissions=0700 \
-  -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c jit=off -c autovacuum=off \
+  -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c jit=off -c autovacuum=off -c track_functions=all \
   -c max_connections=8 -c shared_buffers=64MB -c max_locks_per_transaction=1024 \
   -c logging_collector=off -c log_min_messages=warning > "$R/pg.log" 2>&1 3>&- &
 PGPID=$!
@@ -122,6 +122,15 @@ su_sql -d postgres -c "CREATE DATABASE ${DB} OWNER ${RR} TEMPLATE template0" > /
 for r in "${ROLES[@]}"; do
   su_sql -d "$DB" -v r="$r" <<< 'GRANT CREATE ON SCHEMA public TO :"r";' > /dev/null || fail schema_grant 12
 done
+# P4P-1(b): the allowlisted extensions are created HERE, by the bootstrap superuser, before any backup byte is read.
+# The archive's own EXTENSION entries and comments on extensions are left out of the restore (restore.list below), so
+# the restore role never owns an extension: it cannot add its own functions to one (ALTER EXTENSION … ADD, which would
+# launder them past every "not extension code" check) or run an extension update script.
+if [ "$EXTS" != none ]; then
+  for e in $EXTS; do
+    su_sql -d "$DB" -v e="$e" <<< 'CREATE EXTENSION IF NOT EXISTS :"e" WITH SCHEMA public;' > /dev/null || fail extension_create 12
+  done
+fi
 # DR-5: from here on nothing can log in as the bootstrap superuser (not `\c` from the dump, not a native foothold on
 # the trust socket). The server is stopped by signal, which needs no login.
 su_sql -d postgres -v r="$SU" <<< 'ALTER ROLE :"r" NOLOGIN;' > /dev/null || fail superuser_nologin 12
@@ -132,12 +141,31 @@ emit "roles_created=${#ROLES[@]}"
 # pg_restore turns the structured archive into SQL; psql runs it in restricted mode under a fresh key per section
 # (D5: no meta-command can run). The load guard runs between pre-data and data, as its own session: nothing is ever
 # injected into the stream (PR-6).
+# The restore list: the archive's TOC without EXTENSION entries and comments on extensions (P4P-1(b), above).
+"$PGBIN/pg_restore" -l "$ARCHIVE" > "$R/toc.full" 2> /dev/null 3>&- || fail toc_list 20
+re_ext='^[0-9]+; [0-9]+ [0-9]+ EXTENSION - '
+re_extc='^[0-9]+; [0-9]+ [0-9]+ COMMENT - EXTENSION '
+while IFS= read -r l; do
+  if [[ "$l" =~ $re_ext ]]; then
+    # PR-8 again, inside the unit: an extension outside the allowlist is never left for the restore to skip silently.
+    e="${l#*EXTENSION - }"; e="${e%% *}"
+    [[ " ${EXTS} " == *" ${e} "* ]] || fail extension_not_allowlisted 20
+    continue
+  fi
+  [[ "$l" =~ $re_extc ]] || printf '%s\n' "$l"
+done < "$R/toc.full" > "$R/restore.list"
 restore_section() { # <section> -> 0, or emits the failure and exits
-  local section="$1" key st
+  local section="$1" key st prc
   key="$(printf '%08x%08x%08x%08x%08x%08x%08x%08x' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"
-  "$PGBIN/pg_restore" --section="$section" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&- \
+  # After the section, the session flushes its function-call statistics (track_functions=all, a superuser-only
+  # setting), so that verification sees every user function this session ran (P4P-1).
+  { "$PGBIN/pg_restore" --section="$section" -L "$R/restore.list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
+    echo "$?" > "$R/pg_restore.rc"
+    printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;'; } 3>&- \
     | "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
   st=("${PIPESTATUS[@]}")
+  prc="$(< "$R/pg_restore.rc")"
+  st[0]="${prc:-1}"
   if [ "${st[1]}" -ne 0 ] || [ "${st[0]}" -ne 0 ]; then
     local state="unknown" l
     while IFS= read -r l; do
@@ -179,9 +207,24 @@ trg="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger t JOIN pg_cat
 con="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) k.connamespace WHERE n.nspname OPERATOR(pg_catalog.=) 'public'")" || fail verify 30
 fns="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace WHERE n.nspname OPERATOR(pg_catalog.=) 'public'")" || fail verify 30
 idx="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${pub} AND c.relkind OPERATOR(pg_catalog.=) 'i'")" || fail verify 30
-# PR-2: user code (not from an extension) referenced by index expressions or predicates, materialized-view queries,
-# or as an operator of an exclusion or foreign-key constraint: it would run during a real restore.
-ucode="$(vsql "WITH e AS (SELECT indexprs::text AS t FROM pg_catalog.pg_index WHERE indexprs IS NOT NULL UNION ALL SELECT indpred::text FROM pg_catalog.pg_index WHERE indpred IS NOT NULL UNION ALL SELECT r.ev_action::text FROM pg_catalog.pg_rewrite r JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) r.ev_class WHERE c.relkind OPERATOR(pg_catalog.=) 'm'), ids AS (SELECT (pg_catalog.regexp_matches(t, ':(?:funcid|opfuncid|opno|aggfnoid|winfnoid) ([0-9]+)', 'g'))[1]::pg_catalog.oid AS id FROM e UNION ALL SELECT pg_catalog.unnest(conexclop) FROM pg_catalog.pg_constraint WHERE conexclop IS NOT NULL UNION ALL SELECT pg_catalog.unnest(conpfeqop) FROM pg_catalog.pg_constraint WHERE conpfeqop IS NOT NULL) SELECT pg_catalog.count(*) FROM ids WHERE id OPERATOR(pg_catalog.>=) 16384 AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.objid OPERATOR(pg_catalog.=) ids.id AND d.deptype OPERATOR(pg_catalog.=) 'e')")" || fail verify 30
+# PR-2, P4P-1, P4V-1: user code (not extension code) on a restore path, decided from the DEPENDENCY graph and from the
+# stored expressions: anything a constraint (CHECK, exclusion, foreign key), a generated column, an index (expression,
+# predicate), a partition key, a rule or a domain references, that is a function or operator created by the dump and
+# not a member of an extension, OR that no longer resolves (code that ran while the schema was created can drop what it
+# was called from). Such code runs during a real restore, as the restoring role.
+ext="SELECT d.classid, d.objid FROM pg_catalog.pg_depend d WHERE d.deptype OPERATOR(pg_catalog.=) 'e'"
+deps="SELECT d.refclassid AS cls, d.refobjid AS id FROM pg_catalog.pg_depend d WHERE d.refclassid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.pg_proc'::pg_catalog.regclass, 'pg_catalog.pg_operator'::pg_catalog.regclass]) AND d.deptype OPERATOR(pg_catalog.=) ANY (ARRAY['n','a']::pg_catalog.\"char\"[]) AND (d.classid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.pg_constraint'::pg_catalog.regclass, 'pg_catalog.pg_class'::pg_catalog.regclass, 'pg_catalog.pg_rewrite'::pg_catalog.regclass, 'pg_catalog.pg_type'::pg_catalog.regclass]) OR (d.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_attrdef'::pg_catalog.regclass AND EXISTS (SELECT 1 FROM pg_catalog.pg_attrdef ad JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) ad.adrelid AND a.attnum OPERATOR(pg_catalog.=) ad.adnum WHERE ad.oid OPERATOR(pg_catalog.=) d.objid AND a.attgenerated OPERATOR(pg_catalog.<>) '')))"
+trees="SELECT indexprs::pg_catalog.text AS t FROM pg_catalog.pg_index WHERE indexprs IS NOT NULL UNION ALL SELECT indpred::pg_catalog.text FROM pg_catalog.pg_index WHERE indpred IS NOT NULL UNION ALL SELECT conbin::pg_catalog.text FROM pg_catalog.pg_constraint WHERE conbin IS NOT NULL UNION ALL SELECT ad.adbin::pg_catalog.text FROM pg_catalog.pg_attrdef ad JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) ad.adrelid AND a.attnum OPERATOR(pg_catalog.=) ad.adnum WHERE a.attgenerated OPERATOR(pg_catalog.<>) '' UNION ALL SELECT partexprs::pg_catalog.text FROM pg_catalog.pg_partitioned_table WHERE partexprs IS NOT NULL UNION ALL SELECT r.ev_action::pg_catalog.text FROM pg_catalog.pg_rewrite r JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) r.ev_class WHERE c.relkind OPERATOR(pg_catalog.=) 'm'"
+refs="${deps} UNION ALL SELECT 'pg_catalog.pg_proc'::pg_catalog.regclass, (pg_catalog.regexp_matches(t, ':(?:[a-z]*funcid|aggfnoid|winfnoid) ([0-9]+)', 'g'))[1]::pg_catalog.oid FROM (${trees}) e UNION ALL SELECT 'pg_catalog.pg_operator'::pg_catalog.regclass, (pg_catalog.regexp_matches(t, ':opno ([0-9]+)', 'g'))[1]::pg_catalog.oid FROM (${trees}) e UNION ALL SELECT 'pg_catalog.pg_operator'::pg_catalog.regclass, pg_catalog.unnest(conexclop) FROM pg_catalog.pg_constraint WHERE conexclop IS NOT NULL UNION ALL SELECT 'pg_catalog.pg_operator'::pg_catalog.regclass, pg_catalog.unnest(conpfeqop) FROM pg_catalog.pg_constraint WHERE conpfeqop IS NOT NULL"
+ucode="$(vsql "WITH ext AS (${ext}), refs AS (${refs}) SELECT pg_catalog.count(*) FROM refs WHERE refs.id OPERATOR(pg_catalog.<>) 0 AND ((refs.id OPERATOR(pg_catalog.>=) 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid OPERATOR(pg_catalog.=) refs.cls AND ext.objid OPERATOR(pg_catalog.=) refs.id)) OR (refs.cls OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE p.oid OPERATOR(pg_catalog.=) refs.id)) OR (refs.cls OPERATOR(pg_catalog.=) 'pg_catalog.pg_operator'::pg_catalog.regclass AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_operator o WHERE o.oid OPERATOR(pg_catalog.=) refs.id)))")" || fail verify 30
+# P4P-1: user functions that RAN during the restore at all (track_functions=all; the restore role can neither turn it
+# off nor reset the counters). Any call is a FAIL, whatever the catalog looks like afterwards.
+ucalls="$(vsql "WITH ext AS (${ext}) SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace WHERE n.nspname OPERATOR(pg_catalog.<>) ALL (ARRAY['pg_catalog','information_schema']) AND n.nspname OPERATOR(pg_catalog.!~) '^pg_(toast|temp)' AND COALESCE(pg_catalog.pg_stat_get_function_calls(p.oid), 0) OPERATOR(pg_catalog.>) 0 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass AND ext.objid OPERATOR(pg_catalog.=) p.oid)")" || fail verify 30
+# P4P-1: the catalog shape, in the order the host computes it from the TOC (functions:tables:indexes:constraints:
+# fk_constraints:triggers:sequences); objects that belong to an extension are not the dump's and are not counted.
+notext="NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend x WHERE x.deptype OPERATOR(pg_catalog.=) 'e' AND x.objid OPERATOR(pg_catalog.=)"
+shape="$(vsql "SELECT pg_catalog.concat_ws(':', (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace WHERE n.nspname OPERATOR(pg_catalog.=) 'public' AND p.prokind OPERATOR(pg_catalog.=) ANY (ARRAY['f','w']::pg_catalog.\"char\"[]) AND ${notext} p.oid AND x.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass)), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${pub} AND c.relkind OPERATOR(pg_catalog.=) ANY (ARRAY['r','p']::pg_catalog.\"char\"[]) AND ${notext} c.oid AND x.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass)), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) i.indexrelid JOIN pg_catalog.pg_namespace n ON ${pub} AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conindid OPERATOR(pg_catalog.=) i.indexrelid AND k.conrelid OPERATOR(pg_catalog.=) i.indrelid AND k.contype OPERATOR(pg_catalog.=) ANY (ARRAY['p','u','x']::pg_catalog.\"char\"[])) AND ${notext} i.indrelid AND x.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass)), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) k.conrelid JOIN pg_catalog.pg_namespace n ON ${pub} AND k.contype OPERATOR(pg_catalog.=) ANY (ARRAY['p','u','x']::pg_catalog.\"char\"[])), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint k JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) k.conrelid JOIN pg_catalog.pg_namespace n ON ${pub} AND k.contype OPERATOR(pg_catalog.=) 'f'), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) t.tgrelid JOIN pg_catalog.pg_namespace n ON ${pub} AND NOT t.tgisinternal), (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${pub} AND c.relkind OPERATOR(pg_catalog.=) 'S' AND ${notext} c.oid AND x.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass)))")" || fail verify 30
+[[ "$shape" =~ ^[0-9]{1,9}(:[0-9]{1,9}){6}$ ]] || fail verify_format 30
 # PR-3: P5 is decided from the catalog after the replay, not from a text scan of the dump.
 rown=0
 if [ -n "$RUNTIME" ]; then
@@ -194,13 +237,15 @@ tdigest="$(vsql "SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_t
 [[ "$tdigest" =~ ^[0-9a-f]{64}$ ]] || fail verify_format 30
 # PR-8: no extension beyond plpgsql and the allowlist exists after the restore.
 extbad="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_extension WHERE extname OPERATOR(pg_catalog.<>) 'plpgsql' AND extname OPERATOR(pg_catalog.<>) ALL (pg_catalog.string_to_array('${EXTS}', ' '))")" || fail verify 30
-for v in "$tables" "$mig" "$base" "$rows" "$trg" "$con" "$fns" "$idx" "$ucode" "$rown" "$extbad"; do num "$v" || fail verify_format 30; done
+for v in "$tables" "$mig" "$base" "$rows" "$trg" "$con" "$fns" "$idx" "$ucode" "$ucalls" "$rown" "$extbad"; do num "$v" || fail verify_format 30; done
 emit "table_count=$tables"
 emit "migrations_table=$mig"
 emit "base_table_count=$base"
 emit "rows_total=$rows"
 emit "fidelity_trg_con_fn_idx=${trg}:${con}:${fns}:${idx}"
 emit "user_code_reachable=$ucode"
+emit "user_code_executed=$ucalls"
+emit "catalog_shape=$shape"
 emit "table_digest=$tdigest"
 emit "extensions_outside_allowlist=$extbad"
 emit "runtime_owned_objects=$rown"

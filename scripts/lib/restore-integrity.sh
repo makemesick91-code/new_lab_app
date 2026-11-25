@@ -410,7 +410,16 @@ BEGIN
     SELECT o.what, p.oprcode::oid FROM ops o JOIN pg_operator p ON p.oid = o.op
   )
   SELECT string_agg(DISTINCT reason, '; ') INTO problem FROM (
-    SELECT f.what || ' calls ' || p.oid::regprocedure::text AS reason
+    -- P4P-1: code that ran while the schema was created can drop the function it was called from; the stored
+    -- expression then names an OID that no longer resolves, which is refused rather than ignored. (A stored tree
+    -- carries opfuncid 0 until it is planned: 0 is "not set", never a reference.)
+    SELECT f.what || ' calls a function that no longer exists (oid ' || f.fn::text || ')' AS reason
+      FROM fns f WHERE f.fn <> 0 AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f.fn)
+    UNION ALL
+    SELECT o.what || ' uses an operator that no longer exists (oid ' || o.op::text || ')'
+      FROM ops o WHERE o.op <> 0 AND NOT EXISTS (SELECT 1 FROM pg_operator p WHERE p.oid = o.op)
+    UNION ALL
+    SELECT f.what || ' calls ' || p.oid::regprocedure::text
       FROM fns f JOIN pg_proc p ON p.oid = f.fn
      WHERE p.provolatile <> 'i'
         OR (p.oid >= 16384 AND NOT EXISTS (SELECT 1 FROM ext WHERE ext.classid = 'pg_proc'::regclass AND ext.objid = p.oid))

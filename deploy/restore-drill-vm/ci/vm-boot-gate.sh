@@ -13,6 +13,7 @@
 #   V6 the restore-bomb archive boots the VM and ends FAIL:user_code_in_restore_path, recorded (PR-2)
 #   V7 the signer's store verifies with both records against its head log (D10, PR-9)
 #   V8 the operator cannot read the signer's key (VR-4)
+#   V9 pre-data code that drops its own function is refused in the VM (P4P-1), recorded
 #
 # Usage: vm-boot-gate.sh <drill image.qcow2 built by scripts/restore-drill-vm-image.sh> <out dir>
 set -uo pipefail
@@ -65,6 +66,7 @@ chmod 0600 "$W/drill.conf"
 stage() { cp -- "$1" "$W/$2"; chmod 0600 "$W/$2"; }
 stage "$FX/clean.dump" clean.dump
 stage "$FX/bomb.dump" bomb.dump
+stage "$FX/dangling.dump" dangling.dump
 printf -- '--\n-- PostgreSQL database dump\n--\n\nSELECT 1;\n' > "$W/plain.sql"; chmod 0600 "$W/plain.sql"
 drill() { DMS_RESTORE_DRILL_CONF="$W/drill.conf" bash "$REPO/scripts/restore-drill-vm.sh" "$@" > "$OUT/last.txt" 2>&1; echo $?; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
@@ -84,8 +86,10 @@ rc="$(drill --expected-sha256 "$(sha "$W/plain.sql")" --manifest "$W/manifest" "
 check V5 "a plain-SQL backup is refused: a structured archive is required (PR-6)" "$([ "$rc" = 2 ] && grep -q 'custom-format archive is required' "$OUT/V5.txt"; echo $?)" "exit=$rc"
 rc="$(drill --expected-sha256 "$(sha "$W/bomb.dump")" --manifest "$W/manifest" "$W/bomb.dump")"; cp "$OUT/last.txt" "$OUT/V6.txt"
 check V6 "the restore-bomb archive boots the VM and ends FAIL:user_code_in_restore_path, recorded" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:user_code_in_restore_path ' "$OUT/V6.txt" && grep -q '^Evidence: RECORD 000002 ' "$OUT/V6.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V6.txt" | head -c 70)"
+rc="$(drill --expected-sha256 "$(sha "$W/dangling.dump")" --manifest "$W/manifest" "$W/dangling.dump")"; cp "$OUT/last.txt" "$OUT/V9.txt"
+check V9 "pre-data code that drops its own function is refused in the VM, recorded (P4P-1)" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:' "$OUT/V9.txt" && grep -q '^Evidence: RECORD 000003 ' "$OUT/V9.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V9.txt" | head -c 70)"
 v="$(sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" verify 2>&1)"
-check V7 "the signer's store verifies with both records against its head log" "$(case "$v" in "VERIFIED 2 head="*) echo 0 ;; *) echo 1 ;; esac)" "$v"
+check V7 "the signer's store verifies with every record against its head log" "$(case "$v" in "VERIFIED 3 head="*) echo 0 ;; *) echo 1 ;; esac)" "$v"
 check V8 "the operator cannot read the signer's key (VR-4)" "$([ ! -r "$DMS_GATE_SIGNER_KEY" ]; echo $?)" "$(stat -c '%U %a' "$DMS_GATE_SIGNER_KEY" 2> /dev/null)"
 echo "TOTAL pass=${PASS} fail=${FAIL}" >> "$RESULTS"
 cat "$RESULTS"

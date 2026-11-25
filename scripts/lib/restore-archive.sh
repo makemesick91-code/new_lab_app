@@ -21,20 +21,29 @@ DMS_RESTORE_ARCHIVE_LOADED=1
 # list is a reviewed code change, never configuration.
 # Multi-word types come first: they are matched as prefixes of the listing line.
 DMS_ARCHIVE_ALLOWED_TYPES=("SEQUENCE OWNED BY" "SEQUENCE SET" "FK CONSTRAINT" "TABLE DATA" ACL COMMENT CONSTRAINT DEFAULT FUNCTION INDEX SEQUENCE TABLE TRIGGER EXTENSION)
+# P4P-7: pg_dump types that START with an allowed word are refused by their full name, never read as the shorter type.
+DMS_ARCHIVE_REFUSED_COMPOUND_TYPES=("TABLE ATTACH" "INDEX ATTACH" "DEFAULT ACL")
 DMS_ARCHIVE_ALLOWED_SCHEMAS="public"
 DMS_ARCHIVE_MAX_TOC_LINES=50000
 DMS_ARCHIVE_MAX_TABLES=2000
+# P4P-2: the inspection unit refuses (never truncates) a TOC or a count list above these sizes.
+DMS_ARCHIVE_TOC_MAX_BYTES=8388608
+DMS_ARCHIVE_COUNTS_MAX_BYTES=4194304
 declare -ga DMS_ARCHIVE_DATA_TABLES=()
 declare -gA DMS_ARCHIVE_OWNERS=()
+# P4P-1: the catalog shape the archive creates, "functions:tables:indexes:constraints:fk_constraints:triggers:sequences";
+# the guest reports the same shape from the restored catalog, and GO needs them equal.
+DMS_ARCHIVE_SHAPE=""
 _dms_archive_fail() { echo "archive: $*"; return 1; }
 
 # dms_archive_toc_validate <pg_restore -l output> <allowed owner roles (space-separated)> <extension allowlist (space-separated, may be empty)>
 # Fills DMS_ARCHIVE_DATA_TABLES (schema.table, TOC order) and DMS_ARCHIVE_OWNERS. Returns 1 with the reason.
 dms_archive_toc_validate() {
   local toc="${1:?toc}" owners=" ${2-} " exts=" ${3-} " line n=0 rest type schema tagowner tag owner t
-  local -A tables=() datas=()
+  local -A tables=() datas=() shape=()
   DMS_ARCHIVE_DATA_TABLES=()
   DMS_ARCHIVE_OWNERS=()
+  DMS_ARCHIVE_SHAPE=""
   local fmt_ok=0 ver_ok=0 dumpver_ok=0
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
@@ -49,6 +58,9 @@ dms_archive_toc_validate() {
     [[ "$line" =~ ^[0-9]{1,9}\;\ [0-9]{1,10}\ [0-9]{1,10}\ (.+)$ ]] || { _dms_archive_fail "TOC line ${n} is malformed (a name with a control character splits lines)"; return 1; }
     rest="${BASH_REMATCH[1]}"
     [[ "$rest" =~ ^[[:print:]]+$ ]] || { _dms_archive_fail "TOC line ${n} is not printable"; return 1; }
+    for t in "${DMS_ARCHIVE_REFUSED_COMPOUND_TYPES[@]}"; do
+      [ "${rest#"$t "}" = "$rest" ] || { _dms_archive_fail "TOC line ${n} has an entry type outside the allowlist: ${t}"; return 1; }
+    done
     type=""
     for t in "${DMS_ARCHIVE_ALLOWED_TYPES[@]}"; do
       if [ "${rest#"$t "}" != "$rest" ]; then type="$t"; break; fi
@@ -71,7 +83,12 @@ dms_archive_toc_validate() {
     elif ! [[ "$owner" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
       _dms_archive_fail "TOC line ${n} has an owner that is not a plain role name"
       return 1
-    elif [ "$owner" != pg_database_owner ]; then
+    elif [ "$owner" = pg_database_owner ]; then
+      # P4P-3: pg_database_owner resolves to whoever owns the TARGET database, so it would bypass D-Q6-a and P5. It is
+      # accepted only where PostgreSQL itself puts it: the ACL of, or a comment on, the public schema.
+      { { [ "$type" = ACL ] || [ "$type" = COMMENT ]; } && [ "$schema" = "-" ] && [ "$tag" = "SCHEMA public" ]; } \
+        || { _dms_archive_fail "TOC line ${n} makes pg_database_owner the owner of a ${type}; only the public schema's ACL or comment may name it (P4P-3)"; return 1; }
+    else
       [[ "$owners" == *" ${owner} "* ]] || { _dms_archive_fail "the archive makes '${owner}' an owner and the manifest does not list it (D-Q6-a)"; return 1; }
       DMS_ARCHIVE_OWNERS[$owner]=1
     fi
@@ -82,6 +99,7 @@ dms_archive_toc_validate() {
       EXTENSION)
         [[ "$tag" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] && [[ "$exts" == *" ${tag} "* ]] || { _dms_archive_fail "the archive creates extension '${tag}', which is not in the allowlist (PR-8)"; return 1; } ;;
     esac
+    shape[$type]=$(( ${shape[$type]:-0} + 1 ))
     case "$type" in
       TABLE) [ -z "${tables[$schema.$tag]:-}" ] || { _dms_archive_fail "table ${schema}.${tag} appears twice"; return 1; }; tables[$schema.$tag]=1 ;;
       "TABLE DATA")
@@ -95,7 +113,22 @@ dms_archive_toc_validate() {
   [ "${#tables[@]}" -ge 1 ] && [ "${#tables[@]}" -le "$DMS_ARCHIVE_MAX_TABLES" ] || { _dms_archive_fail "the archive has ${#tables[@]} tables"; return 1; }
   for t in "${!tables[@]}"; do [ -n "${datas[$t]:-}" ] || { _dms_archive_fail "table ${t} has no data entry"; return 1; }; done
   for t in "${!datas[@]}"; do [ -n "${tables[$t]:-}" ] || { _dms_archive_fail "data entry ${t} has no table"; return 1; }; done
+  DMS_ARCHIVE_SHAPE="${shape[FUNCTION]:-0}:${shape[TABLE]:-0}:${shape[INDEX]:-0}:${shape[CONSTRAINT]:-0}:${shape["FK CONSTRAINT"]:-0}:${shape[TRIGGER]:-0}:${shape[SEQUENCE]:-0}"
   return 0
+}
+
+# dms_archive_verify_copy <staged copy> <expected sha256>
+# P4V-2: the drill's integrity check for the STRUCTURED format: the staged copy's digest equals the trusted one and the
+# copy starts with the custom-format magic "PGDMP" (pg_restore -l validates the rest of the header in the sandbox).
+# A plain-SQL dump, or anything else, is refused here, before any parser sees it.
+dms_archive_verify_copy() {
+  local staged="${1:-}" expected="${2:-}" actual magic
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || { _dms_archive_fail "the expected digest is not a SHA-256 hex digest"; return 1; }
+  actual="$(sha256sum < "$staged" | cut -d' ' -f1)"
+  [ "$actual" = "$expected" ] || { _dms_archive_fail "DIGEST MISMATCH: the backup is ${actual}, the trusted evidence says ${expected}; the backup changed after it was written"; return 1; }
+  magic="$(head -c 5 -- "$staged")"
+  [ "$magic" = PGDMP ] || { _dms_archive_fail "the backup matches its digest but is not a pg_dump custom-format archive (no PGDMP header); a custom-format archive is required (PR-6)"; return 1; }
+  echo "RESTORE_INTEGRITY=VERIFIED sha256=${actual} format=custom"
 }
 
 # dms_archive_count_program
@@ -107,9 +140,17 @@ dms_archive_count_program() {
   cat << 'AWK'
 BEGIN { inblk = 0; started = 0; ended = 0; n = 0; failed = 0 }
 function fail(why) { print "ERROR " why; failed = 1; exit 1 }
+# P4P-4: count the columns of a COPY column list outside double quotes ("a, b", "total(idr)" and "x""y" are one each).
+function ncols(s,    i, ch, q, k) {
+  q = 0; k = 1
+  for (i = 1; i <= length(s); i++) { ch = substr(s, i, 1); if (ch == "\"") q = !q; else if (ch == "," && !q) k++ }
+  return q ? -1 : k
+}
 inblk {
   if ($0 == "\\.") { print tbl "\t" rows; inblk = 0; next }
-  if (split($0, f, "\t") != cols) fail("row field count differs from the COPY column list in " tbl)
+  # A row of one empty text value is an empty line: one field, not zero (P4P-4).
+  nf = ($0 == "") ? 1 : split($0, f, "\t")
+  if (nf != cols) fail("row field count differs from the COPY column list in " tbl)
   rows++; next
 }
 {
@@ -125,9 +166,10 @@ inblk {
   if ($0 ~ /^SET [a-z_]+ = [^;]*;$/) next
   if ($0 ~ /^SELECT pg_catalog\.set_config\('search_path', '', false\);$/) next
   if ($0 ~ /^SELECT pg_catalog\.setval\('[a-z0-9_.]+', [0-9]+, (true|false)\);$/) next
-  if (match($0, /^COPY [a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]* \([^()]*\) FROM stdin;$/)) {
+  if (match($0, /^COPY [a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]* \(.+\) FROM stdin;$/)) {
     tbl = $2; c = $0; sub(/^COPY [^ ]+ \(/, "", c); sub(/\) FROM stdin;$/, "", c)
-    cols = split(c, cc, ", "); rows = 0; inblk = 1; next
+    cols = ncols(c); if (cols < 1) fail("unbalanced quotes in the COPY column list of " tbl)
+    rows = 0; inblk = 1; next
   }
   fail("unexpected line in the data section")
 }
@@ -159,34 +201,69 @@ dms_archive_digest() {
   awk -F'\t' '{ split($1, p, "."); printf "%s\t%s\t%s\n", p[1], p[2], $2 }' "${1:?counts}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
 
-# dms_archive_inspect <archive> <out dir> <pg bindir>
+# dms_archive_inspect <archive> <out dir> <pg bindir> <unit name dmsinspect-<12 hex>>
 # Runs pg_restore over the untrusted archive inside a hardened transient unit of the caller's per-user manager: no
-# network, read-only system, the archive bound read-only, every writable mount a capped noexec tmpfs, nothing but the
-# PostgreSQL binaries, bash and awk executable, 512 MiB, 300 s. Writes <out>/toc.txt and <out>/counts.txt (bounded).
+# network, read-only system, /etc, /mnt, /media and the cgroup tree hidden (P4V-3: no way to lift its own limits or move
+# out of the unit), a private /dev/shm, the archive bound read-only, every writable mount a capped noexec tmpfs, nothing
+# but the PostgreSQL binaries, bash, awk, head and wc executable, 512 MiB, 300 s. The caller names the unit so that it
+# can stop it on an interrupt (P4V-10). Writes <out>/toc.txt and <out>/counts.txt. A TOC or a count list above its
+# limit is REFUSED, never truncated (P4P-2), and the stream must end with its end marker.
 dms_archive_inspect() {
-  local archive="${1:?archive}" out="${2:?out}" bindir="${3:?bindir}" unit
-  unit="dmsinspect-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+  local archive="${1:?archive}" out="${2:?out}" bindir="${3:?bindir}" unit="${4:-}" awk_bin raw_size
+  [[ "$unit" =~ ^dmsinspect-[0-9a-f]{12}$ ]] || { _dms_archive_fail "the inspection unit name is invalid"; return 1; }
+  # /etc is hidden inside the unit, so the alternatives symlink behind /usr/bin/awk is resolved here (P4V-9).
+  awk_bin="$(readlink -f /usr/bin/awk)"
+  [[ "$awk_bin" =~ ^/usr/bin/[a-z]+$ ]] && [ -x "$awk_bin" ] || { _dms_archive_fail "no awk binary under /usr/bin"; return 1; }
   dms_archive_count_program > "${out}/count.awk"
   local script='set -o pipefail
 "$B/pg_restore" -l /opt/dmsinspect/archive.dump > /srv/toc.txt 2> /dev/null || { echo "INSPECT pg_restore_list_failed"; exit 1; }
-"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - /opt/dmsinspect/archive.dump 2> /dev/null | /usr/bin/awk -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
+"$B/pg_restore" --section=data --restrict-key=dmsinspect0 -f - /opt/dmsinspect/archive.dump 2> /dev/null | "$AWK" -f /opt/dmsinspect/count.awk > /srv/counts.txt || { echo "INSPECT data_invalid"; exit 1; }
+t=$(/usr/bin/wc -c < /srv/toc.txt) && c=$(/usr/bin/wc -c < /srv/counts.txt) || { echo "INSPECT size_unknown"; exit 1; }
+[ "$t" -le "$TOC_MAX" ] || { echo "INSPECT toc_too_large"; exit 1; }
+[ "$c" -le "$COUNTS_MAX" ] || { echo "INSPECT counts_too_large"; exit 1; }
 echo "INSPECT ok"
-printf "@@TOC\n"; /usr/bin/head -c 8388608 /srv/toc.txt
-printf "@@COUNTS\n"; /usr/bin/head -c 4194304 /srv/counts.txt'
+printf "@@TOC\n"; /usr/bin/head -c "$TOC_MAX" /srv/toc.txt
+printf "@@COUNTS\n"; /usr/bin/head -c "$COUNTS_MAX" /srv/counts.txt
+printf "@@END\n"'
+  local cap=$((DMS_ARCHIVE_TOC_MAX_BYTES + DMS_ARCHIVE_COUNTS_MAX_BYTES + 4096))
   systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
     -p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M -p MemorySwapMax=0 -p TasksMax=16 -p LimitCORE=0 \
     -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateDevices=yes -p PrivateIPC=yes \
-    -p PrivateNetwork=yes -p RestrictAddressFamilies=AF_UNIX -p "TemporaryFileSystem=/run:ro" -p "TemporaryFileSystem=/var:ro" \
-    -p "TemporaryFileSystem=/opt:ro" -p "TemporaryFileSystem=/srv:size=64M,mode=1777,noexec,nosuid,nodev" \
+    -p PrivateNetwork=yes -p RestrictAddressFamilies=AF_UNIX -p ProtectControlGroups=yes -p "InaccessiblePaths=/sys/fs/cgroup" \
+    -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes -p ProtectClock=yes -p ProtectHostname=yes \
+    -p LockPersonality=yes -p RestrictRealtime=yes -p RestrictSUIDSGID=yes -p "CapabilityBoundingSet=" \
+    -p "TemporaryFileSystem=/run:ro" -p "TemporaryFileSystem=/var:ro" -p "TemporaryFileSystem=/opt:ro" -p "TemporaryFileSystem=/etc:ro" \
+    -p "TemporaryFileSystem=/mnt:ro" -p "TemporaryFileSystem=/media:ro" -p "TemporaryFileSystem=/dev/shm:size=1M,mode=1777,noexec,nosuid,nodev" \
+    -p "TemporaryFileSystem=/srv:size=64M,mode=1777,noexec,nosuid,nodev" \
     -p "ReadOnlyPaths=/tmp /var/tmp" -p "BindReadOnlyPaths=${archive}:/opt/dmsinspect/archive.dump ${out}/count.awk:/opt/dmsinspect/count.awk" \
     -p RestrictNamespaces=yes -p MemoryDenyWriteExecute=yes -p SystemCallArchitectures=native -p SystemCallFilter=@system-service \
     -p "SystemCallFilter=~@privileged @resources @mount memfd_create io_uring_setup io_uring_enter io_uring_register @keyring" \
-    -p "NoExecPaths=/ /tmp /var/tmp" -p "ExecPaths=${bindir} ${bindir%/bin}/lib /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/bin/bash /usr/bin/awk /usr/bin/mawk /usr/bin/gawk /usr/bin/head" \
-    "--setenv=B=${bindir}" -- /usr/bin/bash -c "$script" < /dev/null 2> /dev/null | head -c 12582912 > "${out}/inspect.raw"
+    -p "NoExecPaths=/ /tmp /var/tmp" -p "ExecPaths=${bindir} -${bindir%/bin}/lib -/usr/lib/x86_64-linux-gnu -/usr/lib64 /usr/bin/bash ${awk_bin} /usr/bin/head /usr/bin/wc" \
+    "--setenv=B=${bindir}" "--setenv=AWK=${awk_bin}" "--setenv=TOC_MAX=${DMS_ARCHIVE_TOC_MAX_BYTES}" "--setenv=COUNTS_MAX=${DMS_ARCHIVE_COUNTS_MAX_BYTES}" \
+    -- /usr/bin/bash -c "$script" < /dev/null 2> /dev/null | head -c "$((cap + 1))" > "${out}/inspect.raw"
   local st=("${PIPESTATUS[@]}")
   rm -f -- "${out}/count.awk"
-  [ "${st[0]}" = 0 ] && [ "$(head -n 1 "${out}/inspect.raw")" = "INSPECT ok" ] || { _dms_archive_fail "the sandboxed inspection failed ($(head -n 1 "${out}/inspect.raw" | tr -cd 'A-Za-z0-9 _' | head -c 60))"; return 1; }
-  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } s == 1' "${out}/inspect.raw" > "${out}/toc.txt"
-  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } s == 2' "${out}/inspect.raw" > "${out}/counts.txt"
+  if [ ! -s "${out}/inspect.raw" ]; then
+    rm -f -- "${out}/inspect.raw"
+    _dms_archive_fail "the sandboxed inspection produced no output: the operator's per-user service manager is unreachable, or the unit failed to start (systemd-run exit ${st[0]})"
+    return 1
+  fi
+  [ "${st[0]}" = 0 ] && [ "$(head -n 1 "${out}/inspect.raw")" = "INSPECT ok" ] || { _dms_archive_fail "the sandboxed inspection failed ($(head -n 1 "${out}/inspect.raw" | tr -cd 'A-Za-z0-9 _' | head -c 60))"; rm -f -- "${out}/inspect.raw"; return 1; }
+  raw_size="$(stat -c %s -- "${out}/inspect.raw")"
+  # P4P-2: never act on a cut stream: it must fit and end with the end marker.
+  [ "$raw_size" -le "$cap" ] && [ "$(tail -n 1 "${out}/inspect.raw")" = "@@END" ] || { _dms_archive_fail "the inspection output is incomplete or too large; nothing is decided from a truncated TOC"; rm -f -- "${out}/inspect.raw"; return 1; }
+  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } /^@@END$/ { s = 3; next } s == 1' "${out}/inspect.raw" > "${out}/toc.txt"
+  awk '/^@@TOC$/ { s = 1; next } /^@@COUNTS$/ { s = 2; next } /^@@END$/ { s = 3; next } s == 2' "${out}/inspect.raw" > "${out}/counts.txt"
   rm -f -- "${out}/inspect.raw"
+  [ "$(stat -c %s -- "${out}/toc.txt")" -le "$DMS_ARCHIVE_TOC_MAX_BYTES" ] && [ "$(stat -c %s -- "${out}/counts.txt")" -le "$DMS_ARCHIVE_COUNTS_MAX_BYTES" ] \
+    || { _dms_archive_fail "the inspection output exceeds its limits"; return 1; }
+}
+
+# dms_archive_inspect_stop <unit name> — stops a named inspection unit (the orchestrator's interrupt path, P4V-10).
+dms_archive_inspect_stop() {
+  local unit="${1:-}"
+  [[ "$unit" =~ ^dmsinspect-[0-9a-f]{12}$ ]] || return 0
+  systemctl --user stop "${unit}.service" > /dev/null 2>&1
+  systemctl --user reset-failed "${unit}.service" > /dev/null 2>&1
+  return 0
 }

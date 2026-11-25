@@ -138,14 +138,23 @@ it('refuses a revoked manifest, or one issued before the revocation list\'s not-
     ];
 });
 
-/** A contract-2 evidence request (the operator side); $over replaces values. */
+/** The facts the orchestrator verifies on the host (restore-evidence.sh), for a development install. */
+const RDME_HOST_VERIFIED = 'backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits,install=operator';
+
+/** This host's name as the orchestrator and the signer write it. */
+function rdmeHost(): string
+{
+    return substr((string) preg_replace('/[^A-Za-z0-9._-]/', '', (string) gethostname()), 0, 64);
+}
+
+/** A contract-2 evidence request (the operator side), consistent with the signer's policy; $over replaces values. */
 function rdmeRequest(array $over = []): string
 {
     $h = str_repeat('a', 64);
     $now = gmdate('Y-m-d\TH:i:s\Z');
     $fields = array_merge([
         'DMS_DRILL_EVIDENCE_RUN_ID' => 'dmsdrill-'.bin2hex(random_bytes(6)),
-        'DMS_DRILL_EVIDENCE_DRILL_HOST' => 'drillhost',
+        'DMS_DRILL_EVIDENCE_DRILL_HOST' => rdmeHost(),
         'DMS_DRILL_EVIDENCE_STARTED_AT' => $now,
         'DMS_DRILL_EVIDENCE_COMPLETED_AT' => $now,
         'DMS_DRILL_EVIDENCE_BACKUP_SHA256' => $h,
@@ -155,13 +164,41 @@ function rdmeRequest(array $over = []): string
         'DMS_DRILL_EVIDENCE_MANIFEST_SHA256' => $h,
         'DMS_DRILL_EVIDENCE_IMAGE_SHA256' => $h,
         'DMS_DRILL_EVIDENCE_LIMITS' => 'vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,tasks=64',
-        'DMS_DRILL_EVIDENCE_HOST_VERIFIED' => 'backup_sha256,archive_toc,per_table_counts',
-        'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h,
-        'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h,
+        'DMS_DRILL_EVIDENCE_HOST_VERIFIED' => RDME_HOST_VERIFIED,
+        'DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1',
+        'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo',
         'DMS_DRILL_EVIDENCE_DECISION' => 'GO',
     ], $over);
 
     return collect($fields)->filter(fn ($v) => $v !== null)->map(fn (string $v, string $k): string => "{$k}={$v}")->implode("\n")."\n";
+}
+
+/**
+ * Installs the signer entrypoint and its two libraries into a fresh directory, as a drill host would (P4V-7: the
+ * signer refuses to run from a directory another identity can write, such as a group-writable checkout).
+ */
+function rdmeInstallSigner(): string
+{
+    $root = sys_get_temp_dir().'/rdme-inst-'.bin2hex(random_bytes(6));
+    mkdir("{$root}/signer/lib", 0755, true);
+    chmod($root, 0755);
+    chmod("{$root}/signer", 0755);
+    chmod("{$root}/signer/lib", 0755);
+    copy(base_path('scripts/restore-drill-evidence-signer.sh'), "{$root}/signer/restore-drill-evidence-signer.sh");
+    chmod("{$root}/signer/restore-drill-evidence-signer.sh", 0755);
+    foreach (['trusted-path.sh', 'restore-evidence.sh'] as $lib) {
+        copy(base_path("scripts/lib/{$lib}"), "{$root}/signer/lib/{$lib}");
+        chmod("{$root}/signer/lib/{$lib}", 0644);
+    }
+
+    return "{$root}/signer/restore-drill-evidence-signer.sh";
+}
+
+function rdmeSignerConf(string $dir, string $extra = ''): void
+{
+    file_put_contents("{$dir}/signer.conf", "DMS_SIGNER_KEY={$dir}/drill\nDMS_SIGNER_PRINCIPAL=drill-host@dms\nDMS_SIGNER_ANCHOR={$dir}/evidence-anchor\nDMS_SIGNER_STORE={$dir}/store\nDMS_SIGNER_HEAD_LOG={$dir}/head.log\nDMS_SIGNER_ALLOWED_CALLERS=drillop\nDMS_SIGNER_IMAGE_SHA256=".str_repeat('a', 64)."\n".$extra);
+    chmod("{$dir}/signer.conf", 0600);
+    chmod("{$dir}/evidence-anchor", 0600);
 }
 
 /** Publishes $count records through the signer library (the signer side) into a fresh store with a head log. */
@@ -278,19 +315,19 @@ it('ignores an unpublished staging directory left by a crash, and never counts i
 it('lets only a different identity, through sudo, from the allowlist, ask the signer for a record (VR-4)', function (string $case, string $message) {
     $dir = rdmeDir();
     mkdir("{$dir}/store", 0700);
-    file_put_contents("{$dir}/signer.conf", "DMS_SIGNER_KEY={$dir}/drill\nDMS_SIGNER_PRINCIPAL=drill-host@dms\nDMS_SIGNER_ANCHOR={$dir}/evidence-anchor\nDMS_SIGNER_STORE={$dir}/store\nDMS_SIGNER_HEAD_LOG={$dir}/head.log\nDMS_SIGNER_ALLOWED_CALLERS=drillop\n");
-    chmod("{$dir}/signer.conf", 0600);
-    chmod("{$dir}/evidence-anchor", 0600);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
     $uid = (string) getmyuid();
     $env = match ($case) {
         'called directly (no sudo)' => [],
         'sudo from the same identity' => ['SUDO_UID' => $uid, 'SUDO_USER' => 'drillop'],
         'caller not on the allowlist' => ['SUDO_UID' => (string) ((int) $uid + 1), 'SUDO_USER' => 'intruder'],
     };
-    $process = new Process(['bash', base_path('scripts/restore-drill-evidence-signer.sh'), 'sign'], null, array_merge(['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf"], $env), rdmeRequest());
+    $process = new Process(['bash', $signerPath, 'sign'], null, array_merge(['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf"], $env), rdmeRequest());
     $process->run();
     $entries = array_values(array_diff(scandir("{$dir}/store"), ['.', '..', '.lock']));
     rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
 
     expect($process->getExitCode())->toBe(1)
         ->and($process->getOutput())->toContain($message)
@@ -304,12 +341,11 @@ it('lets only a different identity, through sudo, from the allowlist, ask the si
 it('signs through the signer entrypoint for an allowed caller, verifies, and recovers a head log one record behind', function () {
     $dir = rdmeDir();
     mkdir("{$dir}/store", 0700);
-    file_put_contents("{$dir}/signer.conf", "DMS_SIGNER_KEY={$dir}/drill\nDMS_SIGNER_PRINCIPAL=drill-host@dms\nDMS_SIGNER_ANCHOR={$dir}/evidence-anchor\nDMS_SIGNER_STORE={$dir}/store\nDMS_SIGNER_HEAD_LOG={$dir}/head.log\nDMS_SIGNER_ALLOWED_CALLERS=drillop\n");
-    chmod("{$dir}/signer.conf", 0600);
-    chmod("{$dir}/evidence-anchor", 0600);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
     // The real separation (a different uid through sudo) runs in the system-mode CI gate; here SUDO_* stand for it.
     $sudo = ['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf", 'SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop'];
-    $signer = fn (string $mode, string $in = '') => tap(new Process(['bash', base_path('scripts/restore-drill-evidence-signer.sh'), $mode], null, $sudo, $in), fn ($p) => $p->run());
+    $signer = fn (string $mode, string $in = '') => tap(new Process(['bash', $signerPath, $mode], null, $sudo, $in), fn ($p) => $p->run());
     $first = $signer('sign', rdmeRequest());
     $second = $signer('sign', rdmeRequest());
     $verify = $signer('verify');
@@ -321,6 +357,7 @@ it('signs through the signer entrypoint for an allowed caller, verifies, and rec
     $again = $signer('verify');
     $twice = $signer('recover-head');
     rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
 
     expect($first->getOutput())->toStartWith('RECORD 000001 ')
         ->and($second->getOutput())->toStartWith('RECORD 000002 ')
@@ -329,4 +366,112 @@ it('signs through the signer entrypoint for an allowed caller, verifies, and rec
         ->and($recover->getOutput())->toContain('head log recovered to 000002')
         ->and($again->getOutput())->toStartWith('VERIFIED 2 head=')
         ->and($twice->getExitCode())->toBe(1);
+});
+
+/** Runs the installed signer's sign mode as an allowed sudo caller would; $prefix runs before it in the same shell. */
+function rdmeSign(string $dir, string $signerPath, string $request, string $prefix = ''): array
+{
+    $env = ['PATH' => getenv('PATH'), 'DMS_SIGNER_CONF' => "{$dir}/signer.conf", 'SUDO_UID' => (string) (getmyuid() + 1), 'SUDO_USER' => 'drillop', 'S' => $signerPath];
+    $process = new Process(['bash', '-c', $prefix.' exec bash "$S" sign'], null, $env, $request);
+    $process->setTimeout(60);
+    $process->run();
+
+    return ['exit' => (int) $process->getExitCode(), 'out' => trim($process->getOutput().$process->getErrorOutput())];
+}
+
+it('never signs a contradictory or invented record: the signer checks the request against itself (P4V-4, P4P-5)', function (array $over, string $message) {
+    $dir = rdmeDir();
+    mkdir("{$dir}/store", 0700);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
+    $run = rdmeSign($dir, $signerPath, rdmeRequest($over));
+    $entries = array_values(array_diff(scandir("{$dir}/store"), ['.', '..', '.lock']));
+    rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
+
+    expect($run['exit'])->toBe(1, $run['out'])
+        ->and($run['out'])->toContain($message)
+        ->and($entries)->toBe([]);
+})->with(function () {
+    $h = str_repeat('a', 64);
+    $guest = fn (string $replace, string $with) => str_replace($replace, $with, 'restore=ok,tables=2,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo');
+
+    return [
+        'GO whose guest digest differs' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('per_table_digest='.$h, 'per_table_digest='.str_repeat('b', 64))], 'guest per_table_digest differs'],
+        'GO without a restore' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('restore=ok', 'restore=none')], 'a GO without restore=ok'],
+        'GO with another catalog shape' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('catalog_shape=1:2:0:2:0:0:1', 'catalog_shape=0:2:0:2:0:0:1')], 'guest catalog_shape differs'],
+        'GO with user code' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('user_code_executed=0', 'user_code_executed=3')], 'a GO with user code on a restore path'],
+        'GO from a VM with a NIC' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('vm_ifaces=lo', 'vm_ifaces=lo:eth0')], 'a GO from a VM with a network interface'],
+        'other limits' => [['DMS_DRILL_EVIDENCE_LIMITS' => 'vcpu=64,memory_mib=2048,disk_gib=10,minutes=30,tasks=64'], 'LIMITS are not the D6 limits'],
+        'invented host-verified facts' => [['DMS_DRILL_EVIDENCE_HOST_VERIFIED' => 'nothing'], 'HOST_VERIFIED is not the fixed fact list'],
+        'another drill host' => [['DMS_DRILL_EVIDENCE_DRILL_HOST' => 'elsewhere'], "DRILL_HOST is not this signer's host"],
+        'an image the signer does not pin' => [['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => str_repeat('c', 64)], 'is not a drill image pinned'],
+        'completed before it started' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2030-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:00:00Z'], 'out of order or not recent'],
+        'a drill from long ago' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2001-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:10:00Z'], 'out of order or not recent'],
+    ];
+});
+
+it('still records a FAIL whose guest facts differ from the expectation: a failure is evidence too', function () {
+    $dir = rdmeDir();
+    mkdir("{$dir}/store", 0700);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
+    $run = rdmeSign($dir, $signerPath, rdmeRequest(['DMS_DRILL_EVIDENCE_DECISION' => 'FAIL:per_table_rows_mismatch', 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => 'restore=ok,tables=1,per_table_digest='.str_repeat('b', 64).',catalog_shape=1:1:0:1:0:0:1,user_code=0,user_code_executed=0,fidelity=0:1:1:0,vm_ifaces=lo']));
+    rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
+
+    expect($run['exit'])->toBe(0, $run['out'])
+        ->and($run['out'])->toStartWith('RECORD 000001 ');
+});
+
+it('refuses to sign under a file-size limit, with an exposed key, from an unsafe install, or with a relative head log (P4V-5, P4V-7)', function (string $case, int $exit, string $message) {
+    $dir = rdmeDir();
+    mkdir("{$dir}/store", 0700);
+    rdmeSignerConf($dir);
+    $signerPath = rdmeInstallSigner();
+    $prefix = '';
+    match ($case) {
+        'file-size limit' => $prefix = "trap '' XFSZ; ulimit -f 1;",
+        'key readable by others' => chmod("{$dir}/drill", 0644),
+        'install writable by others' => chmod(dirname($signerPath), 0777),
+        'library writable by others' => chmod(dirname($signerPath).'/lib/restore-evidence.sh', 0666),
+        'relative head log' => null,
+    };
+    if ($case === 'relative head log') {
+        file_put_contents("{$dir}/signer.conf", str_replace("DMS_SIGNER_HEAD_LOG={$dir}/head.log", 'DMS_SIGNER_HEAD_LOG=head.log', (string) file_get_contents("{$dir}/signer.conf")));
+    }
+    $run = rdmeSign($dir, $signerPath, rdmeRequest(), $prefix);
+    $entries = array_values(array_diff(scandir("{$dir}/store"), ['.', '..', '.lock']));
+    chmod(dirname($signerPath), 0755);
+    rdmeCleanup($dir);
+    rdmeCleanup(dirname($signerPath, 2));
+
+    expect($run['exit'])->toBe($exit, $run['out'])
+        ->and($run['out'])->toContain($message)
+        ->and($entries)->toBe([]);
+})->with([
+    ['file-size limit', 1, 'a file-size limit is set'],
+    ['key readable by others', 2, 'the signing key must be owned by the signer with mode 0600 or 0400'],
+    ['install writable by others', 2, 'is not owned by root or the signer, or is writable by another identity'],
+    ['library writable by others', 2, 'is unsafe'],
+    ['relative head log', 2, 'the head log path is not canonical and absolute'],
+]);
+
+it('publishes the head log atomically and removes a crashed staging directory under the lock (P4V-5)', function () {
+    [$dir, $store] = rdmeStore(1);
+    mkdir("{$store}/.stage-000002-abcdef", 0700);
+    file_put_contents("{$store}/.stage-000002-abcdef/record", "half written\n");
+    file_put_contents("{$dir}/req", rdmeRequest());
+    $run = rdmeSh('dms_evidence_request_parse "$Q" && dms_evidence_publish "$S" "$K" drill-host@dms operator "$H" "$A"', ['Q' => "{$dir}/req", 'S' => $store, 'K' => "{$dir}/drill", 'H' => "{$dir}/head.log", 'A' => "{$dir}/evidence-anchor"]);
+    $entries = array_values(array_diff(scandir($store), ['.', '..']));
+    $leftovers = glob("{$dir}/head.log.*");
+    $evidence = (string) file_get_contents(base_path('scripts/lib/restore-evidence.sh'));
+    rdmeCleanup($dir);
+
+    expect($run['out'])->toStartWith('RECORD 000002 ', $run['out'].$run['err'])
+        ->and($entries)->toBe(['000001', '000002'])
+        ->and($leftovers)->toBe([])
+        ->and($evidence)->toContain('sync -- "$tmp"')
+        ->and($evidence)->toContain('mv -f -- "$tmp" "$headlog"')
+        ->and($evidence)->toContain('the written record differs from the built record');
 });
