@@ -10,6 +10,9 @@ use Symfony\Component\Process\Process;
  * clinical file trees; scripts/clinical-asset-reconcile.sh checks every database reference to a clinical file
  * (deploy/clinical-assets/asset-map.tsv) against a file tree. These tests run on synthetic files and throwaway
  * databases only. Production activation of the backup needs a separate owner approval.
+ *
+ * Selected by the `RestoreDrill` critical-gate token in both runner variants and declared in
+ * critical_gate_mandatory_suites (CG-19). Needs PostgreSQL (psql, pg_dump, pg_restore, CREATEDB), gpg and zstd.
  */
 
 function cabMap(): array

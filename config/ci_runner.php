@@ -2068,6 +2068,13 @@ return [
         // exception flag exists. Selected by the `RestoreDrill` token in BOTH
         // critical variants; declared so a rename cannot drop it.
         'tests/Feature/Foundation/RestoreDrillOwnerRolePreflightTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B13 (owner decision 2026-11-26 §8): the
+        // clinical file backup keeps encrypted, tamper-evident snapshots and the
+        // reconciliation finds every missing, mismatched, duplicate or orphaned
+        // clinical file against the database; every *_path column is mapped.
+        // Selected by the `RestoreDrill` token in BOTH critical variants;
+        // declared so a rename cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillClinicalAssetBackupTest.php',
         // DMS-SPN4-READY-PILOT-1 R6-B6 finding A-1 (2026-11-25): the restore
         // drill replays only a root-only staged copy whose SHA-256 matches
         // trusted evidence (rule 235), refuses a symlinked, foreign-owned or
