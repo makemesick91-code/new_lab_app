@@ -59,6 +59,15 @@ function rdmeManifest(string $dir, array $overrides = [], string $key = 'owner',
     return $file;
 }
 
+/**
+ * Resolves `{now+N}` / `{now-N}` (seconds) when the test RUNS. A dataset is built when the suite is collected, and a
+ * long sequential run (the critical gate) can execute it an hour later: a relative time must never be fixed there.
+ */
+function rdmeNow(string $s): string
+{
+    return (string) preg_replace_callback('/\{now([+-])(\d+)\}/', fn (array $m) => gmdate('Y-m-d\TH:i:s\Z', $m[1] === '+' ? time() + (int) $m[2] : time() - (int) $m[2]), $s);
+}
+
 it('verifies a manifest signed by the trusted principal and prints its sha256 (D3)', function () {
     $dir = rdmeDir();
     $file = rdmeManifest($dir);
@@ -98,16 +107,16 @@ it('refuses a manifest whose signature, signer or namespace is wrong, before rea
 
 it('refuses a correctly signed manifest whose content is invalid', function (array $overrides, array $extra, string $message) {
     $dir = rdmeDir();
-    $file = rdmeManifest($dir, $overrides, extraLines: $extra);
+    $file = rdmeManifest($dir, array_map(fn ($v) => is_string($v) ? rdmeNow($v) : $v, $overrides), extraLines: $extra);
     $run = rdmeSh('dms_restore_manifest_verify "$M" "$A"', ['M' => $file, 'A' => "{$dir}/anchor"]);
     rdmeCleanup($dir);
 
     expect($run['exit'])->toBe(1)
         ->and($run['out'])->toContain($message);
 })->with([
-    'expired' => [['DMS_ROLE_MANIFEST_NOT_AFTER' => gmdate('Y-m-d\TH:i:s\Z', time() - 10)], [], 'expired at'],
-    'issued in the future' => [['DMS_ROLE_MANIFEST_ISSUED_AT' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600), 'DMS_ROLE_MANIFEST_NOT_AFTER' => gmdate('Y-m-d\TH:i:s\Z', time() + 7200)], [], 'issued in the future'],
-    'longer than 90 days' => [['DMS_ROLE_MANIFEST_NOT_AFTER' => gmdate('Y-m-d\TH:i:s\Z', time() + 100 * 86400)], [], 'longer than 90 days'],
+    'expired' => [['DMS_ROLE_MANIFEST_NOT_AFTER' => '{now-10}'], [], 'expired at'],
+    'issued in the future' => [['DMS_ROLE_MANIFEST_ISSUED_AT' => '{now+3600}', 'DMS_ROLE_MANIFEST_NOT_AFTER' => '{now+7200}'], [], 'issued in the future'],
+    'longer than 90 days' => [['DMS_ROLE_MANIFEST_NOT_AFTER' => '{now+8640000}'], [], 'longer than 90 days'],
     'non-canonical time' => [['DMS_ROLE_MANIFEST_NOT_AFTER' => '2026-02-30T00:00:00Z'], [], 'NOT_AFTER is not a canonical UTC time'],
     'unknown key' => [[], ['DMS_ROLE_MANIFEST_EXTRA=1'], 'unknown key DMS_ROLE_MANIFEST_EXTRA'],
     'duplicate key' => [[], ['DMS_ROLE_MANIFEST_ROLES=app_runtime'], 'DMS_ROLE_MANIFEST_ROLES appears twice'],
@@ -125,7 +134,7 @@ it('refuses a correctly signed manifest whose content is invalid', function (arr
 it('refuses a revoked manifest, or one issued before the revocation list\'s not-before (PR-9)', function (string $list, int $exit, string $message) {
     $dir = rdmeDir();
     $file = rdmeManifest($dir, ['DMS_ROLE_MANIFEST_ID' => 'manifest-0007']);
-    file_put_contents("{$dir}/revocations", $list);
+    file_put_contents("{$dir}/revocations", rdmeNow($list));
     $run = rdmeSh('dms_restore_manifest_verify "$M" "$A" > /dev/null && dms_restore_manifest_revocation_check "$R"', ['M' => $file, 'A' => "{$dir}/anchor", 'R' => "{$dir}/revocations"]);
     rdmeCleanup($dir);
 
@@ -136,8 +145,8 @@ it('refuses a revoked manifest, or one issued before the revocation list\'s not-
         'empty list' => ["# none revoked\n", 0, ''],
         'another id revoked' => ["revoked manifest-0001\n", 0, ''],
         'this id revoked' => ["revoked manifest-0007\n", 1, 'manifest-0007 is revoked'],
-        'issued before not-before' => ['not-before '.gmdate('Y-m-d\TH:i:s\Z', time() + 3600)."\n", 1, 'was issued before'],
-        'issued after not-before' => ['not-before '.gmdate('Y-m-d\TH:i:s\Z', time() - 86400)."\n", 0, ''],
+        'issued before not-before' => ["not-before {now+3600}\n", 1, 'was issued before'],
+        'issued after not-before' => ["not-before {now-86400}\n", 0, ''],
         'malformed list fails closed' => ["revoke manifest-0007\n", 1, 'unexpected line'],
     ];
 });

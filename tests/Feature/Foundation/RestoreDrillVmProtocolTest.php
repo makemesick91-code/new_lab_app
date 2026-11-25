@@ -22,6 +22,23 @@ function rdvmSh(string $script, array $env = []): array
     return ['exit' => (int) $process->getExitCode(), 'out' => trim($process->getOutput()), 'err' => $process->getErrorOutput()];
 }
 
+/**
+ * Whether a working per-user systemd manager is reachable HERE: the probe starts a real transient unit, as the tests do.
+ * A runtime directory and `is-system-running` are not enough (a CI runner can have both and no reachable user bus).
+ */
+function rdvmUserSystemdMissing(): ?string
+{
+    $rt = (string) getenv('XDG_RUNTIME_DIR');
+    if ($rt === '' || ! is_dir($rt.'/systemd')) {
+        return 'no per-user systemd manager on this host';
+    }
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '--', '/usr/bin/true'], null, ['XDG_RUNTIME_DIR' => $rt, 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'), 'PATH' => (string) getenv('PATH')]);
+    $probe->setTimeout(30);
+    $probe->run();
+
+    return $probe->getExitCode() === 0 ? null : 'no working per-user systemd manager (systemd-run --user)';
+}
+
 function rdvmDir(): string
 {
     $dir = sys_get_temp_dir().'/rdvm-'.bin2hex(random_bytes(6));
@@ -570,8 +587,8 @@ it('gives the QEMU unit no writable path but its work directory, and the CI cons
 
 it('stops the supervised unit at once when the supervisor is signalled, not when the unit ends by itself (R6F-L1)', function () {
     $rt = (string) getenv('XDG_RUNTIME_DIR');
-    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
-        test()->markTestSkipped('no per-user systemd manager on this host');
+    if (($why = rdvmUserSystemdMissing()) !== null) {
+        test()->markTestSkipped("{$why} (covered by the real-isolation CI gates)");
     }
     $code = (string) file_get_contents(base_path('scripts/restore-drill-supervisor.sh'));
     $from = (int) strpos($code, 'UNIT=""; SR=""');
@@ -603,8 +620,8 @@ it('stops the supervised unit at once when the supervisor is signalled, not when
 
 it('starts the QEMU unit\'s exact properties under systemd, with no socket, no io_uring and a read-only /run (R6F-L13, L18)', function () {
     $rt = (string) getenv('XDG_RUNTIME_DIR');
-    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
-        test()->markTestSkipped('no per-user systemd manager on this host');
+    if (($why = rdvmUserSystemdMissing()) !== null) {
+        test()->markTestSkipped("{$why} (covered by the real-isolation CI gates)");
     }
     $p = new Process(['bash', '-c', '. "$1"; dms_vm_qemu_unit_properties x /nonexistent 1', 'x', base_path('scripts/lib/restore-vm.sh')]);
     $p->mustRun();
