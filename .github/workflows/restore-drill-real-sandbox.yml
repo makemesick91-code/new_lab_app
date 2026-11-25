@@ -91,6 +91,19 @@ jobs:
           sudo loginctl enable-linger "$(id -un)"
           for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
           test -S "/run/user/$(id -u)/bus"
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; the user manager's sandboxing
+          # (PrivateUsers=, implied by the inspection unit's protections) needs one. Grant it to systemd's unit
+          # executor ONLY, never host-wide (drill-host requirement, runbook).
+          echo "apparmor_restrict_unprivileged_userns=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2> /dev/null || echo n/a)"
+          printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' 'profile dms-systemd-executor-userns /usr/lib/systemd/systemd-executor flags=(unconfined) {' '  userns,' '}' \
+            | sudo tee /etc/apparmor.d/dms-systemd-executor-userns
+          sudo apparmor_parser -r /etc/apparmor.d/dms-systemd-executor-userns
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+          if systemd-run --user --wait --pipe --quiet -p PrivateUsers=yes -p ProtectSystem=strict -p ProtectControlGroups=yes -- /usr/bin/true; then
+            echo "user-manager sandbox: OK"
+          else
+            journalctl --user -n 30 --no-pager || true; exit 1
+          fi
       - name: Ubuntu 24.04 cloud image, verified against Ubuntu's signed SHA256SUMS; drill image built
         run: |
           base=https://cloud-images.ubuntu.com/releases/noble/release
