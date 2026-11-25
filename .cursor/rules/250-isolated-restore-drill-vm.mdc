@@ -147,3 +147,19 @@ Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-b
 infrastructure only. The audited workflow is activated only on the dedicated branch `validation/r6-b6-real-isolation`
 (owner directive "R6-B6 — Phase 3"), never on a PR, base or production branch. A gate that did not run is NOT RUN,
 never PASS. `provision-drill-host.sh` runs only on a GitHub-hosted, disposable runner.
+
+## A-1 closure (owner decision, 2026-11-25)
+Finding A-1 is **CLOSED** for implementation and security acceptance. The owner's decision followed Evidence Pack 53:
+final code `8f7e2807`, final real-isolation CI run 45593398043 (sprint record G6-R6B6-ACC). The acceptance holds only
+with these permanent limitations; never report it without them:
+- A malicious root or host administrator of the drill host is outside the proven security boundary.
+- CI proves the identity-separation mechanisms, not protection against a privileged host administrator (G0).
+- The stated heuristics are accepted within their documented limits: the guard's lists, the differential's profiles,
+  a setting set and reset within one session, the image-minor rule, and a length coercion buried in an expression.
+- The independent reviewers were AI agents, not human security auditors.
+- The Full Suite was NOT RUN under the current CI policy.
+- Production environment compatibility is not established. Until the owner signs a production environment contract and
+  it passes the compatibility checks, a drill of a production archive is never GO.
+- Production operational readiness remains NO-GO.
+
+Reopen R6-B6 only for a new material finding that invalidates this acceptance.

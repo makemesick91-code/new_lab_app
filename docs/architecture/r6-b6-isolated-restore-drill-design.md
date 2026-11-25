@@ -584,13 +584,42 @@ environment digests equal.
 
 **Verdict on the final code `8f7e2807`.** These are three separate decisions:
 - **A-1 implementation and security acceptance:** ready for owner review. A-1 stays **OPEN** until the owner
-  approves.
+  approves (approved on 2026-11-25: §0.15).
 - **PR #695 merge readiness:** **BLOCKED.** The integration plan is in Evidence Pack 53 §16, and it needs explicit
   owner approval.
 - **Production operational readiness:** **NO-GO** until all of these are done:
   - the drill host is provisioned;
   - production's contract is signed;
   - production takes custom-format backups.
+
+### 0.15 A-1 closure record (owner decision, 2026-11-25)
+
+The owner approved the closure of finding A-1 for implementation and security acceptance (decision "R6-B6 ACCEPTANCE,
+PR #695 INTEGRATION AND NEXT WORKSTREAM", sprint record G6-R6B6-ACC). Before the record was written, these were verified
+again: Evidence Pack 53's index and checksums, the acceptance matrix, the tested SHAs, and the CI results.
+
+| Item | Value |
+|---|---|
+| Final code | `8f7e2807` |
+| Documentation and CI-selection HEAD | `e667b8ff` |
+| Final real-isolation CI | 45593398043: system mode 92/0/1, VM boot 29/0 |
+| Validation merge | `ab288c1b`: the code plus the workflow file only |
+
+**Permanent limitations.** They are recorded in rule 250 ("A-1 closure"):
+- a malicious root or host administrator is outside the proven boundary;
+- CI proves the mechanisms only (G0);
+- the stated heuristics are accepted within their documented limits;
+- the reviewers were AI agents;
+- the Full Suite was NOT RUN;
+- production environment compatibility is not established;
+- production operational readiness is NO-GO.
+
+**Scope after closure:**
+- PR #695 integration is authorized as a fast-forward with no force push. The merge is conditional on required CI on
+  the exact final head, with no bypass and no deployment.
+- Rollback reliability is a separate workstream (R6-B7).
+- The production environment contract, the drill host and the backup transition stay owner decisions.
+- R6-B6 reopens only for a new material finding.
 
 ## 1. Problem and objective
 
