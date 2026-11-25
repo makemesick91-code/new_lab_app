@@ -90,8 +90,13 @@ it('reports the extensions an archive creates, and accepts an extension entry on
         unlink($file);
     }
 
+    $file = rdaTemp((string) preg_replace('/^(\d+; \d+ \d+ COMMENT )- EXTENSION pg_stat_statements $/m', '${1}public EXTENSION pg_stat_statements ', $toc, 1));
+    $comment = rdaLib('dms_archive_toc_validate "'.$file.'" "app_runtime dms_owner" "pg_stat_statements"');
+    unlink($file);
+
     expect($clean['out'])->toBe('[]')
-        ->and($pgstat['out'])->toBe('[pg_stat_statements]');
+        ->and($pgstat['out'])->toBe('[pg_stat_statements]')
+        ->and($comment['exit'])->toBe(1)->and($comment['out'])->toContain("a comment on extension 'pg_stat_statements' is not listed the way pg_dump lists one");
     foreach ($crafted as $form => $run) {
         expect($run['exit'])->toBe(1, $form)->and($run['out'])->toContain("extension 'pg_stat_statements' is not listed the way pg_dump lists one");
     }
