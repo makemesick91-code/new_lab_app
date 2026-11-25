@@ -245,3 +245,15 @@ it('measures the environment at the end of every restore session: a setting the 
     expect($facts['sandbox_env_digest'] ?? null)->toBe('inconsistent', json_encode($facts))
         ->and($facts['decision'] ?? null)->toBe('FAIL:env_mismatch');
 });
+
+it('restores production\'s extension only when allowlisted, and an allowlisted extension never disturbs an archive without it (R6-B8)', function () {
+    $allowed = rdsrDrill('pgstat', 'pg_stat_statements');
+    $refused = rdsrDrill('pgstat', 'none');
+    $without = rdsrDrill('clean', 'pg_stat_statements');
+
+    expect($allowed['decision'] ?? null)->toBe('GO', json_encode($allowed))
+        ->and($allowed['sandbox_extensions_outside_allowlist'] ?? null)->toBe('0')
+        ->and($refused['sandbox_stage'] ?? null)->toBe('extension_not_allowlisted', json_encode($refused))
+        ->and($refused['decision'] ?? null)->toBe('FAIL:unit_exit_20')
+        ->and($without['decision'] ?? null)->toBe('GO', json_encode($without));
+});

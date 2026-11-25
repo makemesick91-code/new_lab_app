@@ -122,8 +122,14 @@ the only supported way to replay a backup for a drill. Design and evidence:
     sudo or PAM) leaves a drill hanging after its VM, only root can end it; its run is then closed by the next start as
     `ABORTED:unclosed_after_boot`.
   - `DMS_DRILL_LOCALE` must equal the production database's locale. Generated values and indexes depend on it.
-  - The image is built by `scripts/restore-drill-vm-image.sh` with the same extension allowlist (`none`). Widening the
-    allowlist needs a production-side check first that no table belongs to an extension.
+  - The image is built by `scripts/restore-drill-vm-image.sh` with the drill host's extension allowlist, and the image
+    keeps exactly those extensions. For production it is **`pg_stat_statements`**, production's only extension (R6-B8):
+    - build the image with the allowlist `pg_stat_statements` (from the verified Ubuntu archive, `host-apt`);
+    - set `DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements` in `drill.conf`;
+    - record the image properties and pin the image digest in `qemu.conf`.
+    The signed contract's `DMS_ENV_EXTENSIONS` must name the image's exact version, or the drill is refused before boot.
+    Every other extension stays refused. Widening the allowlist further needs a production-side check first that no
+    table belongs to an extension (`pg_stat_statements` owns only views and functions).
 - **Reading a FAIL with SQLSTATE 42883** (undefined function) in pre-data or post-data: a DEFAULT, CHECK, generated
   column or index names a function of the dump. The restore order keeps every dump function out of the database until
   the end, so no code from the backup can run (P5-1). For an honest schema, it means the schema uses its own

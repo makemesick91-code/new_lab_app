@@ -69,6 +69,16 @@ it('accepts an allowlisted extension and records both owners of a two-owner arch
         ->and($owners['out'])->toBe('app_runtime,dms_owner');
 });
 
+it('accepts production\'s pg_stat_statements only where it is allowlisted, and still refuses every other extension (R6-B8)', function () {
+    $refused = rdaLib('dms_archive_toc_validate "$FX/pgstat.toc" "app_runtime" ""');
+    $allowed = rdaLib('dms_archive_toc_validate "$FX/pgstat.toc" "app_runtime" "pg_stat_statements"');
+    $other = rdaLib('dms_archive_toc_validate "$FX/ext.toc" "app_runtime" "pg_stat_statements"');
+
+    expect($refused['exit'])->toBe(1)->and($refused['out'])->toContain("extension 'pg_stat_statements', which is not in the allowlist")
+        ->and($allowed['exit'])->toBe(0, $allowed['out'])
+        ->and($other['exit'])->toBe(1)->and($other['out'])->toContain("extension 'pgcrypto', which is not in the allowlist");
+});
+
 it('refuses a TOC that is malformed, not custom format, not from PostgreSQL 16, or inconsistent', function (string $mutation, string $message) {
     $toc = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/clean.toc'));
     $file = rdaTemp(match ($mutation) {
@@ -218,7 +228,7 @@ it('refuses, never truncates, a TOC above its limit, in the real inspection unit
 
 it('ships the fixture archives with their generator and digests (synthetic data only)', function () {
     $sums = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/SHA256SUMS'));
-    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish', 'rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'idxbomb', 'agebomb', 'aclbomb'] as $f) {
+    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish', 'rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'idxbomb', 'agebomb', 'aclbomb', 'arrnull', 'pgstat'] as $f) {
         $file = base_path("tests/Fixtures/restore-drill/{$f}.dump");
         expect($sums)->toContain(hash_file('sha256', $file)."  {$f}.dump");
     }

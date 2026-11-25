@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb, agebomb, aclbomb, arrnull (.dump).
+# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb, agebomb, aclbomb, arrnull, pgstat (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,7 +166,12 @@ dump rd_aclbomb aclbomb
 base rd_arrnull
 q -U app_runtime -d rd_arrnull -c "CREATE TABLE tags (id int PRIMARY KEY, codes int[])" -c "INSERT INTO tags VALUES (1, ARRAY[1, NULL, 3]), (2, ARRAY[4])"
 dump rd_arrnull arrnull
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb rd_agebomb rd_aclbomb rd_arrnull; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# R6-B8: production's only extension, created by the superuser as in production (it is not a trusted extension). The
+# production-compatible drill image allowlists exactly this extension; every other one stays refused (ext.dump).
+base rd_pgstat
+q -U "$SU" -d rd_pgstat -c "CREATE EXTENSION pg_stat_statements"
+dump rd_pgstat pgstat
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb rd_agebomb rd_aclbomb rd_arrnull rd_pgstat; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do
