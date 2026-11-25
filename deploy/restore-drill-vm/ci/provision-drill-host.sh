@@ -90,6 +90,8 @@ if [ -n "$IMAGE_SRC" ]; then sudo install -o root -g root -m 0644 "$IMAGE_SRC" "
 # --- Configuration, root-owned ------------------------------------------------------------------------------------
 sudo install -d -o root -g root -m 0755 "$E"
 conf() { sudo install -o root -g root -m 0644 /dev/stdin "$E/$1"; }
+# R6F-L22: this host is a disposable CI runner (the guest console of synthetic drills may be kept only here).
+printf 'GitHub-hosted disposable runner; synthetic data only\n' | sudo install -o root -g root -m 0644 /dev/stdin "$E/disposable-ci-runner"
 printf '%s\n' "DMS_SIGNER_KEY=/var/lib/dmsdrill-signer/signing-key" "DMS_SIGNER_PRINCIPAL=drill-signer@ci" \
   "DMS_SIGNER_ANCHOR=/var/lib/dmsdrill-signer/allowed_signers" "DMS_SIGNER_STORE=/var/lib/dmsdrill-signer/store" \
   "DMS_SIGNER_HEAD_LOG=/var/lib/dmsdrill-signer/head.log" "DMS_SIGNER_ALLOWED_CALLERS=${R}" "DMS_SIGNER_IMAGE_SHA256=${IMAGES}" \

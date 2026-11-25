@@ -73,9 +73,20 @@ clean_after() { # V12 after every drill
 
 # --- V1, with a sampler: QEMU's account, cgroup, network namespace and /dev/kvm ------------------------------------
 ( for _ in $(seq 1 900); do
-    p="$(pgrep -o -u "$QEU" -f 'qemu-system-x86_64' || true)"
+    # The QEMU process itself (its executable), never the timeout wrapper whose command line also names it (CI run 13).
+    p=""
+    for c in $(pgrep -u "$QEU" 2> /dev/null); do
+      [ "$(sudo readlink "/proc/${c}/exe" 2> /dev/null)" = /usr/bin/qemu-system-x86_64 ] && { p="$c"; break; }
+    done
     if [ -n "$p" ]; then
-      echo "qemu pid=${p} user=$(ps -o user= -p "$p") kvm_fds=$(sudo ls -l "/proc/${p}/fd" 2> /dev/null | grep -c /dev/kvm)"
+      # QEMU opens /dev/kvm a moment after it starts (CI run 13): sample until it holds it, or has ended.
+      k=0
+      for _ in $(seq 1 120); do
+        k="$(sudo ls -l "/proc/${p}/fd" 2> /dev/null | grep -c /dev/kvm)"
+        [ "$k" -gt 0 ] || ! sudo test -d "/proc/${p}" && break
+        sleep 0.25
+      done
+      echo "qemu pid=${p} user=$(ps -o user= -p "$p") kvm_fds=${k}"
       echo "cgroup=$(sudo cat "/proc/${p}/cgroup")"
       echo "netns_qemu=$(sudo readlink "/proc/${p}/ns/net") netns_host=$(sudo readlink /proc/1/ns/net)"
       sudo cat "/proc/${p}/status" | grep -E '^(Uid|Gid|Groups|NoNewPrivs|Seccomp|CapEff):'

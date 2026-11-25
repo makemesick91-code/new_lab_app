@@ -491,7 +491,10 @@ it('keeps root confined to the supervisor: two fixed modes, root-owned code, the
         ->and($code)->toContain('( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted')
         // R6F-L4, R6F-L6, R6F-L10, R6F-L11: dedicated work file system, root-owned parent, one inspection, trusted code.
         ->and($code)->toContain('|| refuse work_dir_not_dedicated')
-        ->and($code)->toContain('_root_ok "$(dirname -- "$W")" || refuse work_dir_parent_unsafe')
+        // R6F-L21: every directory above the work directory is root's before root repairs and empties it.
+        ->and($code)->toContain('while :; do _root_ok "$d" || refuse work_dir_parent_unsafe; [ "$d" = / ] && break; d="$(dirname -- "$d")"; done')
+        // R6F-L22: a guest console only on a host marked as a disposable CI runner.
+        ->and($code)->toContain('_root_ok /etc/dms-restore-drill/disposable-ci-runner 2> /dev/null || refuse console_dir_outside_ci')
         ->and($code)->toContain('flock -n "$ilock" || refuse inspect_busy')
         ->and($code)->toContain('|| refuse launcher_untrusted')
         // R6F-L2, R6F-L3, R6F-L4: no io_uring or namespaces, a private /dev/shm, no journal or D-Bus, bounded resources.
