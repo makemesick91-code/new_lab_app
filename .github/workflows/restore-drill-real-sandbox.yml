@@ -79,6 +79,9 @@ jobs:
           test -r /dev/kvm && test -w /dev/kvm || { echo "KVM is not available on this runner: the drill never falls back to emulation"; exit 1; }
           sudo apt-get update -q
           sudo apt-get install -y -q qemu-system-x86 qemu-utils libguestfs-tools ubuntu-cloudimage-keyring postgresql-16
+          # libguestfs's passt helper exits 1 on these runners; without it, libguestfs uses QEMU user networking, only for
+          # the image BUILD (package install). The drill VM itself never has a network device.
+          sudo apt-get remove -y -q passt || true
           sudo pg_dropcluster --stop 16 main || true
           sudo chmod 0644 /boot/vmlinuz-* || true
           /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
