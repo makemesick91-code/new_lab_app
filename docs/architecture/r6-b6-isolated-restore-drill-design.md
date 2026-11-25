@@ -1,12 +1,12 @@
 ---
 kb_status: unverified
-kb_verified_against: 039a7f59
+kb_verified_against: 96e874e9
 kb_updated: 2026-11-25
 ---
 
 # R6-B6 isolated restore drill: structural redesign (finding A-1)
 
-**Status: DESIGN PROPOSAL, not implemented.**
+**Status: version 2, implemented LOCALLY per owner decisions D1–D10 (§0); not published, not deployed.**
 - Finding A-1 (HIGH) stays **OPEN**. This document does not close it. Closure needs the implementation, system-mode
   tests and an independent review of the implemented isolation controls.
 - R6-B6-F1 (the rehearsal swallows a failed drop) stays **OPEN** as a separate issue.
@@ -15,8 +15,88 @@ kb_updated: 2026-11-25
 Source directive: "G6 — R6-B6 STRUCTURAL SECURITY REDESIGN" (owner, 2026-11-25). The PR #695 head and every local
 remediation commit up to `039a7f59` are kept unchanged.
 
-The design went through **one independent adversarial review round** (DR-1 to DR-19). Its seven proven findings were
-reproduced, fixed in the prototype profile and re-tested (§11).
+The design went through two independent adversarial review rounds: round 1 on the prototype (DR-1 to DR-19, §11), and
+round 2 on the implementation by two reviewers, Linux/systemd/VM and PostgreSQL restore security (VR-1..12 and PR-1..9,
+§0.2).
+
+## 0. Version 2: owner decisions D1–D10 and the implemented architecture
+
+Owner directive "OWNER DESIGN DIRECTIVE — R6-B6 ISOLATED RESTORE DRILL" (2026-11-25) decided OD-ISO-1 to OD-ISO-9.
+**Where they differ, this section supersedes §3–§12** (the version 1 design ran the unit on the production host).
+§1–§9 still describe the unit's profile and threats, which now apply INSIDE the VM.
+
+| Decision | Content | Implemented in |
+|---|---|---|
+| D1 | A separate, disposable VM, not a sandbox on the production kernel | `scripts/restore-drill-vm.sh` refuses the production host. It boots QEMU/KVM with no NIC, from a pinned image, with read-only encrypted input. |
+| D2 | An ephemeral unprivileged identity in a systemd system unit inside the VM | guest agent + `dms_sandbox_properties system` (DynamicUser) |
+| D3 | An authenticated role manifest; no connection to production PostgreSQL | `scripts/lib/restore-manifest.sh` (ssh-keygen `-Y`, namespace `dms-restore-role-manifest`) |
+| D4 | A non-superuser replay role | `drill_restore` NOSUPERUSER; `drill_super` NOLOGIN before the first byte |
+| D5 | Restricted mode mandatory; load guard kept | restricted stream + guard from #695, both in the payload |
+| D6 | 1 vCPU, 2 GiB, 10 GiB, 30 min, 64 tasks, one drill, fail closed | fixed in the orchestrator; `dms_sandbox_limits_check`; flock |
+| D7 | Continue in the local #695 branch, history preserved | commits on top of `039a7f59` (base `bd52f97f` merged) |
+| D8 | A real-sandbox CI gate on disposable infrastructure | `deploy/restore-drill-vm/ci/` (two gates + an INACTIVE workflow proposal) |
+| D9 | Two independent reviews (Linux/systemd/VM; PostgreSQL restore) | review round 2 (VR-1..12, PR-1..9), below |
+| D10 | Authenticated, tamper-evident evidence; readiness kept separate | `scripts/lib/restore-evidence.sh` (signed, sha256-chained) |
+
+The in-place superuser replay is **retired**: `scripts/rollout-restore-drill.sh` verifies read-only and exits 3.
+
+```
+ ISOLATED DRILL HOST (never the production VPS; unprivileged operator, never root)
+   restore-drill-vm.sh: fixed env -> trusted config -> D6 limits + flock -> pinned image (JSON check)
+     -> signed manifest (one private copy) -> #695 integrity chain -> trailer + host counts
+     -> restricted stream + load guard -> AES-256-CTR input disk -> QEMU/KVM in its own process group
+     -> output disk (strict parse) -> decision -> signed, chained evidence -> cleanup (kill group, rm run dir)
+        |  -nic none, -nodefaults, -sandbox on, -cpu host,-vmx,-svm,pmu=off, vmport/hpet/smm off
+        v
+ DISPOSABLE VM (one boot, root disk = overlay on the pinned image, deleted after)
+   guest agent (root): parse header, decrypt, verify sha256, run the unit, write result lines, power off
+     systemd SYSTEM unit, Type=oneshot, DynamicUser, the §5 profile (+ review fixes)
+       disposable PG16 -> drill_restore (NOSUPERUSER) replays; read-only verification
+```
+
+### 0.1 Security acceptance (directive: configuration-only claims are insufficient)
+
+| # | Acceptance item | Evidence | Status |
+|---|---|---|---|
+| 1 | Actual OS identity separation | system-mode gate `P-uid`, `P-private`, `P-signal`, `P-proc` | **NOT RUN.** It needs root or a disposable CI VM. User mode is a LIMIT: same uid. |
+| 2 | VM isolation from production | vm-boot gate V1–V5; guest reports `lo` only | **NOT RUN.** No hypervisor is usable on this workstation (no QEMU, not in the kvm group, no Hyper-V rights). |
+| 3 | No production file, socket or network access | real-sandbox gate P-* (user mode): decoys reachable from outside, refused inside (files, sockets, TCP, IPv6, netlink, vsock, io_uring, metadata) | **PROVEN in user mode** (55/0/3). VM layer NOT RUN. |
+| 4 | Trusted backup and manifest verification | #695 integrity suites; manifest/evidence suite (real ssh-keygen); orchestrator refusals | **PROVEN locally** (Pest) |
+| 5 | Non-superuser replay | runtime suite + gate S-su1..5 (42501), S-super (NOLOGIN), PR-2/3/5 cases | **PROVEN in user mode** |
+| 6 | End-to-end restore fidelity | the full application schema through the guest/host protocol: GO, 186/186 tables, 238/238 rows, fidelity `22:1045:5:968`, no user code on a restore path | **PROVEN without the hypervisor.** The VM boot is NOT RUN. |
+| 7 | Resource exhaustion resistance | gate X-disk, X-time; prototype memory and fork bombs | **PROVEN in user mode.** VM-level D6 is NOT RUN. |
+| 8 | Reliable cleanup | gate C-*; VR-2 process-group test; stale-run sweep | **PROVEN locally.** VM is NOT RUN. |
+| 9 | Evidence authenticity | signed and chained records; edit, gap, reorder, re-sign and tail-with-head detection (real ssh-keygen) | **PROVEN locally.** Dropping the newest records without a head anchor is a residual. |
+| 10 | Independent adversarial reviews | round 1 (19 findings) and round 2: VR-1..12 and PR-1..9, two reviewers | **DONE.** Their HIGH/MEDIUM findings are fixed or open, below. |
+
+### 0.2 Review round 2: findings and dispositions
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| PR-1 | HIGH (conditional) | With code running as the sandbox identity, a SIGTERM-killed `Type=simple` main process counted as success, so a GO could be forged | **Fixed:** `Type=oneshot` + `TimeoutStartSec` (proven: every terminating signal is a failure). **Residual:** with native code or a cluster superuser inside the unit, every reported fact is attacker-chosen (see VR-1). |
+| VR-1 | MEDIUM | Root in the guest can forge GO from the payload alone | **OPEN (inherent).** No host check can separate "restored" from "computed". GO integrity rests on no code reaching the guest's root. The evidence marks counts `guest-asserted`. |
+| VR-4 | MEDIUM | QEMU runs as the identity that holds the evidence signing key | **Partly fixed:** root refused, environment fixed. **OPEN:** a separate signer identity, or QEMU under its own uid (system mode, phase 3). |
+| VR-2 | MEDIUM | Interrupt killed `timeout`, not QEMU | **Fixed:** process-group kill (tested) |
+| VR-3 | MEDIUM | `-drive …,serial=` removed in QEMU 3.0; `qemu-img info` misparsed under QEMU 8 | **Fixed:** `-device virtio-blk-pci,serial=`; JSON parser (tested with QEMU 8-shaped output). The VM boot itself is still unproven. |
+| PR-2 | MEDIUM | An index-expression "restore bomb" gets GO in the drill and destroys data in a real restore | **Fixed:** GO needs no user code on a restore path (tested) |
+| PR-3 | MEDIUM | A function body blinds the text owner scan (P5) | **Fixed:** P5 is decided from the restored catalog (tested) |
+| PR-4 | MEDIUM | Manifest read multiple times (race) | **Fixed:** a single private copy |
+| PR-5 | MEDIUM | Completeness totals can be steered; RLS policy code ran during verification | **Partly fixed:** read-only verification, `row_security=off` (tested), real `migrations` table. **OPEN:** per-table counts from a structured source (custom-format TOC or a dump-time count log). |
+| VR-5..VR-11 | LOW | window/NUL forgery; disk probing; CPU surface; FAIL reasons; stale data; manifest reads; environment | **Fixed** (VR-6 by payload encryption; probe-suppression udev rule to validate on the real image) |
+| PR-6 | LOW | Text heuristics: COPY data matching patterns causes FAIL (DoS); guard call inside quoted names | **OPEN:** structured dump format |
+| PR-7 | LOW | The orchestrator could never pass the manifest gate (subshell) | **Fixed** |
+| PR-8 | LOW | Trusted extensions run superuser install scripts; role settings DoS | **Partly fixed:** connection options override role and database settings. **OPEN:** an image extension allowlist. |
+| PR-9 | INFO | Manifest freshness and revocation; evidence publication atomicity; guard search_path | **Guard search_path fixed. OPEN:** manifest binding, evidence `ln`/`mv` atomicity. |
+
+### 0.3 Verdicts (2026-11-25)
+
+- **A-1: OPEN.** Acceptance items 1 (real identity separation) and 2 (VM isolation) have no real evidence. VR-1, VR-4,
+  PR-5 and PR-6 remain open. Closure needs:
+  - the system-mode gate and the vm-boot gate run on disposable infrastructure;
+  - the open items above resolved;
+  - a re-review of the result.
+- **PR #695: BLOCKED.** It must not be published as an A-1 fix while A-1 is OPEN. Publishing it as work in progress
+  would be a separate owner decision.
 
 ## 1. Problem and objective
 
