@@ -9,8 +9,12 @@
 #
 # SAFETY (mirrors scripts/deploy-vps.sh):
 #   - Fail-fast: any error stops the rollback (set -euo pipefail).
-#   - A verified DB backup is taken BEFORE the code is switched; backup failure
-#     stops the rollback.
+#   - A DB backup is taken, and its digest checked by root, BEFORE the code is
+#     switched; backup failure stops the rollback. It is written to the deploy
+#     backup directory, which the NSF-10 verifier accepts, and verified
+#     (foundation:backup-verify) by the target's code after the switch. A target
+#     that could not finish the rollback (its verifier or a post-switch command)
+#     is refused before anything is backed up or checked out (R6-B7).
 #   - Code rollback keeps the current additive (backward-compatible) schema and
 #     NEVER runs a destructive database command or a schema-destroying migration.
 #     A data rollback is a separate, explicit step using
@@ -280,6 +284,29 @@ if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"; then
   exit 2
 fi
 
+# R6-B7: everything after the checkout runs the TARGET's code. Before any backup
+# or checkout, refuse a target that could not finish this rollback: its shipped
+# backup verifier (config/backup_governance.php at that commit) must accept the
+# deploy backup directory and .sql, and it must ship every application command
+# this script runs after the checkout (Laravel's own commands always exist).
+# Keep this list equal to the commands below (a test enforces it).
+ROLLBACK_POST_SWITCH_COMMANDS="foundation:backup-verify architecture:foundation-roadmap-check foundation:queue-retry-failed-job-check foundation:idempotency-outbox-check foundation:developer-console-check foundation:health-check foundation:security-compliance-check foundation:cicd-enterprise-gate-check foundation:deployment-rollback-check foundation:deployment-entrypoint-check foundation:release-safety-check architecture:foundation-governance-summary release:automated-smoke"
+TARGET_BACKUP_CONFIG="$(git show "${ROLLBACK_TARGET_SHA}:config/backup_governance.php" 2>/dev/null || true)"
+if ! grep -Fq "'storage/app/backups/deploy'" <<< "$TARGET_BACKUP_CONFIG" || ! grep -Fq "'sql'" <<< "$TARGET_BACKUP_CONFIG"; then
+  echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} ships no backup verifier that accepts storage/app/backups/deploy and .sql — nothing was backed up or checked out — NOT GO" >&2
+  exit 2
+fi
+TARGET_MISSING_COMMANDS=""
+for rollback_cmd in $ROLLBACK_POST_SWITCH_COMMANDS; do
+  if ! git grep -q -E "signature = ['\"]${rollback_cmd}([ '\"]|\$)" "$ROLLBACK_TARGET_SHA" -- app 2>/dev/null; then
+    TARGET_MISSING_COMMANDS="${TARGET_MISSING_COMMANDS} ${rollback_cmd}"
+  fi
+done
+if [ -n "$TARGET_MISSING_COMMANDS" ]; then
+  echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} lacks commands this rollback runs after the switch:${TARGET_MISSING_COMMANDS} — nothing was backed up or checked out — NOT GO" >&2
+  exit 2
+fi
+
 echo "== Backup DB before rollback =="
 # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE
 # (0600 under a scoped `umask 077`) and published unchanged once complete —
@@ -292,13 +319,17 @@ echo "== Backup DB before rollback =="
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
 DUMP_HELPERS="_dms_dump_err _dms_dump_assert_no_default_acl"
 dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups
-dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups/rollback
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups/deploy
 
 set -a
 source .env
 set +a
 
-BACKUP="storage/app/backups/rollback/pre_rollback_${STAMP}.sql"
+# R6-B7: the deploy backup directory, next to the pre-deploy dumps, which the
+# NSF-10 verifier accepts (config/backup_governance.php `allowed_directories`);
+# the scheduled backup's retention (scripts/backup-vps.sh) treats these dumps
+# like pre-deploy dumps.
+BACKUP="storage/app/backups/deploy/pre_rollback_${STAMP}.sql"
 
 # Rule 235 (R4): the digest the restore tools trust must be ROOT's own. Root
 # runs pg_dump (a root-owned binary; no application code) into a private file
@@ -334,6 +365,30 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   git status --porcelain --untracked-files=no >&2
   exit 1
 fi
+# R6-B7: from the checkout on, every stop before "ROLLBACK OK" (an error, an
+# interruption, a failed or partial checkout) says that the host is between
+# releases and how to recover (runbook vps-deploy-rollback-runbook.md).
+dms_rollback_partial_notice() {
+  echo "ROLLBACK STATE: stopped after the code switch began (target ${ROLLBACK_TARGET_SHA}, now at $(git rev-parse --short HEAD 2>/dev/null || echo unknown)). Recover with a forward deploy (a new signed approval), or re-run this rollback only if the target contains R6-B7 — see the runbook." >&2
+}
+# A signal to the whole process group (an SSH drop, Ctrl+C) can arrive while the
+# EXIT handler runs: each handler first ignores further signals, and a signal
+# handler states the notice itself, so it is printed exactly once.
+dms_rollback_on_exit() {
+  local rc=$?
+  trap '' TERM INT HUP
+  [ "$rc" -eq 0 ] || dms_rollback_partial_notice
+}
+dms_rollback_on_signal() {
+  trap '' TERM INT HUP
+  trap - EXIT
+  dms_rollback_partial_notice
+  exit "$1"
+}
+trap dms_rollback_on_exit EXIT
+trap 'dms_rollback_on_signal 143' TERM
+trap 'dms_rollback_on_signal 130' INT
+trap 'dms_rollback_on_signal 129' HUP
 git checkout "$ROLLBACK_TARGET_SHA"
 
 ROLLED_BACK_SHA="$(git rev-parse --verify HEAD)"
@@ -342,6 +397,9 @@ if [ "$ROLLED_BACK_SHA" != "$ROLLBACK_TARGET_SHA" ]; then
   exit 1
 fi
 echo "HEAD verified at pinned rollback target: ${ROLLED_BACK_SHA}"
+# R6-B7: a re-run of this script snapshots the CURRENT checkout, which is now
+# the target's code and its own rollback tooling.
+echo "ROLLBACK STATE: code switched to ${ROLLED_BACK_SHA}; until ROLLBACK OK, recovery is a forward deploy, or a re-run only if the target contains R6-B7"
 
 # Rule 233: the checkout (root's git) writes the tracked files that live under
 # storage/ and creates any new tracked directory there. Hand them to the runtime
@@ -464,6 +522,7 @@ if [ "$FINAL_HEAD" != "$ROLLBACK_TARGET_SHA" ]; then
 fi
 echo "ROLLBACK_HEAD_TARGET_MATCH=YES (${FINAL_HEAD})"
 
+trap - EXIT TERM INT HUP
 echo "ROLLBACK OK: rolled back to ${TARGET_REF} (from ${CURRENT_REF_DESC}) at ${STAMP}"
 echo "Pre-rollback backup: ${BACKUP}"
 echo "To restore data (only if required, owner-approved, as the administrator): bash scripts/restore_postgres.sh --file <backup_file> --expected-sha256 <the sha256 printed above for that backup>"

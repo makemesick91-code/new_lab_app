@@ -308,8 +308,9 @@ commit a release approval record merged on the base branch approves. The runner 
 following `docs/runbooks/vps-deploy-rollback-runbook.md`. Since rule 235 it is the administrator's break-glass step
 on the owner's explicit decision: `ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo bash scripts/rollback-vps.sh <full-sha>'`
 with the owner typing the password; the deploy operator cannot roll back. The target must be an ancestor of the running checkout
-(rule 229); anything else is refused before the backup. It runs the same host preflight, takes a verified database
-dump first and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
+(rule 229); anything else is refused before the backup. It runs the same host preflight, takes a database dump
+first (root checks its digest before the switch; the target's NSF-10 verifier checks it in the deploy backup directory
+after the switch) and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
 operation, and an older dump is never restored over newer clinical data. Since rule 233 a rollback, like a deploy, runs
 every artisan command (and the dump) as the runtime user and ends with the same privilege-drift gate; its snapshot is
 the CURRENT code, so a rollback to a release older than rule 233 still runs separated.

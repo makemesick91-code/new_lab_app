@@ -128,6 +128,10 @@ return [
             // isolation. The verifier is staged before the checkout so this gate
             // runs even when the target ref predates this sprint.
             'verify-runtime-isolation.sh',
+            // R6-B7: a target that could not finish the rollback after the code
+            // switch is refused before any backup or checkout.
+            'ROLLBACK_POST_SWITCH_COMMANDS=',
+            'trap - EXIT TERM INT HUP',
         ],
         // The rollback path re-verifies the ENT-5..10 foundation stack.
         'required_gate_markers' => [
