@@ -221,19 +221,25 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   r="$(req GO "$(printf 'e%.0s' {1..64})" | sign)"
   check G5 "the signer refuses a contradictory GO (guest digest differs from the expected one, P4V-4)" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(req GO | bash -c 'ulimit -f 1; exec sudo -n -u "$0" -- "$1" sign' "$SIG" "$SCMD" 2>&1)"
-  check G6 "no record is written under a caller's file-size limit (P4V-5)" "$([ "${r#RECORD }" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  v="$(as "$SIG" "$SCMD" verify)"
+  # P4V-5: whatever sudo does with the caller's limit (it may reset it), no record may ever be truncated: the request
+  # is refused, or the record is complete and the whole store still verifies.
+  check G6 "a caller's file-size limit never yields a truncated record: refused, or complete and verifying (P4V-5)" \
+    "$({ [ "${r#RECORD }" = "$r" ] || [ "${v#VERIFIED }" != "$v" ]; } && [ "${v#VERIFIED }" != "$v" ]; echo $?)" "$(printf '%s | %s' "${r:0:40}" "${v:0:40}")"
   r="$(req GO | DMS_SIGNER_CONF=/etc/dms-restore-drill/signer.conf bash "$SCMD" sign 2>&1)"
   check G2 "calling the signer directly as the operator is refused" "$([ "${r#*SIGNER: }" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   check G3 "the operator cannot read the signer's key" "$([ ! -r "$KEY" ]; echo $?)" "$(sudo stat -c '%U %a' "$KEY" 2> /dev/null)"
   r="$(printf 'DMS_DRILL_EVIDENCE_DECISION=REFUSED:manifest\n' | sign)"
   check G7 "a malformed refusal request is refused, never signed" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$SIG" "$SCMD" verify)"
-  check G4 "the signer's store verifies against its head log and EVERY witnessed digest" "$(starts "$r" "VERIFIED 1 ")" "$(printf '%s' "$r" | head -c 80)"
+  NREC="$(sudo find /var/lib/dmsdrill-signer/store -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | wc -l)"
+  check G4 "the signer's store verifies against its head log and EVERY witnessed digest" "$(starts "$r" "VERIFIED ${NREC} ")" "$(printf '%s' "$r" | head -c 80) records=${NREC}"
   r="$(as "$WIT" "$WCMD" show)"
-  check W1 "the operator reads the witness log; it holds the signer's record digest" "$([ "$(printf '%s\n' "$r" | wc -l)" = 1 ] && [ "${r%% *}" = 000001 ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  last="$(sudo sha256sum "/var/lib/dmsdrill-signer/store/$(printf '%06d' "$NREC")/record" | cut -d' ' -f1)"
+  check W1 "the operator reads the witness log: one line per record, the newest equal to the store's head" "$([ "$(printf '%s\n' "$r" | wc -l)" = "$NREC" ] && [ "$(printf '%s\n' "$r" | tail -n 1)" = "$(printf '%06d' "$NREC") ${last}" ]; echo $?)" "$(printf '%s' "$r" | tail -n 1 | head -c 80)"
   r="$(as "$WIT" "$WCMD" append 000002 "$(printf 'f%.0s' {1..64})")"
   check W2 "the operator cannot append to the witness log (only the signer may)" "$([ "${r#WITNESSED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
-  r="$(sudo -n -u "$SIG" -- sudo -n -u "$WIT" -- "$WCMD" append 000001 "$(printf 'f%.0s' {1..64})" 2>&1)"
+  r="$(sudo -n -u "$SIG" -- sudo -n -u "$WIT" -- "$WCMD" append "$(printf '%06d' "$NREC")" "$(printf 'f%.0s' {1..64})" 2>&1)"
   check W3 "even the signer cannot replay or rewrite a witnessed sequence number" "$([ "${r#WITNESSED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$QEU" cat "$KEY")"
   check Q1 "the QEMU identity cannot read the signer's key" "$([ "${r#*Permission denied}" != "$r" ] || [ "${r#*not allowed}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
@@ -245,8 +251,8 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   check Q4 "the QEMU identity cannot change its own configuration (root-owned)" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$QEU" sh -c 'echo x >> /var/lib/dmsdrill-witness/heads.log; echo x >> /var/lib/dmsdrill-signer/head.log')"
   check Q5 "the QEMU identity cannot write the witness or the signer's head log" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
-  # A compromised SIGNER that drops its newest record and rewrites its own head log is caught by the witness.
-  sudo -n -u "$SIG" -- sh -c 'rm -rf /var/lib/dmsdrill-signer/store/000001 && : > /var/lib/dmsdrill-signer/head.log'
+  # A compromised SIGNER that drops its newest record and rewrites its own head log to match is caught by the witness.
+  sudo -n -u "$SIG" -- sh -c "rm -rf /var/lib/dmsdrill-signer/store/$(printf '%06d' "$NREC") && head -n $((NREC - 1)) /var/lib/dmsdrill-signer/head.log > /var/lib/dmsdrill-signer/head.tmp && mv /var/lib/dmsdrill-signer/head.tmp /var/lib/dmsdrill-signer/head.log"
   r="$(as "$SIG" "$SCMD" verify)"
   check W4 "a rollback by the signer's own identity is detected against the witness" "$([ "${r#*rollback or truncation}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
   r="$(req GO | sign)"
