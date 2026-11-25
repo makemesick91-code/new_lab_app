@@ -127,7 +127,8 @@ the only supported way to replay a backup for a drill. Design and evidence:
     - build the image with the allowlist `pg_stat_statements` (from the verified Ubuntu archive, `host-apt`);
     - set `DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements` in `drill.conf`;
     - record the image properties and pin the image digest in `qemu.conf`.
-    The signed contract's `DMS_ENV_EXTENSIONS` must name the image's exact version, or the drill is refused before boot.
+    Every extension the archive creates must be named in the signed contract's `DMS_ENV_EXTENSIONS` at the image's
+    exact version, or the drill is refused before boot. The guest creates only the archive's own extensions.
     Every other extension stays refused. Widening the allowlist further needs a production-side check first that no
     table belongs to an extension (`pg_stat_statements` owns only views and functions).
 - **Reading a FAIL with SQLSTATE 42883** (undefined function) in pre-data or post-data: a DEFAULT, CHECK, generated
