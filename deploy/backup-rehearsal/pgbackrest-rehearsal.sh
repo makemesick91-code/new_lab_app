@@ -136,14 +136,16 @@ note "B5 after the gap: a new full backup on both repositories re-establishes a 
 q 55601 synth "INSERT INTO synth_visits (branch, note) VALUES (5, 'b6-marker')"; q 55601 postgres "SELECT pg_switch_wal()" > /dev/null; waitarch pg-src; sleep 3
 seg="$(find "$W/repo2/archive/demo" -name '0000*' -type f | sort | tail -n 2 | head -n 1)"
 cp "$seg" "$W/seg.orig"; printf 'XXXX' | dd of="$seg" bs=1 seek=200 conv=notrunc status=none
-pb --repo=2 verify > "$OUT/b6-verify.txt" 2>&1; vr=$?
+# run 1 (45703306142) showed: verify FINDS the corruption ("status: error", logged at INFO) but exits 0 and prints
+# nothing at console level warn. So the result is read from its report, never from its exit code.
+pb --repo=2 --log-level-console=info verify > "$OUT/b6-verify.txt" 2>&1; vr=$?
 vcmd=present; grep -Eqi 'invalid command|unknown command|not a valid command' "$OUT/b6-verify.txt" && vcmd=missing
-grep -Eqi 'checksum|invalid|corrupt|mismatch|error' "$OUT/b6-verify.txt"; vfound=$?
+grep -Eq 'status: error' "$OUT/b6-verify.txt"; vfound=$?
 pb --repo=2 --pg1-path="$W/pg-tamper" --type=default restore > "$OUT/b6-restore.txt" 2>&1
 start pg-tamper 55603 "-c archive_mode=off" 2> /dev/null; sleep 10
 tst="$(q 55603 postgres "SELECT CASE WHEN pg_is_in_recovery() THEN 'in recovery' ELSE 'promoted' END" 2> /dev/null || echo 'not running')"
 grep -Ei 'error|fatal' "$W/pg-tamper.log" 2> /dev/null | tail -n 3 > "$OUT/b6-tamper-server.txt"
-ok B6-tampered-segment-detected "$([ "$vcmd" = present ] && [ "$vr" != 0 ] && [ "$vfound" = 0 ]; echo $?)" "verify command ${vcmd}, exit ${vr} (findings in output: $([ "$vfound" = 0 ] && echo yes || echo no)); a restore through it: server ${tst}"
+ok B6-tampered-segment-detected "$([ "$vcmd" = present ] && [ "$vfound" = 0 ] && [ "$tst" != promoted ]; echo $?)" "verify command ${vcmd}: report 'status: error' $([ "$vfound" = 0 ] && echo present || echo absent), EXIT CODE ${vr} (0 = the exit code does not signal corruption: monitoring must parse the report) (findings in output: $([ "$vfound" = 0 ] && echo yes || echo no)); a restore through it: server ${tst}"
 "$PGB/pg_ctl" -D "$W/pg-tamper" -m immediate stop > /dev/null 2>&1; rm -rf "$W/pg-tamper"; cp "$W/seg.orig" "$seg"
 
 # ---------------------------------------------------------------------------------------------------------------- B7
