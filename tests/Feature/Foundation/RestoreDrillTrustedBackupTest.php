@@ -523,9 +523,61 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'a CHECK on a float\'s text form (extra_float_digits)' => ["CREATE TABLE rdtb_f (f float8, CONSTRAINT rdtb_fcheck CHECK ((f)::text = '0.30000000000000004'));", 'text-form conversion'],
     'a CHECK on bytea text (bytea_output)' => ["CREATE TABLE rdtb_b (b bytea, CONSTRAINT rdtb_bcheck CHECK ((b)::text LIKE '\\x%'));", 'text-form conversion'],
     'a CHECK calling float8out directly' => ["CREATE TABLE rdtb_o (f float8, CONSTRAINT rdtb_ocheck CHECK (textin(float8out(f)) <> ''));", 'float8out(double precision)'],
-    'a regclass column (cluster-assigned object ids)' => ['CREATE TABLE rdtb_r (r regclass);', 'object-id type regclass'],
-    'a CHECK over a regclass constant' => ["CREATE TABLE rdtb_c (n int, CONSTRAINT rdtb_ccheck CHECK (n < ('pg_class'::regclass)::integer));", 'uses an object-id type'],
+    'a regclass column (cluster-assigned object ids)' => ['CREATE TABLE rdtb_r (r regclass);', 'object-id or ACL type regclass'],
+    'a CHECK over a regclass constant' => ["CREATE TABLE rdtb_c (n int, CONSTRAINT rdtb_ccheck CHECK (n < ('pg_class'::regclass)::integer));", 'uses an object-id or ACL type'],
     'a domain constraint of the dump' => ['CREATE DOMAIN rdtb_pos AS int CONSTRAINT rdtb_pos_check CHECK (VALUE > 0);', 'domain constraint rdtb_pos_check'],
+    // R6F-P5, R6F-P6 (second fix verification): mislabelled builtins and ACL items.
+    'a CHECK on age() (TimeZone)' => ["CREATE TABLE rdtb_a (s timestamptz, e timestamptz, CONSTRAINT rdtb_acheck CHECK (age(e, s) < interval '1 mon'));", 'age(timestamp with time zone,timestamp with time zone)'],
+    'a CHECK on quote_ident() (quote_all_identifiers)' => ['CREATE TABLE rdtb_q2 (n text, CONSTRAINT rdtb_q2check CHECK (quote_ident(n) = n));', 'quote_ident(text)'],
+    'an aclitem column (cluster-assigned role ids)' => ['CREATE TABLE rdtb_acl (acl aclitem);', 'object-id or ACL type aclitem'],
+    'a CHECK building an aclitem from role ids' => ["CREATE TABLE rdtb_acl2 (n int, CONSTRAINT rdtb_acl2check CHECK (makeaclitem(16384::oid, 16384::oid, 'SELECT', false) IS NOT NULL));", 'object-id or ACL type'],
+    'a whole-row text conversion' => ["CREATE TABLE rdtb_w (f float8, CONSTRAINT rdtb_wcheck CHECK ((rdtb_w.*)::text <> ''));", 'text-form conversion'],
+])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
+
+it('lets text conversions of values whose text form never depends on the session through the guard (R6F-P7)', function () {
+    $call = rdtbGuard();
+
+    expect(fn () => DB::transaction(function () use ($call) {
+        DB::unprepared("CREATE TABLE rdtb_ok (n int, u uuid, d json, CONSTRAINT rdtb_ok_n CHECK (length(n::text) <= 9), CONSTRAINT rdtb_ok_u CHECK (u::text ~ '^[0-9a-f-]{36}$'), CONSTRAINT rdtb_ok_d CHECK (jsonb_typeof(d::jsonb) = 'object'))");
+        DB::select($call);
+    }))->not->toThrow(Throwable::class);
+})->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
+
+/** The drill's differential check (R6F-P8), as the inner script runs it after post-data. */
+function rdtbDifferential(): string
+{
+    $inner = (string) file_get_contents(base_path('scripts/restore-drill-sandbox-inner.sh'));
+    $start = (int) strpos($inner, 'DO $dmsdiff$');
+    $end = (int) strpos($inner, '$dmsdiff$;', $start) + strlen('$dmsdiff$;');
+
+    return substr($inner, $start, $end - $start);
+}
+
+it('fails, on the restored rows, a CHECK or a generated column whose result depends on the session settings (R6F-P8)', function (string $plant, string $setting) {
+    $sql = rdtbDifferential();
+    // Each attempt runs in its own savepoint, always rolled back, so the planted table exists once per attempt.
+    $attempt = function (string $profile) use ($plant, $sql): string {
+        DB::beginTransaction();
+        try {
+            DB::unprepared("SET LOCAL TimeZone = 'UTC'; SET LOCAL quote_all_identifiers = off; ".$plant);
+            DB::unprepared($profile);
+            DB::unprepared($sql);
+
+            return 'ok';
+        } catch (Throwable $e) {
+            return $e->getMessage();
+        } finally {
+            DB::rollBack();
+        }
+    };
+
+    // Under the settings the rows were loaded with, nothing differs; under another profile the same rows break the
+    // schema, so the drill FAILs (R6B22) whatever the guard's list missed.
+    expect($attempt('SELECT 1;'))->toBe('ok')
+        ->and($attempt($setting))->toContain('R6B22');
+})->with([
+    'age() across a month end' => ["CREATE TABLE rdtb_d1 (s timestamptz, e timestamptz, CONSTRAINT rdtb_d1c CHECK (age(e, s) < interval '1 mon')); INSERT INTO rdtb_d1 VALUES ('2026-01-31 17:00+00', '2026-02-28 17:00+00');", "SET LOCAL TimeZone = 'Asia/Makassar';"],
+    'a quote_ident() generated column' => ['CREATE TABLE rdtb_d2 (n text, g text GENERATED ALWAYS AS (quote_ident(n)) STORED); INSERT INTO rdtb_d2 (n) VALUES (\'abc\');', 'SET LOCAL quote_all_identifiers = on;'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 it('keeps no lock per probed CHECK: the probes run in rolled-back subtransactions (R6F-P4)', function () {

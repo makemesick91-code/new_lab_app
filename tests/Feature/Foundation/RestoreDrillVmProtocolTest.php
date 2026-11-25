@@ -501,7 +501,10 @@ it('keeps root confined to the supervisor: two fixed modes, root-owned code, the
         ->and($vm)->toContain('-p "InaccessiblePaths=-/dev/mqueue -/run/systemd/journal -/run/dbus"')
         ->and($vm)->toContain('-p CPUQuota=150% -p IOWeight=10 -p LimitFSIZE=12G')
         // R6A-1, R6A-2, R6A-6, R6A-11: the unit's bounds are outside QEMU's reach.
-        ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=AF_UNIX')
+        // R6F-L13: no socket of any family (an AF_UNIX socket reaches systemd-resolved, which resolves names outside).
+        ->and($vm)->toContain('-p PrivateNetwork=yes -p IPAddressDeny=any -p RestrictAddressFamilies=none')
+        ->and($vm)->not->toContain('RestrictAddressFamilies=AF_UNIX')
+        ->and($code)->toContain('flock -n "$vlock" || refuse vm_busy')
         ->and($vm)->toContain('-p KillMode=control-group')
         ->and($vm)->toContain('-p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=512 -p LimitCORE=0 -p CoredumpFilter=0')
         ->and($vm)->toContain('-p DevicePolicy=closed -p "DeviceAllow=/dev/kvm rw"')

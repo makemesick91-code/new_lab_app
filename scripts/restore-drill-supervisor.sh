@@ -61,14 +61,16 @@ QUID="$(id -u -- "${C[DMS_SUPERVISOR_QEMU_USER]}" 2> /dev/null)" && SUID_="$(id 
 
 # R6F-L11: the launcher and the PostgreSQL binaries handed to a unit are root's, writable by nobody else.
 APP="$(cd "$HERE/.." && pwd)"
-dms_trusted_file "QEMU launcher" "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" 0 "$APP" > /dev/null || refuse launcher_untrusted
+# (The launcher belongs to this install, so it is checked without the "outside the install" rule; CI run 11.)
+dms_trusted_file "QEMU launcher" "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" 0 "" > /dev/null || refuse launcher_untrusted
 dms_trusted_file "pg_restore" "${C[DMS_SUPERVISOR_PG_BINDIR]}/pg_restore" 0 "$APP" > /dev/null || refuse pg_bindir_untrusted
 
 UNIT=""; SR=""
 stop_unit() {
+  # R6F-L16: the client first, so it cannot create the unit after the stop; then the unit itself.
+  [ -n "$SR" ] && kill -TERM "$SR" 2> /dev/null
   [ -n "$UNIT" ] && systemctl stop "${UNIT}.service" > /dev/null 2>&1
   [ -n "$UNIT" ] && systemctl reset-failed "${UNIT}.service" > /dev/null 2>&1
-  [ -n "$SR" ] && kill -TERM "$SR" 2> /dev/null
   UNIT=""; SR=""; return 0
 }
 # R6F-L1: the unit is stopped on EVERY catchable signal, at once: systemd-run runs in the background and the
@@ -85,14 +87,12 @@ run_unit() {
   systemd-run --system --wait --pipe --collect --quiet --unit="$UNIT" "$@" <&3 >&4 3<&- 4>&- &
   SR=$!
   exec 3<&- 4>&-
-  while :; do
-    wait "$SR"; rc=$?
-    kill -0 "$SR" 2> /dev/null || break
-  done
+  # Every trapped signal ends the supervisor inside its trap, so `wait` returns only with the client's own status.
+  wait "$SR"; rc=$?
   UNIT=""; SR=""
   return "$rc"
 }
-unit_idle() { case "$(systemctl show -P ActiveState "${1}.service" 2> /dev/null)" in inactive | failed | '') return 0 ;; *) return 1 ;; esac; }
+unit_idle() { case "$(systemctl show -P ActiveState "${1}.service" 2> /dev/null)" in inactive | failed) return 0 ;; *) return 1 ;; esac; }
 
 MODE="${1:-}"; NAME="${2:-}"
 case "$MODE" in
@@ -112,6 +112,9 @@ case "$MODE" in
     ;;
   vm)
     [[ "$NAME" =~ ^dmsdrill-[0-9a-f]{12}$ ]] || refuse bad_name
+    # R6F-L17: one vm request at a time (a second one could pass the idle check and wipe the first one's files).
+    exec {vlock}> /run/dms-restore-drill-supervisor-vm.lock
+    flock -n "$vlock" || refuse vm_busy
     # R6F-L1: never while a VM still runs (an earlier drill's unit is stopped by its own supervisor, or by its limit).
     unit_idle dmsqemu || refuse unit_busy
     # R6C-3: the newest record of the evidence store must be this run's signed STARTED record (R6F-L5: a regular
@@ -124,11 +127,10 @@ case "$MODE" in
     [ ! -L "${recs[${#recs[@]} - 1]}" ] && [ ! -L "$last" ] && [ -f "$last" ] && [ "$(stat -c %u -- "$last")" = "$SUID_" ] || refuse record_unsafe
     rec="$(head -c 65536 -- "$last")"
     grep -qx "DMS_DRILL_EVIDENCE_RUN_ID=${NAME}" <<< "$rec" && grep -qx 'DMS_DRILL_EVIDENCE_DECISION=STARTED' <<< "$rec" || refuse run_not_started
-    # The marker is root's and readable: the signer closes a run whose VM booted as ABORTED:unclosed_after_boot.
     B=/var/lib/dms-restore-drill/supervisor-booted
     [ -d "$B" ] && [ ! -L "$B" ] || install -d -o root -g root -m 0755 -- "$B" || refuse booted_dir
     _root_ok "$B" || refuse booted_dir
-    ( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted
+    [ ! -e "$B/$NAME" ] || refuse already_booted
     W="${C[DMS_SUPERVISOR_QEMU_WORK_DIR]}"
     dms_trusted_dir "QEMU work directory" "$W" "$QUID" "$APP" > /dev/null || refuse work_dir_untrusted
     # R6F-L10: the directory above the work directory is root's, so nothing can swap the work directory itself.
@@ -145,6 +147,9 @@ case "$MODE" in
       dms_trusted_canonical "$CON" && [ "$(stat -c '%u %a' -- "$CON" 2> /dev/null)" = "${QUID} 700" ] || refuse console_dir_not_private
     fi
     mapfile -t PROPS < <(dms_vm_qemu_unit_properties "${C[DMS_SUPERVISOR_QEMU_USER]}" "$W" 30 "$CON")
+    # The marker is root's and readable, written only now that the VM boots (R6F-L15): the signer closes a run with a
+    # marker as ABORTED:unclosed_after_boot; a run boots once.
+    ( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted
     run_unit dmsqemu "${PROPS[@]}" -- /bin/bash "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" run "$NAME"
     exit $?
     ;;

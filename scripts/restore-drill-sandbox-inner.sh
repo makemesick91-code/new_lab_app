@@ -206,6 +206,61 @@ if ! "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -
 fi
 restore_part data "$R/list.schema" data
 restore_part post_data "$R/list.schema" post-data
+# R6F-P8: the restored rows under DIFFERENT session settings, before any function of the dump exists (P5-1), so only
+# builtins are evaluated. Every table CHECK must still hold, every stored generated column must equal its expression,
+# and every unique expression index must stay unique, under each profile (time zones far apart, every interval style,
+# float digits from -15 to 3, both bytea and XML binary outputs, identifier quoting on and off). A schema whose
+# result depends on the session can hold in the drill and fail in a real restore: such a drill FAILs. This is the
+# safety net under the guard's list of known session-dependent builtins (age(), quote_ident() …), on the actual data.
+# (Held in a variable: only the PostgreSQL binaries, bash, awk, head and wc may run in this unit.)
+read -r -d '' DIFF_SQL <<'SQL'
+DO $dmsdiff$
+DECLARE r record; n bigint; total bigint := 0; keys text; nn text;
+BEGIN
+  FOR r IN SELECT c.conrelid::pg_catalog.regclass AS rel, pg_catalog.pg_get_expr(c.conbin, c.conrelid) AS ex
+             FROM pg_catalog.pg_constraint c
+            WHERE c.contype OPERATOR(pg_catalog.=) 'c' AND c.conrelid OPERATOR(pg_catalog.<>) 0 AND c.oid OPERATOR(pg_catalog.>=) 16384 LOOP
+    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE NOT (%s)', r.rel, r.ex) INTO n;
+    total := total OPERATOR(pg_catalog.+) n;
+  END LOOP;
+  FOR r IN SELECT a.attrelid::pg_catalog.regclass AS rel, pg_catalog.quote_ident(a.attname::pg_catalog.text) AS col, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS ex
+             FROM pg_catalog.pg_attrdef d JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) d.adrelid AND a.attnum OPERATOR(pg_catalog.=) d.adnum
+            WHERE a.attgenerated OPERATOR(pg_catalog.<>) '' AND d.oid OPERATOR(pg_catalog.>=) 16384 LOOP
+    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE %s IS DISTINCT FROM (%s)', r.rel, r.col, r.ex) INTO n;
+    total := total OPERATOR(pg_catalog.+) n;
+  END LOOP;
+  FOR r IN SELECT i.indrelid::pg_catalog.regclass AS rel, i.indexrelid AS idx, i.indnkeyatts AS k, pg_catalog.pg_get_expr(i.indpred, i.indrelid) AS pr
+             FROM pg_catalog.pg_index i
+            WHERE i.indisunique AND i.indexprs IS NOT NULL AND i.indexrelid OPERATOR(pg_catalog.>=) 16384 LOOP
+    SELECT pg_catalog.string_agg('(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(r.idx, g, true) OPERATOR(pg_catalog.||) ')', ', ' ORDER BY g),
+           pg_catalog.string_agg('(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(r.idx, g, true) OPERATOR(pg_catalog.||) ') IS NOT NULL', ' AND ' ORDER BY g)
+      INTO keys, nn FROM pg_catalog.generate_series(1, r.k::pg_catalog.int4) AS g;
+    EXECUTE pg_catalog.format('SELECT pg_catalog.count(*) FROM (SELECT 1 FROM ONLY %s WHERE %s%s GROUP BY %s HAVING pg_catalog.count(*) OPERATOR(pg_catalog.>) 1) AS x',
+      r.rel, CASE WHEN r.pr IS NULL THEN '' ELSE '(' OPERATOR(pg_catalog.||) r.pr OPERATOR(pg_catalog.||) ') AND ' END, nn, keys) INTO n;
+    total := total OPERATOR(pg_catalog.+) n;
+  END LOOP;
+  IF total OPERATOR(pg_catalog.>) 0 THEN
+    RAISE EXCEPTION USING ERRCODE = 'R6B22', MESSAGE = 'environment-dependent schema';
+  END IF;
+END
+$dmsdiff$;
+SQL
+[ -n "$DIFF_SQL" ] || fail differential 30
+for profile in \
+  "TimeZone=UTC IntervalStyle=postgres extra_float_digits=1 bytea_output=hex xmlbinary=base64 quote_all_identifiers=off" \
+  "TimeZone=Asia/Makassar IntervalStyle=iso_8601 extra_float_digits=0 bytea_output=escape xmlbinary=hex quote_all_identifiers=on" \
+  "TimeZone=Etc/GMT+12 IntervalStyle=sql_standard extra_float_digits=-15 bytea_output=hex xmlbinary=hex quote_all_identifiers=off" \
+  "TimeZone=Pacific/Kiritimati IntervalStyle=postgres_verbose extra_float_digits=3 bytea_output=escape xmlbinary=base64 quote_all_identifiers=on"; do
+  opts="-c search_path=pg_catalog -c row_security=off -c default_transaction_read_only=on -c local_preload_libraries= -c statement_timeout=0"
+  for kv in $profile; do opts="${opts} -c ${kv}"; done
+  if ! PGOPTIONS="$opts" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -c "$DIFF_SQL" > /dev/null 2> "$R/differential.err" 3>&-; then
+    emit "replay_section=post_data_differential"
+    state="unknown"
+    while IFS= read -r l; do [[ "$l" =~ ERROR:\ +([0-9A-Z]{5})$ ]] && { state="${BASH_REMATCH[1]}"; break; }; done < "$R/differential.err"
+    emit "replay_sqlstate=$state"
+    fail environment_dependent 22
+  fi
+done
 restore_part functions "$R/list.functions"
 restore_part triggers "$R/list.triggers"
 restore_part acls "$R/list.acls"
@@ -226,10 +281,12 @@ pub="n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE n.nspname OPERATOR(pg_cat
 # the guard for CHECKs: no XML expression, no text-form conversion, no domain coercion, no session-dependent output or
 # XML function and no object-id type in any expression of the dump's own objects; such an index (or constraint) can
 # build in the drill and fail in a real restore, so the drill FAILs.
-regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regrole','regnamespace','regcollation','regconfig','regdictionary'])"
+regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regrole','regnamespace','regcollation','regconfig','regdictionary','aclitem'])"
+sens="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS s FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['float4','float8','bytea','time','timetz','interval','timestamptz','timestamp','date','money','xml','point','lseg','path','box','polygon','line','circle','record'])"
+tf=':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) '
 etrees="SELECT i.indexprs::pg_catalog.text AS t FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indexprs IS NOT NULL UNION ALL SELECT i.indpred::pg_catalog.text FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indpred IS NOT NULL UNION ALL SELECT k.conbin::pg_catalog.text FROM pg_catalog.pg_constraint k WHERE k.oid OPERATOR(pg_catalog.>=) 16384 AND k.conbin IS NOT NULL"
-efn="EXISTS (SELECT 1 FROM pg_catalog.regexp_matches(e.t, ':[a-z]*funcid ([0-9]+)', 'g') AS m JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) (m[1])::pg_catalog.oid WHERE p.proname OPERATOR(pg_catalog.=) ANY (ARRAY['float4out','float8out','byteaout','time_out','timetz_out','box_out','circle_out','line_out','lseg_out','path_out','point_out','poly_out']::pg_catalog.name[]) OR p.prorettype OPERATOR(pg_catalog.=) 'pg_catalog.xml'::pg_catalog.regtype OR 'pg_catalog.xml'::pg_catalog.regtype OPERATOR(pg_catalog.=) ANY ((p.proargtypes)::pg_catalog.oid[]))"
-envdep="$(vsql "WITH g AS (${regt}), e AS (${etrees}) SELECT pg_catalog.count(*) FROM e, g WHERE e.t OPERATOR(pg_catalog.~) '[{](XMLEXPR|COERCEVIAIO|COERCETODOMAIN) ' OR e.t OPERATOR(pg_catalog.~) (':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) (' OPERATOR(pg_catalog.||) g.r OPERATOR(pg_catalog.||) ')[ }]') OR ${efn}")" || fail verify 30
+efn="EXISTS (SELECT 1 FROM pg_catalog.regexp_matches(e.t, ':[a-z]*funcid ([0-9]+)', 'g') AS m JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) (m[1])::pg_catalog.oid WHERE p.proname OPERATOR(pg_catalog.=) ANY (ARRAY['float4out','float8out','byteaout','time_out','timetz_out','box_out','circle_out','line_out','lseg_out','path_out','point_out','poly_out']::pg_catalog.name[]) OR p.prorettype OPERATOR(pg_catalog.=) 'pg_catalog.xml'::pg_catalog.regtype OR 'pg_catalog.xml'::pg_catalog.regtype OPERATOR(pg_catalog.=) ANY ((p.proargtypes)::pg_catalog.oid[]) OR p.oid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::pg_catalog.regprocedure, 'pg_catalog.quote_ident(text)'::pg_catalog.regprocedure]::pg_catalog.oid[]))"
+envdep="$(vsql "WITH g AS (${regt}), h AS (${sens}), e AS (${etrees}) SELECT pg_catalog.count(*) FROM e, g, h WHERE e.t OPERATOR(pg_catalog.~) '[{](XMLEXPR|COERCETODOMAIN) ' OR (e.t OPERATOR(pg_catalog.~) '[{]COERCEVIAIO ' AND (e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) h.s OPERATOR(pg_catalog.||) ')[ }]') OR e.t OPERATOR(pg_catalog.~) ':varattno 0 ' OR e.t OPERATOR(pg_catalog.~) '[{]ROWEXPR ')) OR e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) g.r OPERATOR(pg_catalog.||) ')[ }]') OR ${efn}")" || fail verify 30
 num "$envdep" || fail verify_format 30
 if [ "$envdep" != 0 ]; then emit "replay_section=post_data_environment"; fail environment_dependent 22; fi
 tables="$(vsql "SELECT pg_catalog.count(*) FROM information_schema.tables WHERE table_schema OPERATOR(pg_catalog.=) 'public'")" || fail verify 30

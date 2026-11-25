@@ -291,6 +291,15 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   check Q8 "a file the QEMU unit writes to /dev/shm is gone with the unit (a private /dev/shm, R6F-L3)" "$([ ! -e /dev/shm/dmsqemu-probe ]; echo $?)" "host_shm_file=$([ -e /dev/shm/dmsqemu-probe ] && echo present || echo absent)"
   r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'for s in /run/systemd/journal/socket /run/dbus/system_bus_socket; do [ -e "$s" ] && echo "REACH $s"; done; echo DONE' 2>&1)"
   check Q9 "the QEMU unit reaches neither the journal nor the system D-Bus socket (R6F-L3)" "$([ "${r#*REACH}" = "$r" ] && [ "${r#*DONE}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | tr '\n' ' ' | head -c 80)"
+  # R6F-L13: no socket of any kind in the QEMU unit, so no host daemon (systemd-resolved: DNS to the outside) is reachable.
+  rsv='import socket
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect("/run/systemd/resolve/io.systemd.Resolve"); print("RESOLVER_REACHED")
+except OSError as e:
+    print("RESOLVER_REFUSED errno=%d" % e.errno)'
+  r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /usr/bin/python3 -I -c "$rsv" 2>&1)"
+  rc="$(sudo -n -u "$QEU" -- /usr/bin/python3 -I -c "$rsv" 2>&1)"
+  check Q10 "the QEMU unit cannot open any socket: the host resolver (DNS out of the host) is unreachable; reachable outside (control)" "$([ "${r#*RESOLVER_REFUSED}" != "$r" ] && [ "${rc#*RESOLVER_REACHED}" != "$rc" ]; echo $?)" "unit=$(printf '%s' "$r" | head -c 40) control=$(printf '%s' "$rc" | head -c 30)"
   r="$(sudo -n -l -U "$(id -un)" 2>&1 | grep -c "(${SIG})" || true)"
   check G7 "the operator's sudo rules name no signer command (R6F-E1: no route to the signer, not even verify)" "$(is "$r" 0)" "signer_rules=${r}"
   # A compromised SIGNER that drops its newest record and rewrites its own head log to match is caught by the witness.
