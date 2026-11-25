@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner, vanish (.dump).
+# launder, execbomb, dbowner, vanish, rolebomb, timebomb (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -126,7 +126,15 @@ CREATE FUNCTION public.a() RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RE
 CREATE TABLE public.zz_vanish (id int, g int GENERATED ALWAYS AS (public.a()) STORED);
 SQL
 dump rd_vanish vanish
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# Review round 6 (R6B-1): CHECK constraints that depend on the session or the clock carry no function id; they hold
+# where the archive was made and fail in another restore.
+base rd_rolebomb
+q -U app_runtime -d rd_rolebomb -c "ALTER TABLE items ADD CONSTRAINT items_role CHECK (current_user = ANY (ARRAY['app_runtime'::name, 'drill_restore'::name]))"
+dump rd_rolebomb rolebomb
+base rd_timebomb
+q -U app_runtime -d rd_timebomb -c "ALTER TABLE items ADD CONSTRAINT items_time CHECK (CURRENT_TIMESTAMP < (('2999-01-01 00:00:00'::text || '+00'::text))::timestamptz)"
+dump rd_timebomb timebomb
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do

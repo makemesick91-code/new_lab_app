@@ -176,7 +176,12 @@ it('inspects the untrusted archive only inside a hardened, network-less unit', f
     expect($code)->toContain('-p PrivateNetwork=yes')
         ->and($code)->toContain('-p RestrictAddressFamilies=AF_UNIX')
         ->and($code)->toContain('-p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M')
-        ->and($code)->toContain('BindReadOnlyPaths=${archive}:/opt/dmsinspect/archive.dump')
+        ->and($code)->toContain('binds="${archive}:/opt/dmsinspect/archive.dump ${binds}"')
+        // Review round 6 (R6A-3): on a drill host the archive is inspected in the root supervisor's DynamicUser system
+        // unit, fed on stdin, with no user namespace and so no AppArmor exception; bytes are counted under LC_ALL=C.
+        ->and($code)->toContain("system) printf '%s\\n' -p DynamicUser=yes ;;")
+        ->and($code)->toContain('sudo -n -- "$sup" inspect "$unit" < "$archive"')
+        ->and($code)->toContain('export LC_ALL=C')
         ->and($code)->toContain('-p "NoExecPaths=/ /tmp /var/tmp"')
         // P4V-3: no way to lift its own limits or leave the unit, no host /dev/shm, /etc hidden.
         ->and($code)->toContain('-p ProtectControlGroups=yes -p "InaccessiblePaths=/sys/fs/cgroup"')
@@ -213,7 +218,7 @@ it('refuses, never truncates, a TOC above its limit, in the real inspection unit
 
 it('ships the fixture archives with their generator and digests (synthetic data only)', function () {
     $sums = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/SHA256SUMS'));
-    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish'] as $f) {
+    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish', 'rolebomb', 'timebomb'] as $f) {
         $file = base_path("tests/Fixtures/restore-drill/{$f}.dump");
         expect($sums)->toContain(hash_file('sha256', $file)."  {$f}.dump");
     }

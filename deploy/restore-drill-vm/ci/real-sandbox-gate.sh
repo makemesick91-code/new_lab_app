@@ -193,69 +193,95 @@ d="$(drill X-time "$DWORK/xtime.dump" none 512 3)"
 e=$(( $(date +%s) - s ))
 check X-time "the same restore is stopped at a 3 s unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ -z "$(fact X-time sandbox_result)" ] && [ "$e" -lt 90 ]; echo $?)" "$d secs=${e}"
 
-# --- G, W, Q: separate identities for the signer, the witness and QEMU (VR-4, Phase 3); only in system mode, on the
-# drill-host layout provision-drill-host.sh installed. LIMIT (CI): the CI operator also has passwordless root, so these
-# checks prove the mechanism (accounts, file modes, sudoers, caller checks), not a boundary against the operator.
+# --- G, W, Q: the runner, signer, witness and QEMU identities (VR-4, Phase 3, review round 6); only in system mode, on
+# the drill-host layout provision-drill-host.sh installed. LIMIT (CI): the CI operator also has passwordless root
+# (GitHub's own sudoers rule), so these checks prove the mechanism (accounts, file modes, sudoers, caller checks,
+# unit properties), not a boundary against the operator; that is reported as a LIMIT, never hidden.
 if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   # shellcheck source=/dev/null
   . "$REPO/scripts/lib/restore-evidence.sh"
-  SIG=dmsdrill-signer; WIT=dmsdrill-witness; QEU=dmsdrill-qemu; L=/usr/local/lib/dms-restore-drill
+  # shellcheck source=/dev/null
+  . "$REPO/scripts/lib/restore-vm.sh"
+  RUNR=dmsdrill-runner; SIG=dmsdrill-signer; WIT=dmsdrill-witness; QEU=dmsdrill-qemu; L=/usr/local/lib/dms-restore-drill
   SCMD="$L/signer/restore-drill-evidence-signer.sh"; WCMD="$L/witness/restore-drill-evidence-witness.sh"
   KEY=/var/lib/dmsdrill-signer/signing-key
-  # A request consistent with the signer's policy (P4V-4); its image digest is the one provision-drill-host.sh pinned.
-  req() { # <decision> [guest per-table digest]
+  limit G0 "CI: the operator has passwordless root here, so identity separation is shown as a mechanism only" "github_hosted_sudo"
+  req() { # <decision> <run id> [guest per-table digest]
     local h; h="$(printf 'd%.0s' {1..64})"
-    printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=%s\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\nDMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' \
-      "$(dms_sandbox_unit_name)" "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"
+    printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_OPERATOR=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=%s\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\n' \
+      "$2" "$(id -un)" "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ "$1" = STARTED ]; then
+      printf 'DMS_DRILL_EVIDENCE_BACKUP_SHA256=none\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=0\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=none\nDMS_DRILL_EVIDENCE_MANIFEST_ID=none\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=none\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=none\n'
+      printf 'DMS_DRILL_EVIDENCE_LIMITS=%s\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=none\nDMS_DRILL_EVIDENCE_EXPECTED=none\nDMS_DRILL_EVIDENCE_GUEST_ASSERTED=none\nDMS_DRILL_EVIDENCE_DECISION=STARTED\n' "$DMS_DRILL_EVIDENCE_LIMITS_D6"
+      return 0
+    fi
+    printf 'DMS_DRILL_EVIDENCE_BACKUP_SHA256=%s\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=1\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=expected-sha256\nDMS_DRILL_EVIDENCE_MANIFEST_ID=gate-manifest-1\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=%s\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=%s\n' \
+      "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" "$(printf 'c%.0s' {1..64})"
     printf 'DMS_DRILL_EVIDENCE_LIMITS=%s\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=%s\n' "$DMS_DRILL_EVIDENCE_LIMITS_D6" "$DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS"
     printf 'DMS_DRILL_EVIDENCE_EXPECTED=tables=2,rows=6,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1\n' "$h"
-    printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=ok,tables=2,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo\n' "${2:-$h}"
-    printf 'DMS_DRILL_EVIDENCE_DECISION=%s\n' "${1:-GO}"
+    printf 'DMS_DRILL_EVIDENCE_GUEST_ASSERTED=restore=ok,tables=2,per_table_digest=%s,catalog_shape=1:2:0:2:0:0:1,user_code=0,user_code_executed=0,fidelity=0:2:1:0,vm_ifaces=lo\n' "${3:-$h}"
+    printf 'DMS_DRILL_EVIDENCE_DECISION=%s\n' "$1"
   }
-  sign() { sudo -n -u "$SIG" -- "$SCMD" sign 2>&1; }
+  # The runner identity (which only ever runs the installed orchestrator on a drill host) asks the signer.
+  sign() { sudo -n -u "$RUNR" -- sudo -n -u "$SIG" -- "$SCMD" sign 2>&1; }
   as() { local u="$1"; shift; sudo -n -u "$u" -- "$@" 2>&1; }
-  r="$(req GO | sign)"
-  check G1 "the operator obtains a witnessed GO record only through sudo to the signer, from a verified root install" "$([ "${r#RECORD }" != "$r" ] && [ "${r% witnessed}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
-  rec1="$(sudo cat /var/lib/dmsdrill-signer/store/000001/record 2> /dev/null)"
-  check G1-install "the signer recorded the install it verified itself (root-owned, digest)" "$([[ "$rec1" =~ DMS_DRILL_EVIDENCE_INSTALL=root:[0-9a-f]{64} ]]; echo $?)" "$(printf '%s' "$rec1" | grep -m1 INSTALL)"
-  r="$(req GO "$(printf 'e%.0s' {1..64})" | sign)"
-  check G5 "the signer refuses a contradictory GO (guest digest differs from the expected one, P4V-4)" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
-  r="$(req GO | bash -c 'ulimit -f 1; exec sudo -n -u "$0" -- "$1" sign' "$SIG" "$SCMD" 2>&1)"
+  RUN1="$(dms_sandbox_unit_name)"
+  r="$(req GO "$RUN1" | sign)"
+  check G8 "an outcome without an open STARTED record is refused (contract 4, R6C-3)" "$([ "${r#*no open STARTED}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
+  r="$(req STARTED "$RUN1" | sign)"; r2="$(req GO "$RUN1" | sign)"
+  check G1 "through the runner identity: a STARTED record, then the run's witnessed GO, from a verified root install" "$([ "${r#RECORD }" != "$r" ] && [ "${r2#RECORD }" != "$r2" ] && [ "${r2#* witnessed}" != "$r2" ]; echo $?)" "$(printf '%s | %s' "${r:0:30}" "${r2:0:40}")"
+  rec2="$(sudo cat /var/lib/dmsdrill-signer/store/000002/record 2> /dev/null)"
+  check G1-install "the signer recorded the install it verified itself: code and configuration digests" "$([[ "$rec2" =~ DMS_DRILL_EVIDENCE_INSTALL=root:[0-9a-f]{64},config:[0-9a-f]{64} ]]; echo $?)" "$(printf '%s' "$rec2" | grep -m1 INSTALL | head -c 60)"
+  r="$(req GO "$RUN1" | sign)"
+  check G9 "a closed run cannot be recorded again (replay)" "$([ "${r#RECORD }" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  RUN2="$(dms_sandbox_unit_name)"; RUN3="$(dms_sandbox_unit_name)"
+  r="$(req STARTED "$RUN2" | sign)"; r2="$(req STARTED "$RUN3" | sign)"
+  check G10 "a start that never closed is closed by the signer as ABORTED:unclosed before the next start (R6C-3)" "$([ "${r2#*closed ${RUN2}}" != "$r2" ] && sudo grep -rqx 'DMS_DRILL_EVIDENCE_DECISION=ABORTED:unclosed' /var/lib/dmsdrill-signer/store; echo $?)" "$(printf '%s' "$r2" | head -c 100)"
+  r="$(req "FAIL:per_table_rows_mismatch" "$RUN3" "$(printf 'e%.0s' {1..64})" | sign)"
+  check G5 "a FAIL whose guest digest differs is recorded; a GO like it would be refused (P4V-4)" "$([ "${r#RECORD }" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  RUN4="$(dms_sandbox_unit_name)"
+  req STARTED "$RUN4" | sign > /dev/null
+  r="$(req GO "$RUN4" "$(printf 'e%.0s' {1..64})" | sign)"
+  check G5b "the signer refuses a contradictory GO (guest digest differs from the expected one)" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  r="$(req "ABORTED:vm" "$RUN4" | bash -c 'ulimit -f 1; exec sudo -n -u "$0" -- sudo -n -u "$1" -- "$2" sign' "$RUNR" "$SIG" "$SCMD" 2>&1)"
   v="$(as "$SIG" "$SCMD" verify)"
-  # P4V-5: whatever sudo does with the caller's limit (it may reset it), no record may ever be truncated: the request
-  # is refused, or the record is complete and the whole store still verifies.
-  check G6 "a caller's file-size limit never yields a truncated record: refused, or complete and verifying (P4V-5)" \
-    "$({ [ "${r#RECORD }" = "$r" ] || [ "${v#VERIFIED }" != "$v" ]; } && [ "${v#VERIFIED }" != "$v" ]; echo $?)" "$(printf '%s | %s' "${r:0:40}" "${v:0:40}")"
-  r="$(req GO | DMS_SIGNER_CONF=/etc/dms-restore-drill/signer.conf bash "$SCMD" sign 2>&1)"
-  check G2 "calling the signer directly as the operator is refused" "$([ "${r#*SIGNER: }" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  check G6 "a caller's file-size limit never yields a truncated record: refused, or complete and verifying (P4V-5)" "$([ "${v#VERIFIED }" != "$v" ]; echo $?)" "$(printf '%s | %s' "${r:0:40}" "${v:0:40}")"
+  RUN5="$(dms_sandbox_unit_name)"
+  r="$(req STARTED "$RUN5" | sudo -n -u "$SIG" -- "$SCMD" sign 2>&1)"
+  check G2 "the operator itself gets no record: the signer accepts only the runner identity (R6C-1)" "$([ "${r#*caller is not allowed}" != "$r" ] || [ "${r#*different identity}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   check G3 "the operator cannot read the signer's key" "$([ ! -r "$KEY" ]; echo $?)" "$(sudo stat -c '%U %a' "$KEY" 2> /dev/null)"
-  r="$(printf 'DMS_DRILL_EVIDENCE_DECISION=REFUSED:manifest\n' | sign)"
-  check G7 "a malformed refusal request is refused, never signed" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$SIG" "$SCMD" verify)"
   NREC="$(sudo find /var/lib/dmsdrill-signer/store -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | wc -l)"
   check G4 "the signer's store verifies against its head log and EVERY witnessed digest" "$(starts "$r" "VERIFIED ${NREC} ")" "$(printf '%s' "$r" | head -c 80) records=${NREC}"
   r="$(as "$WIT" "$WCMD" show)"
   last="$(sudo sha256sum "/var/lib/dmsdrill-signer/store/$(printf '%06d' "$NREC")/record" | cut -d' ' -f1)"
   check W1 "the operator reads the witness log: one line per record, the newest equal to the store's head" "$([ "$(printf '%s\n' "$r" | wc -l)" = "$NREC" ] && [ "$(printf '%s\n' "$r" | tail -n 1)" = "$(printf '%06d' "$NREC") ${last}" ]; echo $?)" "$(printf '%s' "$r" | tail -n 1 | head -c 80)"
-  r="$(as "$WIT" "$WCMD" append 000002 "$(printf 'f%.0s' {1..64})")"
+  r="$(as "$WIT" "$WCMD" append "$(printf '%06d' $((NREC + 1)))" "$(printf 'f%.0s' {1..64})")"
   check W2 "the operator cannot append to the witness log (only the signer may)" "$([ "${r#WITNESSED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(sudo -n -u "$SIG" -- sudo -n -u "$WIT" -- "$WCMD" append "$(printf '%06d' "$NREC")" "$(printf 'f%.0s' {1..64})" 2>&1)"
   check W3 "even the signer cannot replay or rewrite a witnessed sequence number" "$([ "${r#WITNESSED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$QEU" cat "$KEY")"
-  check Q1 "the QEMU identity cannot read the signer's key" "$([ "${r#*Permission denied}" != "$r" ] || [ "${r#*not allowed}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  check Q1 "the QEMU identity cannot read the signer's key" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(sudo -n -u "$QEU" -- sudo -n -u "$SIG" -- "$SCMD" verify 2>&1)"
   check Q2 "the QEMU identity cannot reach the signer (no sudoers rule)" "$([ "${r#VERIFIED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
-  r="$(as "$QEU" ls /var/lib/dms-restore-drill/operator)"
-  check Q3 "the QEMU identity cannot read the operator's work directory" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  r="$(as "$QEU" ls /var/lib/dms-restore-drill/runner)"
+  check Q3 "the QEMU identity cannot read the runner's work directory" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(as "$QEU" sh -c 'echo x >> /etc/dms-restore-drill/qemu.conf')"
   check Q4 "the QEMU identity cannot change its own configuration (root-owned)" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
-  r="$(as "$QEU" sh -c 'echo x >> /var/lib/dmsdrill-witness/heads.log; echo x >> /var/lib/dmsdrill-signer/head.log')"
-  check Q5 "the QEMU identity cannot write the witness or the signer's head log" "$([ "${r#*Permission denied}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
+  # R6A-1, R6A-2: under the supervisor's exact unit properties, the QEMU account reaches no network, and a process that
+  # kills its parent and hides is still gone when the unit ends (the whole cgroup is killed).
+  mapfile -t QP < <(dms_vm_qemu_unit_properties "$QEU" /var/lib/dmsdrill-qemu/work 1)
+  r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c '{ : 3<> /dev/tcp/1.1.1.1/53; } 2> /dev/null && echo CONNECTED || echo BLOCKED; ls /sys/class/net | tr "\n" " "' 2>&1)"
+  check Q5 "the QEMU unit has no network: no outbound connection, loopback only (R6A-2)" "$([ "${r#*BLOCKED}" != "$r" ] && [ "${r#*CONNECTED}" = "$r" ]; echo $?)" "$(printf '%s' "$r" | tr -d '\n' | head -c 80)"
+  sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c '( setsid sleep 600 & ) ; sleep 1' > /dev/null 2>&1
+  nap 2
+  left="$(pgrep -u "$QEU" -c 2> /dev/null || true)"
+  check Q6 "a process that leaves its parent does not outlive the QEMU unit (cgroup kill, R6A-1)" "$([ "${left:-0}" = 0 ]; echo $?)" "qemu_processes_left=${left:-0}"
   # A compromised SIGNER that drops its newest record and rewrites its own head log to match is caught by the witness.
   sudo -n -u "$SIG" -- sh -c "rm -rf /var/lib/dmsdrill-signer/store/$(printf '%06d' "$NREC") && head -n $((NREC - 1)) /var/lib/dmsdrill-signer/head.log > /var/lib/dmsdrill-signer/head.tmp && mv /var/lib/dmsdrill-signer/head.tmp /var/lib/dmsdrill-signer/head.log"
   r="$(as "$SIG" "$SCMD" verify)"
   check W4 "a rollback by the signer's own identity is detected against the witness" "$([ "${r#*rollback or truncation}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
-  r="$(req GO | sign)"
+  r="$(req STARTED "$(dms_sandbox_unit_name)" | sign)"
   check W5 "and no new record is accepted onto the rolled-back store" "$([ "${r#RECORD }" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
 fi
 

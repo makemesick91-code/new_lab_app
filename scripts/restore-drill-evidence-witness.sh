@@ -68,6 +68,11 @@ dms_trusted_canonical "$LOG" || { echo "WITNESS: the log path is not canonical a
 # The log itself must be well formed and gapless before anything is read from it or added to it.
 log_ok() {
   local n=0 seq sha
+  # R6C-6: exact lines only, each ending with its newline.
+  if [ -s "$LOG" ]; then
+    [ "$(tail -c 1 -- "$LOG" | od -An -tx1 | tr -d ' ')" = 0a ] || return 1
+    ! grep -qvE '^[0-9]{6} [0-9a-f]{64}$' -- "$LOG" || return 1
+  fi
   while IFS=' ' read -r seq sha; do
     n=$((n + 1))
     [ "$seq" = "$(printf '%06d' "$n")" ] && [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || return 1
@@ -75,6 +80,7 @@ log_ok() {
   [ "$(wc -l < "$LOG")" = "$n" ]
 }
 
+trap '' INT TERM HUP QUIT USR1 USR2 ALRM PIPE TSTP TTIN TTOU
 exec {lock_fd}>> "$(dirname -- "$LOG")/.lock"
 flock -w 30 "$lock_fd" || { echo "WITNESS: the log is locked"; exit 1; }
 log_ok || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
@@ -82,7 +88,10 @@ log_ok || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit
 case "$MODE" in
   show)
     [[ " ${C[DMS_WITNESS_SHOW_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not read"; exit 1; }
-    cat -- "$LOG"
+    # R6C-2: copied under the lock, printed after it is released (a reader that never drains cannot hold the log).
+    copy="$(cat -- "$LOG")"
+    exec {lock_fd}>&-
+    [ -z "$copy" ] || printf '%s\n' "$copy"
     ;;
   append)
     [[ " ${C[DMS_WITNESS_APPEND_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not append"; exit 1; }
@@ -91,7 +100,6 @@ case "$MODE" in
     want="$(printf '%06d' $(( $(wc -l < "$LOG") + 1 )))"
     # No replay, no rollback, no gap: only the next sequence number is accepted, exactly once.
     [ "$SEQ" = "$want" ] || { echo "WITNESS: refused: ${SEQ} is not the next sequence number (${want})"; exit 1; }
-    trap '' INT TERM HUP QUIT
     tmp="$(mktemp "${LOG}.XXXXXX")" || { echo "WITNESS: cannot write"; exit 1; }
     if ! { cat -- "$LOG" > "$tmp" && printf '%s %s\n' "$SEQ" "$SHA" >> "$tmp" && sync -- "$tmp" \
       && mv -f -- "$tmp" "$LOG" && sync -- "$(dirname -- "$LOG")"; }; then

@@ -69,18 +69,27 @@ the only supported way to replay a backup for a drill. Design and evidence:
     checkout records `install=operator` and is not acceptance evidence.
   - An unprivileged operator account with a lingering user manager (`loginctl enable-linger`; XDG_RUNTIME_DIR
     `/run/user/<uid>`). It runs QEMU and the archive inspection, and holds no other sudo right.
-  - A separate signer account owning the signing key, `allowed_signers`, the store, the head log and its
-    configuration (`/etc/dms-restore-drill/signer.conf`, mode 0600).
+  - Three further separate system accounts, each owning only its own state:
+    - a **signer** account (signing key, `allowed_signers`, store, head log);
+    - a **witness** account (the append-only head log);
+    - a **QEMU** account (VM work directory, read access to `/dev/kvm`; no sudoers rule of its own).
+  - Root-owned configuration in `/etc/dms-restore-drill/`, each file readable by its own account and writable by
+    root alone: `signer.conf` (`DMS_SIGNER_PROFILE=drill-host`), `witness.conf` and `qemu.conf` (pinned image and
+    digest, QEMU binaries). The drill image itself is root-owned.
   - The signer entrypoint and its two libraries installed root-owned outside any checkout.
-  - One sudoers rule: the operator may run exactly `<entrypoint> sign` and `<entrypoint> verify` as the signer, with
-    no SETENV, and `secure_path` set.
+  - Exactly four sudoers rules, with no SETENV and `secure_path` set:
+    - the operator may run the signer's `sign` and `verify` as the signer;
+    - the operator may run the QEMU launcher's `run` as the QEMU account;
+    - the operator may run the witness's `show` as the witness;
+    - the signer may run the witness's `append` and `show` as the witness.
+  - `deploy/restore-drill-vm/ci/provision-drill-host.sh` builds exactly this layout on a disposable CI runner, as a
+    reference.
   - In the signer configuration, `DMS_SIGNER_IMAGE_SHA256` lists the digests of the drill images this host may
     report. The signer refuses a record for any other image, another host, other limits, or a contradictory GO.
   - The trusted drill configuration (`/etc/dms-restore-drill/drill.conf`): image and pinned digest, manifest trust
     anchor, revocation list, extension allowlist, signer account and entrypoint, pinned PostgreSQL 16.15+ client
     directory, work directory.
   - The image built by `scripts/restore-drill-vm-image.sh` with the same extension allowlist.
-  - `deploy/restore-drill-vm/ci/provision-signer.sh` shows the layout but runs only on a disposable CI runner.
 
 ```bash
 # On the ISOLATED DRILL HOST only (never on production). Configuration: a trusted file, by default

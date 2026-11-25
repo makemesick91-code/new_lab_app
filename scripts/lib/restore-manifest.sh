@@ -107,7 +107,7 @@ _dms_manifest_check_content() {
   local -A uniq=()
   for r in ${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}; do
     [[ "$r" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || { echo "manifest: role name '${r}' is not a plain lowercase role name"; return 1; }
-    case "$r" in drill_super | drill_restore | pg_*) echo "manifest: role name '${r}' is reserved"; return 1 ;; esac
+    case "$r" in drill_super | drill_restore* | pg_*) echo "manifest: role name '${r}' is reserved"; return 1 ;; esac
     [ -z "${uniq[$r]:-}" ] || { echo "manifest: role '${r}' listed twice"; return 1; }
     uniq[$r]=1
     [ "$r" = "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}" ] && runtime_ok=1

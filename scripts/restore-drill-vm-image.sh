@@ -37,15 +37,24 @@ qemu-img resize -q "$OUT" 10G
 PKG_ARGS=(--install postgresql-16)
 if [ "$PKG_MODE" = host-apt ]; then
   qemu-img convert -O qcow2 "$SRC" "$STAGE/sim.qcow2"
-  virt-customize -a "$STAGE/sim.qcow2" --no-network --run-command 'apt-get install -s -y postgresql-16 > /var/tmp/dms-sim.txt 2>&1 || true'
+  # R6C-10: the image's OWN package index also gives the SHA-256 of every package version it resolved.
+  virt-customize -a "$STAGE/sim.qcow2" --no-network --run-command 'apt-get install -s -y postgresql-16 > /var/tmp/dms-sim.txt 2>&1 || true; awk '"'"'/^Inst / { v = $3; sub(/^\(/, "", v); print $2 "=" v }'"'"' /var/tmp/dms-sim.txt | while read -r pv; do apt-cache show "$pv" | awk -v p="$pv" '"'"'/^SHA256: / { print p, $2; exit }'"'"'; done > /var/tmp/dms-sha.txt'
   virt-cat -a "$STAGE/sim.qcow2" /var/tmp/dms-sim.txt > "$STAGE/sim.txt"
+  virt-cat -a "$STAGE/sim.qcow2" /var/tmp/dms-sha.txt > "$STAGE/sha.txt"
   # Exactly the versions the IMAGE's own apt resolved ("Inst <pkg> (<version> <origin> [arch])"): pkg=version, so the
   # host never substitutes a version from another repository it may have configured.
   mapfile -t PKGS < <(awk '/^Inst / { v = $3; sub(/^\(/, "", v); print $2 "=" v }' "$STAGE/sim.txt")
   [ "${#PKGS[@]}" -ge 1 ] && printf '%s\n' "${PKGS[@]}" | grep -q '^postgresql-16=16\.' || { echo "FATAL: the package simulation did not resolve postgresql-16"; cat "$STAGE/sim.txt"; exit 2; }
   mkdir -p "$STAGE/debs"
   (cd "$STAGE/debs" && apt-get download "${PKGS[@]}")
-  echo "offline packages: ${PKGS[*]}"
+  # Every downloaded package must be exactly the one the image's own index names (no other repository's build).
+  for deb in "$STAGE"/debs/*.deb; do
+    pv="$(dpkg-deb -f "$deb" Package)=$(dpkg-deb -f "$deb" Version)"
+    want="$(awk -v p="$pv" '$1 == p { print $2 }' "$STAGE/sha.txt")"
+    [ -n "$want" ] && [ "$(sha256sum -- "$deb" | cut -d' ' -f1)" = "$want" ] || { echo "FATAL: ${pv} does not match the image's own package index"; exit 2; }
+  done
+  [ "$(find "$STAGE/debs" -name '*.deb' | wc -l)" = "${#PKGS[@]}" ] || { echo "FATAL: the downloaded package set differs from the image's resolution"; exit 2; }
+  echo "offline packages, each verified against the image's own index: ${PKGS[*]}"
   PKG_ARGS=(--no-network --copy-in "$STAGE/debs:/var/tmp" --run-command 'dpkg -i /var/tmp/debs/*.deb && rm -rf /var/tmp/debs')
 fi
 virt-customize -a "$OUT" \

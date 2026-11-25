@@ -79,7 +79,18 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
    - The orchestrator trusts only inputs owned by root or by the owner of its own script, and records `install=root`
      or `install=operator`. Acceptance needs a root-owned install.
    - The readiness service is not wired to it without a separate change.
-10. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
+10. **Phase 3, four identities:**
+    - QEMU runs only through `scripts/restore-drill-qemu-launcher.sh` under its own account. The launcher's
+      root-owned configuration pins the image, binaries and work directory; D6 is fixed in the launcher. The operator
+      passes only the encrypted input disk and the run id.
+    - Every published record is appended to the witness (`scripts/restore-drill-evidence-witness.sh`, a separate
+      account). The store must match every witnessed digest.
+    - Once the configuration is trusted, refused and aborted drills are `REFUSED:` and `ABORTED:` records.
+    - The signer (drill-host profile, root-owned configuration) verifies the root-owned install itself
+      (`INSTALL=root:<sha256>`) and refuses a GO from any other install. The operator never states its install.
+    - The guest keeps the plaintext archive on a RAM tmpfs. The working space is sized from the uncompressed data
+      size and refused above D6.
+11. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
    patient data and is removed with the run directory.
 
 ## Acceptance before A-1 may be reported for closure
@@ -97,4 +108,4 @@ Each item needs real evidence; a configuration-only claim is not enough:
 
 Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-boot-gate.sh`, on disposable
 infrastructure only (workflow proposal, inactive until the owner decides). A gate that did not run is NOT RUN, never
-PASS. `provision-signer.sh` runs only on a disposable CI runner.
+PASS. `provision-drill-host.sh` runs only on a disposable CI runner.

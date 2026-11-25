@@ -65,7 +65,7 @@ case "$MODE" in sign | verify | recover-head) : ;; *) echo "usage: restore-drill
 CONF="$DMS_SIGNER_CONF"
 why="$(dms_trusted_file "signer configuration" "$CONF" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 declare -A C=()
-KEYS="DMS_SIGNER_KEY DMS_SIGNER_PRINCIPAL DMS_SIGNER_ANCHOR DMS_SIGNER_STORE DMS_SIGNER_HEAD_LOG DMS_SIGNER_ALLOWED_CALLERS DMS_SIGNER_IMAGE_SHA256 DMS_SIGNER_PROFILE DMS_SIGNER_WITNESS_USER DMS_SIGNER_WITNESS_COMMAND DMS_SIGNER_ORCHESTRATOR_DIR DMS_SIGNER_QEMU_LAUNCHER"
+KEYS="DMS_SIGNER_KEY DMS_SIGNER_PRINCIPAL DMS_SIGNER_ANCHOR DMS_SIGNER_STORE DMS_SIGNER_HEAD_LOG DMS_SIGNER_ALLOWED_CALLERS DMS_SIGNER_IMAGE_SHA256 DMS_SIGNER_PROFILE DMS_SIGNER_WITNESS_USER DMS_SIGNER_WITNESS_COMMAND DMS_SIGNER_ORCHESTRATOR_DIR DMS_SIGNER_QEMU_LAUNCHER DMS_SIGNER_SUPERVISOR"
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
   [[ "$line" =~ ^(DMS_SIGNER_[A-Z0-9_]+)=([A-Za-z0-9_./@:\ -]{1,255})$ ]] || { echo "SIGNER: unexpected line in ${CONF}"; exit 2; }
@@ -88,7 +88,7 @@ case "$PROFILE" in
       || { echo "SIGNER: the witness entrypoint is not a root-owned install"; exit 2; }
     ;;
   development)
-    [ "${C[DMS_SIGNER_WITNESS_USER]}" = none ] && [ "${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" = none ] || { echo "SIGNER: the development profile has no witness and no install"; exit 2; }
+    [ "${C[DMS_SIGNER_WITNESS_USER]}" = none ] && [ "${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" = none ] && [ "${C[DMS_SIGNER_SUPERVISOR]}" = none ] || { echo "SIGNER: the development profile has no witness and no install"; exit 2; }
     ;;
   *) echo "SIGNER: DMS_SIGNER_PROFILE must be drill-host or development"; exit 2 ;;
 esac
@@ -97,15 +97,19 @@ esac
 # (no sticky exception). Prints root:<sha256 over "<sha256>  <path>" lines> or unverified:<reason>.
 install_state() {
   [ "$PROFILE" = drill-host ] || { echo "unverified:development"; return 0; }
-  local -a files=() lines=()
-  local f d st o="${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" q="${C[DMS_SIGNER_QEMU_LAUNCHER]}" w="${C[DMS_SIGNER_WITNESS_COMMAND]}"
+  local -a files=() lines=() cfg=()
+  local f d st o="${C[DMS_SIGNER_ORCHESTRATOR_DIR]}" q="${C[DMS_SIGNER_QEMU_LAUNCHER]}" w="${C[DMS_SIGNER_WITNESS_COMMAND]}" sv="${C[DMS_SIGNER_SUPERVISOR]}" code
   shopt -s nullglob
   files=("$o/scripts/restore-drill-vm.sh" "$o"/scripts/lib/*.sh "$o/deploy/production-host.conf" "$q" "$(dirname -- "$q")"/lib/*.sh \
-    "$w" "$(dirname -- "$w")"/lib/*.sh "$HERE/$(basename "${BASH_SOURCE[0]}")" "$HERE"/lib/*.sh)
+    "$sv" "$(dirname -- "$sv")"/lib/*.sh "$w" "$(dirname -- "$w")"/lib/*.sh "$HERE/$(basename "${BASH_SOURCE[0]}")" "$HERE"/lib/*.sh)
+  cfg=(/etc/dms-restore-drill/*.conf)
   shopt -u nullglob
-  [ "${#files[@]}" -ge 8 ] || { echo "unverified:install_incomplete"; return 0; }
-  for f in "${files[@]}"; do
-    [ -f "$f" ] && [ ! -L "$f" ] && dms_trusted_canonical "$f" || { echo "unverified:install_not_canonical"; return 0; }
+  # R6C-8: the orchestrator's own library directory must be there in full, not only "enough files".
+  for f in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
+    [ -f "$o/scripts/lib/$f" ] || { echo "unverified:install_incomplete"; return 0; }
+  done
+  for f in "${files[@]}" "${cfg[@]}"; do
+    [ -f "$f" ] && [ ! -L "$f" ] && dms_trusted_canonical "$f" && [ -r "$f" ] || { echo "unverified:install_not_canonical"; return 0; }
     st="$(stat -c '%u %a' -- "$f")"
     [ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#022 )) -eq 0 ] || { echo "unverified:install_not_root_owned"; return 0; }
     d="$(dirname -- "$f")"
@@ -115,9 +119,15 @@ install_state() {
       [ "$d" = / ] && break
       d="$(dirname -- "$d")"
     done
-    lines+=("$(sha256sum -- "$f")")
   done
-  echo "root:$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+  # R6C-8: the drill configuration must point at exactly the signer and the supervisor this digest covers.
+  grep -qx "DMS_DRILL_SIGNER_COMMAND=$HERE/$(basename "${BASH_SOURCE[0]}")" /etc/dms-restore-drill/drill.conf 2> /dev/null \
+    && grep -qx "DMS_DRILL_SUPERVISOR_COMMAND=${sv}" /etc/dms-restore-drill/drill.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
+  for f in "${files[@]}"; do lines+=("$(sha256sum -- "$f")"); done
+  code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+  lines=()
+  for f in "${cfg[@]}"; do lines+=("$(sha256sum -- "$f")"); done
+  echo "root:${code},config:$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 }
 # The witness (Phase 3): its log is read for every verification and extended after every publication.
 witness_show() { sudo -n -u "${C[DMS_SIGNER_WITNESS_USER]}" -- "${C[DMS_SIGNER_WITNESS_COMMAND]}" show; }
@@ -128,21 +138,25 @@ done
 # P4V-7: the key is the signer's own and readable by nobody else (ssh-keygen checks that only for its caller's keys).
 [ "$(stat -c '%u' -- "${C[DMS_SIGNER_KEY]}")" = "$(id -u)" ] && [ $(( 8#$(stat -c '%a' -- "${C[DMS_SIGNER_KEY]}") & 8#077 )) -eq 0 ] \
   || { echo "SIGNER: the signing key must be owned by the signer with mode 0600 or 0400"; exit 2; }
-why="$(dms_trusted_dir DMS_SIGNER_STORE "${C[DMS_SIGNER_STORE]}" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
+STORE="${C[DMS_SIGNER_STORE]}"
+why="$(dms_trusted_dir DMS_SIGNER_STORE "$STORE" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 HEADLOG="${C[DMS_SIGNER_HEAD_LOG]}"
 # P4V-7: the head log is an absolute, canonical path in a directory only the signer (or root) can change.
 dms_trusted_canonical "$HEADLOG" || { echo "SIGNER: the head log path is not canonical and absolute"; exit 2; }
 why="$(dms_trusted_dir "head log directory" "$(dirname -- "$HEADLOG")" "$(id -u)" "$(cd "$HERE/.." && pwd)")" || { echo "SIGNER: ${why}"; exit 2; }
 [ ! -L "$HEADLOG" ] && { [ ! -e "$HEADLOG" ] || [ "$(stat -c '%u' -- "$HEADLOG")" = "$(id -u)" ]; } || { echo "SIGNER: the head log is not the signer's"; exit 2; }
 [ -e "$HEADLOG" ] || : > "$HEADLOG"
+# R6C-2: no relayed or terminal signal stops the signer half way (sudo relays every catchable signal to it).
+trap '' INT TERM HUP QUIT USR1 USR2 ALRM PIPE TSTP TTIN TTOU
+TMP="$(mktemp -d)"
+trap 'rm -rf -- "$TMP"' EXIT
 
 # --- sign: only a sudo caller on the allowlist, never the signer itself; the request is read BEFORE the store lock
 # is taken, with a deadline, so a caller that never closes its input cannot hold the lock (P4V-5). ------------------
 if [ "$MODE" = sign ]; then
   [[ "${SUDO_UID:-}" =~ ^[0-9]+$ ]] && [ "$SUDO_UID" != "$(id -u)" ] || { echo "SIGNER: refused: requests come only through sudo from a different identity (VR-4)"; exit 1; }
   [[ "${SUDO_USER:-}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [[ " ${C[DMS_SIGNER_ALLOWED_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "SIGNER: refused: caller is not allowed"; exit 1; }
-  REQ="$(mktemp)"
-  trap 'rm -f -- "$REQ"' EXIT
+  REQ="$TMP/request"
   timeout 30 head -c $((DMS_DRILL_EVIDENCE_MAX_BYTES + 1)) > "$REQ" || { echo "SIGNER: refused: the request was not complete within 30 seconds"; exit 1; }
   why="$(dms_evidence_request_parse "$REQ")" || { echo "SIGNER: refused: ${why}"; exit 1; }
   dms_evidence_request_parse "$REQ" > /dev/null
@@ -154,62 +168,99 @@ if [ "$MODE" = sign ]; then
   fi
 fi
 
-exec {lock_fd}>> "${C[DMS_SIGNER_STORE]}/.lock"
+exec {lock_fd}>> "${STORE}/.lock"
 flock -w 30 "$lock_fd" || { echo "SIGNER: the store is locked"; exit 1; }
+unlock() { exec {lock_fd}>&-; }
+# The witness log, read under the store lock (drill-host). R6C-3: everything is printed only after the lock is gone,
+# so a reader that never drains its output cannot hold the store.
+read_witness() { [ "$PROFILE" = drill-host ] || return 0; witness_show > "$TMP/witness" 2> /dev/null; }
+WARG() { [ "$PROFILE" = drill-host ] && printf '%s' "$TMP/witness"; }
 
 case "$MODE" in
   verify)
-    if [ "$PROFILE" = drill-host ]; then
-      WLOG="$(mktemp)"; trap 'rm -f -- "$WLOG"' EXIT
-      witness_show > "$WLOG" || { echo "FAIL the witness log could not be read"; exit 1; }
-      dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$WLOG"
-    else
-      dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG"
-    fi
+    out="FAIL the witness log could not be read"
+    if read_witness; then out="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)")"; fi
+    unlock
+    printf '%s\n' "$out"
+    [ "${out#VERIFIED }" != "$out" ]
     exit $?
     ;;
   recover-head)
-    # Only the one crash window: the store verifies on its own, and the head log is exactly one record behind.
-    v="$(dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}")" || { echo "SIGNER: ${v}"; exit 1; }
-    n="${v#VERIFIED }"; n="${n%% *}"
-    [ "$n" -ge 1 ] || { echo "SIGNER: nothing to recover"; exit 1; }
-    last="$(grep -v '^$' -- "$HEADLOG" | tail -n 1)"
-    prevseq="$(printf '%06d' $((10#$n - 1)))"
-    if [ "$prevseq" = 000000 ]; then want_prev=""; else want_prev="${prevseq} $(sha256sum -- "${C[DMS_SIGNER_STORE]}/${prevseq}/record" | cut -d' ' -f1)"; fi
-    [ "$last" = "$want_prev" ] || { echo "SIGNER: the head log is not exactly one record behind; refusing"; exit 1; }
-    # P5-5: the same atomic replace as publication (copy, append, fsync, rename), never an in-place append.
-    tmp="$(mktemp "${HEADLOG}.XXXXXX")" || { echo "SIGNER: cannot write the head log"; exit 1; }
-    if ! { cat -- "$HEADLOG" > "$tmp" && printf '%s %s\n' "$(printf '%06d' "$n")" "${v##*head=}" >> "$tmp" && sync -- "$tmp" \
-      && mv -f -- "$tmp" "$HEADLOG" && sync -- "$(dirname -- "$HEADLOG")"; }; then
-      rm -f -- "$tmp"; echo "SIGNER: the head log could not be replaced"; exit 1
-    fi
-    echo "SIGNER: head log recovered to $(printf '%06d' "$n")"
+    # R6C-2: every crash window between publication, the witness and the head log. The store must verify on its own;
+    # the head log and (drill-host) the witness may each be EXACTLY one record behind, with every earlier entry equal
+    # to the store; the missing entry is added to the witness first, then to the head log.
+    v="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}")" || { unlock; echo "SIGNER: ${v}"; exit 1; }
+    n="${v#VERIFIED }"; n="${n%% *}"; head="${v##*head=}"
+    [ "$n" -ge 1 ] || { unlock; echo "SIGNER: nothing to recover"; exit 1; }
+    seqn="$(printf '%06d' "$n")"
+    prefix_ok() { # <file> <lines expected>: the file's first lines equal the store's record digests
+      local i=0 a b
+      while IFS=' ' read -r a b; do
+        i=$((i + 1)); [ "$i" -le "$2" ] || return 1
+        [ "$a" = "$(printf '%06d' "$i")" ] && [ "$b" = "$(sha256sum -- "${STORE}/$(printf '%06d' "$i")/record" | cut -d' ' -f1)" ] || return 1
+      done < "$1"
+      [ "$i" = "$2" ]
+    }
+    fixed=0
     if [ "$PROFILE" = drill-host ]; then
-      # The same crash window for the witness: it may be exactly one record behind the store, never more.
-      WLOG="$(mktemp)"; trap 'rm -f -- "$WLOG"' EXIT
-      witness_show > "$WLOG" || { echo "SIGNER: the witness log could not be read"; exit 1; }
-      if [ "$(wc -l < "$WLOG")" = $((10#$n - 1)) ]; then
-        witness_append "$(printf '%06d' "$n")" "${v##*head=}" || { echo "SIGNER: the witness refused the catch-up"; exit 1; }
+      read_witness || { unlock; echo "SIGNER: the witness log could not be read"; exit 1; }
+      if prefix_ok "$TMP/witness" $((n - 1)); then
+        fixed=1
+        witness_append "$seqn" "$head" > /dev/null || { unlock; echo "SIGNER: the witness refused the catch-up"; exit 1; }
+      elif ! prefix_ok "$TMP/witness" "$n"; then
+        unlock; echo "SIGNER: the witness log is not within one record of the store; refusing"; exit 1
       fi
     fi
+    grep -v '^$' -- "$HEADLOG" > "$TMP/head" || true
+    if prefix_ok "$TMP/head" $((n - 1)); then
+      fixed=1
+      dms_evidence_headlog_append "$HEADLOG" "$seqn" "$head" || { unlock; echo "SIGNER: the head log could not be replaced"; exit 1; }
+    elif ! prefix_ok "$TMP/head" "$n"; then
+      unlock; echo "SIGNER: the head log is not within one record of the store; refusing"; exit 1
+    fi
+    unlock
+    [ "$fixed" = 1 ] || { echo "SIGNER: nothing to recover: the head log and the witness already match the store"; exit 1; }
+    echo "SIGNER: head log and witness recovered to ${seqn}"
     exit 0
     ;;
 esac
 
-# --- sign: publication runs with interrupts ignored, so a relayed signal cannot stop it half way (P4V-5) ------------
-trap '' INT TERM HUP QUIT
-WLOG=""
-if [ "$PROFILE" = drill-host ]; then
-  # Before anything is added: the store, the head log and EVERY witnessed digest agree (no rollback, no truncation).
-  WLOG="$(mktemp)"; trap 'rm -f -- "$REQ" "$WLOG"' EXIT
-  witness_show > "$WLOG" || { echo "SIGNER: refused: the witness log could not be read"; exit 1; }
-  v="$(dms_evidence_verify_store "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$WLOG")" || { echo "SIGNER: refused: the store does not match its witness (${v})"; exit 1; }
+# --- sign ----------------------------------------------------------------------------------------------------------
+# Before anything is added: the store, the head log and (drill-host) EVERY witnessed digest agree.
+read_witness || { unlock; echo "SIGNER: refused: the witness log could not be read"; exit 1; }
+v="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)")" || { unlock; echo "SIGNER: refused: the store does not verify (${v})"; exit 1; }
+# R6C-11: the store's identity, fixed at its first record and carried by every record.
+[ -s "${STORE}/.store-id" ] || od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > "${STORE}/.store-id"
+STORE_ID="$(head -c 32 -- "${STORE}/.store-id")"
+[[ "$STORE_ID" =~ ^[0-9a-f]{32}$ ]] || { unlock; echo "SIGNER: the store id is invalid"; exit 1; }
+# publish_one: publication in THIS shell (R6C-2: no subshell left behind), witness before head log.
+publish_one() {
+  dms_evidence_publish "$STORE" "${C[DMS_SIGNER_KEY]}" "${C[DMS_SIGNER_PRINCIPAL]}" "$SUDO_USER" "$HEADLOG" "${C[DMS_SIGNER_ANCHOR]}" "$INSTALL" "$STORE_ID" defer > "$TMP/out" || return 1
+  read -r _ PSEQ PSHA < "$TMP/out"
+  if [ "$PROFILE" = drill-host ]; then
+    witness_append "$PSEQ" "$PSHA" > /dev/null || { echo "evidence: record ${PSEQ} was published but NOT witnessed; run recover-head" > "$TMP/out"; return 1; }
+  fi
+  dms_evidence_headlog_append "$HEADLOG" "$PSEQ" "$PSHA" || { echo "evidence: record ${PSEQ} published but the head log was not updated; run recover-head" > "$TMP/out"; return 1; }
+}
+DEC="${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]}"
+RUN="${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_RUN_ID]}"
+bind="$(dms_evidence_binding_check "$STORE" "$DEC" "$RUN")" || { unlock; echo "SIGNER: refused: ${bind#evidence: }"; exit 1; }
+if [ "${bind%% *}" = open ]; then
+  # R6C-3: a run that never closed (its orchestrator was killed) is closed by the signer itself before a new start.
+  OPEN_RUN="${bind#open }"
+  last="$(find "$STORE" -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | LC_ALL=C sort | tail -n 1)/record"
+  declare -A NEWREQ=()
+  for k in "${!DMS_EVIDENCE_REQUEST[@]}"; do NEWREQ[$k]="${DMS_EVIDENCE_REQUEST[$k]}"; done
+  DMS_EVIDENCE_REQUEST=()
+  for k in $DMS_DRILL_EVIDENCE_REQUEST_KEYS; do DMS_EVIDENCE_REQUEST[$k]="$(sed -n "s/^${k}=//p" -- "$last" | head -n 1)"; done
+  DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_COMPLETED_AT]="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]="ABORTED:unclosed"
+  [ "${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_RUN_ID]}" = "$OPEN_RUN" ] || { unlock; echo "SIGNER: the open run could not be read"; exit 1; }
+  publish_one || { unlock; cat -- "$TMP/out"; exit 1; }
+  CLOSED="closed ${OPEN_RUN} as ${PSEQ}; "
+  DMS_EVIDENCE_REQUEST=()
+  for k in "${!NEWREQ[@]}"; do DMS_EVIDENCE_REQUEST[$k]="${NEWREQ[$k]}"; done
 fi
-OUT="$(dms_evidence_publish "${C[DMS_SIGNER_STORE]}" "${C[DMS_SIGNER_KEY]}" "${C[DMS_SIGNER_PRINCIPAL]}" "$SUDO_USER" "$HEADLOG" "${C[DMS_SIGNER_ANCHOR]}" "$INSTALL")" || { echo "$OUT"; exit 1; }
-if [ "$PROFILE" = drill-host ]; then
-  read -r _ SEQ SHA <<< "$OUT"
-  witness_append "$SEQ" "$SHA" > /dev/null || { echo "SIGNER: ${OUT} was published but NOT witnessed; run recover-head"; exit 1; }
-  echo "${OUT} witnessed"
-else
-  echo "$OUT"
-fi
+publish_one || { unlock; cat -- "$TMP/out"; exit 1; }
+unlock
+if [ "$PROFILE" = drill-host ]; then echo "RECORD ${PSEQ} ${PSHA} witnessed ${CLOSED:-}"; else echo "RECORD ${PSEQ} ${PSHA} ${CLOSED:-}"; fi
