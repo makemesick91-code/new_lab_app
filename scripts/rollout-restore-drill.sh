@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #
-# ROLL-5-1A — Staging restore drill (disposable DB) + evidence emitter.
+# ROLL-5-1A — Staging restore drill: production-side VERIFICATION only (the in-place replay is retired).
+#
+# RETIRED 2026-11-25 (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1): this script no longer creates,
+# replays or drops anything. It verifies the backup read-only (trusted digest, source checks, staged copy, pinned
+# client, owner roles, runtime ownership gate) and then refuses with exit 3. The drill itself runs only in a disposable
+# VM on an isolated drill host: scripts/restore-drill-vm.sh. The description below is the historical contract of the
+# retired replay, kept for the checks that remain.
 #
 # Restores the latest verified deploy backup into a DISPOSABLE database, runs
 # read-only verification (table count + a few bounded COUNTs — NO patient rows,
@@ -12,36 +18,190 @@
 #   - NEVER restores over the production database. The target is a disposable DB
 #     whose name is guarded to (a) differ from the production DB and (b) contain
 #     a safe marker (restore_drill / staging / test). If either check fails, abort.
-#   - Drops ONLY the disposable database. Never calls scripts/restore_postgres.sh.
+#   - Drops ONLY the disposable database, and only when this run proved it
+#     created it: createdb succeeded in this run, and the database still has
+#     the oid recorded right after creation. A name that already exists, a
+#     createdb that fails, or an oid that changed means the database is not
+#     this run's: it is never dropped, and the run fails. A drop that fails
+#     also fails the run (decision FAIL); it is never ignored.
+#     Never calls scripts/restore_postgres.sh.
 #   - Never runs migrate:fresh / db:wipe / schema:drop / migrate:reset.
 #   - The evidence file contains NO password / secret / .env / KTP / NIK / raw
-#     rows — only sanitized counts and metadata. The psql password is passed via
-#     PGPASSWORD in the environment, never echoed into the evidence.
+#     rows — only sanitized counts and metadata.
+#
+# PRIVILEGE (DMS-SPN4-READY-PILOT-1 D-Q6 and D-Q7, findings N-5 and N-9):
+#   - Runs as the privileged operator (root on the host): every database
+#     operation — createdb, the replay, the counts, dropdb — goes through the
+#     local PostgreSQL superuser OS account, as scripts/restore-rehearsal.sh does.
+#     The application login role is never used for them and never needs
+#     CREATEDB (rule 245 #5).
+#   - Refuses to run when the application login role holds CREATEDB, CREATEROLE
+#     or SUPERUSER.
+#   - The disposable database is owned by the superuser, never by the
+#     application role (a database owner can create schemas and alter or drop
+#     the database). artisan runs as the runtime user, never as root.
+#
+# INTEGRITY (rule 235; finding A-1, 2026-11-25). The backup is a plain SQL file
+# the runtime user owns and can write, and the replay runs as the superuser, so
+# the drill never replays it unverified:
+#   - The expected SHA-256 comes from evidence the runtime cannot write: the
+#     root-only log of the deploy that wrote the backup (--deploy-id), or a digest
+#     the administrator passes from an independent record (--expected-sha256).
+#     There is no default "latest backup": without trusted evidence nothing runs.
+#   - The backup must be a regular file (no symlink), owned by the runtime user or
+#     the operator, and not group- or other-writable. It is read ONCE, by its
+#     owner, into a root-only staging copy; root hashes that copy. The owner-role
+#     preflight, the runtime ownership gate and the replay read only that copy,
+#     so replacing the file after the check changes nothing.
+#   - The replay runs in psql's restricted mode under a fresh random key: every
+#     backslash meta-command in the dump is refused and stops the replay.
+#   - The environment file and both libraries are loaded only when no other
+#     identity could have written them.
 #
 # Usage:
-#   bash scripts/rollout-restore-drill.sh [backup_file.sql]
-# With no argument, the latest .sql backup in storage/app/backups/deploy is used.
+#   bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS> [<backup_file.sql>]
+#   bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>
+# With --deploy-id and no file, the backup that deploy recorded is used.
+# PostgreSQL client: psql, createdb and dropdb run only from DMS_PG_BINDIR (default
+# /usr/lib/postgresql/16/bin), a canonical directory owned by root (or the operator)
+# and not writable by others, by absolute path and never through PATH; psql there
+# must answer PostgreSQL 16 at 16.15 or later, or the drill stops before reading
+# any backup.
 #
 # This VALIDATES recoverability via a disposable restore. It is NOT a production
 # restore and NOT a full DR certification.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
+# The shared restore checks live beside this script. Like the two restore tools,
+# the drill loads them only when no other identity could have written them: not a
+# symlink, owned by the identity running the drill (root on the host), and not
+# group- or other-writable, for the file and its directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESTORE_LIB="${SCRIPT_DIR}/lib/restore-integrity.sh"
+TRUSTED_LIB="${SCRIPT_DIR}/lib/trusted-path.sh"
+for node in "$RESTORE_LIB" "${SCRIPT_DIR}/lib" "$TRUSTED_LIB"; do
+  if [ -L "$node" ] || [ ! -e "$node" ] || [ "$(stat -c '%u' -- "$node")" != "$(id -u)" ] \
+    || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
+    echo "FATAL: ${node} is missing, a symlink, not owned by $(id -un), or writable by another identity; refusing to load it. Aborting."
+    exit 1
+  fi
+done
+# shellcheck source=lib/trusted-path.sh
+. "$TRUSTED_LIB"
+# shellcheck source=lib/restore-integrity.sh
+. "$RESTORE_LIB"
+
+# --- Trusted digest evidence (rule 235, finding A-1) --------------------------
+DRILL_USAGE="usage: bash scripts/rollout-restore-drill.sh (--deploy-id <YYYYmmdd-HHMMSS> [<backup_file.sql>] | --expected-sha256 <hex> <backup_file.sql>)"
+BACKUP_FILE=""
+EVIDENCE_DEPLOY_ID=""
+EXPECTED_SHA256=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deploy-id) EVIDENCE_DEPLOY_ID="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+    --expected-sha256) EXPECTED_SHA256="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+    -*) echo "$DRILL_USAGE" >&2; exit 2 ;;
+    *) [ -z "$BACKUP_FILE" ] || { echo "FATAL: one backup file at most. Aborting." >&2; exit 2; }; BACKUP_FILE="$1"; shift ;;
+  esac
+done
+if [ -n "$EVIDENCE_DEPLOY_ID" ] && [ -n "$EXPECTED_SHA256" ]; then
+  echo "FATAL: pass --deploy-id OR --expected-sha256, not both. Nothing was created. Aborting." >&2
+  exit 2
+fi
+if [ -z "$EVIDENCE_DEPLOY_ID" ] && [ -z "$EXPECTED_SHA256" ]; then
+  echo "FATAL: the drill replays the backup as the PostgreSQL superuser, so it needs trusted digest evidence: --deploy-id <the deploy that wrote it> or --expected-sha256 <digest from an independent record> (rule 235, finding A-1). Nothing was created. Aborting." >&2
+  echo "$DRILL_USAGE" >&2
+  exit 2
+fi
+if [ -n "$EXPECTED_SHA256" ] && [ -z "$BACKUP_FILE" ]; then
+  echo "FATAL: --expected-sha256 needs the backup file it describes. Nothing was created. Aborting." >&2
+  exit 2
+fi
+if [ -n "$EXPECTED_SHA256" ] && [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "FATAL: --expected-sha256 must be 64 lowercase hex digits. Nothing was created. Aborting." >&2
+  exit 2
+fi
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
-STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-BACKUP_DIR="storage/app/backups/deploy"
-EVIDENCE_DIR="storage/app/readiness/restore-drills"
-EVIDENCE_FILE="${EVIDENCE_DIR}/latest.json"
 
 cd "$APP_DIR"
 
+# The environment file is sourced by the privileged operator: refuse one that
+# another identity could have written (as scripts/restore-rehearsal.sh does).
+if [ -L .env ] || [ ! -f .env ] || [ "$(stat -c '%u' -- .env)" != "$(id -u)" ] \
+  || [ $(( 8#$(stat -c '%a' -- .env) & 8#022 )) -ne 0 ]; then
+  echo "FATAL: the environment file is missing, a symlink, not owned by $(id -un), or writable by another identity; refusing to source it. Aborting."
+  exit 1
+fi
 set -a
 # shellcheck disable=SC1091
 source .env
 set +a
 
+# artisan must not run as root: it would leave root-owned files in the
+# runtime-owned cache and log directories (INFRA-SEC-RUNTIME-1).
+RUNTIME_USER="daengtisiams"
+if [ -r deploy/runtime-identity.conf ]; then
+  RUNTIME_USER="$(sed -n 's/^[[:space:]]*DMS_RUNTIME_USER=//p' deploy/runtime-identity.conf | head -n 1 | sed 's/^"//; s/"$//')"
+  RUNTIME_USER="${RUNTIME_USER:-daengtisiams}"
+fi
+as_runtime() {
+  if [ "$(id -un)" = "$RUNTIME_USER" ]; then
+    "$@"
+  else
+    sudo -n -u "$RUNTIME_USER" -- "$@"
+  fi
+}
+
+PG_SUPERUSER_ACCOUNT="${PG_SUPERUSER_ACCOUNT:-postgres}"
+as_superuser() {
+  if [ "$(id -un)" = "$PG_SUPERUSER_ACCOUNT" ]; then
+    "$@"
+  else
+    sudo -n -u "$PG_SUPERUSER_ACCOUNT" -- "$@"
+  fi
+}
+
+case "${DB_USERNAME:-}" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: DB_USERNAME is missing or not a plain role name. Aborting."; exit 1 ;;
+esac
+
+# --- PostgreSQL client: pinned and verified (owner directive, 2026-11-25) ----
+# psql, createdb and dropdb run from ONE pinned directory by absolute path, never
+# through PATH or the version-switching wrapper, and psql must be PostgreSQL 16 at
+# 16.15 or later. The version is asked of the very binary the replay uses, as the
+# superuser OS account that runs it. Anything else stops the drill before a backup
+# is read or a database created.
+PG_BINDIR="${DMS_PG_BINDIR:-/usr/lib/postgresql/16/bin}"
+dms_restore_pg_client_check "$PG_BINDIR" "$(id -u)" "$APP_DIR" || {
+  echo "FATAL: the PostgreSQL client directory failed its checks. Nothing was created. Aborting."
+  exit 1
+}
+PSQL_BIN="${PG_BINDIR}/psql"
+CREATEDB_BIN="${PG_BINDIR}/createdb"
+DROPDB_BIN="${PG_BINDIR}/dropdb"
+PSQL_VERSION_LINE="$(as_superuser "$PSQL_BIN" --version 2>/dev/null | head -n 1)" || PSQL_VERSION_LINE=""
+PSQL_CLIENT="$(dms_restore_psql_version_check "$PSQL_VERSION_LINE")" || {
+  echo "FATAL: the psql client at ${PSQL_BIN} could not be verified as PostgreSQL 16.15 or later. Nothing was created. Aborting."
+  exit 1
+}
+echo "$PSQL_CLIENT (${PSQL_BIN})"
+# The shared restore library runs `<prefix> psql …`. The drill's prefix maps the
+# tool name to the pinned, verified binary, so no library call reaches a psql
+# through PATH either; any other command is refused.
+as_superuser_pg() {
+  local tool="${1:-}"
+  shift || true
+  case "$tool" in
+    psql) as_superuser "$PSQL_BIN" "$@" ;;
+    createdb) as_superuser "$CREATEDB_BIN" "$@" ;;
+    dropdb) as_superuser "$DROPDB_BIN" "$@" ;;
+    *) echo "FATAL: as_superuser_pg refuses '${tool}'." >&2; return 2 ;;
+  esac
+}
+
 DRILL_ENV="${ROLLOUT_DRILL_ENVIRONMENT:-staging}"
-OPERATOR="${ROLLOUT_DRILL_OPERATOR:-ops}"
 
 echo "== ROLL-5-1A restore drill =="
 
@@ -58,105 +218,122 @@ case "$DRILL_DB" in
   *restore_drill*|*staging*|*test*) : ;;
   *) echo "FATAL: drill target name must contain a safe marker (restore_drill/staging/test). Aborting."; exit 1 ;;
 esac
+# PostgreSQL silently truncates a longer identifier, so the name looked up
+# later would not be the database created.
+if [ "${#DRILL_DB}" -gt 63 ]; then
+  echo "FATAL: drill target name is longer than 63 bytes and would be truncated by PostgreSQL. Aborting."
+  exit 1
+fi
 case "$(printf '%s' "$DRILL_ENV" | tr '[:upper:]' '[:lower:]')" in
   production|pilot|live|prod) echo "FATAL: drill environment must be staging/test, not production/pilot/live. Aborting."; exit 1 ;;
 esac
 
-# --- Select + verify a source backup -------------------------------------
-BACKUP_FILE="${1:-}"
-if [ -z "$BACKUP_FILE" ]; then
-  BACKUP_FILE="$(ls -1t "${BACKUP_DIR}"/*.sql 2>/dev/null | head -n1 || true)"
-fi
-if [ -z "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
-  echo "FATAL: no non-empty source backup found under ${BACKUP_DIR}. Aborting."
-  exit 1
+# --- Select + verify a source backup (rule 235, finding A-1) ---------------
+if [ -n "$EVIDENCE_DEPLOY_ID" ]; then
+  EVIDENCE_DIR_TRUSTED=""
+  if [ -r deploy/production-host.conf ]; then
+    EVIDENCE_DIR_TRUSTED="$(sed -n 's/^[[:space:]]*DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR=//p' deploy/production-host.conf | head -n 1 | sed 's/^"//; s/"$//')"
+  fi
+  EVIDENCE="$(dms_restore_evidence_digest "$EVIDENCE_DIR_TRUSTED" "$EVIDENCE_DEPLOY_ID" "$(hostname)" "$APP_DIR" "$(id -u)")" || {
+    echo "FATAL: no trusted digest evidence for deploy ${EVIDENCE_DEPLOY_ID}. Nothing was created. Aborting."
+    exit 1
+  }
+  if [ -z "$BACKUP_FILE" ]; then
+    BACKUP_FILE="${EVIDENCE% *}"
+  elif ! GIVEN_REAL="$(realpath -e -- "$BACKUP_FILE" 2>/dev/null)" \
+    || ! RECORDED_REAL="$(realpath -e -- "${APP_DIR}/${EVIDENCE% *}" 2>/dev/null)" \
+    || [ -z "$GIVEN_REAL" ] || [ "$GIVEN_REAL" != "$RECORDED_REAL" ]; then
+    echo "FATAL: deploy ${EVIDENCE_DEPLOY_ID} recorded ${EVIDENCE% *}, not ${BACKUP_FILE}. Nothing was created. Aborting."
+    exit 1
+  fi
+  EXPECTED_SHA256="${EVIDENCE##* }"
+  INTEGRITY_SOURCE="the root-only log of deploy ${EVIDENCE_DEPLOY_ID}"
+else
+  INTEGRITY_SOURCE="an independent record passed by the administrator"
 fi
 echo "Source backup : ${BACKUP_FILE}"
-BACKUP_SIZE="$(wc -c < "$BACKUP_FILE" | tr -d ' ')"
-
-php artisan foundation:backup-verify --path="$BACKUP_FILE"
-
-# --- Restore into disposable DB (never touches production) ----------------
-DB_CONNECTIVITY="FAIL"; MIGRATION_CONSISTENCY="UNKNOWN"; APP_BOOT="UNKNOWN"
-HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0
-RESTORE_START="$(date +%s)"
-
-cleanup() {
-  echo "== Drop disposable database: ${DRILL_DB} =="
-  PGPASSWORD="${DB_PASSWORD}" dropdb -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-    -U "${DB_USERNAME}" --if-exists "$DRILL_DB" || true
+dms_restore_check_source "$BACKUP_FILE" "$RUNTIME_USER" "$(id -un)" || {
+  echo "FATAL: the backup file failed its source checks. Nothing was created. Aborting."
+  exit 1
 }
-trap cleanup EXIT
-
-echo "== Create disposable database =="
-PGPASSWORD="${DB_PASSWORD}" createdb -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" "$DRILL_DB"
-
-echo "== Restore backup into disposable database =="
-PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -v ON_ERROR_STOP=1 -f "$BACKUP_FILE" > /dev/null
-DB_CONNECTIVITY="GO"
-
-echo "== Verify restored data (read-only counts, NO patient rows) =="
-TABLE_COUNT="$(PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d ' ')"
-[ "${TABLE_COUNT:-0}" -ge 1 ] && SAMPLE_QUERIES="GO" || SAMPLE_QUERIES="FAIL"
-
-# Migration table present => migration consistency verifiable.
-MIG_COUNT="$(PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
-  -U "${DB_USERNAME}" -d "$DRILL_DB" -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='migrations';" | tr -d ' ')"
-[ "${MIG_COUNT:-0}" -ge 1 ] && MIGRATION_CONSISTENCY="GO" || MIGRATION_CONSISTENCY="WATCH"
-
-# App boot + health routes (do not point the app at the disposable DB — just
-# confirm the app/artisan boots and health endpoints resolve on this host).
-if php artisan --version > /dev/null 2>&1; then APP_BOOT="GO"; else APP_BOOT="FAIL"; fi
-if php artisan route:list --json 2>/dev/null | grep -q 'health/ready'; then HEALTH_ROUTES="GO"; else HEALTH_ROUTES="WATCH"; fi
-
-RESTORE_END="$(date +%s)"
-DURATION=$(( RESTORE_END - RESTORE_START ))
-COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-DECISION="GO"
-[ "$SAMPLE_QUERIES" = "FAIL" ] && DECISION="FAIL"
-
-echo "== Write ROLL-5-1A evidence =="
-mkdir -p "$EVIDENCE_DIR"
-cat > "$EVIDENCE_FILE" <<JSON
-{
-  "schema_version": 1,
-  "drill_id": "roll-5-1a-${STAMP}",
-  "environment": "${DRILL_ENV}",
-  "source_backup_path": "${BACKUP_FILE}",
-  "source_backup_size_bytes": ${BACKUP_SIZE},
-  "restore_target": "${DRILL_DB}",
-  "production_overwrite": false,
-  "started_at": "${STARTED_AT}",
-  "completed_at": "${COMPLETED_AT}",
-  "duration_seconds": ${DURATION},
-  "operator": "${OPERATOR}",
-  "commands_summary": [
-    "createdb <disposable_target>",
-    "psql -d <disposable_target> -f <backup> (password hidden)",
-    "read-only count verification (no patient rows)",
-    "dropdb <disposable_target>"
-  ],
-  "verification": {
-    "db_connectivity": "${DB_CONNECTIVITY}",
-    "migration_consistency": "${MIGRATION_CONSISTENCY}",
-    "app_boot": "${APP_BOOT}",
-    "health_routes": "${HEALTH_ROUTES}",
-    "sample_readonly_queries": "${SAMPLE_QUERIES}",
-    "pii_redaction_confirmed": true
-  },
-  "decision": "${DECISION}",
-  "notes": [
-    "disposable DB dropped after evidence captured; production never touched",
-    "restored public table count: ${TABLE_COUNT}"
-  ]
+STAGING_DIR="$(mktemp -d)"
+chmod 0700 -- "$STAGING_DIR"
+trap 'rm -rf -- "$STAGING_DIR"' EXIT
+STAGED_BACKUP="$(dms_restore_stage_copy "$BACKUP_FILE" "$STAGING_DIR")" || {
+  echo "FATAL: could not stage a private copy of ${BACKUP_FILE}. Nothing was created. Aborting."
+  exit 1
 }
-JSON
+INTEGRITY="$(dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256")" || {
+  echo "FATAL: integrity check failed: the backup does not match ${INTEGRITY_SOURCE}. Nothing was created. Aborting."
+  exit 1
+}
+echo "$INTEGRITY (expected digest from ${INTEGRITY_SOURCE})"
+# A CHECK that pg_dump splits out is validated after the data, in the superuser
+# session, before the load guard can see it (third review of A-1): refused here.
+SPLIT_CHECKS_STATUS=0
+SPLIT_CHECKS="$(dms_restore_split_check_entries "$STAGED_BACKUP")" || SPLIT_CHECKS_STATUS=$?
+if [ "$SPLIT_CHECKS_STATUS" != 0 ]; then
+  echo "FATAL: the backup holds ${SPLIT_CHECKS:-an unknown number of} CHECK constraint(s) that pg_dump split out to validate after the data; that validation would run their code as the superuser before the load guard can see it. Nothing was created. Aborting."
+  exit 1
+fi
 
-echo "Evidence written: ${EVIDENCE_FILE} (decision=${DECISION})"
-php artisan rollout:restore-drill-evidence --path="$EVIDENCE_FILE" || true
+# The runtime's own format check of its file: informational, never the trust anchor.
+as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
+
+# --- Privilege preflight (D-Q7: privileged operator, no runtime CREATEDB) ----
+if ! SUPER_CHECK="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT usesuper FROM pg_user WHERE usename = current_user" 2>/dev/null)"; then
+  echo "FATAL: cannot reach PostgreSQL as OS account '${PG_SUPERUSER_ACCOUNT}'. Run this drill as the privileged operator (root). Aborting."
+  exit 1
+fi
+if [ "$SUPER_CHECK" != "t" ]; then
+  echo "FATAL: the role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser. Aborting."
+  exit 1
+fi
+RUNTIME_ELEVATED="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT rolcreatedb OR rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = '${DB_USERNAME}'")"
+if [ "$RUNTIME_ELEVATED" != "f" ]; then
+  echo "FATAL: the application login role '${DB_USERNAME}' holds CREATEDB, CREATEROLE or SUPERUSER, or was not found; the drill never relies on it (rule 245 #5, D-Q7). Aborting."
+  exit 1
+fi
+DRILL_OWNER="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT current_user")"
+case "$DRILL_OWNER" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the disposable database. Aborting."; exit 1 ;;
+esac
+
+# Owner decision D-Q6-a: every role that owns an object in the backup must
+# already exist on this cluster, checked before anything is created. A missing
+# role stops the drill. It is never created here, and ownership is never
+# stripped, rewritten or given to the runtime.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser_pg)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: the backup makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created. An authorised operator provisions the role(s) separately, then repeats the drill (D-Q6-a). Aborting."; exit 1 ;;
+  *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created. Aborting."; exit 1 ;;
+esac
+
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser_pg)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: ${RUNTIME_GATE} Nothing was created. Aborting."; exit 1 ;;
+  *) echo "FATAL: could not decide the runtime ownership gate as the superuser; nothing was created. Aborting."; exit 1 ;;
+esac
+
+# --- The in-place replay is RETIRED (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1) -----------
+# Until 2026-11-25 this script went on to create a disposable database on THIS cluster and replay the backup into it
+# as the PostgreSQL superuser. A backup whose digest is trusted is still attacker-influenced content (before R6-D the
+# runtime owns the schema it dumps), and three review rounds kept finding superuser-execution paths in that replay.
+# The owner decided the drill runs only in a separate disposable VM on an isolated drill host (D1), never on the
+# production kernel: scripts/restore-drill-vm.sh. This script keeps only its read-only verification of the backup
+# above, and never creates, replays, counts or drops anything here.
+echo "VERIFIED (read-only, on this host): ${INTEGRITY} from ${INTEGRITY_SOURCE}; pinned client ${PSQL_CLIENT#PSQL_CLIENT=}; owner roles present (D-Q6-a); runtime ownership gate (P5) passed."
+echo "REFUSED: this host never replays a backup (finding A-1). The drill runs only in a disposable VM on an isolated drill host:"
+echo "  scripts/restore-drill-vm.sh --expected-sha256 <the archive's trusted sha256> --manifest <signed role manifest> <archive.dump>"
+echo "  The drill accepts only a pg_dump 16 custom-format archive (pg_dump -Fc, PR-6); the plain-SQL backup verified above"
+echo "  (sha256 ${EXPECTED_SHA256}) is refused there. See docs/architecture/r6-b6-backup-format-transition-plan.md."
+echo "Nothing was created, replayed or dropped. No drill evidence is written by this script."
+exit 3

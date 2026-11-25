@@ -197,6 +197,30 @@ dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256" || {
   exit 1
 }
 
+# Owner decision D-Q6-a: every role that owns an object in the dump must already
+# exist on this cluster, checked before the scratch database is created. A
+# missing role stops the rehearsal. It is never created here, and ownership is
+# never stripped, rewritten or given to the runtime.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_BACKUP" as_superuser)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: the dump makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created or restored. An authorised operator provisions the role(s) separately, then repeats the rehearsal (D-Q6-a)."; exit 1 ;;
+  *) echo "FATAL: could not read the roles of this cluster as the superuser; nothing was created or restored."; exit 1 ;;
+esac
+
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_BACKUP" "${DB_USERNAME}" as_superuser)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+  0) : ;;
+  1) echo "FATAL: ${RUNTIME_GATE} Nothing was created."; exit 1 ;;
+  *) echo "FATAL: could not decide the runtime ownership gate as the superuser; nothing was created."; exit 1 ;;
+esac
+
 echo "== Verify backup (NSF-10) =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
 
@@ -208,9 +232,20 @@ if [ "$REHEARSAL_DB" = "${DB_DATABASE}" ]; then
 fi
 
 echo "== Create scratch database: ${REHEARSAL_DB} =="
-# Created by the superuser (the application role has no CREATEDB privilege) but
-# OWNED by the application role, so restored object ownership matches production.
-as_superuser createdb -O "${DB_USERNAME}" -T template0 -- "$REHEARSAL_DB"
+# Created AND owned by the superuser, as the production database is
+# (DMS-SPN4-READY-PILOT-1 D-Q6, finding N-9). Object ownership comes from the
+# dump's own OWNER TO statements, never from the database owner; a database
+# owned by the application role would let it create schemas and alter or drop
+# the database, undoing rule 245 at the database level.
+REHEARSAL_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+case "$REHEARSAL_OWNER" in
+  ''|*[!A-Za-z0-9_]*) echo "FATAL: could not resolve the superuser role for the scratch database."; exit 1 ;;
+esac
+if [ "$REHEARSAL_OWNER" = "${DB_USERNAME}" ]; then
+  echo "FATAL: the scratch database would be owned by the application login role (D-Q6, N-9)."
+  exit 1
+fi
+as_superuser createdb -O "$REHEARSAL_OWNER" -T template0 -- "$REHEARSAL_DB"
 
 cleanup() {
   echo "== Drop scratch database: ${REHEARSAL_DB} =="

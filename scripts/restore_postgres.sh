@@ -114,8 +114,13 @@
 #     --target <db>        Database to restore INTO. Default: DB_DATABASE from
 #                          the application environment file (i.e. production),
 #                          which then requires --force-production.
-#     --owner <role>       Owner for a database created with --create.
-#                          Default: DB_USERNAME from the environment file.
+#     --owner <role>       Owner for a database created with --create. It must be
+#                          a superuser role, never the application login role
+#                          (DMS-SPN4-READY-PILOT-1 D-Q6, finding N-9: a database
+#                          owner can create schemas and alter or drop the
+#                          database, which would undo rule 245 at the database
+#                          level). Default: the superuser this restore runs as,
+#                          which is also the production database's owner.
 #     --create             Create the target database first (fails if it exists).
 #     --force-production   Permit the target to be the production database.
 #     --yes                Skip the interactive typed confirmation.
@@ -249,10 +254,15 @@ TARGET_DB="${TARGET_DB:-$PRODUCTION_DB}"
 case "$TARGET_DB" in
     *[!A-Za-z0-9_]*) die "invalid --target '${TARGET_DB}': use only letters, digits and underscore" 2 ;;
 esac
-if [ -z "$TARGET_OWNER" ]; then
-    TARGET_OWNER="$(env_value DB_USERNAME || true)"
-fi
-[ -n "$TARGET_OWNER" ] || die "could not read DB_USERNAME from ${ENV_FILE}" 2
+# D-Q6 / N-9: the application login role never owns a restored database. Read
+# it here only to refuse it; the owner itself is resolved after the superuser
+# preflight below.
+APP_ROLE="$(env_value DB_USERNAME || true)"
+[ -n "$APP_ROLE" ] || die "could not read DB_USERNAME from ${ENV_FILE}" 2
+case "$TARGET_OWNER" in
+    *[!A-Za-z0-9_]*) die "invalid --owner '${TARGET_OWNER}': use only letters, digits and underscore" 2 ;;
+esac
+[ "$TARGET_OWNER" != "$APP_ROLE" ] || die "refusing --owner '${TARGET_OWNER}': the application login role never owns a restored database (D-Q6, N-9); omit --owner to use the superuser" 2
 
 # ---------------------------------------------------------------------------
 # Production guard
@@ -298,6 +308,17 @@ if ! SUPER_CHECK="$(as_superuser psql -X -Atqc "SELECT usesuper FROM pg_user WHE
 fi
 [ "$SUPER_CHECK" = "t" ] || die "role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser; the dump's CREATE EXTENSION / COMMENT ON EXTENSION statements would fail" 2
 
+# D-Q6 / N-9: a database created here is owned by a superuser role — by default
+# the one reached above, which also owns the production database.
+if [ -z "$TARGET_OWNER" ]; then
+    TARGET_OWNER="$(as_superuser psql -X -Atqc "SELECT current_user")"
+fi
+case "$TARGET_OWNER" in
+    ''|*[!A-Za-z0-9_]*) die "could not resolve a valid owner role for the restored database" 2 ;;
+esac
+OWNER_IS_SUPERUSER="$(as_superuser psql -X -Atqc "SELECT rolsuper FROM pg_roles WHERE rolname = '${TARGET_OWNER}'")"
+[ "$OWNER_IS_SUPERUSER" = "t" ] || die "refusing owner '${TARGET_OWNER}': a restored database is owned by a superuser role only (D-Q6, N-9)" 2
+
 # ---------------------------------------------------------------------------
 # Integrity (rule 235): trusted digest, root-only staging copy, verify the copy.
 # ---------------------------------------------------------------------------
@@ -335,6 +356,30 @@ trap 'rm -rf -- "$STAGING_DIR"' EXIT
 STAGED_DUMP="$(dms_restore_stage_copy "$DUMP_FILE" "$STAGING_DIR")" || die "could not stage a private copy of ${DUMP_FILE} — nothing was restored"
 dms_restore_verify_copy "$STAGED_DUMP" "$EXPECTED_SHA256" || die "integrity check failed — nothing was restored"
 echo "  evidence    : ${EVIDENCE_SOURCE}"
+
+# Owner decision D-Q6-a: every role that owns an object in the dump must already
+# exist on this cluster, checked before anything is created or replayed. A
+# missing role stops the restore. It is never created here, ownership is never
+# stripped or rewritten, and the runtime is never made the owner instead.
+OWNER_ROLE_STATUS=0
+MISSING_OWNER_ROLES="$(dms_restore_missing_owner_roles "$STAGED_DUMP" as_superuser)" || OWNER_ROLE_STATUS=$?
+case "$OWNER_ROLE_STATUS" in
+    0) echo "  owner roles : every object owner in the dump exists on this cluster" ;;
+    1) die "the dump makes these roles object owners, and they do not exist on this cluster: $(printf '%s\n' "$MISSING_OWNER_ROLES" | paste -sd, -). Nothing was created or restored. An authorised operator provisions the role(s) separately, then repeats the restore (D-Q6-a)." ;;
+    *) die "could not read the roles of this cluster as the superuser; nothing was created or restored" ;;
+esac
+
+# Owner directive P5: after R6 (the owner role exists on this cluster), objects
+# owned by the runtime are never an acceptable final state. A pre-R6 dump is
+# refused here, before anything is created, and goes through the separate
+# operator-controlled legacy procedure. No flag lets it through (D-Q6-b).
+RUNTIME_GATE_STATUS=0
+RUNTIME_GATE="$(dms_restore_runtime_ownership_gate "$STAGED_DUMP" "$APP_ROLE" as_superuser)" || RUNTIME_GATE_STATUS=$?
+case "$RUNTIME_GATE_STATUS" in
+    0) echo "  runtime own : no runtime-owned object after R6 (gate passed)" ;;
+    1) die "${RUNTIME_GATE} Nothing was created or restored." ;;
+    *) die "could not decide the runtime ownership gate as the superuser; nothing was created or restored" ;;
+esac
 
 # Only the verified root-only copy is ever streamed to psql (the postgres OS
 # account cannot open it; it reads the pipe).
@@ -418,5 +463,19 @@ count_table() {
 }
 
 ROW_SUMMARY="patients=$(count_table mst_patients) visits=$(count_table trx_clinic_visits) payments=$(count_table trx_rme_payments)"
+
+# The final state, checked again after the replay: after R6, a database whose
+# objects the runtime owns is restored but NOT usable, and the run fails.
+RUNTIME_OWNED="$(dms_restore_runtime_owned_objects "$TARGET_DB" "$APP_ROLE" as_superuser)" \
+    || die "could not count the objects the runtime owns in '${TARGET_DB}'" 3
+R6_ACTIVE=0
+dms_restore_r6_active as_superuser || R6_ACTIVE=$?
+if [ "$R6_ACTIVE" -eq 0 ] && [ "${RUNTIME_OWNED:-1}" != "0" ]; then
+    die "RESTORED BUT NOT A FINAL STATE: the runtime '${APP_ROLE}' owns ${RUNTIME_OWNED} objects in '${TARGET_DB}' after R6. Do not use this database; the legacy procedure moves the ownership first." 3
+fi
+[ "$R6_ACTIVE" -ne 2 ] || die "could not tell whether this cluster has the R6 owner role" 3
+if [ "$R6_ACTIVE" -eq 1 ]; then
+    echo "  runtime own : ${RUNTIME_OWNED} objects owned by the runtime (pre-R6 cluster: the current design until R6-D)"
+fi
 
 echo "RESTORE OK: ${TABLE_COUNT} tables into '${TARGET_DB}' in ${RESTORE_SECONDS}s (${ROW_SUMMARY}) from ${DUMP_FILE}"

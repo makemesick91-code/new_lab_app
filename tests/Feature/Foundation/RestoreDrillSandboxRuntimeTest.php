@@ -1,0 +1,247 @@
+<?php
+
+use Symfony\Component\Process\Process;
+
+/*
+ * R6-B6 isolated restore drill — the REAL sandbox: the synthetic fixture archives (tests/Fixtures/restore-drill)
+ * restored by a disposable PostgreSQL 16 cluster in a transient systemd unit with the full isolation profile, through
+ * the guest agent, and decided by the host against the per-table counts it took from the archive itself.
+ *
+ * It needs a working per-user systemd manager and PostgreSQL 16.15+ binaries. Where they are missing the tests are
+ * SKIPPED, never passed (CG-17): the dedicated real-sandbox CI gate on disposable infrastructure (D8) runs them, and
+ * runs the system-mode DynamicUser variant that this per-user mode cannot provide.
+ */
+
+function rdsrAvailable(): ?string
+{
+    $bin = '/usr/lib/postgresql/16/bin';
+    foreach (['postgres', 'initdb', 'pg_restore', 'psql'] as $tool) {
+        if (! is_executable("{$bin}/{$tool}")) {
+            return "PostgreSQL 16 {$tool} is not installed";
+        }
+    }
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
+    $probe->setTimeout(30);
+    $probe->run();
+
+    return $probe->getExitCode() === 0 ? null : 'no working per-user systemd manager (systemd-run --user)';
+}
+
+/** Restores one fixture archive through the guest agent (user mode) and decides on the host. */
+function rdsrDrill(string $fixture, string $extensions = 'none', string $pins = 'none', string $expectEnv = ''): array
+{
+    $dir = sys_get_temp_dir().'/rdsr-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    $script = <<<'SH'
+        . "$LIB/restore-integrity.sh"; . "$LIB/restore-sandbox.sh"; . "$LIB/restore-vm.sh"; . "$LIB/restore-archive.sh"
+        B=/usr/lib/postgresql/16/bin
+        dms_archive_count_program > "$T/count.awk"
+        "$B/pg_restore" --section=data --restrict-key=hostk -f - "$ARCHIVE" | awk -f "$T/count.awk" > "$T/counts" || exit 7
+        ET=$(wc -l < "$T/counts"); ED=$(dms_archive_digest "$T/counts")
+        "$B/pg_restore" -l "$ARCHIVE" > "$T/toc"
+        TE=""; [ "$EXTS" = none ] || TE="$EXTS"
+        dms_archive_toc_validate "$T/toc" "app_runtime dms_owner" "$TE" > /dev/null; ES="$DMS_ARCHIVE_SHAPE"
+        RUN=$(dms_sandbox_unit_name)
+        cp -- "$ARCHIVE" "$T/payload"
+        PB=$(stat -c %s "$T/payload"); PS=$(sha256sum "$T/payload" | cut -d' ' -f1)
+        read -r PK PIV < <(dms_vm_input_key_iv)
+        declare -A IN=([run_id]=$RUN [payload_bytes]=$PB [payload_sha256]=$PS [payload_key]=$PK [payload_iv]=$PIV
+          [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$EXTS" [locale]=C.UTF-8 [env_pins]="$PINS"
+          [tmpfs_mib]=256 [memory_mib]=768 [tasks]=64 [timeout_seconds]=300)
+        dms_vm_input_build "$T/input.raw" "$T/payload" IN || exit 9
+        head -c 65536 /dev/zero > "$T/output.raw"
+        bash "$GUEST" "$T/input.raw" "$T/output.raw" user
+        dms_vm_output_parse "$T/output.raw" || exit 8
+        for k in "${!DMS_VM_OUTPUT[@]}"; do echo "$k=${DMS_VM_OUTPUT[$k]}"; done
+        echo "expected_digest=$ED"
+        echo "expected_shape=$ES"
+        echo "decision=$(dms_vm_decision_safe "$(dms_vm_decide 0 "$RUN" "$PS" "$ED" "$ET" "$ES" "$EXPECT_ENV")")"
+        echo "units_left=$(systemctl --user list-units --all --plain --no-legend "$RUN.service" | wc -l)"
+
+        SH;
+    $process = new Process(['bash', '-c', $script], null, [
+        'LIB' => base_path('scripts/lib'), 'GUEST' => base_path('scripts/restore-drill-vm-guest.sh'), 'T' => $dir,
+        'ARCHIVE' => base_path("tests/Fixtures/restore-drill/{$fixture}.dump"), 'EXTS' => $extensions, 'PATH' => getenv('PATH'),
+        'PINS' => $pins, 'EXPECT_ENV' => $expectEnv,
+        'XDG_RUNTIME_DIR' => (string) getenv('XDG_RUNTIME_DIR'), 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'),
+    ]);
+    $process->setTimeout(240);
+    $process->run();
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+    $facts = [];
+    foreach (explode("\n", trim($process->getOutput())) as $line) {
+        if (str_contains($line, '=')) {
+            [$k, $v] = explode('=', $line, 2);
+            $facts[$k] = $v;
+        }
+    }
+
+    return $facts + ['_exit' => (string) $process->getExitCode(), '_err' => $process->getErrorOutput()];
+}
+
+beforeEach(function () {
+    if (($why = rdsrAvailable()) !== null) {
+        $this->markTestSkipped("real sandbox not available here: {$why} (covered by the real-sandbox CI gate)");
+    }
+});
+
+it('restores the synthetic archive section by section as the restore role and decides GO from the per-table digest (PR-5, PR-6)', function () {
+    $facts = rdsrDrill('clean');
+
+    expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
+        ->and($facts['sandbox_profile'] ?? null)->toBe('attested')
+        ->and($facts['sandbox_bootstrap_superuser'] ?? null)->toBe('nologin')
+        ->and($facts['sandbox_table_digest'] ?? null)->toBe($facts['expected_digest'] ?? 'x')
+        ->and($facts['sandbox_base_table_count'] ?? null)->toBe('2')
+        ->and($facts['sandbox_user_code_executed'] ?? null)->toBe('0')
+        ->and($facts['sandbox_catalog_shape'] ?? null)->toBe($facts['expected_shape'] ?? 'x')
+        ->and($facts['expected_shape'] ?? null)->toBe('1:2:0:2:0:0:1')
+        ->and($facts['units_left'] ?? null)->toBe('0');
+});
+
+/** P5-1: no dump function exists while the restore evaluates anything: code-bearing archives fail with 42883. */
+function rdsrUndefinedFunction(array $facts, string $section): void
+{
+    expect($facts['sandbox_stage'] ?? null)->toBe('replay', json_encode($facts))
+        ->and($facts['sandbox_replay_section'] ?? null)->toBe($section)
+        ->and($facts['sandbox_replay_sqlstate'] ?? null)->toBe('42883')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_20');
+}
+
+it('refuses an index-expression restore bomb: the function does not exist when the index is built (PR-2, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('bomb'), 'post_data');
+    rdsrUndefinedFunction(rdsrDrill('execbomb'), 'post_data');
+});
+
+it('never runs row-security policy code: the policy cannot even be created before the functions (PR-5, P5-1)', function () {
+    // The host refuses this archive at its TOC (ROW SECURITY); this drives the guest directly to prove the inner layer.
+    rdsrUndefinedFunction(rdsrDrill('rls'), 'post_data');
+});
+
+it('keeps a backslash line inside a function body as text: no meta-command runs (D5, PR-6)', function () {
+    $facts = rdsrDrill('metabody');
+
+    expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
+        ->and($facts['sandbox_replay'] ?? null)->toBe('ok');
+});
+
+it('enforces the extension allowlist inside the unit too, with allowlisted extensions owned by the bootstrap superuser (PR-8, P4P-1(b))', function () {
+    $allowed = rdsrDrill('ext', 'pgcrypto');
+    $refused = rdsrDrill('ext', 'none');
+
+    expect($allowed['decision'] ?? null)->toBe('GO', json_encode($allowed))
+        ->and($allowed['sandbox_extensions_outside_allowlist'] ?? null)->toBe('0')
+        ->and($refused['sandbox_stage'] ?? null)->toBe('extension_not_allowlisted', json_encode($refused))
+        ->and($refused['decision'] ?? null)->toBe('FAIL:unit_exit_20');
+});
+
+it('refuses a CHECK constraint or generated column that calls dump code: CREATE TABLE fails before any code runs (P4V-1, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('checkgen'), 'pre_data');
+});
+
+it('refuses pre-data code that would drop its own function, or launder it into an extension: it never runs (P4P-1, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('dangling'), 'pre_data');
+    rdsrUndefinedFunction(rdsrDrill('launder', 'pgcrypto'), 'pre_data');
+});
+
+it('refuses self-erasing pre-data code that got GO before the restore order changed (review round 5, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('vanish'), 'pre_data');
+});
+
+it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-3)', function () {
+    $facts = rdsrDrill('r6owner');
+
+    expect((int) ($facts['sandbox_runtime_owned_objects'] ?? 0))->toBeGreaterThan(0, json_encode($facts));
+});
+
+it('refuses a CHECK that depends on the session or the clock: it would hold in the drill and fail in a real restore (R6B-1)', function () {
+    // R6F-P1, R6F-P2 (fix verification of round 6): IMMUTABLE by label yet session-dependent (TimeZone through XML,
+    // extra_float_digits through a text cast), and object ids the restoring cluster assigns (a column, a constant).
+    foreach (['rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'agebomb', 'aclbomb'] as $fixture) {
+        $facts = rdsrDrill($fixture);
+        expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', $fixture.' '.json_encode($facts))
+            ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+    }
+});
+
+it('fails an index whose expression goes through a value\'s text form: it can build in the drill and fail in a real restore (R6F-P1)', function () {
+    $facts = rdsrDrill('idxbomb');
+
+    expect($facts['sandbox_replay_section'] ?? null)->toBe('post_data_environment', json_encode($facts))
+        ->and($facts['sandbox_stage'] ?? null)->toBe('environment_dependent')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_22');
+});
+
+/**
+ * F3: a production-like restore environment (the contract's pinned settings) and the digest the host computes for it
+ * (the canonical lines of dms_env_expected_digest, which RestoreDrillEnvContractTest checks against the library).
+ */
+function rdsrEnv(array $over = []): array
+{
+    $tz = 'unknown';
+    if (preg_match('/^# version ([0-9]{4}[a-z])$/m', (string) @file_get_contents('/usr/share/zoneinfo/tzdata.zi'), $m)) {
+        $tz = $m[1];
+    }
+    $pins = array_merge([
+        'TimeZone' => 'Asia/Makassar', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'array_nulls' => 'on',
+        'lc_monetary' => 'C.UTF-8', 'lc_numeric' => 'C.UTF-8', 'lc_time' => 'C.UTF-8', 'extra_float_digits' => '1',
+        'bytea_output' => 'hex', 'xmlbinary' => 'base64', 'xmloption' => 'content', 'standard_conforming_strings' => 'on',
+        'quote_all_identifiers' => 'off', 'default_text_search_config' => 'pg_catalog.english', 'timezone_abbreviations' => 'Default',
+        'transform_null_equals' => 'off',
+    ], $over);
+    $lines = ['pg_major=16', 'server_encoding=UTF8', 'locale_provider=libc', 'datcollate=C.UTF-8', 'datctype=C.UTF-8', 'collation_version=none', "tzdata_version={$tz}"];
+    foreach ($pins as $k => $v) {
+        $lines[] = "{$k}={$v}";
+    }
+
+    return [
+        collect($pins)->map(fn (string $v, string $k): string => "{$k}={$v}")->implode(';'),
+        hash('sha256', implode("\n", $lines)."\n"),
+    ];
+}
+
+it('restores under the contract\'s pinned environment, and the guest\'s environment digest equals the host\'s (F3)', function () {
+    [$pins, $digest] = rdsrEnv();
+    $facts = rdsrDrill('clean', 'none', $pins, $digest);
+
+    expect($facts['decision'] ?? null)->toBe('GO', json_encode($facts))
+        ->and($facts['sandbox_env_digest'] ?? null)->toBe($digest);
+});
+
+it('FAILs when the restore environment the guest observed is not the signed contract\'s (F3)', function () {
+    [$pins] = rdsrEnv();
+    [, $other] = rdsrEnv(['TimeZone' => 'UTC']);
+    $facts = rdsrDrill('clean', 'none', $pins, $other);
+
+    expect($facts['decision'] ?? null)->toBe('FAIL:env_mismatch', json_encode($facts));
+});
+
+it('reproduces production\'s restore outcome under its pinned settings: array_nulls=off fails the load as the real restore would, on is GO (F3)', function () {
+    [$off, $offDigest] = rdsrEnv(['array_nulls' => 'off']);
+    $failed = rdsrDrill('arrnull', 'none', $off, $offDigest);
+    [$on, $onDigest] = rdsrEnv();
+    $go = rdsrDrill('arrnull', 'none', $on, $onDigest);
+
+    expect($failed['decision'] ?? null)->toBe('FAIL:unit_exit_20', json_encode($failed))
+        ->and($failed['sandbox_replay_section'] ?? null)->toBe('data')
+        ->and($failed['sandbox_replay_sqlstate'] ?? null)->toBe('22P02')
+        ->and($go['decision'] ?? null)->toBe('GO', json_encode($go));
+});
+
+it('refuses pinned settings outside the sixteen it knows, inside the unit too (F3)', function () {
+    [$pins] = rdsrEnv();
+    $facts = rdsrDrill('clean', 'none', str_replace('timezone_abbreviations=Default', 'search_path=public', $pins));
+
+    expect($facts['sandbox_stage'] ?? null)->toBe('env_pins_invalid', json_encode($facts))
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_12');
+});
+
+it('measures the environment at the end of every restore session: a setting the archive itself changes is never reported as the contract\'s (F3 review)', function () {
+    // pg_restore's own preamble sets xmloption = content in every session it feeds. Pinned to document (which a signed
+    // contract can no longer carry), the fresh session alone would match the host's digest; the restore sessions do not.
+    [$pins, $digest] = rdsrEnv(['xmloption' => 'document']);
+    $facts = rdsrDrill('clean', 'none', $pins, $digest);
+
+    expect($facts['sandbox_env_digest'] ?? null)->toBe('inconsistent', json_encode($facts))
+        ->and($facts['decision'] ?? null)->toBe('FAIL:env_mismatch');
+});

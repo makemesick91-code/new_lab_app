@@ -2054,6 +2054,48 @@ return [
         // Selected by the `DeployHarden` token in BOTH critical variants;
         // declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenDirectApprovalTest.php',
+        // DMS-SPN4-READY-PILOT-1 G6 / R6-B6 (owner decisions D-Q6, D-Q7; findings
+        // N-5, N-9): a restore never makes the application login role a database
+        // owner, and the restore drill runs every database operation through the
+        // superuser and never relies on the runtime holding CREATEDB. Selected by
+        // the `RestoreDrill` token in BOTH critical variants; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillOwnershipPrivilegeTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B6 (owner decisions D-Q6-a, D-Q6-b): every
+        // restore path stops before it creates or replays anything when a role
+        // that owns objects in the dump is missing, and names it; no role is
+        // created, no ownership stripped or given to the runtime, and no pre-R6
+        // exception flag exists. Selected by the `RestoreDrill` token in BOTH
+        // critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillOwnerRolePreflightTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B6 finding A-1 (2026-11-25): the restore
+        // drill replays only a root-only staged copy whose SHA-256 matches
+        // trusted evidence (rule 235), refuses a symlinked, foreign-owned or
+        // writable backup, runs the replay in psql restricted mode (no
+        // meta-command), and refuses before the data load any CHECK, domain,
+        // generated-column or partition expression that would run user code or
+        // a non-IMMUTABLE builtin as the superuser, all through one pinned,
+        // verified PostgreSQL 16.15+ client. Selected by the
+        // `RestoreDrill` token in BOTH critical variants; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillTrustedBackupTest.php',
+        // R6-B6 isolated restore drill (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", 2026-11-25):
+        // the sandbox unit's isolation profile, the D6 limits, the strict result parser and the host decision; the
+        // signed role manifest (D3) and signed, chained drill evidence (D10); the disposable-VM transport and the
+        // orchestrator's refusals (D1); and the retired in-place replay. Selected by the `RestoreDrill` token in BOTH
+        // critical variants. RestoreDrillSandboxRuntimeTest (the real sandbox) is not declared here: it skips where no
+        // per-user systemd manager exists and runs in the dedicated real-sandbox gate instead (D8).
+        'tests/Feature/Foundation/RestoreDrillIsolationProfileTest.php',
+        'tests/Feature/Foundation/RestoreDrillManifestEvidenceTest.php',
+        'tests/Feature/Foundation/RestoreDrillVmProtocolTest.php',
+        // R6-B6 phase 2 (PR-6, PR-5, PR-8): the structured custom-format archive, its strict TOC and data-section
+        // validation and the per-table counts, over committed synthetic fixtures (no PostgreSQL binary needed).
+        'tests/Feature/Foundation/RestoreDrillArchiveTest.php',
+        // R6-B6 F3 (owner decision RECORD AND PIN): the signed Restore Environment Compatibility Contract, its
+        // refusals, revocation, the exact/compatible/pinned classes checked before boot, the canonical environment
+        // digest and the read-only production collector. Selected by the `RestoreDrill` token in BOTH critical
+        // variants; declared so a rename cannot drop it (needs ssh-keygen only, no PostgreSQL binary).
+        'tests/Feature/Foundation/RestoreDrillEnvContractTest.php',
     ],
 
     /*

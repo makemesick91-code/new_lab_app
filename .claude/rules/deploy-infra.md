@@ -106,12 +106,12 @@ current behaviour. A mismatch is implementation drift: report it.
   verified on Biznet 2026-11-04; `Persistent=true`, `User=daengtisiams`), never through Laravel's scheduler:
   production has no `schedule:run` invoker, so a scheduled task silently never fires. Source:
   `.cursor/rules/61-backup-disaster-recovery-automation.mdc`, archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`.
-- **AIR-DEP-16** Restores run as the `postgres` superuser with the dump streamed on stdin (dumps are not readable by
-  that account), `ON_ERROR_STOP=1`, single transaction and checked `PIPESTATUS`; never grant the app role superuser.
-  `scripts/restore_postgres.sh` refuses the production database without `--force-production` plus a typed
-  confirmation (`--yes` only on an explicit owner decision); both restore tools need trusted digest evidence (AIR-DEP-40). `scripts/restore-rehearsal.sh` restores into `<db>_dr_rehearsal_<stamp>`, aborts if it equals the
-  production name, and drops only that scratch database via a trap. Absent drill evidence stays WATCH. Source: `61-…`,
-  archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`, `.cursor/rules/125-final-pre-full-suite-readiness-gate.mdc` (§6).
+- **AIR-DEP-16** `restore_postgres.sh` and `restore-rehearsal.sh` restore as the `postgres` superuser, dump on stdin,
+  `ON_ERROR_STOP=1`, one transaction, checked `PIPESTATUS`; never grant the app role superuser. `restore_postgres.sh`
+  refuses the production DB without `--force-production` and a typed confirmation (`--yes` only by owner
+  decision); both need a trusted digest (AIR-DEP-40). The rehearsal uses `<db>_dr_rehearsal_<stamp>`, aborts on
+  the production name, drops only it. Drills replay only in a disposable VM (rule 250); absent drill evidence =
+  WATCH. Source: `61-…`, archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`, `.cursor/rules/125-final-pre-full-suite-readiness-gate.mdc` (§6).
 
 ### Upload limits and request budget
 
@@ -304,6 +304,7 @@ current behaviour. A mismatch is implementation drift: report it.
 | `.cursor/rules/233-deploy-privilege-separation.mdc` | No root PHP; no root path mutation of runtime trees; source claim; drift gate; deploy security baseline index |
 | `.cursor/rules/235-deploy-least-privilege-sudo.mdc` | Operator entrypoint; password-only admin; build sandbox; restore evidence |
 | `.cursor/rules/236-direct-signed-release-approval.mdc` | Approval contract 3: direct signed approval, host-verified CI (exact-SHA dispatch; push historical, §5) |
+| `.cursor/rules/250-isolated-restore-drill-vm.mdc` | Disposable-VM drill; in-place replay retired |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

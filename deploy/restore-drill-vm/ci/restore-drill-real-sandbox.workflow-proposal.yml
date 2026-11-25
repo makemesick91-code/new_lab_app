@@ -1,0 +1,113 @@
+# R6-B6 isolated restore drill — the real-isolation validation workflow (owner directives D8 and "R6-B6 — Phase 3").
+# The audited source of truth. It runs ONLY where it is copied to .github/workflows/ on the dedicated validation branch
+# named below (owner authorisation "R6-B6 — Phase 3", §2); it is never active on the base branch or on PR #695.
+#
+# Disposable infrastructure only: each job runs on a fresh GitHub-hosted Linux VM that is discarded afterwards.
+#   Trigger:     push to the one validation branch below. No pull_request, no schedule, no workflow_run, no tags.
+#   Data:        synthetic only (tests/Fixtures/restore-drill, and archives the gates build from their own decoy
+#                clusters). No production host, backup, credential or patient data; no secret, no environment.
+#   Identity:    no token use beyond a read-only checkout (persist-credentials: false). Permissions: contents: read.
+#   Actions:     pinned by full commit SHA, verified against their tags (checkout v4.4.0, upload-artifact v4.6.2).
+#   Image:       Ubuntu 24.04 cloud image verified against Ubuntu's signed SHA256SUMS (gpgv + ubuntu-cloudimage-keyring).
+#   KVM:         required; the job fails if /dev/kvm is not usable by the QEMU account (root:kvm 0660, the QEMU account
+#                in kvm, the operator not), and QEMU runs with accel=kvm only (no emulation).
+#   Limits:      job timeouts; one run per branch (concurrency, cancel in progress); D6 inside the drill.
+#   system-mode-sandbox  the drill's sandbox profile in a SYSTEM unit with DynamicUser, the separate signer, witness
+#                        and QEMU identities, their sudoers and file boundaries (provision-drill-host.sh).
+#   vm-boot              builds the drill image and drives the root-owned installed orchestrator end to end under KVM.
+name: restore-drill-real-sandbox
+
+on:
+  push:
+    branches:
+      - validation/r6-b6-real-isolation
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restore-drill-real-sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  system-mode-sandbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: PostgreSQL 16.15+ binaries (Ubuntu archive); the packaged cluster is removed; QEMU (digested by the signer)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16 qemu-system-x86 qemu-utils
+          sudo pg_dropcluster --stop 16 main || true
+          /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
+      - name: Drill-host layout (runner, signer, witness and QEMU identities; root supervisor; root-owned code and configuration)
+        run: bash deploy/restore-drill-vm/ci/provision-drill-host.sh "$(id -un)" "$(printf 'c%.0s' {1..64})" "$RUNNER_TEMP/gate-system"
+      - name: Identity evidence
+        run: |
+          for u in dmsdrill-runner dmsdrill-signer dmsdrill-witness dmsdrill-qemu "$(id -un)"; do id "$u"; done
+          sudo cat /etc/sudoers.d/dms-restore-drill
+          sudo find /usr/local/lib/dms-restore-drill /etc/dms-restore-drill /var/lib/dmsdrill-signer /var/lib/dmsdrill-witness /var/lib/dmsdrill-qemu -printf '%u:%g %m %p\n' | grep -v '/store/'
+      - name: Real sandbox, system mode (DynamicUser) + signer, witness and QEMU identity separation
+        run: bash deploy/restore-drill-vm/ci/real-sandbox-gate.sh system "$RUNNER_TEMP/gate-system"
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-drill-real-sandbox-system
+          path: ${{ runner.temp }}/gate-system/
+          retention-days: 30
+
+  vm-boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: KVM (required, never emulated); QEMU, libguestfs, PostgreSQL 16 client
+        run: |
+          echo "cpu virtualization flags: $(grep -c -E 'vmx|svm' /proc/cpuinfo)"; ls -l /dev/kvm || true
+          test -c /dev/kvm || { echo "KVM is not available on this runner: the drill never falls back to emulation"; exit 1; }
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils libguestfs-tools ubuntu-cloudimage-keyring postgresql-16
+          # libguestfs's passt helper exits 1 on these runners; without it, libguestfs uses QEMU user networking, only for
+          # the image BUILD (package install). The drill VM itself never has a network device.
+          sudo apt-get remove -y -q passt || true
+          sudo pg_dropcluster --stop 16 main || true
+          sudo chmod 0644 /boot/vmlinuz-* || true
+          /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
+          ls -l /dev/kvm; qemu-system-x86_64 --version | head -n 1
+      - name: Ubuntu 24.04 cloud image, verified against Ubuntu's signed SHA256SUMS; drill image built
+        run: |
+          base=https://cloud-images.ubuntu.com/releases/noble/release
+          mkdir -p "$RUNNER_TEMP/img" && cd "$RUNNER_TEMP/img"
+          curl -fsSLO "$base/SHA256SUMS" && curl -fsSLO "$base/SHA256SUMS.gpg"
+          gpgv --keyring /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg SHA256SUMS.gpg SHA256SUMS
+          img=ubuntu-24.04-server-cloudimg-amd64.img
+          curl -fsSLO "$base/$img"
+          sha="$(grep " \*$img\$" SHA256SUMS | cut -d' ' -f1)"
+          echo "cloud image ${img} sha256 ${sha}"
+          cd "$GITHUB_WORKSPACE"
+          bash scripts/restore-drill-vm-image.sh "$RUNNER_TEMP/img/$img" "$sha" "$RUNNER_TEMP/drill.qcow2" none host-apt
+      - name: Drill-host layout with the drill image (runner, signer, witness and QEMU identities; root supervisor)
+        run: bash deploy/restore-drill-vm/ci/provision-drill-host.sh "$(id -un)" "$(sha256sum "$RUNNER_TEMP/drill.qcow2" | cut -d' ' -f1)" "$RUNNER_TEMP/gate-vm" "$RUNNER_TEMP/drill.qcow2"
+      - name: KVM for the QEMU account only
+        run: |
+          ls -l /dev/kvm
+          sudo -n -u dmsdrill-qemu test -r /dev/kvm -a -w /dev/kvm || { echo "KVM is not usable by the QEMU account: the drill never falls back to emulation"; exit 1; }
+      - name: VM boot gate (the installed orchestrator as the runner, end to end under KVM)
+        run: bash deploy/restore-drill-vm/ci/vm-boot-gate.sh "$RUNNER_TEMP/gate-vm" "$RUNNER_TEMP/gate-vm/pinned-anchor"
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-drill-vm-boot
+          path: ${{ runner.temp }}/gate-vm/
+          retention-days: 30

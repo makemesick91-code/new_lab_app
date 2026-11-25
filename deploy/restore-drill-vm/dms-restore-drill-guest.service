@@ -1,0 +1,19 @@
+# R6-B6 isolated restore drill — guest agent unit, installed only in the disposable drill VM image
+# (scripts/restore-drill-vm-image.sh). Never installed on the production host or the drill host.
+[Unit]
+Description=DMS isolated restore drill (guest agent, runs once, then powers the VM off)
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+# The input and output disks are attached by the host and found by their virtio serial. Mode is always `system`:
+# the replay runs in a transient system unit under DynamicUser (owner directive D2).
+ExecStart=/usr/local/lib/dms-restore-drill/restore-drill-vm-guest.sh /dev/disk/by-id/virtio-dmsdrill-input /dev/disk/by-id/virtio-dmsdrill-output system
+ExecStopPost=/usr/bin/systemctl --no-block poweroff
+StandardOutput=null
+StandardError=null
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target

@@ -31,23 +31,167 @@ declaring Stage-1 GO.
 
 ## 2. Restore target — staging / test / disposable ONLY
 
-Two supported safe options. Prefer **Option 2** (disposable DB) when a staging
-host with existing DB credentials is available and production is untouched.
+Two supported safe options. Prefer **Option 2** (the isolated VM drill) when an isolated drill host
+is available; production is never touched.
 
 **Option 1 — dedicated staging VPS/database:** restore the latest production
 backup into the staging database only, verify app boot + health/read-only routes
 + migrations, and record the ROLL-5-1A evidence JSON.
 
-**Option 2 — disposable local/staging PostgreSQL DB (preferred):** run the
-fail-fast drill helper — it creates a disposable DB named
-`<db>_restore_drill_YYYYMMDD-HHMMSS`, restores the latest verified backup there,
-runs read-only verification (table count + bounded COUNTs — **no patient rows**),
-drops **only** the disposable DB, and writes the canonical evidence:
+**Option 2 — the isolated VM drill (R6-B6; owner directive "R6-B6 ISOLATED RESTORE DRILL", 2026-11-25):**
+the only supported way to replay a backup for a drill. Design and evidence:
+[r6-b6-isolated-restore-drill-design](../architecture/r6-b6-isolated-restore-drill-design.md).
+
+- **The in-place drill is retired (finding A-1).** `scripts/rollout-restore-drill.sh` used to replay the backup as
+  the PostgreSQL superuser on the host's own cluster. It now verifies the backup read-only (trusted digest, source
+  checks, staged copy, pinned client, owner roles, runtime ownership gate), then refuses with exit 3. It creates,
+  replays and drops nothing, and writes no evidence.
+- **The drill runs only on an isolated drill host, in a disposable VM** (D1): never on the production host, which the
+  orchestrator refuses. Each drill boots one fresh VM from a pinned, digest-verified image, with no network device, at
+  most 1 vCPU, 2 GiB RAM, a 10 GiB disk and 30 minutes, one drill at a time (D6). Inside the VM, the replay runs in a
+  systemd system unit under DynamicUser (D2), as a non-superuser role (D4), in psql restricted mode with the load
+  guard (D5).
+- **Inputs:**
+  - the backup, which must be a **pg_dump 16 custom-format archive** (`pg_dump -Fc`). A plain-SQL backup is refused
+    (PR-6). Its TOC must hold only the object types the application produces, the `public` schema, owners from the
+    manifest and allowlisted extensions;
+  - its SHA-256 from an independent record;
+  - a role manifest signed with `ssh-keygen -Y sign -n dms-restore-role-manifest` by a principal of the drill host's
+    trust anchor (D3), and not listed in the drill host's revocation list. The VM never connects to production
+    PostgreSQL.
+- **Output:** two records per drill, a STARTED record and its outcome (GO, FAIL, REFUSED or ABORTED). They are signed
+  by the drill host's **separate signer account**, published atomically, chained by sha256 and appended to the
+  independent witness (D10, PR-9, contract 4). The drill prints each record's head digest: copy it to a store outside
+  the drill host. A record is not ROLL-5-1A JSON. The
+  readiness service does not read it yet (a separate change), so `restore_drill_evidence` stays at WATCH until then.
+- **Drill host provisioning (owner; not automated).** Never on the production host. The reference layout is
+  `deploy/restore-drill-vm/ci/provision-drill-host.sh` (CI only); the design is in design §0.12.
+  - All drill code installed **root-owned** outside any checkout (`/usr/local/lib/dms-restore-drill/`), in
+    directories no other identity can write. The signer verifies this itself and records
+    `INSTALL=root:<code digest>,config:<configuration digest>`; it refuses a GO from any other install, and a GO whose
+    install changed since the run started. The code digest covers the drill code and the QEMU, qemu-img and pg_restore
+    binaries. The configuration digest covers `/etc/dms-restore-drill/*.conf`, the manifest anchor and revocation list,
+    and the drill's sudoers rules (`/etc/dms-restore-drill/sudoers`).
+  - Accounts, each owning only its own state, with no login and no other sudo right:
+    - the **operator**, a person, who places the backup (`pg_dump -Fc`) and the signed manifest in the **inbox**
+      (`/var/lib/dms-restore-drill/inbox`, group `dmsdrill-inbox`, mode 2770, files 0640);
+    - the **runner** (`dmsdrill-runner`, also in `dmsdrill-inbox`), which runs the installed orchestrator. Its work
+      directory must be a tmpfs, and the host must have **no swap**: the staged copy and the input disk are
+      plaintext-equivalent. The orchestrator refuses to run while swap is active;
+    - the **signer** (signing key, `allowed_signers` with `namespaces="dms-restore-drill-evidence"`, store, head log);
+    - the **witness** (the append-only head log).
+    The signer's state directory (store, head log and working files) and the witness's log directory are each a
+    **mount point of a file system of their own**: a small dedicated partition, not a subvolume or thin volume that
+    shares space. Then nobody else can fill them and stop a publication half way. The signer verifies the mount points
+    and refuses a GO otherwise.
+    - the **QEMU** account (a member of `kvm`; `/dev/kvm` root:kvm 0660; no sudoers rule). Its VM work directory is a
+      **file system of its own**, for example a dedicated partition of at least 12 GiB, under a root-owned parent
+      directory. The supervisor refuses otherwise, so a full VM disk can never fill the evidence store.
+  - The **supervisor** (`restore-drill-supervisor.sh`, run as root by the runner only) starts the archive inspection in
+    a DynamicUser system unit and QEMU in the system unit `dmsqemu.service`: no network, cgroup killed at the time
+    limit, no swap, no core dump, no socket of any kind (no host daemon such as the DNS resolver is reachable), no
+    io_uring and no namespaces, a private `/dev/shm`, bounded CPU, I/O and file size. It starts one VM at a time, and each run's VM boots only once. No AppArmor
+    exception and no lingering user manager are needed.
+  - Root-owned configuration in `/etc/dms-restore-drill/`, mode 0644 (paths only, no secret): `drill.conf`,
+    `signer.conf` (`DMS_SIGNER_PROFILE=drill-host`, `DMS_SIGNER_IMAGE_SHA256` the allowed image digests),
+    `witness.conf`, `qemu.conf` (the pinned image and digest, the QEMU binaries) and `supervisor.conf`. The drill image
+    is root-owned.
+  - Exactly these sudoers rules. Use `Defaults!<the four commands> !use_pty, !log_input, !log_output`, and the same
+    commands' `rlimit_*` defaults exactly as `provision-drill-host.sh` writes them: `rlimit_nproc=infinity`,
+    `rlimit_cpu=infinity`, `rlimit_as=infinity`, `rlimit_data=infinity`, `rlimit_fsize=infinity`,
+    `rlimit_locks=infinity`, `rlimit_nofile=65536`, `rlimit_stack=8388608`, `rlimit_memlock=8388608`, `rlimit_core=0`.
+    Then a caller's resource limits never reach the drill identities. The orchestrator and the signer refuse to run
+    when the process, CPU or address-space limit is not unlimited. No SETENV, and `secure_path` set. The rules live in `/etc/dms-restore-drill/sudoers`: check it with `visudo -c` at mode 0440,
+    then make it 0444 so the signer can digest it. The drop-in `/etc/sudoers.d/dms-restore-drill` (0440) holds only
+    `@include /etc/dms-restore-drill/sudoers`:
+    - operator → runner: the orchestrator `*`;
+    - operator → witness: `show` (the operator has **no** route to the signer);
+    - runner → signer: `sign`, `verify`;
+    - runner → root: the supervisor's `inspect *` and `vm *`;
+    - runner → witness: `show`;
+    - signer → witness: `append *`, `show`.
+  - Before the first drill: write down the signer key's fingerprint outside the host (it is the anchor every exported
+    store is verified against), and the expected INSTALL digest of this host's install. The configuration part names
+    this host's accounts, so it is per host, not per release.
+  - After every drill: copy the witness log (`show`) off the host. It is the independently retained record of every
+    evidence digest. `show` ends after 30 seconds, so read it to the end at once (a reader that stalls gets a
+    truncated copy and exit 137).
+  - **A record published but not witnessed** (the signer says so, and every later record is refused): root runs the
+    signer's `recover-head` **as the signer account through sudo**, so the pinned limits apply. It refuses unless the
+    store verifies and the witness and the head log are each at most one record behind. If an environmental stall (a hung disk,
+    sudo or PAM) leaves a drill hanging after its VM, only root can end it; its run is then closed by the next start as
+    `ABORTED:unclosed_after_boot`.
+  - `DMS_DRILL_LOCALE` must equal the production database's locale. Generated values and indexes depend on it.
+  - The image is built by `scripts/restore-drill-vm-image.sh` with the same extension allowlist (`none`). Widening the
+    allowlist needs a production-side check first that no table belongs to an extension.
+- **Reading a FAIL with SQLSTATE 42883** (undefined function) in pre-data or post-data: a DEFAULT, CHECK, generated
+  column or index names a function of the dump. The restore order keeps every dump function out of the database until
+  the end, so no code from the backup can run (P5-1). For an honest schema, it means the schema uses its own
+  functions outside triggers, which the drill does not accept.
+- **Restore Environment Compatibility Contract (F3, RECORD AND PIN).** A drill reports GO only for production's
+  restore environment as recorded in a contract the owner signed. Specification: `scripts/lib/restore-envcontract.sh`.
+  - **Collect** production's values read-only with `scripts/restore-env-contract-collect.sh <database>`. Only with a
+    separate owner authorization, on the production database host, as the account and connection settings of the
+    real restore. It prints an UNSIGNED DRAFT and changes nothing.
+  - **Review** every line. Fill in the id (8–64 of `a-z0-9-`), the issuing principal and the validity window (at most
+    90 days).
+  - **Sign** offline with the owner key: `ssh-keygen -Y sign -f <owner key> -n dms-restore-env-contract <file>`.
+    Never edit the file after signing; a signature on another namespace is refused. The manifest anchor serves both
+    namespaces: a `namespaces="…"` restriction on its line must list `dms-restore-role-manifest` and
+    `dms-restore-env-contract`, or contracts are refused.
+  - **Bind:** the next role manifest (contract 2) names the contract's sha256 in
+    `DMS_ROLE_MANIFEST_ENV_CONTRACT_SHA256`. Copy both, with their `.sig` files, into the inbox.
+  - **Classes, checked before any VM boots:**
+    - exact, against the drill image's properties: PG major, UTF8, libc provider, collate = ctype, collation version,
+      glibc, ICU, tzdata, extensions, locales present;
+    - compatible: same major, image minor 16.15 or later and never older than production's. A GO carries over only
+      to a restore on a PostgreSQL minor at least the drill image's: before a recovery relies on a drill GO, patch
+      the target to that minor, or drill on an image of the target's exact minor.
+    - pinned: sixteen restore-session settings, applied to every restore session. The guest measures the environment
+      at the end of each of the six restore sessions (behind a per-session nonce the archive cannot forge) and once
+      more in a fresh one; any difference reports `inconsistent`. A setting the archive changes and resets within one
+      session is not seen; production's restore runs the same statements.
+    - `xmloption` must be `content` and `standard_conforming_strings` must be `on`: pg_restore's own preamble sets
+      both in every restore session, in production as in the drill. The collector notes another server value on
+      stderr; the verifier refuses it.
+    - collation version: `none` for C, POSIX and C.* locales; otherwise the image's glibc version. A database that
+      recorded another (stale) version is refused before boot.
+  - **Evidence store:** records of evidence contract 5 carry the environment contract. A store holding records of an
+    earlier contract cannot be extended; start a new store (new store id) and keep the old one, with its witness
+    copies, for reference.
+  - **Retention:** keep every signed role manifest and environment contract, with its `.sig`, for as long as a record
+    naming its sha256 is kept. An independent verifier needs them to check a record.
+  - **When production changes** (PostgreSQL minor or major, OS packages, locale, server or role settings), collect and
+    sign a new contract. Revoke the old one in the revocation list (`revoked <id>`). If the drill image no longer
+    matches, rebuild it so its properties do.
+- **Reading an environment refusal or FAIL:**
+  - `REFUSED:env_contract`: the contract is missing, unsigned, expired, revoked, or not the one the manifest names.
+  - `REFUSED:env_compatibility`: the drill image cannot reproduce production's environment (the message names the
+    property). Rebuild the image or record a new contract.
+  - `FAIL:env_mismatch`: the guest did not report the contract's environment, or a restore session ended in another
+    one (`inconsistent`: the archive itself changed a pinned setting).
+  - `FAIL:image_properties_mismatch`: the booted image is not the one whose properties were checked.
+- **Reading a load-guard refusal (`FAIL:unit_exit_21`) or `environment_dependent` (`FAIL:unit_exit_22`):** a CHECK,
+  generated column, partition key or index of the schema depends on the session or the cluster. Examples are the
+  clock, the role, an XML expression, a value converted through its text form, or an object-id type such as
+  `regclass` (full-text search ids included). The drill also re-evaluates every CHECK, generated column and index
+  over the restored rows under several session settings; a difference FAILs as `environment_dependent`. Such an expression can hold in the drill and fail in a real restore, so the drill does not accept it.
 
 ```bash
-bash scripts/rollout-restore-drill.sh                 # uses latest deploy backup
-php artisan rollout:restore-drill-evidence --strict   # validate the written evidence
+# On the ISOLATED DRILL HOST only (never on production), as the operator, with both files in the inbox:
+sudo -n -u dmsdrill-runner -- /usr/local/lib/dms-restore-drill/drill/scripts/restore-drill-vm.sh \
+  --expected-sha256 <hex> --manifest /var/lib/dms-restore-drill/inbox/<manifest> \
+  --env-contract /var/lib/dms-restore-drill/inbox/<environment contract> /var/lib/dms-restore-drill/inbox/<archive.dump>
+# The witness log, to copy off the host after every drill (one line per evidence record; the last line is the head):
+sudo -n -u dmsdrill-witness -- /usr/local/lib/dms-restore-drill/witness/restore-drill-evidence-witness.sh show
+# Only after the signer reported a record published but not witnessed (root, as the signer account):
+sudo -n -u dmsdrill-signer -- /usr/local/lib/dms-restore-drill/signer/restore-drill-evidence-signer.sh recover-head
+# Production-side verification only (no replay; exit 3 by design):
+bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>
 ```
+
+Not authorised without a separate owner decision: building the drill VM on the production VPS, running any drill
+against production data, and wiring the evidence into readiness.
 
 **Option 3 — no safe restore target available:** do **not** fake GO. Leave the
 `restore_drill_evidence` signal at WATCH and complete the action checklist below
