@@ -90,6 +90,11 @@ printf '%s\n' "DMS_QEMU_BINARY=/usr/bin/qemu-system-x86_64" "DMS_QEMU_IMG=/usr/b
 printf '%s\n' "DMS_SUPERVISOR_CALLER=${R}" "DMS_SUPERVISOR_QEMU_USER=${Q}" "DMS_SUPERVISOR_SIGNER_USER=${S}" \
   "DMS_SUPERVISOR_QEMU_LAUNCHER=${L}/qemu/restore-drill-qemu-launcher.sh" "DMS_SUPERVISOR_QEMU_WORK_DIR=/var/lib/dmsdrill-qemu/work" \
   "DMS_SUPERVISOR_PG_BINDIR=/usr/lib/postgresql/16/bin" "DMS_SUPERVISOR_SIGNER_STORE=/var/lib/dmsdrill-signer/store" | conf supervisor.conf
+# The drill's own configuration is part of the install the signer verifies (R6C-8): its signer and supervisor paths.
+printf '%s\n' "DMS_DRILL_MANIFEST_ANCHOR=${E}/manifest-anchor" "DMS_DRILL_MANIFEST_REVOCATIONS=${E}/revocations" \
+  "DMS_DRILL_EXTENSION_ALLOWLIST=none" "DMS_DRILL_SIGNER_USER=${S}" "DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh" \
+  "DMS_DRILL_SUPERVISOR_COMMAND=${L}/supervisor/restore-drill-supervisor.sh" "DMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin" \
+  "DMS_DRILL_WORK_DIR=/var/lib/dms-restore-drill/runner" "DMS_DRILL_LOCALE=C.UTF-8" | conf drill.conf
 
 # --- Sudoers: exactly these rules (R6C-1: the operator has no route to the signer's sign) ---------------------------
 ORCH="$L/drill/scripts/restore-drill-vm.sh"; SIGN="$L/signer/restore-drill-evidence-signer.sh"
