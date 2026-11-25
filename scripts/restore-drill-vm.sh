@@ -369,6 +369,12 @@ INSPECT_UNIT=""
 STAGE=archive_toc
 why="$(dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS")" || refuse "$why"
 dms_archive_toc_validate "$WORK/inspect/toc.txt" "${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" "$EXTENSIONS" > /dev/null
+STAGE=archive_extensions
+# R6-B8 review MEDIUM-1: every extension the archive creates is named in the signed environment contract, whose versions
+# were matched to the image above (env_compatibility); an extension the contract does not name would restore unverified.
+for e in $DMS_ARCHIVE_EXTENSIONS; do
+  [[ ",${DMS_ENV_CONTRACT[DMS_ENV_EXTENSIONS]}," == *",${e}:"* ]] || refuse "the archive creates extension ${e}, which the signed environment contract does not name (its version would be unverified)"
+done
 STAGE=archive_counts
 why="$(dms_archive_counts_check "$WORK/inspect/counts.txt")" || refuse "$why"
 STAGE=archive_p5
@@ -396,11 +402,14 @@ PAYLOAD_BYTES="$(stat -c %s -- "$WORK/payload")"
 PAYLOAD_SHA="$(sha256sum -- "$WORK/payload" | cut -d' ' -f1)"
 [ "$PAYLOAD_SHA" = "$EXPECTED_SHA256" ] || refuse "the staged archive changed"
 read -r PAYLOAD_KEY PAYLOAD_IV < <(dms_vm_input_key_iv) || refuse "cannot draw the payload key"
+# The guest creates only the extensions THIS archive creates (validated against the allowlist and the contract above),
+# not the whole allowlist: an archive that leaves an extension out must not restore against one it would not have in
+# a real restore (R6-B8 review LOW-1); P4P-1(b) holds, they are still created before any backup byte is read.
 # shellcheck disable=SC2034  # passed by name to dms_vm_input_build
 declare -A IN=([run_id]="$RUN_ID" [payload_bytes]="$PAYLOAD_BYTES" [payload_sha256]="$PAYLOAD_SHA"
   [payload_key]="$PAYLOAD_KEY" [payload_iv]="$PAYLOAD_IV"
   [roles]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_ROLES]}" [runtime_role]="${DMS_ROLE_MANIFEST[DMS_ROLE_MANIFEST_RUNTIME_ROLE]}"
-  [extension_allowlist]="${EXTENSIONS:-none}"
+  [extension_allowlist]="${DMS_ARCHIVE_EXTENSIONS:-none}"
   [locale]="${DMS_ENV_CONTRACT[DMS_ENV_DATCOLLATE]}" [env_pins]="$ENV_PINS" [tmpfs_mib]="$TMPFS_MIB"
   [memory_mib]="$UNIT_MEMORY_MIB" [tasks]="$TASKS" [timeout_seconds]="$UNIT_TIMEOUT")
 dms_vm_input_build "$WORK/input.raw" "$WORK/payload" IN || refuse "cannot build the input disk"
