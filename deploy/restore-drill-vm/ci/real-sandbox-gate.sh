@@ -122,7 +122,7 @@ drill() { # <label> <archive> [extension allowlist] [tmpfs MiB] [timeout s] -> p
   read -r pk piv < <(dms_vm_input_key_iv)
   # shellcheck disable=SC2034
   declare -A IN=([run_id]="$run" [payload_bytes]="$pb" [payload_sha256]="$ps" [payload_key]="$pk" [payload_iv]="$piv"
-    [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$exts" [locale]=C.UTF-8
+    [roles]="app_runtime dms_owner" [runtime_role]=app_runtime [extension_allowlist]="$exts" [locale]=C.UTF-8 [env_pins]=none
     [tmpfs_mib]="$tmpfs" [memory_mib]=768 [tasks]=64 [timeout_seconds]="$timeout")
   dms_vm_input_build "$d/input.raw" "$d/payload" IN
   head -c "$DMS_VM_OUTPUT_BYTES" /dev/zero > "$d/output.raw"

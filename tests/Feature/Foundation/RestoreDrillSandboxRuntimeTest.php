@@ -187,6 +187,7 @@ function rdsrEnv(array $over = []): array
         'lc_monetary' => 'C.UTF-8', 'lc_numeric' => 'C.UTF-8', 'lc_time' => 'C.UTF-8', 'extra_float_digits' => '1',
         'bytea_output' => 'hex', 'xmlbinary' => 'base64', 'xmloption' => 'content', 'standard_conforming_strings' => 'on',
         'quote_all_identifiers' => 'off', 'default_text_search_config' => 'pg_catalog.english', 'timezone_abbreviations' => 'Default',
+        'transform_null_equals' => 'off',
     ], $over);
     $lines = ['pg_major=16', 'server_encoding=UTF8', 'locale_provider=libc', 'datcollate=C.UTF-8', 'datctype=C.UTF-8', 'collation_version=none', "tzdata_version={$tz}"];
     foreach ($pins as $k => $v) {
@@ -227,10 +228,20 @@ it('reproduces production\'s restore outcome under its pinned settings: array_nu
         ->and($go['decision'] ?? null)->toBe('GO', json_encode($go));
 });
 
-it('refuses pinned settings outside the fifteen it knows, inside the unit too (F3)', function () {
+it('refuses pinned settings outside the sixteen it knows, inside the unit too (F3)', function () {
     [$pins] = rdsrEnv();
     $facts = rdsrDrill('clean', 'none', str_replace('timezone_abbreviations=Default', 'search_path=public', $pins));
 
     expect($facts['sandbox_stage'] ?? null)->toBe('env_pins_invalid', json_encode($facts))
         ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_12');
+});
+
+it('measures the environment at the end of every restore session: a setting the archive itself changes is never reported as the contract\'s (F3 review)', function () {
+    // pg_restore's own preamble sets xmloption = content in every session it feeds. Pinned to document (which a signed
+    // contract can no longer carry), the fresh session alone would match the host's digest; the restore sessions do not.
+    [$pins, $digest] = rdsrEnv(['xmloption' => 'document']);
+    $facts = rdsrDrill('clean', 'none', $pins, $digest);
+
+    expect($facts['sandbox_env_digest'] ?? null)->toBe('inconsistent', json_encode($facts))
+        ->and($facts['decision'] ?? null)->toBe('FAIL:env_mismatch');
 });

@@ -471,10 +471,10 @@ BEGIN
     -- R6F-P1: IMMUTABLE by PostgreSQL's label, yet the result depends on session settings (TimeZone, extra_float_digits,
     -- bytea_output, IntervalStyle, xmlbinary …): an XML expression, a conversion through a value's text form, a domain
     -- coercion, or a call of such an output or XML function. Refused in the dump's own objects.
-    SELECT e.what || ' uses an XML expression, a domain coercion, or a text-form conversion of a session-dependent value'
+    SELECT e.what || ' uses an XML or JSON constructor, a domain coercion, or a text-form conversion of a session-dependent value'
       FROM expr e
      WHERE e.uoid >= 16384
-       AND (e.tree ~ '[{](XMLEXPR|COERCETODOMAIN) '
+       AND (e.tree ~ '[{](XMLEXPR|COERCETODOMAIN|JSONCONSTRUCTOREXPR) '
             OR (e.tree ~ '[{]COERCEVIAIO ' AND (e.tree ~ (tf || '(' || sens || ')[ }]') OR e.tree ~ ':varattno 0 ' OR e.tree ~ '[{]ROWEXPR ')))
     UNION ALL
     SELECT f.what || ' calls ' || p.oid::regprocedure::text || ' (its result depends on session settings)'
@@ -484,7 +484,12 @@ BEGIN
               'line_out', 'lseg_out', 'path_out', 'point_out', 'poly_out'])
             OR p.prorettype = 'pg_catalog.xml'::regtype OR 'pg_catalog.xml'::regtype = ANY (p.proargtypes::oid[])
             -- R6F-P5: labelled IMMUTABLE, yet age() reads TimeZone and quote_ident() quote_all_identifiers.
-            OR p.oid = ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::regprocedure, 'pg_catalog.quote_ident(text)'::regprocedure]::oid[]))
+            OR p.oid = ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::regprocedure, 'pg_catalog.quote_ident(text)'::regprocedure,
+              -- R6F-P16: a zone NAME resolves through timezone_abbreviations, the tzdata files and, for 'localtime', the
+              -- restore host's /etc/localtime, none of which a session setting pins.
+              'pg_catalog.timezone(text,timestamptz)'::regprocedure, 'pg_catalog.timezone(text,timestamp)'::regprocedure,
+              'pg_catalog.date_trunc(text,timestamptz,text)'::regprocedure, 'pg_catalog.date_add(timestamptz,interval,text)'::regprocedure,
+              'pg_catalog.date_subtract(timestamptz,interval,text)'::regprocedure]::oid[]))
     UNION ALL
     -- R6F-P2: an object id (regclass …) in an expression or as a column: the restoring cluster assigns it, so a check
     -- over it can hold in the drill's fresh cluster and fail in a real restore.

@@ -96,13 +96,13 @@ GUARD=/opt/dmsdrill/guard.sql
 [ -f "$ARCHIVE" ] && [ -r "$ARCHIVE" ] && [ -f "$GUARD" ] && [ -r "$GUARD" ] || fail inputs_missing 12
 [ -z "$RUNTIME" ] || [[ "$RUNTIME" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail runtime_role_invalid 12
 [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]{1,32}$ ]] || fail locale_invalid 12
-# F3: the pinned restore-session settings: each of the fifteen names exactly once, values of a safe alphabet. They
+# F3: the pinned restore-session settings: each of the sixteen names exactly once, values of a safe alphabet. They
 # become libpq options of every restore session (spaces escaped), exactly as production's restore session has them.
-PIN_NAMES="TimeZone DateStyle IntervalStyle array_nulls lc_monetary lc_numeric lc_time extra_float_digits bytea_output xmlbinary xmloption standard_conforming_strings quote_all_identifiers default_text_search_config timezone_abbreviations"
+PIN_NAMES="TimeZone DateStyle IntervalStyle array_nulls lc_monetary lc_numeric lc_time extra_float_digits bytea_output xmlbinary xmloption standard_conforming_strings quote_all_identifiers default_text_search_config timezone_abbreviations transform_null_equals"
 PINS="${DRILL_ENV_PINS:-none}"
 PIN_OPTS=""
 if [ "$PINS" != none ]; then
-  [[ "$PINS" =~ ^[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14}$ ]] || fail env_pins_invalid 12
+  [[ "$PINS" =~ ^[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){15}$ ]] || fail env_pins_invalid 12
   declare -A PSEEN=()
   rest="$PINS"
   while [ -n "$rest" ]; do
@@ -113,9 +113,31 @@ if [ "$PINS" != none ]; then
     PSEEN[$pname]=1
     PIN_OPTS="${PIN_OPTS} -c ${pname}=${pval// /\\ }"
   done
-  [ "${#PSEEN[@]}" = 15 ] || fail env_pins_invalid 12
+  [ "${#PSEEN[@]}" = 16 ] || fail env_pins_invalid 12
 fi
 
+# F3: the restore-environment digest (what a pinned session observes), defined before any restore session.
+TZV=unknown
+if IFS= read -r tzl < /usr/share/zoneinfo/tzdata.zi 2> /dev/null && [[ "$tzl" =~ ^\#\ version\ ([0-9]{4}[a-z])$ ]]; then TZV="${BASH_REMATCH[1]}"; fi
+PIN_SQL=""
+for n in $PIN_NAMES; do PIN_SQL="${PIN_SQL}${PIN_SQL:+, }pg_catalog.concat('${n}=', pg_catalog.current_setting('${n}'))"; done
+read -r -d '' ENV_EXPR <<SQL
+pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.concat(pg_catalog.concat_ws(E'\\n',
+  pg_catalog.concat('pg_major=', pg_catalog.current_setting('server_version_num')::pg_catalog.int4 OPERATOR(pg_catalog./) 10000),
+  pg_catalog.concat('server_encoding=', pg_catalog.current_setting('server_encoding')),
+  pg_catalog.concat('locale_provider=', CASE d.datlocprovider WHEN 'c' THEN 'libc' WHEN 'i' THEN 'icu' ELSE 'other' END),
+  pg_catalog.concat('datcollate=', d.datcollate), pg_catalog.concat('datctype=', d.datctype),
+  pg_catalog.concat('collation_version=', COALESCE(d.datcollversion, 'none')),
+  pg_catalog.concat('tzdata_version=', '${TZV}'),
+  ${PIN_SQL}
+), E'\\n'), 'UTF8')), 'hex')
+SQL
+ENV_FROM="FROM pg_catalog.pg_database d WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
+ENV_SQL="SELECT ${ENV_EXPR} ${ENV_FROM}"
+# R6F-E12 (F3 review): the same digest, measured at the end of EVERY restore session (marked, so it can be found in that
+# session's output), so a setting changed inside a restore session is seen.
+ENV_MARK_SQL="SELECT pg_catalog.concat('DMSENV:', ${ENV_EXPR}) ${ENV_FROM};"
+SECTION_ENV=()
 # --- Trusted setup (no backup byte has been read yet) -----------------------------------------------------------
 "$PGBIN/initdb" -D "$R/data" -U "$SU" --auth=trust -E UTF8 --locale="$LOCALE" > "$R/initdb.log" 2>&1 3>&- || fail initdb 10
 "$PGBIN/postgres" -D "$R/data" -k "$R/data" -c listen_addresses= -c unix_socket_permissions=0700 \
@@ -202,8 +224,8 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
   # a defence-in-depth signal for verification, never the boundary (P5-2).
   { "$PGBIN/pg_restore" "${sect[@]}" -L "$list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
     echo "$?" > "$R/pg_restore.rc"
-    printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;'; } 3>&- \
-    | PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
+    printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;' "$ENV_MARK_SQL"; } 3>&- \
+    | PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -At -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-
   st=("${PIPESTATUS[@]}")
   prc="$(< "$R/pg_restore.rc")"
   st[0]="${prc:-1}"
@@ -219,6 +241,11 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
     emit "replay_sqlstate=$state"
     fail replay 20
   fi
+  # The environment this session ended in (the last marked line; the session's own output comes before it).
+  local env="missing" l
+  while IFS= read -r l; do [[ "$l" =~ ^DMSENV:([0-9a-f]{64})$ ]] && env="${BASH_REMATCH[1]}"; done < "$R/replay.out"
+  SECTION_ENV+=("$env")
+  : > "$R/replay.out"
 }
 restore_part pre_data "$R/list.schema" pre-data
 if ! PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f "$GUARD" > /dev/null 2> "$R/guard.err" 3>&-; then
@@ -255,10 +282,16 @@ BEGIN
   END LOOP;
   -- R6F-P10: a generated column equals its expression cast to the column's own type, compared by binary image.
   FOR r IN SELECT a.attrelid::pg_catalog.regclass AS rel, pg_catalog.quote_ident(a.attname::pg_catalog.text) AS col,
-                  pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS ex, pg_catalog.format_type(a.atttypid, a.atttypmod) AS ty
+                  pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS ex, pg_catalog.format_type(a.atttypid, a.atttypmod) AS ty,
+                  a.atttypid AS tid, a.atttypmod AS tmod
              FROM pg_catalog.pg_attrdef d JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) d.adrelid AND a.attnum OPERATOR(pg_catalog.=) d.adnum
             WHERE a.attgenerated OPERATOR(pg_catalog.<>) '' AND d.oid OPERATOR(pg_catalog.>=) 16384 LOOP
     q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE NOT pg_catalog.record_image_eq(ROW(%s), ROW(CAST((%s) AS %s)))', r.rel, r.col, r.ex, r.ty);
+    -- R6F-P17: COPY assigns (and raises on a value too long); an explicit cast silently truncates. For a length-limited
+    -- character column, the expression's value must fit.
+    IF r.tid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.varchar'::pg_catalog.regtype, 'pg_catalog.bpchar'::pg_catalog.regtype]::pg_catalog.oid[]) AND r.tmod OPERATOR(pg_catalog.>) 4 THEN
+      q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE pg_catalog.char_length(pg_catalog.rtrim(CAST((%s) AS pg_catalog.text))) OPERATOR(pg_catalog.>) %s', r.rel, r.ex, r.tmod OPERATOR(pg_catalog.-) 4);
+    END IF;
   END LOOP;
   -- R6F-P11: every index with an expression or a predicate: its keys are evaluated (an error in a real build shows
   -- here), and a unique one stays unique (NULL keys distinct unless NULLS NOT DISTINCT).
@@ -321,23 +354,10 @@ done
 # locale provider, collate, ctype and collation version, the tzdata version PostgreSQL reads (system tzdata), and the
 # effective value of every pinned setting. The host compares it with the digest it computed from the signed contract
 # (scripts/lib/restore-envcontract.sh, dms_env_expected_digest); this is the guest's assertion, never production's.
-TZV=unknown
-if IFS= read -r tzl < /usr/share/zoneinfo/tzdata.zi 2> /dev/null && [[ "$tzl" =~ ^\#\ version\ ([0-9]{4}[a-z])$ ]]; then TZV="${BASH_REMATCH[1]}"; fi
-PIN_SQL=""
-for n in $PIN_NAMES; do PIN_SQL="${PIN_SQL}${PIN_SQL:+, }pg_catalog.concat('${n}=', pg_catalog.current_setting('${n}'))"; done
-read -r -d '' ENV_SQL <<SQL
-SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.concat(pg_catalog.concat_ws(E'\\n',
-  pg_catalog.concat('pg_major=', pg_catalog.current_setting('server_version_num')::pg_catalog.int4 OPERATOR(pg_catalog./) 10000),
-  pg_catalog.concat('server_encoding=', pg_catalog.current_setting('server_encoding')),
-  pg_catalog.concat('locale_provider=', CASE d.datlocprovider WHEN 'c' THEN 'libc' WHEN 'i' THEN 'icu' ELSE 'other' END),
-  pg_catalog.concat('datcollate=', d.datcollate), pg_catalog.concat('datctype=', d.datctype),
-  pg_catalog.concat('collation_version=', COALESCE(d.datcollversion, 'none')),
-  pg_catalog.concat('tzdata_version=', '${TZV}'),
-  ${PIN_SQL}
-), E'\\n'), 'UTF8')), 'hex') FROM pg_catalog.pg_database d WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database()
-SQL
 envd="$(PGOPTIONS="$PIN_OPTS -c search_path=pg_catalog -c default_transaction_read_only=on" "$PGBIN/psql" -X -Atq -v ON_ERROR_STOP=1 -h "$R/data" -U "$RR" -d "$DB" -c "$ENV_SQL" 2> /dev/null 3>&-)" || fail env_digest 30
 [[ "$envd" =~ ^[0-9a-f]{64}$ ]] || fail env_digest 30
+for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done
+[ "${#SECTION_ENV[@]}" -ge 3 ] || envd=inconsistent
 emit "env_digest=${envd}"
 restore_part functions "$R/list.functions"
 restore_part triggers "$R/list.triggers"
@@ -363,8 +383,8 @@ regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_cat
 sens="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS s FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['float4','float8','bytea','time','timetz','interval','timestamptz','timestamp','date','money','xml','point','lseg','path','box','polygon','line','circle','record'])"
 tf=':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) '
 etrees="SELECT i.indexprs::pg_catalog.text AS t FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indexprs IS NOT NULL UNION ALL SELECT i.indpred::pg_catalog.text FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indpred IS NOT NULL UNION ALL SELECT k.conbin::pg_catalog.text FROM pg_catalog.pg_constraint k WHERE k.oid OPERATOR(pg_catalog.>=) 16384 AND k.conbin IS NOT NULL"
-efn="EXISTS (SELECT 1 FROM pg_catalog.regexp_matches(e.t, ':[a-z]*funcid ([0-9]+)', 'g') AS m JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) (m[1])::pg_catalog.oid WHERE p.proname OPERATOR(pg_catalog.=) ANY (ARRAY['float4out','float8out','byteaout','time_out','timetz_out','box_out','circle_out','line_out','lseg_out','path_out','point_out','poly_out']::pg_catalog.name[]) OR p.prorettype OPERATOR(pg_catalog.=) 'pg_catalog.xml'::pg_catalog.regtype OR 'pg_catalog.xml'::pg_catalog.regtype OPERATOR(pg_catalog.=) ANY ((p.proargtypes)::pg_catalog.oid[]) OR p.oid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::pg_catalog.regprocedure, 'pg_catalog.quote_ident(text)'::pg_catalog.regprocedure]::pg_catalog.oid[]))"
-envdep="$(vsql "WITH g AS (${regt}), h AS (${sens}), e AS (${etrees}) SELECT pg_catalog.count(*) FROM e, g, h WHERE e.t OPERATOR(pg_catalog.~) '[{](XMLEXPR|COERCETODOMAIN) ' OR (e.t OPERATOR(pg_catalog.~) '[{]COERCEVIAIO ' AND (e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) h.s OPERATOR(pg_catalog.||) ')[ }]') OR e.t OPERATOR(pg_catalog.~) ':varattno 0 ' OR e.t OPERATOR(pg_catalog.~) '[{]ROWEXPR ')) OR e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) g.r OPERATOR(pg_catalog.||) ')[ }]') OR ${efn}")" || fail verify 30
+efn="EXISTS (SELECT 1 FROM pg_catalog.regexp_matches(e.t, ':[a-z]*funcid ([0-9]+)', 'g') AS m JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) (m[1])::pg_catalog.oid WHERE p.proname OPERATOR(pg_catalog.=) ANY (ARRAY['float4out','float8out','byteaout','time_out','timetz_out','box_out','circle_out','line_out','lseg_out','path_out','point_out','poly_out']::pg_catalog.name[]) OR p.prorettype OPERATOR(pg_catalog.=) 'pg_catalog.xml'::pg_catalog.regtype OR 'pg_catalog.xml'::pg_catalog.regtype OPERATOR(pg_catalog.=) ANY ((p.proargtypes)::pg_catalog.oid[]) OR p.oid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.age(timestamptz,timestamptz)'::pg_catalog.regprocedure, 'pg_catalog.quote_ident(text)'::pg_catalog.regprocedure, 'pg_catalog.timezone(text,timestamptz)'::pg_catalog.regprocedure, 'pg_catalog.timezone(text,timestamp)'::pg_catalog.regprocedure, 'pg_catalog.date_trunc(text,timestamptz,text)'::pg_catalog.regprocedure, 'pg_catalog.date_add(timestamptz,interval,text)'::pg_catalog.regprocedure, 'pg_catalog.date_subtract(timestamptz,interval,text)'::pg_catalog.regprocedure]::pg_catalog.oid[]))"
+envdep="$(vsql "WITH g AS (${regt}), h AS (${sens}), e AS (${etrees}) SELECT pg_catalog.count(*) FROM e, g, h WHERE e.t OPERATOR(pg_catalog.~) '[{](XMLEXPR|COERCETODOMAIN|JSONCONSTRUCTOREXPR) ' OR (e.t OPERATOR(pg_catalog.~) '[{]COERCEVIAIO ' AND (e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) h.s OPERATOR(pg_catalog.||) ')[ }]') OR e.t OPERATOR(pg_catalog.~) ':varattno 0 ' OR e.t OPERATOR(pg_catalog.~) '[{]ROWEXPR ')) OR e.t OPERATOR(pg_catalog.~) ('${tf}(' OPERATOR(pg_catalog.||) g.r OPERATOR(pg_catalog.||) ')[ }]') OR ${efn}")" || fail verify 30
 num "$envdep" || fail verify_format 30
 if [ "$envdep" != 0 ]; then emit "replay_section=post_data_environment"; fail environment_dependent 22; fi
 tables="$(vsql "SELECT pg_catalog.count(*) FROM information_schema.tables WHERE table_schema OPERATOR(pg_catalog.=) 'public'")" || fail verify 30

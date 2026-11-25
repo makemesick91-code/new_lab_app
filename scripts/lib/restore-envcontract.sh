@@ -24,7 +24,7 @@ DMS_ENV_CONTRACT_MAX_SIG_BYTES=4096
 DMS_ENV_CONTRACT_MAX_VALIDITY_SECONDS=$((90 * 86400))
 DMS_ENV_CONTRACT_CLOCK_SKEW_SECONDS=300
 # The pinned restore-session settings, in the canonical (digest) order.
-DMS_ENV_CONTRACT_PINS="TimeZone DateStyle IntervalStyle array_nulls lc_monetary lc_numeric lc_time extra_float_digits bytea_output xmlbinary xmloption standard_conforming_strings quote_all_identifiers default_text_search_config timezone_abbreviations"
+DMS_ENV_CONTRACT_PINS="TimeZone DateStyle IntervalStyle array_nulls lc_monetary lc_numeric lc_time extra_float_digits bytea_output xmlbinary xmloption standard_conforming_strings quote_all_identifiers default_text_search_config timezone_abbreviations transform_null_equals"
 DMS_ENV_CONTRACT_KEYS="DMS_ENV_CONTRACT_VERSION DMS_ENV_CONTRACT_ID DMS_ENV_CONTRACT_SOURCE DMS_ENV_CONTRACT_ISSUED_BY DMS_ENV_CONTRACT_ISSUED_AT DMS_ENV_CONTRACT_NOT_AFTER DMS_ENV_PG_MAJOR DMS_ENV_PG_MINOR DMS_ENV_SERVER_ENCODING DMS_ENV_LOCALE_PROVIDER DMS_ENV_DATCOLLATE DMS_ENV_DATCTYPE DMS_ENV_ICU_LOCALE DMS_ENV_COLLATION_VERSION DMS_ENV_GLIBC_VERSION DMS_ENV_ICU_VERSION DMS_ENV_TZDATA_VERSION DMS_ENV_EXTENSIONS"
 for _p in $DMS_ENV_CONTRACT_PINS; do DMS_ENV_CONTRACT_KEYS="${DMS_ENV_CONTRACT_KEYS} DMS_ENV_SET_${_p^^}"; done
 unset _p
@@ -64,11 +64,16 @@ _dms_env_value_ok() {
     DMS_ENV_SET_TIMEZONE) [[ "$v" =~ ^[A-Za-z0-9_/+-]{1,48}$ ]] ;;
     DMS_ENV_SET_DATESTYLE) [[ "$v" =~ ^(ISO|SQL|Postgres|German),\ (MDY|DMY|YMD)$ ]] ;;
     DMS_ENV_SET_INTERVALSTYLE) [[ "$v" =~ ^(postgres|postgres_verbose|sql_standard|iso_8601)$ ]] ;;
-    DMS_ENV_SET_ARRAY_NULLS | DMS_ENV_SET_STANDARD_CONFORMING_STRINGS | DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS) [ "$v" = on ] || [ "$v" = off ] ;;
+    DMS_ENV_SET_ARRAY_NULLS | DMS_ENV_SET_QUOTE_ALL_IDENTIFIERS | DMS_ENV_SET_TRANSFORM_NULL_EQUALS) [ "$v" = on ] || [ "$v" = off ] ;;
+    # These two are set by the archive itself: pg_restore's preamble opens every restore session with
+    # standard_conforming_strings = on (the dumping session's value; on since PostgreSQL 9.1) and xmloption = content,
+    # in production as in the drill. Another value could never be the restore's environment (and the per-session
+    # digest would then FAIL every honest drill), so only these are accepted.
+    DMS_ENV_SET_STANDARD_CONFORMING_STRINGS) [ "$v" = on ] ;;
     DMS_ENV_SET_EXTRA_FLOAT_DIGITS) [[ "$v" =~ ^(-1[0-5]|-[0-9]|[0-3])$ ]] ;;
     DMS_ENV_SET_BYTEA_OUTPUT) [ "$v" = hex ] || [ "$v" = escape ] ;;
     DMS_ENV_SET_XMLBINARY) [ "$v" = base64 ] || [ "$v" = hex ] ;;
-    DMS_ENV_SET_XMLOPTION) [ "$v" = content ] || [ "$v" = document ] ;;
+    DMS_ENV_SET_XMLOPTION) [ "$v" = content ] ;;
     DMS_ENV_SET_DEFAULT_TEXT_SEARCH_CONFIG) [[ "$v" =~ ^pg_catalog\.[a-z_]{1,32}$ ]] ;;
     DMS_ENV_SET_TIMEZONE_ABBREVIATIONS) [[ "$v" =~ ^[A-Za-z0-9_.-]{1,32}$ ]] ;;
     *) return 1 ;;
@@ -204,6 +209,11 @@ dms_env_compatibility_check() {
     case "$l" in C | POSIX) continue ;; esac
     [[ " $(_dms_env_locale_norm "${I[DMS_IMAGE_LOCALES]}") " == *" $(_dms_env_locale_norm "$l") "* ]] || { echo "env compatibility: locale ${l} is not available in the drill image"; return 1; }
   done
+  # R6F-E13: the collation version libc gives that locale on the image's glibc (none for C, POSIX and C.*); a database
+  # that recorded another version (stale after a glibc upgrade) cannot be reproduced, and is refused here, not late.
+  local cv=none
+  case "${C[DMS_ENV_DATCOLLATE]}" in C | POSIX | C.*) cv=none ;; *) cv="${I[DMS_IMAGE_GLIBC_VERSION]}" ;; esac
+  [ "${C[DMS_ENV_COLLATION_VERSION]}" = "$cv" ] || { echo "env compatibility: the recorded collation version ${C[DMS_ENV_COLLATION_VERSION]} is not the ${cv} that locale ${C[DMS_ENV_DATCOLLATE]} has on glibc ${I[DMS_IMAGE_GLIBC_VERSION]} (stale in production, or another glibc)"; return 1; }
   if [ "${C[DMS_ENV_EXTENSIONS]}" != none ]; then
     for e in ${C[DMS_ENV_EXTENSIONS]//,/ }; do
       name="${e%%:*}"

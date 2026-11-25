@@ -139,7 +139,7 @@ dms_sandbox_run() {
   [[ "$exts" =~ ^(none|[a-z_][a-z0-9_]{0,62}(\ [a-z_][a-z0-9_]{0,62}){0,15})$ ]] || { _dms_sandbox_err "bad extension allowlist"; return 2; }
   # F3: the pinned restore-session settings of the signed environment contract (the inner script validates them again).
   local pins="${DMS_SANDBOX_ENV_PINS:-none}"
-  [[ "$pins" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){14})$ ]] || { _dms_sandbox_err "bad environment pins"; return 2; }
+  [[ "$pins" =~ ^(none|[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}(\;[A-Za-z_]{1,40}=[A-Za-z0-9_.,/@\ :+-]{1,64}){15})$ ]] || { _dms_sandbox_err "bad environment pins"; return 2; }
   local status_file
   status_file="$(mktemp)" || return 2
   {

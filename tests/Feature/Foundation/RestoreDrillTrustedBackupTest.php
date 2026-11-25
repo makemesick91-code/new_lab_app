@@ -519,7 +519,7 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'a user-defined cast (JSON constructors and foreign-key checks use casts with no function id in the expression)' => ["CREATE TYPE rdtb_e AS ENUM ('a'); CREATE FUNCTION rdtb_cast(rdtb_e) RETURNS json LANGUAGE sql IMMUTABLE AS \$f\$ SELECT '1'::json \$f\$; CREATE CAST (rdtb_e AS json) WITH FUNCTION rdtb_cast(rdtb_e);", 'user-defined cast'],
     'a user-defined operator' => ['CREATE FUNCTION rdtb_eq(int, int) RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$ SELECT $1 = $2 $f$; CREATE OPERATOR ==== (FUNCTION = rdtb_eq, LEFTARG = int, RIGHTARG = int);', 'user-defined operator'],
     // R6F-P1..P3 (fix verification of round 6): IMMUTABLE by label, yet session- or cluster-dependent.
-    'a CHECK printing a timestamp through XML (TimeZone)' => ["CREATE TABLE rdtb_x (ts timestamptz, CONSTRAINT rdtb_xcheck CHECK ((xmlserialize(content xmlelement(name t, ts) AS text)) LIKE '%+00:00</t>'));", 'an XML expression'],
+    'a CHECK printing a timestamp through XML (TimeZone)' => ["CREATE TABLE rdtb_x (ts timestamptz, CONSTRAINT rdtb_xcheck CHECK ((xmlserialize(content xmlelement(name t, ts) AS text)) LIKE '%+00:00</t>'));", 'an XML or JSON constructor'],
     'a CHECK on a float\'s text form (extra_float_digits)' => ["CREATE TABLE rdtb_f (f float8, CONSTRAINT rdtb_fcheck CHECK ((f)::text = '0.30000000000000004'));", 'text-form conversion'],
     'a CHECK on bytea text (bytea_output)' => ["CREATE TABLE rdtb_b (b bytea, CONSTRAINT rdtb_bcheck CHECK ((b)::text LIKE '\\x%'));", 'text-form conversion'],
     'a CHECK calling float8out directly' => ["CREATE TABLE rdtb_o (f float8, CONSTRAINT rdtb_ocheck CHECK (textin(float8out(f)) <> ''));", 'float8out(double precision)'],
@@ -534,6 +534,10 @@ it('refuses, before any row is loaded, schema code the runtime could plant that 
     'an aclitem column (cluster-assigned role ids)' => ['CREATE TABLE rdtb_acl (acl aclitem);', 'object-id or ACL type aclitem'],
     'a CHECK building an aclitem from role ids' => ["CREATE TABLE rdtb_acl2 (n int, CONSTRAINT rdtb_acl2check CHECK (makeaclitem(16384::oid, 16384::oid, 'SELECT', false) IS NOT NULL));", 'object-id or ACL type'],
     'a whole-row text conversion' => ["CREATE TABLE rdtb_w (f float8, CONSTRAINT rdtb_wcheck CHECK ((rdtb_w.*)::text <> ''));", 'text-form conversion'],
+    // F2 review: IMMUTABLE by label, yet the result follows the tzdata rules of the restoring host, or the session.
+    'a CHECK converting into a named time zone (tzdata)' => ["CREATE TABLE rdtb_z (at timestamptz, CONSTRAINT rdtb_zcheck CHECK (timezone('Asia/Makassar', at) < '2100-01-01'::timestamp));", 'timezone(text,timestamp with time zone)'],
+    'a CHECK truncating in a named time zone' => ["CREATE TABLE rdtb_z2 (at timestamptz, CONSTRAINT rdtb_z2check CHECK (date_trunc('day', at, 'Asia/Makassar') <= at));", 'date_trunc(text,timestamp with time zone,text)'],
+    'a CHECK on a JSON constructor (TimeZone, DateStyle through the value)' => ["CREATE TABLE rdtb_j (at timestamptz, CONSTRAINT rdtb_jcheck CHECK (JSON_OBJECT('at': at)::text <> ''));", 'an XML or JSON constructor'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 it('lets text conversions of values whose text form never depends on the session through the guard (R6F-P7)', function () {
@@ -584,6 +588,10 @@ it('fails, on the restored rows, a CHECK or a generated column whose result depe
     // R6F-P12: a planted "shadow" index whose predicate is the negated CHECK cannot answer the differential's query.
     'an age() CHECK behind a shadow partial index' => ["CREATE TABLE rdtb_d4 (k int, s timestamptz, e timestamptz, CONSTRAINT rdtb_d4c CHECK (age(e, s) < interval '1 mon')); INSERT INTO rdtb_d4 SELECT g, '2026-01-31 17:00+00', '2026-02-28 17:00+00' FROM generate_series(1, 2000) g; CREATE INDEX rdtb_d4s ON rdtb_d4 (k) WHERE NOT (age(e, s) < interval '1 mon'); ANALYZE rdtb_d4;", "SET LOCAL TimeZone = 'Asia/Makassar';"],
     'a partial unique index on age()' => ["CREATE TABLE rdtb_d3 (k int, s timestamptz, e timestamptz); INSERT INTO rdtb_d3 VALUES (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'), (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'); CREATE UNIQUE INDEX rdtb_d3u ON rdtb_d3 (k) WHERE age(e, s) >= interval '1 mon';", "SET LOCAL TimeZone = 'Asia/Makassar';"],
+    // R6F-P17: loaded with extra_float_digits = 0 the generated text is '0.3' and fits varchar(3); under 1 it is
+    // '0.30000000000000004', which a real restore's COPY refuses as too long, but an explicit cast silently truncates
+    // back to the stored '0.3' (record_image_eq alone would see no difference).
+    'a generated varchar whose value would be too long under another profile' => ['SET LOCAL extra_float_digits = 0; CREATE TABLE rdtb_d5 (f float8, g varchar(3) GENERATED ALWAYS AS ((f)::text) STORED); INSERT INTO rdtb_d5 (f) VALUES (0.1::float8 + 0.2::float8);', 'SET LOCAL extra_float_digits = 1;'],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 
 it('never fails an honest schema in the differential: constants, rounding generated columns, NULLS NOT DISTINCT (R6F-P9, P10, P11)', function (string $plant, string $setting) {

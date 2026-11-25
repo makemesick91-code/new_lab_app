@@ -306,7 +306,9 @@ mkdir -m 0700 -- "$WORK" || { WORK=""; refuse "cannot create the run directory";
 # --- D3: the signed role manifest, read once into the run directory (VR-10) ----------------------------------------
 STAGE=manifest
 [ ! -L "$MANIFEST" ] && [ -f "$MANIFEST" ] && [ ! -L "${MANIFEST}.sig" ] && [ -f "${MANIFEST}.sig" ] || refuse "the manifest or its .sig is missing or a symlink"
-cat -- "$MANIFEST" > "$WORK/manifest" && cat -- "${MANIFEST}.sig" > "$WORK/manifest.sig" || refuse "cannot copy the manifest"
+# (Opened without following a symlink and without blocking on a FIFO the inbox could hold: F3 review.)
+dd if="$MANIFEST" iflag=nofollow,nonblock bs=8192 count=1 status=none > "$WORK/manifest" \
+  && dd if="${MANIFEST}.sig" iflag=nofollow,nonblock bs=8192 count=1 status=none > "$WORK/manifest.sig" || refuse "cannot copy the manifest"
 # PR-7: verified in THIS shell (a $(…) subshell would lose DMS_ROLE_MANIFEST); its first output line is the sha256.
 dms_restore_manifest_verify "$WORK/manifest" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/manifest.verify" || refuse "$(head -c 300 "$WORK/manifest.verify")"
 MANIFEST_SHA="$(head -n 1 "$WORK/manifest.verify")"
@@ -320,7 +322,8 @@ why="$(dms_restore_manifest_revocation_check "${C[DMS_DRILL_MANIFEST_REVOCATIONS
 # guest); the manifest names its sha256. Missing, unsigned, expired, revoked or unbound: no drill.
 STAGE=env_contract
 [ ! -L "$ENV_CONTRACT" ] && [ -f "$ENV_CONTRACT" ] && [ ! -L "${ENV_CONTRACT}.sig" ] && [ -f "${ENV_CONTRACT}.sig" ] || refuse "the environment contract or its .sig is missing or a symlink"
-cat -- "$ENV_CONTRACT" > "$WORK/env-contract" && cat -- "${ENV_CONTRACT}.sig" > "$WORK/env-contract.sig" || refuse "cannot copy the environment contract"
+dd if="$ENV_CONTRACT" iflag=nofollow,nonblock bs=8192 count=1 status=none > "$WORK/env-contract" \
+  && dd if="${ENV_CONTRACT}.sig" iflag=nofollow,nonblock bs=8192 count=1 status=none > "$WORK/env-contract.sig" || refuse "cannot copy the environment contract"
 dms_env_contract_verify "$WORK/env-contract" "${C[DMS_DRILL_MANIFEST_ANCHOR]}" > "$WORK/env-contract.verify" || refuse "$(head -c 300 "$WORK/env-contract.verify")"
 ENV_SHA="$(head -n 1 "$WORK/env-contract.verify")"
 [[ "$ENV_SHA" =~ ^[0-9a-f]{64}$ ]] && [ -n "${DMS_ENV_CONTRACT[DMS_ENV_CONTRACT_ID]:-}" ] || { ENV_SHA=""; refuse "the environment contract did not verify in this shell"; }
@@ -331,6 +334,11 @@ STAGE=env_compatibility
 why="$(dms_env_image_properties_parse "${C[DMS_DRILL_IMAGE_PROPERTIES]}")" || { ENV_SHA=""; refuse "$why"; }
 dms_env_image_properties_parse "${C[DMS_DRILL_IMAGE_PROPERTIES]}" > /dev/null
 why="$(dms_env_compatibility_check "$EXTENSIONS")" || { ENV_SHA=""; refuse "$why"; }
+# On a drill host the properties must describe the very image QEMU is pinned to (refused before boot, F3 review).
+if [ "$TRUST_UID" = 0 ]; then
+  qsha="$(sed -n 's/^DMS_QEMU_IMAGE_SHA256=//p' /etc/dms-restore-drill/qemu.conf 2> /dev/null | head -n 1)"
+  [ "$qsha" = "${DMS_IMAGE_PROPERTIES[DMS_IMAGE_SHA256]}" ] || { ENV_SHA=""; refuse "the image properties describe another image than the pinned drill image"; }
+fi
 [ "${DMS_ENV_CONTRACT[DMS_ENV_DATCOLLATE]}" = "${C[DMS_DRILL_LOCALE]}" ] || { ENV_SHA=""; refuse "DMS_DRILL_LOCALE (${C[DMS_DRILL_LOCALE]}) differs from production's database locale in the contract"; }
 EXPECT_ENV="$(dms_env_expected_digest)"
 ENV_PINS="$(dms_env_pins)"

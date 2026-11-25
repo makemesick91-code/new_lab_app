@@ -113,7 +113,7 @@ backups.
 - `docs/runbooks/backup-dr-restore-rehearsal-runbook.md:11` gives RTO 60, RPO 1440 and retention 14.
   `:26-34` says backups "are plain-text `pg_dump` output". `:49-56` covers the unit install.
 - `docs/runbooks/roll-5-backup-restore-drill-runbook.md:29-30` covers deploy backups as `*.sql`. `:54-56` says the
-  drill needs `-Fc`. `:65` says readiness does not read drill records yet. `:135-143` gives a draft RPO ≤ 24 h and
+  drill needs `-Fc`. `:65` says readiness does not read drill records yet. `:191-199` gives a draft RPO ≤ 24 h and
   RTO ≤ 4 h. `:156` shows example evidence with a `.sql` path.
 - `docs/architecture/backup-disaster-recovery-automation-governance.md:39-48` covers RTO, RPO and retention.
 - `docs/runbooks/bk2-offserver-workstation-recovery.md` and `.cursor/rules/230-…`, `232-…` cover BK-2 (format not
@@ -152,7 +152,7 @@ The plan uses four releases. Each is a separate owner-approved production change
 |---|---|---|
 | P-A pre-deploy (`deploy-vps.sh`) | Add a **second** dump after the plain one, in the same root staging directory: `"<pg16-bindir>/pg_dump" --format=custom --compress=6 …` into `<root-staging>/dump.custom` through `dms_write_private_dump`. Root hashes it. The runtime copy goes to `<deploy-backup-dir>/pre_auto_deploy_<stamp>.dump`, then root re-hashes and compares. The log gets the new `Pre-deploy archive:` line. Keep the plain lines byte for byte (`config/deployment_rollback.php:172-175`), and add the new lines as additional required markers. Run backup-verify on both files (needs C-1). The extra dump adds its measured duration before the checkout. The deploy has no maintenance mode (no `artisan down` in `deploy-vps.sh`), so both dumps are live, consistent snapshots, taken at slightly different instants. | R3: `release:evidence-capture --backup-path` points to the `.dump` (`:543`). R4: remove the plain dump. The `Pre-deploy backup:` line ends, and the `--deploy-id` plain path stays valid for historical deploys only. |
 | P-B pre-rollback (`rollback-vps.sh`) | The same second dump to `<rollback-backup-dir>/pre_rollback_<stamp>.dump`, with its digest printed next to the plain one. First resolve the backup-verify directory question (§14 Q-15). | As P-A |
-| P-C scheduled (`backup-vps.sh` + unit) | Add the second dump to `auto_backup_<stamp>.dump`, then verify both. The **prune becomes per format**: today it matches only `*.sql` (`:64,69,76`), so `.dump` files would grow without bound. Run separate floor and age loops for `*.sql` and `*.dump`, and remove `checksums/` sidecars with their archive. The `TimeoutStartSec=1800` budget (`*-db-backup.service:52`) must cover both dumps. That is likely, given ~1 s measured for one plain dump on 2026-11-03 (`*-db-backup.timer:79`), but it must be re-measured on today's data. The unit file needs no change, because it runs the script from the checkout. If the timeout or the identity changes (OD-4), the unit must be reinstalled: a privileged host step (`install`, `daemon-reload`) outside the deploy runner, which is a separate owner-authorised admin action. The ENT-12 scanner markers stay present. | R3: monitoring requires `.dump` freshness. R4: stop the plain dump and **freeze the `*.sql` prune**, so the plain files left are never deleted by automation (§10, OD-8). |
+| P-C scheduled (`backup-vps.sh` + unit) | Add the second dump to `auto_backup_<stamp>.dump`, then verify both. The **prune becomes per format**: today it matches only `*.sql` (`:64,69,76`), so `.dump` files would grow without bound. Run separate floor and age loops for `*.sql` and `*.dump`, and remove `checksums/` sidecars with their archive. The `TimeoutStartSec=1800` budget (`*-db-backup.service:52`) must cover both dumps. That is likely, given ~1 s measured for one plain dump on 2026-11-03 (`*-db-backup.timer:19`), but it must be re-measured on today's data. The unit file needs no change, because it runs the script from the checkout. If the timeout or the identity changes (OD-4), the unit must be reinstalled: a privileged host step (`install`, `daemon-reload`) outside the deploy runner, which is a separate owner-authorised admin action. The ENT-12 scanner markers stay present. | R3: monitoring requires `.dump` freshness. R4: stop the plain dump and **freeze the `*.sql` prune**, so the plain files left are never deleted by automation (§10, OD-8). |
 | P-D manual helper (`backup_postgres.sh`) | Not used in production. Either align it with T-2 to T-8 (pinned pg16, allowed directory, verify, digest, no hard-coded defaults) or mark it deprecated (OD-12). Do not use it as a production producer while this transition runs. | Retire or align |
 | P-E rehearsal snapshot (`restore-rehearsal.sh`) | **Do not port to custom.** Its replay is the same in-place superuser replay that finding A-1 retired in `rollout-restore-drill.sh` (§8). Its future is an owner decision (OD-10), outside this format change. | n/a |
 | P-F BK-2 (host-only) | Not determinable. If the BK-2 package embeds its own plain dump, the owner decides whether and when it switches (OD-11). Its private runbook must then say which restore tool applies. BK-2 is never a gate (rule 232). | Owner |
@@ -285,10 +285,10 @@ production hold only a format it cannot restore.
 - **Stated values (they disagree).**
   - `config/backup_dr.php:122,124`, the ENT-15 runbook (`backup-dr-restore-rehearsal-runbook.md:11`) and the DR
     governance doc (`:43-46`) give **RTO 60 min** and **RPO 1440 min**.
-  - `roll-5-backup-restore-drill-runbook.md:139-140` gives a *draft* **RTO ≤ 4 h** and **RPO ≤ 24 h**.
+  - `roll-5-backup-restore-drill-runbook.md:191-199` gives a *draft* **RTO ≤ 4 h** and **RPO ≤ 24 h**.
   - The 60-minute versus 4-hour difference is unresolved (OD-13).
 - **Measured values in the repository.**
-  - One plain scheduled dump took about 1 s, and BK-2 about 9 s, on 2026-11-03 (`*-db-backup.timer:79`).
+  - One plain scheduled dump took about 1 s, and BK-2 about 9 s, on 2026-11-03 (`*-db-backup.timer:19`).
   - No restore duration from production data is in the repository. The rehearsal JSON's `restore_seconds` lives on
     the host and is not determinable here.
 - **Effect of the format change.**
@@ -459,7 +459,7 @@ credentials or environment-file contents (CG-11).
 - Q-12: whether anything alerts on a `failed` backup unit today.
 - Q-13: current free disk space and backup growth rate on the host.
 - Q-14: whether the environment overrides `BACKUP_DR_RETENTION_DAYS`, `BACKUP_DR_MIN_RETAINED` or the RTO/RPO values.
-- Q-15: whether `rollback-vps.sh` can pass its own backup verification. By code reading, `foundation:backup-verify`
+- Q-15 (**answered 2026-11-25: CONFIRMED by synthetic reproduction**, a separate issue in Evidence Pack 53; not part of this transition or of PR #695): whether `rollback-vps.sh` can pass its own backup verification. By code reading, `foundation:backup-verify`
   allows only `<deploy-backup-dir>` (`config/backup_governance.php:15-17`, check `BackupVerificationService.php:51-58`).
   The rollback verifies a file in `<rollback-backup-dir>` (`rollback-vps.sh:301,373`) under `set -euo pipefail`
   (`:25`), which would fail after the checkout has already moved. This was not executed. Reproduce it on a disposable
@@ -495,3 +495,29 @@ credentials or environment-file contents (CG-11).
   code, or readers will follow the wrong restore tool.
 - R-14: **Drill line references drift.** The drill files were being edited by another session during this read. Re-check
   the references in §2.3 and §5 against the merged code before implementation.
+
+## 15. Staged transition (directive "R6-B6 — Final Acceptance Closure", F5): status
+
+The custom-format standard is approved **at the design level only**. Nothing below changes production.
+
+| Step | Status | Evidence |
+|---|---|---|
+| 1. Inventory existing backup mechanisms | **Done** | §2 (producers, consumers, tests, documents) |
+| 2. Implement and test custom-format support locally | **Done, not activated** | `scripts/backup-custom-format.sh` on the separate local branch `feature/r6-b6-backup-custom-format` (`61795750`, cut from the base, not pushed, not part of PR #695). It writes `pg_dump -Fc` 0600 from creation, verifies the PGDMP magic, a non-empty TOC and a sha256 sidecar, and writes a manifest. It is wired to no schedule, deploy, rollback or retention path; a test asserts that. `PrivateDatabaseDumpCustomFormatTest`: 10 tests, including a real dump on PostgreSQL 16. |
+| 3. Validate synthetic backup restoration | **Done** | A backup of the migrated application schema (synthetic) made by that script, restored through the R6-B6 drill guest under a pinned environment contract: GO, 186/186 tables, 238/238 rows, environment digests equal (Evidence Pack 53). |
+| 4. Parallel production backup procedure | **Prepared** (§5); needs owner approval | Producers P-A to P-C add a second `-Fc` dump beside the plain one; the plain dump stays authoritative until cutover. |
+| 5. Checksum, encryption, retention, verification requirements | **Defined** (§7; sidecars as in step 2) | sha256 sidecar plus manifest for every archive; BK-2 encryption unchanged; per-format retention (the `*.sql` prune never touches `*.dump`); verification by `pg_restore --list` at creation and by the drill for restorability. |
+| 6. RPO/RTO assumptions | **Audited; owner decision** | §9 and the RTO audit in Evidence Pack 53: 60 min (config, authoritative) against 4 h (draft runbook); no incident classes defined; no end-to-end recovery measured. |
+| 7. Cutover acceptance criteria | **Defined below**; needs owner approval | — |
+| 8. Rollback and historical compatibility | **Defined** (§10, §12) | Plain `.sql` backups stay restorable by the existing tooling; the plain dump continues until the cutover is accepted; nothing historical is deleted. |
+
+**Cutover acceptance criteria** (all required, each evidenced):
+- 30 consecutive days of parallel dumps, every `.dump` verified at creation;
+- at least 3 drills of real production `-Fc` archives on the dedicated drill host with GO, each under a current signed
+  environment contract, with the evidence verified off the host;
+- the restore helpers, `foundation:backup-verify` and monitoring accept `.dump`, with tests (§4, §11);
+- the rollback defect of Q-15 fixed and released first (a separate issue);
+- RTO/RPO decided (OD-13), and the measured backup and restore times inside them;
+- the owner's written approval of the cutover date. Plain dumps stop only then, and their retention is frozen, not
+  pruned (§10).
+
