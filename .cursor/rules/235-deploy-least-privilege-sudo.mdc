@@ -109,6 +109,11 @@ GO is recorded in the sprint doc, not here.
   them for later builds. Bounded by the sandbox: it reaches vendor code the runtime runs anyway, never root.
 - Composer and npm still resolve dependencies on the host (lockfiles authoritative); CI-built, digest-verified
   artifacts would remove host-side resolution but change the delivery model — a separate owner decision.
+- **The drill's in-place replay is RETIRED** (2026-11-25, owner directive "R6-B6 ISOLATED RESTORE DRILL",
+  rule 250). `scripts/rollout-restore-drill.sh` keeps only its read-only verification and refuses with exit 3. The drill
+  runs only in a disposable VM on an isolated drill host (`scripts/restore-drill-vm.sh`). That VM reuses the integrity
+  chain, the restricted stream and the load guard described in the next item, which records the retired replay's
+  history. Finding A-1 stays OPEN until rule 250's acceptance evidence and two independent reviews are complete.
 - `scripts/rollout-restore-drill.sh` (staging only, refuses production) replays as the PostgreSQL superuser since R6-B6
   (D-Q7). Finding A-1 (2026-11-25, owner directive: remediate, never risk-accept) closed the gap that opened: the drill
   now takes this rule's restore path. It reads the expected digest from the deploy's root-only log (`--deploy-id`) or an

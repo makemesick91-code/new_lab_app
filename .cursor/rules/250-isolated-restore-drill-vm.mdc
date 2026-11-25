@@ -1,0 +1,62 @@
+---
+description: R6-B6 isolated restore drill (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1–D10, 2026-11-25) — a backup is replayed for a drill only in a disposable VM on an isolated drill host, never on the production kernel; inside the VM in a systemd system unit under DynamicUser, as a non-superuser role, with psql restricted mode and the load guard; role names from a signed manifest; GO only from host-checkable facts; signed, hash-chained evidence. The in-place superuser replay is retired.
+globs: scripts/restore-drill-vm.sh, scripts/restore-drill-vm-guest.sh, scripts/restore-drill-vm-image.sh, scripts/restore-drill-sandbox-inner.sh, scripts/lib/restore-sandbox.sh, scripts/lib/restore-vm.sh, scripts/lib/restore-manifest.sh, scripts/lib/restore-evidence.sh, scripts/rollout-restore-drill.sh, deploy/restore-drill-vm/**
+alwaysApply: false
+---
+
+# Isolated restore drill in a disposable VM (rule 250)
+
+A backup whose digest is trusted is still attacker-influenced CONTENT: before R6-D the runtime role owns the schema it
+dumps. Three review rounds of the superuser replay's deny-list (#695) each found a new execution path, so the owner
+replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-drill-design.md`).
+
+## Invariants
+1. **No drill replay outside the VM.**
+   - `scripts/rollout-restore-drill.sh` verifies read-only and then refuses (exit 3); it never creates, replays or
+     drops anything.
+   - `scripts/restore-drill-vm.sh` refuses on the production host (D1). Never build or run the drill VM on the
+     production VPS without a separate owner decision.
+2. **The VM:**
+   - one fresh boot per drill from an image whose sha256 is pinned in the trusted drill configuration;
+   - no network device (`-nic none`), `-nodefaults`, QEMU `-sandbox on`, a read-only input disk;
+   - the guest reports `lo` as its only interface, otherwise FAIL.
+3. **The D6 ceilings are fixed and fail closed:** 1 vCPU, 2 GiB RAM, a 10 GiB disk, 30 minutes, 64 tasks, one drill
+   at a time (flock). A request above any ceiling is refused, never trimmed.
+4. **The replay unit (`scripts/lib/restore-sandbox.sh`, the single source of truth):**
+   - a systemd system unit under DynamicUser (D2) with the complete property set, and every writable mount a capped
+     noexec tmpfs;
+   - no network family but AF_UNIX, and no memfd, io_uring or keyring syscalls;
+   - the inner script attests the effective profile before it reads any input.
+5. **The replay identity:**
+   - the restore role is NOSUPERUSER (D4); the bootstrap superuser becomes NOLOGIN before the first byte of the
+     backup is read;
+   - psql restricted mode is load-bearing and is never retired (D5); the load guard stays as defense in depth.
+6. **D3:** role names come only from a manifest signed with `ssh-keygen -Y sign -n dms-restore-role-manifest`,
+   verified against the drill host's root-owned trust anchor. D-Q6-a and P5 are decided against that manifest, never
+   against a live production cluster.
+7. **GO** needs every host-checkable fact:
+   - VM exit 0; the echoed run id and payload digest;
+   - feeder and unit exit 0;
+   - no duplicate or rejected result line;
+   - an attested profile, the superuser locked out;
+   - restored base tables and rows equal to the counts the host took from the dump, and the pg_dump trailer present.
+8. **D10:** every drill writes a record signed with `ssh-keygen -Y sign -n dms-restore-drill-evidence` and chained by
+   sha256. The readiness service is not wired to it without a separate change.
+9. **Privacy:** only the SQLSTATE of a failure leaves the unit, never error text or rows (CG-11). The input disk holds
+   patient data and is removed with the run directory.
+
+## Acceptance before A-1 may be reported for closure
+Each item needs real evidence; a configuration-only claim is not enough:
+- system-mode DynamicUser identity separation;
+- a real VM boot with no network;
+- absence of production file, socket and network access;
+- trusted backup and manifest verification;
+- non-superuser replay;
+- end-to-end fidelity;
+- resource exhaustion resistance;
+- reliable cleanup;
+- evidence authenticity;
+- two independent adversarial reviews (Linux/systemd/VM, and PostgreSQL restore security).
+
+Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-boot-gate.sh`, on disposable
+infrastructure only (workflow proposal, inactive until the owner decides).

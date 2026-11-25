@@ -31,27 +31,45 @@ declaring Stage-1 GO.
 
 ## 2. Restore target — staging / test / disposable ONLY
 
-Two supported safe options. Prefer **Option 2** (disposable DB) when a staging
-host with existing DB credentials is available and production is untouched.
+Two supported safe options. Prefer **Option 2** (the isolated VM drill) when an isolated drill host
+is available; production is never touched.
 
 **Option 1 — dedicated staging VPS/database:** restore the latest production
 backup into the staging database only, verify app boot + health/read-only routes
 + migrations, and record the ROLL-5-1A evidence JSON.
 
-**Option 2 — disposable local/staging PostgreSQL DB (preferred):** run the
-fail-fast drill helper — it creates a disposable DB named
-`<db>_restore_drill_YYYYMMDD-HHMMSS`, restores there a backup whose SHA-256 matches trusted
-evidence (from a root-only staged copy, in psql restricted mode),
-runs read-only verification (table count + bounded COUNTs — **no patient rows**),
-drops **only** the disposable DB, and writes the canonical evidence:
+**Option 2 — the isolated VM drill (R6-B6; owner directive "R6-B6 ISOLATED RESTORE DRILL", 2026-11-25):**
+the only supported way to replay a backup for a drill. Design and evidence:
+[r6-b6-isolated-restore-drill-design](../architecture/r6-b6-isolated-restore-drill-design.md).
+
+- **The in-place drill is retired (finding A-1).** `scripts/rollout-restore-drill.sh` used to replay the backup as
+  the PostgreSQL superuser on the host's own cluster. It now verifies the backup read-only (trusted digest, source
+  checks, staged copy, pinned client, owner roles, runtime ownership gate), then refuses with exit 3. It creates,
+  replays and drops nothing, and writes no evidence.
+- **The drill runs only on an isolated drill host, in a disposable VM** (D1): never on the production host, which the
+  orchestrator refuses. Each drill boots one fresh VM from a pinned, digest-verified image, with no network device, at
+  most 1 vCPU, 2 GiB RAM, a 10 GiB disk and 30 minutes, one drill at a time (D6). Inside the VM, the replay runs in a
+  systemd system unit under DynamicUser (D2), as a non-superuser role (D4), in psql restricted mode with the load
+  guard (D5).
+- **Inputs:**
+  - the backup;
+  - its SHA-256 from an independent record;
+  - a role manifest signed with `ssh-keygen -Y sign -n dms-restore-role-manifest` by a principal of the drill host's
+    trust anchor (D3). The VM never connects to production PostgreSQL.
+- **Output:** a signed, hash-chained evidence record in the drill host's evidence store (D10), verifiable with
+  `dms_evidence_verify_store`. It is not ROLL-5-1A JSON, and the readiness service does not read it yet (a separate
+  change), so `restore_drill_evidence` stays at WATCH until then.
 
 ```bash
-# As the privileged operator. Trusted digest evidence is required (rule 235, finding A-1); there is no default backup.
-# psql must be PostgreSQL 16 at 16.15 or later, run from /usr/lib/postgresql/16/bin (or DMS_PG_BINDIR); otherwise the drill stops.
-bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>              # the backup that deploy recorded
-bash scripts/rollout-restore-drill.sh --expected-sha256 <hex> <backup_file.sql>  # digest from an independent record
-php artisan rollout:restore-drill-evidence --strict   # validate the written evidence
+# On the ISOLATED DRILL HOST only (never on production). Configuration: a trusted file, by default
+# /etc/dms-restore-drill/drill.conf (image path and pinned digest, trust anchors, evidence key, store, work directory).
+bash scripts/restore-drill-vm.sh --expected-sha256 <hex> --manifest <signed role manifest> <backup_file.sql>
+# Production-side verification only (no replay; exit 3 by design):
+bash scripts/rollout-restore-drill.sh --deploy-id <YYYYmmdd-HHMMSS>
 ```
+
+Not authorised without a separate owner decision: building the drill VM on the production VPS, running any drill
+against production data, and wiring the evidence into readiness.
 
 **Option 3 — no safe restore target available:** do **not** fake GO. Leave the
 `restore_drill_evidence` signal at WATCH and complete the action checklist below
