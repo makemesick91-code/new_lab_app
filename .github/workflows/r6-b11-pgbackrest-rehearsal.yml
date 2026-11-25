@@ -1,0 +1,42 @@
+# R6-B11 — isolated pgBackRest rehearsal (owner decision 2026-11-26 §7). Validation branch only: synthetic data on a
+# disposable GitHub-hosted runner; no production data, no secrets, no deployment. Read-only repository permissions.
+#   Trigger:     push to validation/r6-b11-pgbackrest only.
+#   Packages:    PostgreSQL 16 and pgBackRest from the runner's apt sources; their versions and origins are recorded.
+#   Evidence:    the summary, versions, command outputs and pgBackRest logs (synthetic) as an artifact.
+name: R6-B11 pgBackRest rehearsal (synthetic)
+
+on:
+  push:
+    branches:
+      - validation/r6-b11-pgbackrest
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r6-b11-pgbackrest
+  cancel-in-progress: true
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install PostgreSQL 16 and pgBackRest
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends postgresql-16 pgbackrest zstd
+          mkdir -p "$RUNNER_TEMP/out"
+          apt-cache policy pgbackrest postgresql-16 > "$RUNNER_TEMP/out/apt-policy.txt"
+      - name: Rehearsal
+        run: bash deploy/backup-rehearsal/pgbackrest-rehearsal.sh "$RUNNER_TEMP/out"
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: r6-b11-pgbackrest-rehearsal
+          path: ${{ runner.temp }}/out
+          retention-days: 30
