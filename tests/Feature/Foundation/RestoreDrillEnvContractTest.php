@@ -85,6 +85,15 @@ function rdecImage(string $dir, array $over = []): string
     return $file;
 }
 
+/**
+ * Resolves `{now+N}` / `{now-N}` (seconds) when the test RUNS. A dataset is built when the suite is collected, and a
+ * long sequential run (the critical gate) can execute it an hour later: a relative time must never be fixed there.
+ */
+function rdecNow(string $s): string
+{
+    return (string) preg_replace_callback('/\{now([+-])(\d+)\}/', fn (array $m) => gmdate('Y-m-d\TH:i:s\Z', $m[1] === '+' ? time() + (int) $m[2] : time() - (int) $m[2]), $s);
+}
+
 function rdecSh(string $script, array $env = []): array
 {
     $p = new Process(['bash', '-c', '. "$LIB/restore-envcontract.sh"; '.$script], null, array_merge(['LIB' => base_path('scripts/lib'), 'PATH' => getenv('PATH')], $env));
@@ -160,14 +169,14 @@ it('refuses a contract that is unsigned, tampered, wrongly signed, out of date o
 it('refuses a revoked contract, by id or by the not-before date of the revocation list', function (string $list, string $message) {
     $dir = rdecDir();
     $c = rdecContract($dir);
-    file_put_contents("{$dir}/revocations", $list);
+    file_put_contents("{$dir}/revocations", rdecNow($list));
     $run = rdecSh('dms_env_contract_verify "$C" "$A" > /dev/null && dms_env_contract_revocation_check "$R"', ['C' => $c, 'A' => "{$dir}/anchor", 'R' => "{$dir}/revocations"]);
     (new Process(['rm', '-rf', '--', $dir]))->run();
 
     expect($run['exit'])->toBe(1, $run['out'])->and($run['out'])->toContain($message);
 })->with([
     'revoked by id' => ["# owner\nrevoked env-contract-0001\n", 'env-contract-0001 is revoked'],
-    'issued before not-before' => ['not-before '.gmdate('Y-m-d\TH:i:s\Z', time() + 60)."\n", 'was issued before'],
+    'issued before not-before' => ["not-before {now+3600}\n", 'was issued before'],
     'an unexpected line' => ["allow everything\n", 'unexpected line'],
 ]);
 

@@ -61,6 +61,9 @@ envcontract() { # <file> <id> [KEY=value …]
 envcontract "$W/env-contract" ci-env-contract-0001
 envcontract "$W/env-contract-nulls-off" ci-env-contract-0002 DMS_ENV_SET_ARRAY_NULLS=off
 envcontract "$W/env-contract-tz" ci-env-contract-0003 DMS_ENV_TZDATA_VERSION=1999a
+# R6-B8: production's extension at the image's own version (exact class), and the same contract at another version.
+envcontract "$W/env-contract-pgstat" ci-env-contract-0005 "DMS_ENV_EXTENSIONS=$(prop DMS_IMAGE_EXTENSIONS)"
+envcontract "$W/env-contract-pgstat-badver" ci-env-contract-0006 DMS_ENV_EXTENSIONS=pg_stat_statements:0.9
 cp "$W/env-contract" "$W/env-contract-tampered"; cp "$W/env-contract.sig" "$W/env-contract-tampered.sig"
 sed -i 's/^DMS_ENV_SET_ARRAY_NULLS=.*/DMS_ENV_SET_ARRAY_NULLS=off/' "$W/env-contract-tampered"
 csha() { sha256sum "$1" | cut -d' ' -f1; }
@@ -78,14 +81,18 @@ manifest "$W/manifest-revoked" ci-manifest-0099
 manifest "$W/manifest-nulls-off" ci-manifest-0002 "$W/env-contract-nulls-off"
 manifest "$W/manifest-tz" ci-manifest-0003 "$W/env-contract-tz"
 manifest "$W/manifest-tampered-env" ci-manifest-0004 "$W/env-contract-tampered"
+manifest "$W/manifest-pgstat" ci-manifest-0005 "$W/env-contract-pgstat"
+manifest "$W/manifest-pgstat-badver" ci-manifest-0006 "$W/env-contract-pgstat-badver"
 cp "$W/manifest" "$W/manifest-tampered"; cp "$W/manifest.sig" "$W/manifest-tampered.sig"
 sed -i 's/^DMS_ROLE_MANIFEST_ROLES=.*/DMS_ROLE_MANIFEST_ROLES=app_runtime dms_owner intruder/' "$W/manifest-tampered"
 printf -- '--\n-- PostgreSQL database dump\n--\n\nSELECT 1;\n' > "$W/plain.sql"
-for f in clean bomb vanish ext arrnull; do cp -- "$FX/$f.dump" "$W/$f.dump"; done
+for f in clean bomb vanish ext arrnull pgstat; do cp -- "$FX/$f.dump" "$W/$f.dump"; done
 # The inbox: the operator's files, group-readable by the runner, writable by nobody else.
 for f in manifest manifest.sig manifest-revoked manifest-revoked.sig manifest-tampered manifest-tampered.sig plain.sql clean.dump bomb.dump vanish.dump ext.dump \
   arrnull.dump manifest-nulls-off manifest-nulls-off.sig manifest-tz manifest-tz.sig manifest-tampered-env manifest-tampered-env.sig \
-  env-contract env-contract.sig env-contract-nulls-off env-contract-nulls-off.sig env-contract-tz env-contract-tz.sig env-contract-tampered env-contract-tampered.sig; do
+  env-contract env-contract.sig env-contract-nulls-off env-contract-nulls-off.sig env-contract-tz env-contract-tz.sig env-contract-tampered env-contract-tampered.sig \
+  pgstat.dump env-contract-pgstat env-contract-pgstat.sig env-contract-pgstat-badver env-contract-pgstat-badver.sig manifest-pgstat manifest-pgstat.sig \
+  manifest-pgstat-badver manifest-pgstat-badver.sig; do
   sudo install -o "$(id -un)" -g dmsdrill-inbox -m 0640 "$W/$f" "$INBOX/$f"
 done
 # The drill configuration is the provisioned one (provision-drill-host.sh), verified by the signer as part of the install.
@@ -198,6 +205,15 @@ check V19 "production pinned to array_nulls=off: an array with a NULL element fa
 clean_after V19
 rc="$(drill --expected-sha256 "$(sha "$W/arrnull.dump")" --manifest "$INBOX/manifest" "$INBOX/arrnull.dump")"; cp "$OUT/last.txt" "$OUT/V20.txt"
 check V20 "the same archive under the contract with array_nulls=on is GO, restored under that environment (F3)" "$([ "$rc" = 0 ] && has V20 '^Decision: GO ' && has V20 '^ENV_CONTRACT=VERIFIED ' && recorded V20; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V20.txt" | head -c 40)"
+
+# --- R6-B8: the production-compatible image (allowlist pg_stat_statements) -----------------------------------------
+# The image was pruned to exactly the allowlist: its properties name pg_stat_statements and nothing else.
+check V23 "the drill image carries exactly the allowlisted extension, at a pinned version (R6-B8)" "$([[ "$(prop DMS_IMAGE_EXTENSIONS)" =~ ^pg_stat_statements:[0-9]+(\.[0-9]+)*$ ]]; echo $?)" "$(prop DMS_IMAGE_EXTENSIONS)"
+rc="$(ENVC="$INBOX/env-contract-pgstat" drill --expected-sha256 "$(sha "$W/pgstat.dump")" --manifest "$INBOX/manifest-pgstat" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V21.txt"
+check V21 "a production-shaped archive with pg_stat_statements restores GO under a contract naming the image's exact version (R6-B8)" "$([ "$rc" = 0 ] && has V21 '^Decision: GO ' && has V21 '^ENV_CONTRACT=VERIFIED ' && recorded V21; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V21.txt" | head -c 40)"
+clean_after V21
+rc="$(ENVC="$INBOX/env-contract-pgstat-badver" drill --expected-sha256 "$(sha "$W/pgstat.dump")" --manifest "$INBOX/manifest-pgstat-badver" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V22.txt"
+check V22 "a contract naming another extension version is refused before any VM boots, and recorded (R6-B8, exact class)" "$([ "$rc" = 2 ] && has V22 'not the version the drill image has' && ! has V22 'VM boot' && recorded V22; echo $?)" "exit=$rc"
 clean_after V20
 
 # --- V14: KVM belongs to the QEMU account only ------------------------------------------------------------------------
@@ -220,7 +236,7 @@ check V13 "the operator verifies the exported store against the witness with the
 check V8 "the operator cannot read the signer's key" "$([ ! -r /var/lib/dmsdrill-signer/signing-key ]; echo $?)" "$(sudo stat -c '%U %a' /var/lib/dmsdrill-signer/signing-key 2> /dev/null)"
 for f in "$OUT"/evidence/store/*/record; do grep -h '^DMS_DRILL_EVIDENCE_\(SEQ\|RUN_ID\|INSTALL\|DECISION\)=' "$f" | tr '\n' ' '; echo; done > "$OUT/evidence/decisions.txt"
 starts="$(grep -c 'DECISION=STARTED' "$OUT/evidence/decisions.txt")"
-check V15 "every drill has a STARTED record and exactly one outcome (contract 5)" "$([ "$starts" = 14 ] && [ "$NREC" = 28 ]; echo $?)" "started=${starts} records=${NREC}"
+check V15 "every drill has a STARTED record and exactly one outcome (contract 5)" "$([ "$starts" = 16 ] && [ "$NREC" = 32 ]; echo $?)" "started=${starts} records=${NREC}"
 echo "TOTAL pass=${PASS} fail=${FAIL} limitation=${LIMIT}" >> "$RESULTS"
 cat "$RESULTS"
 [ "$FAIL" = 0 ]

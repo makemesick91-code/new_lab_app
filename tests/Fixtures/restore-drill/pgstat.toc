@@ -1,0 +1,27 @@
+;
+;     TOC Entries: 19
+;     Compression: gzip
+;     Dump Version: 1.15-0
+;     Format: CUSTOM
+;     Integer: 4 bytes
+;     Offset: 8 bytes
+;     Dumped from database version: 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+;     Dumped by pg_dump version: 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+;
+;
+; Selected TOC Entries:
+;
+3425; 0 0 ACL - SCHEMA public pg_database_owner
+2; 3079 16405 EXTENSION - pg_stat_statements 
+3426; 0 0 COMMENT - EXTENSION pg_stat_statements 
+221; 1255 16404 FUNCTION public synthetic_fn() app_runtime
+218; 1259 16396 TABLE public items app_runtime
+217; 1259 16388 TABLE public migrations app_runtime
+216; 1259 16387 SEQUENCE public migrations_id_seq app_runtime
+3427; 0 0 SEQUENCE OWNED BY public migrations_id_seq app_runtime
+3264; 2604 16391 DEFAULT public migrations id app_runtime
+3417; 0 16396 TABLE DATA public items app_runtime
+3416; 0 16388 TABLE DATA public migrations app_runtime
+3428; 0 0 SEQUENCE SET public migrations_id_seq app_runtime
+3269; 2606 16403 CONSTRAINT public items items_pkey app_runtime
+3267; 2606 16395 CONSTRAINT public migrations migrations_pkey app_runtime

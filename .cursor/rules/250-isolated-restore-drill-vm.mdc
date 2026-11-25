@@ -97,14 +97,18 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
     - Never give the operator a sudoers route to `sign`. Never run QEMU outside the supervisor's unit.
     - Fix verification of round 6 (R6F-*, design §0.13):
       - **Guard.** It also refuses, in the dump's own expressions, anything that is IMMUTABLE by label but depends on
-        session settings or cluster-assigned object ids: XML expressions, text-form conversions (CoerceViaIO), domain
-        coercions, the float, bytea, time and geometric output functions, XML functions, and reg* values and columns.
+        session settings or cluster-assigned object ids: XML expressions, SQL/JSON constructors, text-form
+        conversions (CoerceViaIO), domain coercions, the float, bytea, time and geometric output functions, XML
+        functions, the zone-name variants of timezone(), date_trunc(), date_add() and date_subtract(), and reg* values
+        and columns.
         Index expressions and predicates get the same check after post-data (`FAIL:unit_exit_22`). Text search ids
         are cluster-assigned too, because they depend on the host's locales at initdb. Never exempt a reg* type.
       - **Differential.** After post-data, before any dump function exists, every CHECK, generated column and
         expression or partial index is re-evaluated on the restored rows under five session profiles. It reads every
-        row: no index scan, no constraint exclusion, and keys only where the predicate holds. Any difference FAILs
-        (`unit_exit_22`). Never let it use an index or skip a profile.
+        row: no index scan, no constraint exclusion, and keys only where the predicate holds. A generated
+        `varchar`/`bpchar`/`bit`/`varbit` value, or array element, must also fit its length under every profile (an
+        explicit cast truncates silently; COPY raises). Any difference FAILs (`unit_exit_22`). Never let it use an index
+        or skip a profile.
       - **Supervisor.** Every signal stops the unit at once. It refuses a busy unit; each run boots once.
       - **QEMU unit.** A system-call filter (no `socket()`, no io_uring), no namespaces, a private `/dev/shm`, a
         read-only `/run`, no journal or D-Bus, and bounded CPU, I/O and file size. The work directory is a dedicated
@@ -143,3 +147,25 @@ Gates: `deploy/restore-drill-vm/ci/real-sandbox-gate.sh` (system mode) and `vm-b
 infrastructure only. The audited workflow is activated only on the dedicated branch `validation/r6-b6-real-isolation`
 (owner directive "R6-B6 — Phase 3"), never on a PR, base or production branch. A gate that did not run is NOT RUN,
 never PASS. `provision-drill-host.sh` runs only on a GitHub-hosted, disposable runner.
+
+## Production-compatible image (R6-B8)
+The production drill image is built with the extension allowlist `pg_stat_statements` (production's only extension).
+The drill host allowlists exactly that, and the contract names its exact version. Every other extension stays refused
+(V10, S-pgstat-no, the TOC allowlist). Allowlisted extensions are created by the bootstrap superuser before any backup
+byte is read, so an archive without the extension still restores (S-pgstat, V21).
+
+## A-1 closure (owner decision, 2026-11-25)
+Finding A-1 is **CLOSED** for implementation and security acceptance. The owner's decision followed Evidence Pack 53:
+final code `8f7e2807`, final real-isolation CI run 45593398043 (sprint record G6-R6B6-ACC). The acceptance holds only
+with these permanent limitations; never report it without them:
+- A malicious root or host administrator of the drill host is outside the proven security boundary.
+- CI proves the identity-separation mechanisms, not protection against a privileged host administrator (G0).
+- The stated heuristics are accepted within their documented limits: the guard's lists, the differential's profiles,
+  a setting set and reset within one session, the image-minor rule, and a length coercion buried in an expression.
+- The independent reviewers were AI agents, not human security auditors.
+- The Full Suite was NOT RUN under the current CI policy.
+- Production environment compatibility is not established. Until the owner signs a production environment contract and
+  it passes the compatibility checks, a drill of a production archive is never GO.
+- Production operational readiness remains NO-GO.
+
+Reopen R6-B6 only for a new material finding that invalidates this acceptance.

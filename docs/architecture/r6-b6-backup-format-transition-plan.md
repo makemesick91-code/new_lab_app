@@ -78,7 +78,7 @@ backups.
 | `scripts/restore-rehearsal.sh` | Plain SQL only, replayed with `psql --single-transaction` **as the superuser into a scratch database on the same cluster, without restricted mode** (`:268-274`) | It has the same header and evidence coupling as above (`:179-195`). |
 | `scripts/rollout-restore-drill.sh` | Plain SQL. Verification only: the in-place replay is retired, and the script exits 3 (`:3-8,328-337`). | It verifies a plain file (`:266`), then tells the operator to run `restore-drill-vm.sh` **on that same file** (`:335`). The drill refuses it (row below). **This hand-off cannot succeed for any production backup today.** |
 | `scripts/restore-drill-vm.sh` + `scripts/lib/restore-archive.sh` (R6-B6) | **Custom format only.** The drill checks: the `PGDMP` magic after the digest (`restore-archive.sh:124-131`); TOC header `Format: CUSTOM`, `Dumped from database version: 16.`, `Dumped by pg_dump version: 16.` (`:53-55`); entry-type allowlist (`:23-24`); only the `public` schema (`:26`); every owner in the signed role manifest; every TABLE has one TABLE DATA entry; per-table counts from `pg_restore --section=data --restrict-key` (`:214-251`). | It refuses on the production host (`restore-drill-vm.sh:146`). Work space is sized from max(archive × 8, uncompressed data × 4) and capped at 1024 MiB (`:192,285-287`). |
-| `php artisan foundation:backup-verify` (`app/Services/Foundation/BackupVerificationService.php`) | Path inside `<deploy-backup-dir>` only (`:43-58`). Extension `sql` only (`config/backup_governance.php:19`; check at service `:81-85`). Size ≥ 1024. A header marker, `PGDMP` included, is a WATCH when absent (`config/backup_governance.php:29-33`). | **A `.dump` FAILs** (`BACKUP-EXTENSION-EXPECTED`). By code reading, a `<rollback-backup-dir>` path also fails `BACKUP-PATH-ALLOWED`, so `rollback-vps.sh:373` would stop under `set -euo pipefail`. This was not executed (§14 Q-15). |
+| `php artisan foundation:backup-verify` (`app/Services/Foundation/BackupVerificationService.php`) | Path inside `<deploy-backup-dir>` only (`:43-58`). Extension `sql` only (`config/backup_governance.php:19`; check at service `:81-85`). Size ≥ 1024. A header marker, `PGDMP` included, is a WATCH when absent (`config/backup_governance.php:29-33`). | **A `.dump` FAILs** (`BACKUP-EXTENSION-EXPECTED`). The rollback path's use of the verifier is §14 Q-15. |
 | `release:evidence-capture --backup-path` (`app/Services/Foundation/ReleaseEvidenceService.php:419-423,509-526`) | Any path. It runs backup-verify and records the basename and size. | Inherits backup-verify's extension rule |
 | Monitoring "Deploy — Latest Backup" (`app/Services/Foundation/FoundationMonitoringStatusService.php:324-370`; `config/foundation_monitoring.php:51,80,176-184`) | The newest **regular file of any name** in `<deploy-backup-dir>` by mtime. Older than 48 h is WATCH. | Format-agnostic, so a `.partial` or a sidecar in the same directory would be reported as "latest backup". |
 | Developer console disk/backup card (`app/Support/DeveloperConsole/DeveloperConsoleService.php:303-318`) | The newest five files of any name | Same as above |
@@ -151,7 +151,7 @@ The plan uses four releases. Each is a separate owner-approved production change
 | Producer | R1, parallel (both formats) | R3, cutover / R4, retirement |
 |---|---|---|
 | P-A pre-deploy (`deploy-vps.sh`) | Add a **second** dump after the plain one, in the same root staging directory: `"<pg16-bindir>/pg_dump" --format=custom --compress=6 …` into `<root-staging>/dump.custom` through `dms_write_private_dump`. Root hashes it. The runtime copy goes to `<deploy-backup-dir>/pre_auto_deploy_<stamp>.dump`, then root re-hashes and compares. The log gets the new `Pre-deploy archive:` line. Keep the plain lines byte for byte (`config/deployment_rollback.php:172-175`), and add the new lines as additional required markers. Run backup-verify on both files (needs C-1). The extra dump adds its measured duration before the checkout. The deploy has no maintenance mode (no `artisan down` in `deploy-vps.sh`), so both dumps are live, consistent snapshots, taken at slightly different instants. | R3: `release:evidence-capture --backup-path` points to the `.dump` (`:543`). R4: remove the plain dump. The `Pre-deploy backup:` line ends, and the `--deploy-id` plain path stays valid for historical deploys only. |
-| P-B pre-rollback (`rollback-vps.sh`) | The same second dump to `<rollback-backup-dir>/pre_rollback_<stamp>.dump`, with its digest printed next to the plain one. First resolve the backup-verify directory question (§14 Q-15). | As P-A |
+| P-B pre-rollback (`rollback-vps.sh`) | The same second dump to `<rollback-backup-dir>/pre_rollback_<stamp>.dump`, with its digest printed next to the plain one. First resolve §14 Q-15. | As P-A |
 | P-C scheduled (`backup-vps.sh` + unit) | Add the second dump to `auto_backup_<stamp>.dump`, then verify both. The **prune becomes per format**: today it matches only `*.sql` (`:64,69,76`), so `.dump` files would grow without bound. Run separate floor and age loops for `*.sql` and `*.dump`, and remove `checksums/` sidecars with their archive. The `TimeoutStartSec=1800` budget (`*-db-backup.service:52`) must cover both dumps. That is likely, given ~1 s measured for one plain dump on 2026-11-03 (`*-db-backup.timer:19`), but it must be re-measured on today's data. The unit file needs no change, because it runs the script from the checkout. If the timeout or the identity changes (OD-4), the unit must be reinstalled: a privileged host step (`install`, `daemon-reload`) outside the deploy runner, which is a separate owner-authorised admin action. The ENT-12 scanner markers stay present. | R3: monitoring requires `.dump` freshness. R4: stop the plain dump and **freeze the `*.sql` prune**, so the plain files left are never deleted by automation (§10, OD-8). |
 | P-D manual helper (`backup_postgres.sh`) | Not used in production. Either align it with T-2 to T-8 (pinned pg16, allowed directory, verify, digest, no hard-coded defaults) or mark it deprecated (OD-12). Do not use it as a production producer while this transition runs. | Retire or align |
 | P-E rehearsal snapshot (`restore-rehearsal.sh`) | **Do not port to custom.** Its replay is the same in-place superuser replay that finding A-1 retired in `rollout-restore-drill.sh` (§8). Its future is an owner decision (OD-10), outside this format change. | n/a |
@@ -271,7 +271,7 @@ connects to production PostgreSQL (D3).
 | `restore-rehearsal.sh` | Takes its own plain snapshot and replays it in place, as the superuser, **without restricted mode** (`:268-274`). This is the same class of risk that finding A-1 retired in `rollout-restore-drill.sh`. | Not ported. OD-10: retire it, or reduce it to verification only, as `rollout-restore-drill.sh` was. Rehearsal proof moves to the drill VM. |
 | `rollout-restore-drill.sh` | Verifies plain only, then points at the VM drill with the same file (`:335`), which refuses it. | Accept a `.dump` through `dms_archive_verify_copy` and the `Pre-deploy archive:` evidence, then print the drill command for it. Or retire the script. Either way, the hand-off must name a file the drill accepts. |
 | `restore-drill-vm.sh` | Custom only | No format change is needed. It needs the extension allowlist to include `pg_stat_statements`: the production dump carries it (`restore_postgres.sh:38-41`), and the drill refuses an archive with an extension outside the allowlist (PR-8). It also needs a manifest listing every archive owner. |
-| `foundation:backup-verify` | `sql` only | C-1 (§4). Also resolve the rollback directory question (§14 Q-15). |
+| `foundation:backup-verify` | `sql` only | C-1 (§4). Also resolve §14 Q-15. |
 | BK-2 (off server, host-only) | Format not in repository | If the package contents change, the private BK-2 recovery procedure names `pg_restore` for `.dump` and keeps `psql` for historical `.sql`. Not a gate (rule 232). |
 
 **Rule for the whole transition:** the plain producer and every plain restore helper stay in service until the custom
@@ -358,8 +358,7 @@ credentials or environment-file contents (CG-11).
   - release the previous approved commit through the normal runner path (rule 229 or 236);
   - or, on the host, `scripts/rollback-vps.sh <commit>`. That is code only, never an automatic data restore, and it
     never deletes a backup or the rollback database (CG-15).
-  - Before relying on `rollback-vps.sh`, settle §14 Q-15. By code reading, its backup-verify call targets a directory
-    the verifier does not allow.
+  - Before relying on `rollback-vps.sh`, settle §14 Q-15.
 - **R1 → before R1.** Revert the second dump and the per-format prune. Plain production was never changed, so recovery
   capability is unaffected. `.dump` files already written are **kept**: the reverted `*.sql`-only prune no longer
   touches them, and nobody deletes them by hand (CG-15). Their later disposal is an owner decision. C-1 (`dump` allowed)
@@ -459,11 +458,9 @@ credentials or environment-file contents (CG-11).
 - Q-12: whether anything alerts on a `failed` backup unit today.
 - Q-13: current free disk space and backup growth rate on the host.
 - Q-14: whether the environment overrides `BACKUP_DR_RETENTION_DAYS`, `BACKUP_DR_MIN_RETAINED` or the RTO/RPO values.
-- Q-15 (**answered 2026-11-25: CONFIRMED by synthetic reproduction**, a separate issue in Evidence Pack 53; not part of this transition or of PR #695): whether `rollback-vps.sh` can pass its own backup verification. By code reading, `foundation:backup-verify`
-  allows only `<deploy-backup-dir>` (`config/backup_governance.php:15-17`, check `BackupVerificationService.php:51-58`).
-  The rollback verifies a file in `<rollback-backup-dir>` (`rollback-vps.sh:301,373`) under `set -euo pipefail`
-  (`:25`), which would fail after the checkout has already moved. This was not executed. Reproduce it on a disposable
-  copy before any rollback is relied on. It predates this plan (ENT-11).
+- Q-15: the reliability of the rollback path (`rollback-vps.sh`). It is a separate workstream (R6-B7, owner decision
+  2026-11-25), tracked in the private evidence register; it is not part of this transition or of PR #695. Resolve it
+  before any rollback is relied on and before the cutover.
 
 **Risks:**
 - R-1: **Evidence ambiguity in the parallel phase.** A second `Pre-deploy backup:` line would make every `--deploy-id`
@@ -516,7 +513,7 @@ The custom-format standard is approved **at the design level only**. Nothing bel
 - at least 3 drills of real production `-Fc` archives on the dedicated drill host with GO, each under a current signed
   environment contract, with the evidence verified off the host;
 - the restore helpers, `foundation:backup-verify` and monitoring accept `.dump`, with tests (§4, §11);
-- the rollback defect of Q-15 fixed and released first (a separate issue);
+- Q-15 resolved and released first (R6-B7, a separate workstream);
 - RTO/RPO decided (OD-13), and the measured backup and restore times inside them;
 - the owner's written approval of the cutover date. Plain dumps stop only then, and their retention is frozen, not
   pruned (§10).

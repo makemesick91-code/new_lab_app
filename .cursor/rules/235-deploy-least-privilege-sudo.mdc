@@ -113,7 +113,8 @@ GO is recorded in the sprint doc, not here.
   rule 250). `scripts/rollout-restore-drill.sh` keeps only its read-only verification and refuses with exit 3. The drill
   runs only in a disposable VM on an isolated drill host (`scripts/restore-drill-vm.sh`). That VM reuses the integrity
   chain, the restricted stream and the load guard described in the next item, which records the retired replay's
-  history. Finding A-1 stays OPEN until rule 250's acceptance evidence and two independent reviews are complete.
+  history. Finding A-1 was CLOSED by the owner on 2026-11-25, with the permanent limitations in rule 250
+  ("A-1 closure").
 - `scripts/rollout-restore-drill.sh` (staging only, refuses production) replays as the PostgreSQL superuser since R6-B6
   (D-Q7). Finding A-1 (2026-11-25, owner directive: remediate, never risk-accept) closed the gap that opened: the drill
   now takes this rule's restore path. It reads the expected digest from the deploy's root-only log (`--deploy-id`) or an

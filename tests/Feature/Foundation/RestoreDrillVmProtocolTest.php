@@ -22,6 +22,23 @@ function rdvmSh(string $script, array $env = []): array
     return ['exit' => (int) $process->getExitCode(), 'out' => trim($process->getOutput()), 'err' => $process->getErrorOutput()];
 }
 
+/**
+ * Whether a working per-user systemd manager is reachable HERE: the probe starts a real transient unit, as the tests do.
+ * A runtime directory and `is-system-running` are not enough (a CI runner can have both and no reachable user bus).
+ */
+function rdvmUserSystemdMissing(): ?string
+{
+    $rt = (string) getenv('XDG_RUNTIME_DIR');
+    if ($rt === '' || ! is_dir($rt.'/systemd')) {
+        return 'no per-user systemd manager on this host';
+    }
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '--', '/usr/bin/true'], null, ['XDG_RUNTIME_DIR' => $rt, 'DBUS_SESSION_BUS_ADDRESS' => (string) getenv('DBUS_SESSION_BUS_ADDRESS'), 'PATH' => (string) getenv('PATH')]);
+    $probe->setTimeout(30);
+    $probe->run();
+
+    return $probe->getExitCode() === 0 ? null : 'no working per-user systemd manager (systemd-run --user)';
+}
+
 function rdvmDir(): string
 {
     $dir = sys_get_temp_dir().'/rdvm-'.bin2hex(random_bytes(6));
@@ -468,7 +485,29 @@ it('keeps the real-isolation workflow audited: one validation branch, read-only,
         ->and($yml)->not->toContain('apparmor')
         ->and($yml)->not->toContain('0666')
         ->and(substr_count($yml, 'timeout-minutes: '))->toBe(2)
-        ->and($yml)->toContain('cancel-in-progress: true');
+        ->and($yml)->toContain('cancel-in-progress: true')
+        // R6-B8: the image is pruned to production's one extension; the drill host allowlists exactly that.
+        ->and($yml)->toContain('"$RUNNER_TEMP/drill.qcow2" pg_stat_statements host-apt')
+        ->and((string) file_get_contents(base_path('deploy/restore-drill-vm/ci/provision-drill-host.sh')))->toContain('"DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements"');
+});
+
+it('prunes the drill image to exactly the allowlist: production\'s pg_stat_statements stays, every other extension goes (R6-B8)', function () {
+    $dir = sys_get_temp_dir().'/rdvm-prune-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    foreach (['plpgsql', 'pg_stat_statements', 'pgcrypto', 'dblink'] as $e) {
+        file_put_contents("{$dir}/{$e}.control", "default_version = '1.0'\n");
+        file_put_contents("{$dir}/{$e}--1.0.sql", "-- synthetic\n");
+    }
+    $p = new Process(['bash', base_path('deploy/restore-drill-vm/prune-extensions.sh'), '--dry-run', $dir, 'pg_stat_statements']);
+    $p->run();
+    $bad = new Process(['bash', base_path('deploy/restore-drill-vm/prune-extensions.sh'), '--dry-run', $dir, 'pg_stat_statements;rm']);
+    $bad->run();
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+
+    expect($p->getExitCode())->toBe(0, $p->getErrorOutput())
+        ->and($p->getOutput())->toContain('would-delete pgcrypto.control')->and($p->getOutput())->toContain('would-delete dblink.control')
+        ->and($p->getOutput())->not->toContain('pg_stat_statements')->and($p->getOutput())->not->toContain('plpgsql')
+        ->and($bad->getExitCode())->toBe(2);
 });
 
 it('keeps root confined to the supervisor: two fixed modes, root-owned code, the runner as its only caller (review round 6)', function () {
@@ -570,8 +609,8 @@ it('gives the QEMU unit no writable path but its work directory, and the CI cons
 
 it('stops the supervised unit at once when the supervisor is signalled, not when the unit ends by itself (R6F-L1)', function () {
     $rt = (string) getenv('XDG_RUNTIME_DIR');
-    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
-        test()->markTestSkipped('no per-user systemd manager on this host');
+    if (($why = rdvmUserSystemdMissing()) !== null) {
+        test()->markTestSkipped("{$why} (covered by the real-isolation CI gates)");
     }
     $code = (string) file_get_contents(base_path('scripts/restore-drill-supervisor.sh'));
     $from = (int) strpos($code, 'UNIT=""; SR=""');
@@ -603,8 +642,8 @@ it('stops the supervised unit at once when the supervisor is signalled, not when
 
 it('starts the QEMU unit\'s exact properties under systemd, with no socket, no io_uring and a read-only /run (R6F-L13, L18)', function () {
     $rt = (string) getenv('XDG_RUNTIME_DIR');
-    if ($rt === '' || ! is_dir($rt.'/systemd') || (new Process(['systemctl', '--user', 'is-system-running']))->run() > 1) {
-        test()->markTestSkipped('no per-user systemd manager on this host');
+    if (($why = rdvmUserSystemdMissing()) !== null) {
+        test()->markTestSkipped("{$why} (covered by the real-isolation CI gates)");
     }
     $p = new Process(['bash', '-c', '. "$1"; dms_vm_qemu_unit_properties x /nonexistent 1', 'x', base_path('scripts/lib/restore-vm.sh')]);
     $p->mustRun();
