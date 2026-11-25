@@ -181,19 +181,19 @@ it('creates the rehearsal database owned by the superuser, never by the applicat
         ->and($code)->toContain('as_superuser createdb -O "$REHEARSAL_OWNER" -T template0 -- "$REHEARSAL_DB"');
 });
 
-it('runs every drill database operation through the superuser and artisan as the runtime user', function () {
+it('keeps only read-only verification through the superuser, artisan as the runtime, and no replay code at all (finding A-1)', function () {
     $code = rdopCode('scripts/rollout-restore-drill.sh');
 
     expect($code)->not->toContain('-U "${DB_USERNAME}"')
         ->and($code)->not->toContain('PGPASSWORD')
-        ->and($code)->not->toContain('dropdb --if-exists')
-        ->and($code)->not->toMatch('/dropdb[^\n]*\|\| true/')
-        ->and($code)->toContain('as_superuser "$DROPDB_BIN" -- "$DRILL_DB"')
-        ->and($code)->toContain('as_superuser "$CREATEDB_BIN" -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"')
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN" -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
-        ->and($code)->not->toContain('< "$BACKUP_FILE"')
+        ->and($code)->not->toContain('as_superuser "$CREATEDB_BIN" -O')
+        ->and($code)->not->toContain('as_superuser "$DROPDB_BIN" --')
+        ->and($code)->not->toContain('ON_ERROR_STOP=1 -d "$DRILL_DB" -f -')
+        ->and($code)->not->toContain('restore-drills/latest.json')
+        ->and($code)->toContain('REFUSED: this host never replays a backup (finding A-1)')
+        ->and($code)->toContain('scripts/restore-drill-vm.sh --expected-sha256')
         ->and(preg_match('/^\s*(?!as_runtime )php artisan/m', $code))->toBe(0)
-        ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'as_superuser "$CREATEDB_BIN" -O'));
+        ->and(strpos($code, 'RUNTIME_ELEVATED='))->toBeLessThan(strpos($code, 'REFUSED: this host never replays'));
 });
 
 it('refuses the drill, creating nothing, when the application role holds CREATEDB, CREATEROLE or SUPERUSER', function () {
@@ -212,97 +212,31 @@ it('refuses the drill when the application role cannot be found (fail closed)', 
         ->and(collect($run['log'])->contains(fn (string $l): bool => preg_match('/(^|\] )createdb /', $l) === 1))->toBeFalse();
 });
 
-it('drills through the superuser, owns the disposable database by it, and drops only that database', function () {
+it('verifies read-only, then refuses with exit 3: nothing is created, replayed or dropped, and no evidence is written', function () {
     $run = rdopRunDrill('f');
     $log = collect($run['log']);
-    $startsWith = fn (string $prefix): bool => $log->contains(fn (string $l): bool => str_starts_with($l, $prefix));
 
-    expect($run['exit'])->toBe(0, $run['output'])
-        // Created, filled and dropped by the superuser OS account; owned by the superuser role.
-        ->and($startsWith('AS[postgres] PGBIN/createdb -O pg_superuser -T template0 -- dmsapp_restore_drill_'))->toBeTrue()
-        ->and($startsWith('AS[postgres] PGBIN/psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_'))->toBeTrue()
-        ->and($startsWith('AS[postgres] PGBIN/dropdb -- dmsapp_restore_drill_'))->toBeTrue()
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and(rdopCalls($run, 'dropdb'))->toBe(1)
-        ->and($run['state'])->toBeNull()
-        // No database command ever runs as, or for, the application role.
-        ->and($log->contains(fn (string $l): bool => str_contains($l, 'app_runtime') && preg_match('/\b(createdb|dropdb|psql)\b/', $l) === 1 && ! str_contains($l, 'rolname')))->toBeFalse()
-        // Every artisan call runs as the runtime user, never as the operator.
-        ->and($log->filter(fn (string $l): bool => str_starts_with($l, 'php '))->count())
-        ->toBe($log->filter(fn (string $l): bool => str_starts_with($l, 'AS[daengtisiams] php '))->count())
-        ->and($startsWith('AS[daengtisiams] php artisan foundation:backup-verify'))->toBeTrue()
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO')
-        ->and($run['evidence']['verification']['database_owner_superuser'] ?? null)->toBe('GO')
-        ->and($run['evidence']['verification']['disposable_database_dropped'] ?? null)->toBe('GO')
-        ->and($run['evidence']['production_overwrite'] ?? null)->toBeFalse();
-});
-
-it('refuses a drill target name that already exists and never drops it (collision)', function () {
-    $run = rdopRunDrill('f', 'collision');
-
-    expect($run['exit'])->not->toBe(0)
-        ->and($run['output'])->toContain('already exists. This run did not create it and does not touch it')
+    expect($run['exit'])->toBe(3, $run['output'])
+        ->and($run['output'])->toContain('VERIFIED (read-only, on this host)')
+        ->and($run['output'])->toContain('REFUSED: this host never replays a backup (finding A-1)')
+        ->and($run['output'])->toContain('Nothing was created, replayed or dropped.')
         ->and(rdopCalls($run, 'createdb'))->toBe(0)
         ->and(rdopCalls($run, 'dropdb'))->toBe(0)
-        ->and($run['state'])->toBe('77777')
-        ->and($run['evidence'])->toBeNull();
-});
-
-it('never drops a database another session created between the check and createdb (collision race)', function () {
-    $run = rdopRunDrill('f', 'race');
-
-    expect($run['exit'])->not->toBe(0)
-        ->and($run['output'])->toContain('createdb failed')
-        ->and($run['output'])->toContain('No disposable database was created by this run; nothing is dropped.')
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and(rdopCalls($run, 'dropdb'))->toBe(0)
-        ->and($run['state'])->toBe('88888')
-        ->and($run['evidence'])->toBeNull();
-});
-
-it('drops nothing when createdb fails', function () {
-    $run = rdopRunDrill('f', 'create_fails');
-
-    expect($run['exit'])->not->toBe(0)
-        ->and($run['output'])->toContain('This run created no database and drops none')
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and(rdopCalls($run, 'dropdb'))->toBe(0)
+        ->and($log->contains(fn (string $l): bool => str_contains($l, ' -f -')))->toBeFalse()
         ->and($run['state'])->toBeNull()
+        // Every artisan call still runs as the runtime user, never as the operator.
+        ->and($log->filter(fn (string $l): bool => str_starts_with($l, 'php '))->count())
+        ->toBe($log->filter(fn (string $l): bool => str_starts_with($l, 'AS[daengtisiams] php '))->count())
         ->and($run['evidence'])->toBeNull();
 });
 
-it('fails the drill and records FAIL evidence when its own disposable database cannot be dropped', function () {
-    $run = rdopRunDrill('f', 'drop_fails');
+it('never touches a database that already exists under the drill name (no create, no drop)', function () {
+    $run = rdopRunDrill('f', 'collision');
 
-    expect($run['exit'])->not->toBe(0)
-        ->and($run['output'])->toContain("could not drop 'dmsapp_restore_drill_")
-        // Tried once, never retried or ignored; the database is left and reported.
-        ->and(rdopCalls($run, 'dropdb'))->toBe(1)
-        ->and($run['state'])->toBe('16384')
-        ->and($run['evidence']['decision'] ?? null)->toBe('FAIL')
-        ->and($run['evidence']['verification']['disposable_database_dropped'] ?? null)->toBe('FAIL')
-        ->and($run['evidence']['notes'] ?? [])->toContain('disposable DB NOT dropped: manual cleanup required; production never touched');
-});
-
-it('never drops a database whose oid changed after this run created it', function () {
-    $run = rdopRunDrill('f', 'oid_changes');
-
-    expect($run['exit'])->not->toBe(0)
-        ->and($run['output'])->toContain("is not the database this run created (created oid '16384', now '99999')")
+    expect($run['exit'])->toBe(3, $run['output'])
+        ->and(rdopCalls($run, 'createdb'))->toBe(0)
         ->and(rdopCalls($run, 'dropdb'))->toBe(0)
-        ->and($run['state'])->toBe('99999')
-        ->and($run['evidence']['decision'] ?? null)->toBe('FAIL')
-        ->and($run['evidence']['verification']['disposable_database_dropped'] ?? null)->toBe('FAIL');
-});
-
-it('drops its own database when the run fails after creating it', function () {
-    $run = rdopRunDrill('f', 'replay_fails');
-
-    expect($run['exit'])->not->toBe(0)
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and(rdopCalls($run, 'dropdb'))->toBe(1)
-        ->and($run['state'])->toBeNull()
-        ->and($run['evidence'])->toBeNull();
+        ->and($run['state'])->toBe('77777');
 });
 
 it('refuses a drill target name that PostgreSQL would truncate', function () {
@@ -324,13 +258,13 @@ it('stops the drill before anything is created when a role that owns objects in 
         ->and($run['evidence'])->toBeNull();
 });
 
-it('runs the drill when every role that owns objects in the backup exists', function () {
+it('verifies a backup whose owner roles all exist, then refuses to replay it here', function () {
     $run = rdopRunDrill('f', 'none', 'dmsapp', "-- PostgreSQL database dump\nCREATE TABLE public.t (id int);\nALTER TABLE public.t OWNER TO app_runtime;\n");
 
-    expect($run['exit'])->toBe(0, $run['output'])
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and(rdopCalls($run, 'dropdb'))->toBe(1)
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+    expect($run['exit'])->toBe(3, $run['output'])
+        ->and($run['output'])->toContain('owner roles present (D-Q6-a)')
+        ->and(rdopCalls($run, 'createdb'))->toBe(0)
+        ->and($run['evidence'])->toBeNull();
 });
 
 it('refuses a pre-R6 backup before anything is created once the cluster has the R6 owner role (P5)', function () {
@@ -343,10 +277,11 @@ it('refuses a pre-R6 backup before anything is created once the cluster has the 
         ->and($run['evidence'])->toBeNull();
 });
 
-it('drills a post-R6 backup whose objects the owner role owns', function () {
+it('verifies a post-R6 backup whose objects the owner role owns, then refuses to replay it here', function () {
     $run = rdopRunDrill('f', 'none', 'dmsapp', "-- PostgreSQL database dump\nCREATE TABLE public.t (id int);\nALTER TABLE public.t OWNER TO dms_owner;\n", r6: true);
 
-    expect($run['exit'])->toBe(0, $run['output'])
-        ->and(rdopCalls($run, 'createdb'))->toBe(1)
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+    expect($run['exit'])->toBe(3, $run['output'])
+        ->and($run['output'])->toContain('runtime ownership gate (P5) passed')
+        ->and(rdopCalls($run, 'createdb'))->toBe(0)
+        ->and($run['evidence'])->toBeNull();
 });

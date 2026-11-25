@@ -130,7 +130,8 @@ it('checks owner roles in every restore tool before it creates or replays anythi
 })->with([
     'restore_postgres.sh' => ['scripts/restore_postgres.sh', '$STAGED_DUMP', 'as_superuser createdb -O', 'read_dump | as_superuser psql'],
     'restore-rehearsal.sh' => ['scripts/restore-rehearsal.sh', '$STAGED_BACKUP', 'as_superuser createdb -O', 'read_backup | as_superuser psql'],
-    'rollout-restore-drill.sh' => ['scripts/rollout-restore-drill.sh', '$STAGED_BACKUP', 'as_superuser "$CREATEDB_BIN" -O', 'as_superuser "$PSQL_BIN" -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f -'],
+    // The drill's in-place replay is retired (A-1): its checks come before the refusal that replaced create and replay.
+    'rollout-restore-drill.sh' => ['scripts/rollout-restore-drill.sh', '$STAGED_BACKUP', 'REFUSED: this host never replays a backup', 'REFUSED: this host never replays a backup'],
 ]);
 
 it('never creates a role, strips ownership, or lets the runtime own a restored database (D-Q6-a, D-Q6-b)', function (string $path) {
@@ -215,7 +216,7 @@ it('runs the runtime ownership gate in every restore tool after the role preflig
 })->with([
     'restore_postgres.sh' => ['scripts/restore_postgres.sh', '$STAGED_DUMP', 'as_superuser createdb -O'],
     'restore-rehearsal.sh' => ['scripts/restore-rehearsal.sh', '$STAGED_BACKUP', 'as_superuser createdb -O'],
-    'rollout-restore-drill.sh' => ['scripts/rollout-restore-drill.sh', '$STAGED_BACKUP', 'as_superuser "$CREATEDB_BIN" -O'],
+    'rollout-restore-drill.sh' => ['scripts/rollout-restore-drill.sh', '$STAGED_BACKUP', 'REFUSED: this host never replays a backup'],
 ]);
 
 it('never reports RESTORE OK for a runtime-owned database after R6', function () {

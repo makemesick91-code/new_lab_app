@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #
-# ROLL-5-1A — Staging restore drill (disposable DB) + evidence emitter.
+# ROLL-5-1A — Staging restore drill: production-side VERIFICATION only (the in-place replay is retired).
+#
+# RETIRED 2026-11-25 (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1): this script no longer creates,
+# replays or drops anything. It verifies the backup read-only (trusted digest, source checks, staged copy, pinned
+# client, owner roles, runtime ownership gate) and then refuses with exit 3. The drill itself runs only in a disposable
+# VM on an isolated drill host: scripts/restore-drill-vm.sh. The description below is the historical contract of the
+# retired replay, kept for the checks that remain.
 #
 # Restores the latest verified deploy backup into a DISPOSABLE database, runs
 # read-only verification (table count + a few bounded COUNTs — NO patient rows,
@@ -118,9 +124,6 @@ if [ -n "$EXPECTED_SHA256" ] && [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; th
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-EVIDENCE_DIR="storage/app/readiness/restore-drills"
-EVIDENCE_FILE="${EVIDENCE_DIR}/latest.json"
 
 cd "$APP_DIR"
 
@@ -199,7 +202,6 @@ as_superuser_pg() {
 }
 
 DRILL_ENV="${ROLLOUT_DRILL_ENVIRONMENT:-staging}"
-OPERATOR="${ROLLOUT_DRILL_OPERATOR:-ops}"
 
 echo "== ROLL-5-1A restore drill =="
 
@@ -274,7 +276,6 @@ if [ "$SPLIT_CHECKS_STATUS" != 0 ]; then
   echo "FATAL: the backup holds ${SPLIT_CHECKS:-an unknown number of} CHECK constraint(s) that pg_dump split out to validate after the data; that validation would run their code as the superuser before the load guard can see it. Nothing was created. Aborting."
   exit 1
 fi
-BACKUP_SIZE="$(wc -c < "$STAGED_BACKUP" | tr -d ' ')"
 
 # The runtime's own format check of its file: informational, never the trust anchor.
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
@@ -322,171 +323,15 @@ case "$RUNTIME_GATE_STATUS" in
   *) echo "FATAL: could not decide the runtime ownership gate as the superuser; nothing was created. Aborting."; exit 1 ;;
 esac
 
-# --- Restore into disposable DB (never touches production) ----------------
-DB_CONNECTIVITY="FAIL"; MIGRATION_CONSISTENCY="UNKNOWN"; APP_BOOT="UNKNOWN"
-HEALTH_ROUTES="UNKNOWN"; SAMPLE_QUERIES="UNKNOWN"; TABLE_COUNT=0; DATABASE_OWNER="UNKNOWN"
-RESTORE_START="$(date +%s)"
-
-# Proof of creation. Only a database this run created, still holding the oid
-# read right after its creation, is ever dropped.
-DRILL_DB_CREATED=0; DRILL_DB_OID=""; DROP_ATTEMPTED=0; DISPOSABLE_DROPPED="FAIL"
-
-drill_db_oid() {
-  as_superuser "$PSQL_BIN" -X -Atqc "SELECT oid FROM pg_database WHERE datname = '${DRILL_DB}'"
-}
-
-drop_drill_db() {
-  DROP_ATTEMPTED=1
-  echo "== Drop disposable database: ${DRILL_DB} =="
-  local current_oid
-  if ! current_oid="$(drill_db_oid)"; then
-    echo "FATAL: cannot read the oid of '${DRILL_DB}'; it is NOT dropped. Check it and drop it by hand as the superuser."
-    return 1
-  fi
-  if [ -z "$DRILL_DB_OID" ] || [ "$current_oid" != "$DRILL_DB_OID" ]; then
-    echo "FATAL: '${DRILL_DB}' is not the database this run created (created oid '${DRILL_DB_OID:-unknown}', now '${current_oid:-absent}'); it is NOT dropped."
-    return 1
-  fi
-  if ! as_superuser "$DROPDB_BIN" -- "$DRILL_DB"; then
-    echo "FATAL: could not drop '${DRILL_DB}', created by this run. Drop it by hand as the superuser."
-    return 1
-  fi
-  DISPOSABLE_DROPPED="GO"
-}
-
-on_exit() {
-  local status=$?
-  if [ "$DRILL_DB_CREATED" = "1" ] && [ "$DROP_ATTEMPTED" = "0" ]; then
-    drop_drill_db || status=1
-  elif [ "$DRILL_DB_CREATED" = "0" ]; then
-    echo "No disposable database was created by this run; nothing is dropped."
-  fi
-  rm -rf -- "$STAGING_DIR"
-  exit "$status"
-}
-trap on_exit EXIT
-
-echo "== Create disposable database (owned by the superuser '${DRILL_OWNER}') =="
-EXISTING_OID="$(drill_db_oid)"
-if [ -n "$EXISTING_OID" ]; then
-  echo "FATAL: a database named '${DRILL_DB}' already exists. This run did not create it and does not touch it. Aborting."
-  exit 1
-fi
-# createdb fails when the name exists, so a database created in between by
-# anyone else is never marked as this run's.
-if ! as_superuser "$CREATEDB_BIN" -O "$DRILL_OWNER" -T template0 -- "$DRILL_DB"; then
-  echo "FATAL: createdb failed for '${DRILL_DB}'. This run created no database and drops none. Aborting."
-  exit 1
-fi
-DRILL_DB_CREATED=1
-DRILL_DB_OID="$(drill_db_oid)"
-case "$DRILL_DB_OID" in
-  ''|*[!0-9]*) echo "FATAL: cannot read the oid of '${DRILL_DB}' right after creating it; it is not dropped automatically. Aborting."; exit 1 ;;
-esac
-
-echo "== Restore backup into disposable database =="
-# Only the verified root-only staging copy is replayed, streamed on stdin (the
-# superuser OS account cannot open it, but it can read a pipe). The stream puts
-# psql in restricted mode under a fresh random key, so no backslash meta-command
-# in the dump can run as the superuser's OS account (finding A-1). Before the
-# first row is loaded, the load guard refuses schema code the runtime could have
-# planted that COPY would run as the superuser (CHECK, domain, generated column,
-# partition key; user operators).
-RESTRICT_KEY="$(dms_restore_restrict_key)" || { echo "FATAL: could not generate the restricted-mode key. Aborting."; exit 1; }
-GUARD_TAG="g$(dms_restore_restrict_key | cut -c1-32)" || { echo "FATAL: could not generate the load-guard tag. Aborting."; exit 1; }
-set +o errexit
-dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN" -X -q -v ON_ERROR_STOP=1 -d "$DRILL_DB" -f - > /dev/null
-PIPE_STATUS=("${PIPESTATUS[@]}")
-set -o errexit
-# psql is reported first: when it stops on an error the reader dies of SIGPIPE.
-if [ "${PIPE_STATUS[1]:-1}" -ne 0 ]; then
-  echo "FATAL: the replay into '${DRILL_DB}' FAILED (psql exit ${PIPE_STATUS[1]:-1}); a refused meta-command or a SQL error stops it. Aborting."
-  exit 1
-fi
-if [ "${PIPE_STATUS[0]:-1}" -ne 0 ]; then
-  echo "FATAL: could not read the staged copy (exit ${PIPE_STATUS[0]:-1}). Aborting."
-  exit 1
-fi
-DB_CONNECTIVITY="GO"
-
-echo "== Verify restored data (read-only counts, NO patient rows) =="
-TABLE_COUNT="$(as_superuser "$PSQL_BIN" -X -d "$DRILL_DB" -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d ' ')"
-[ "${TABLE_COUNT:-0}" -ge 1 ] && SAMPLE_QUERIES="GO" || SAMPLE_QUERIES="FAIL"
-
-# Migration table present => migration consistency verifiable.
-MIG_COUNT="$(as_superuser "$PSQL_BIN" -X -d "$DRILL_DB" -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='migrations';" | tr -d ' ')"
-[ "${MIG_COUNT:-0}" -ge 1 ] && MIGRATION_CONSISTENCY="GO" || MIGRATION_CONSISTENCY="WATCH"
-
-# D-Q6 / N-9: the restored database is owned by the superuser, never the runtime.
-RESTORED_OWNER="$(as_superuser "$PSQL_BIN" -X -Atqc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '${DRILL_DB}'")"
-if [ "$RESTORED_OWNER" = "$DRILL_OWNER" ] && [ "$RESTORED_OWNER" != "${DB_USERNAME}" ]; then DATABASE_OWNER="GO"; else DATABASE_OWNER="FAIL"; fi
-
-# App boot + health routes (do not point the app at the disposable DB — just
-# confirm the app/artisan boots and health endpoints resolve on this host).
-if as_runtime php artisan --version > /dev/null 2>&1; then APP_BOOT="GO"; else APP_BOOT="FAIL"; fi
-if as_runtime php artisan route:list --json 2>/dev/null | grep -q 'health/ready'; then HEALTH_ROUTES="GO"; else HEALTH_ROUTES="WATCH"; fi
-
-# Dropped before the evidence is written, so the evidence records the result.
-drop_drill_db || true
-if [ "$DISPOSABLE_DROPPED" = "GO" ]; then
-  CLEANUP_NOTE="disposable DB dropped after verification; production never touched"
-else
-  CLEANUP_NOTE="disposable DB NOT dropped: manual cleanup required; production never touched"
-fi
-
-RESTORE_END="$(date +%s)"
-DURATION=$(( RESTORE_END - RESTORE_START ))
-COMPLETED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-DECISION="GO"
-[ "$SAMPLE_QUERIES" = "FAIL" ] && DECISION="FAIL"
-[ "$DATABASE_OWNER" = "FAIL" ] && DECISION="FAIL"
-[ "$DISPOSABLE_DROPPED" = "FAIL" ] && DECISION="FAIL"
-
-echo "== Write ROLL-5-1A evidence =="
-as_runtime mkdir -p "$EVIDENCE_DIR"
-as_runtime tee "$EVIDENCE_FILE" > /dev/null <<JSON
-{
-  "schema_version": 1,
-  "drill_id": "roll-5-1a-${STAMP}",
-  "environment": "${DRILL_ENV}",
-  "source_backup_path": "${BACKUP_FILE}",
-  "source_backup_size_bytes": ${BACKUP_SIZE},
-  "restore_target": "${DRILL_DB}",
-  "production_overwrite": false,
-  "started_at": "${STARTED_AT}",
-  "completed_at": "${COMPLETED_AT}",
-  "duration_seconds": ${DURATION},
-  "operator": "${OPERATOR}",
-  "commands_summary": [
-    "createdb -O <superuser> <disposable_target> (as the superuser OS account)",
-    "psql -d <disposable_target> -f - from the root-only staged copy whose SHA-256 matched trusted evidence, in restricted mode (as the superuser OS account)",
-    "read-only count verification (no patient rows)",
-    "dropdb <disposable_target>, only when created by this run with an unchanged oid (as the superuser OS account)"
-  ],
-  "verification": {
-    "db_connectivity": "${DB_CONNECTIVITY}",
-    "migration_consistency": "${MIGRATION_CONSISTENCY}",
-    "app_boot": "${APP_BOOT}",
-    "health_routes": "${HEALTH_ROUTES}",
-    "sample_readonly_queries": "${SAMPLE_QUERIES}",
-    "database_owner_superuser": "${DATABASE_OWNER}",
-    "disposable_database_dropped": "${DISPOSABLE_DROPPED}",
-    "pii_redaction_confirmed": true
-  },
-  "decision": "${DECISION}",
-  "notes": [
-    "${CLEANUP_NOTE}",
-    "backup integrity: VERIFIED sha256=${EXPECTED_SHA256}",
-    "restored public table count: ${TABLE_COUNT}"
-  ]
-}
-JSON
-
-echo "Evidence written: ${EVIDENCE_FILE} (decision=${DECISION})"
-as_runtime php artisan rollout:restore-drill-evidence --path="$EVIDENCE_FILE" || true
-if [ "$DISPOSABLE_DROPPED" != "GO" ]; then
-  exit 1
-fi
+# --- The in-place replay is RETIRED (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", D1) -----------
+# Until 2026-11-25 this script went on to create a disposable database on THIS cluster and replay the backup into it
+# as the PostgreSQL superuser. A backup whose digest is trusted is still attacker-influenced content (before R6-D the
+# runtime owns the schema it dumps), and three review rounds kept finding superuser-execution paths in that replay.
+# The owner decided the drill runs only in a separate disposable VM on an isolated drill host (D1), never on the
+# production kernel: scripts/restore-drill-vm.sh. This script keeps only its read-only verification of the backup
+# above, and never creates, replays, counts or drops anything here.
+echo "VERIFIED (read-only, on this host): ${INTEGRITY} from ${INTEGRITY_SOURCE}; pinned client ${PSQL_CLIENT#PSQL_CLIENT=}; owner roles present (D-Q6-a); runtime ownership gate (P5) passed."
+echo "REFUSED: this host never replays a backup (finding A-1). The drill runs only in a disposable VM on an isolated drill host:"
+echo "  scripts/restore-drill-vm.sh --expected-sha256 ${EXPECTED_SHA256} --manifest <signed role manifest> <backup file>"
+echo "Nothing was created, replayed or dropped. No drill evidence is written by this script."
+exit 3

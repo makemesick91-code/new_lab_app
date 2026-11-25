@@ -2079,6 +2079,15 @@ return [
         // `RestoreDrill` token in BOTH critical variants; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/RestoreDrillTrustedBackupTest.php',
+        // R6-B6 isolated restore drill (finding A-1; owner directive "R6-B6 ISOLATED RESTORE DRILL", 2026-11-25):
+        // the sandbox unit's isolation profile, the D6 limits, the strict result parser and the host decision; the
+        // signed role manifest (D3) and signed, chained drill evidence (D10); the disposable-VM transport and the
+        // orchestrator's refusals (D1); and the retired in-place replay. Selected by the `RestoreDrill` token in BOTH
+        // critical variants. RestoreDrillSandboxRuntimeTest (the real sandbox) is not declared here: it skips where no
+        // per-user systemd manager exists and runs in the dedicated real-sandbox gate instead (D8).
+        'tests/Feature/Foundation/RestoreDrillIsolationProfileTest.php',
+        'tests/Feature/Foundation/RestoreDrillManifestEvidenceTest.php',
+        'tests/Feature/Foundation/RestoreDrillVmProtocolTest.php',
     ],
 
     /*

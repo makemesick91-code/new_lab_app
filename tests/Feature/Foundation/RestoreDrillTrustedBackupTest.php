@@ -175,6 +175,20 @@ function rdtbCalls(array $run, string $binary): int
     return collect($run['log'])->filter(fn (string $l): bool => preg_match('/(^|\] )'.preg_quote($binary, '/').' /', $l) === 1)->count();
 }
 
+/**
+ * The replay stream exactly as scripts/restore-drill-vm.sh builds it from the staged copy: restricted mode under a
+ * fresh key, load guard under a fresh tag. The drill's in-place replay is retired (finding A-1); the stream now feeds
+ * the disposable VM.
+ */
+function rdtbStream(string $dump): array
+{
+    $file = rdtbTemp($dump);
+    $run = rdtbLib('key="$(dms_restore_restrict_key)" && tag="g$(dms_restore_restrict_key | cut -c1-32)" && dms_restore_restricted_stream "$F" "$key" "$tag"', ['F' => $file]);
+    @unlink($file);
+
+    return ['exit' => $run['exit'], 'replayed' => $run['out']];
+}
+
 /** Calls one function of scripts/lib/restore-integrity.sh in bash. */
 function rdtbLib(string $script, array $env = []): array
 {
@@ -286,35 +300,36 @@ it('refuses an environment file another identity could have written, before sour
         ->and(rdtbCalls($run, 'createdb'))->toBe(0);
 });
 
-it('replays the verified staged copy even when the backup is replaced after the check (TOCTOU)', function () {
+it('verifies the staged copy even when the backup is replaced after the check, and replays nothing here (TOCTOU, A-1)', function () {
     $malicious = RDTB_DUMP."ALTER TABLE public.t OWNER TO ghost_role;\nCREATE ROLE intruder SUPERUSER;\n\\! touch /tmp/rdtb-should-never-exist\n";
     $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], scenario: 'swap', swapTo: $malicious);
+    $vm = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
 
-    expect($run['exit'])->toBe(0)
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO')
-        ->and($run['evidence']['notes'] ?? [])->toContain('backup integrity: VERIFIED sha256='.hash('sha256', RDTB_DUMP))
-        ->and($run['replayed'])->toContain('CREATE TABLE public.t (id integer);')
-        ->and($run['replayed'])->not->toContain('ghost_role')
-        ->and($run['replayed'])->not->toContain('intruder')
-        ->and($run['replayed'])->not->toContain('\\!')
+    expect($run['exit'])->toBe(3, $run['output'])
+        ->and($run['output'])->toContain('RESTORE_INTEGRITY=VERIFIED sha256='.hash('sha256', RDTB_DUMP))
+        ->and($run['output'])->toContain('REFUSED: this host never replays a backup')
+        ->and($run['replayed'])->toBeNull()
+        ->and($run['evidence'])->toBeNull()
         ->and($run['tmp_left'])->toBe(0)
-        ->and(collect($run['log'])->contains(fn (string $l): bool => str_contains($l, 'foundation:backup-verify')))->toBeTrue();
+        ->and(collect($run['log'])->contains(fn (string $l): bool => str_contains($l, 'foundation:backup-verify')))->toBeTrue()
+        // The VM drill streams only the staged copy, never the live file.
+        ->and(strpos($vm, 'STAGED="$(dms_restore_stage_copy "$BACKUP_FILE" "$WORK")"'))->toBeLessThan(strpos($vm, 'dms_restore_verify_copy "$STAGED"'))
+        ->and($vm)->not->toContain('< "$BACKUP_FILE"');
 });
 
 it('runs the whole replay in psql restricted mode under a fresh key and drops only the dump\'s own complete envelope', function () {
-    $first = rdtbRun(['--expected-sha256', '{sha}', '{file}']);
-    $second = rdtbRun(['--expected-sha256', '{sha}', '{file}']);
+    $first = rdtbStream(RDTB_DUMP);
+    $second = rdtbStream(RDTB_DUMP);
     $lines = explode("\n", (string) $first['replayed']);
 
     expect($first['exit'])->toBe(0)
-        ->and($first['tmp_left'])->toBe(0)
         ->and($lines[0])->toMatch('/^\\\\restrict [0-9a-f]{64}$/')
         ->and(explode("\n", (string) $second['replayed'])[0])->not->toBe($lines[0])
         ->and($first['replayed'])->not->toContain('restrict AbC123synthetic')
         ->and($first['replayed'])->toContain("COPY public.t (id) FROM stdin;\n1\n\\.\n")
         ->and(substr_count((string) $first['replayed'], '\\restrict '))->toBe(1)
         ->and(substr_count((string) $first['replayed'], '\\unrestrict'))->toBe(0)
-        ->and(collect($first['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] PGBIN/psql -X -q -v ON_ERROR_STOP=1 -d dmsapp_restore_drill_') && str_ends_with($l, ' -f -')))->toBeTrue();
+        ->and(file_get_contents(base_path('scripts/restore-drill-vm.sh')))->toContain('dms_restore_restricted_stream "$STAGED" "$KEY" "$TAG" > "$WORK/payload"');
 });
 
 it('keeps every meta-command inside a digest-matching dump under the fresh key, so real psql refuses it', function () {
@@ -322,7 +337,7 @@ it('keeps every meta-command inside a digest-matching dump under the fresh key, 
     // account. The drill must pass them on unchanged after its own fresh \restrict, and never add an \unrestrict.
     // The private PostgreSQL 16 harness proves that psql 16 then refuses them (owner evidence pack, cases C and C2).
     $dump = str_replace('COPY public.t (id) FROM stdin;', "\\unrestrict AbC123synthetic\n\\! id\nSELECT 1; \\! id\nCOPY public.t (id) FROM stdin;", RDTB_DUMP);
-    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+    $run = rdtbStream($dump);
     $lines = explode("\n", (string) $run['replayed']);
 
     expect($run['exit'])->toBe(0)
@@ -334,8 +349,8 @@ it('keeps every meta-command inside a digest-matching dump under the fresh key, 
 
 it('defines the load guard first and calls it before every object header, every COPY line and at the end, under a fresh tag', function () {
     $dump = str_replace('\\unrestrict AbC123synthetic', "COPY public.t (id) FROM stdin;\n2\n\\.\n\n\\unrestrict AbC123synthetic", RDTB_DUMP);
-    $first = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
-    $second = rdtbRun(['--expected-sha256', '{sha}', '{file}']);
+    $first = rdtbStream($dump);
+    $second = rdtbStream(RDTB_DUMP);
     preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\) RETURNS void$/m', (string) $first['replayed'], $tag);
     preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\)/m', (string) $second['replayed'], $other);
     $lines = explode("\n", (string) $first['replayed']);
@@ -363,7 +378,7 @@ it('calls the load guard before every pg_dump object header, so a COPY line spli
             RDTB_DUMP,
         ),
     );
-    $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], $dump);
+    $run = rdtbStream($dump);
     $lines = explode("\n", (string) $run['replayed']);
     preg_match('/^CREATE FUNCTION pg_temp\.dms_restore_guard_(g[0-9a-f]{32})\(\)/m', (string) $run['replayed'], $tag);
     $call = 'SELECT pg_temp.dms_restore_guard_'.($tag[1] ?? 'none').'();';
@@ -417,10 +432,11 @@ it('takes the digest and the file from the deploy\'s trusted root-only log with 
         rdtbEvidence($root, $app, hash('sha256', RDTB_DUMP));
     });
 
-    expect($run['exit'])->toBe(0)
+    expect($run['exit'])->toBe(3, $run['output'])
         ->and($run['output'])->toContain('RESTORE_INTEGRITY=VERIFIED sha256='.hash('sha256', RDTB_DUMP))
         ->and($run['output'])->toContain('the root-only log of deploy '.RDTB_DEPLOY_ID)
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+        ->and($run['replayed'])->toBeNull()
+        ->and($run['evidence'])->toBeNull();
 });
 
 it('refuses --deploy-id evidence that disagrees, names another file, or is writable by others', function (string $case, string $message) {
@@ -452,9 +468,9 @@ it('reads only the staged copy after the integrity check, and never picks a defa
         ->and(strpos($code, 'dms_restore_check_source "$BACKUP_FILE"'))->toBeLessThan($verify)
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_missing_owner_roles "$STAGED_BACKUP"'))
         ->and($verify)->toBeLessThan(strpos($code, 'dms_restore_runtime_ownership_gate "$STAGED_BACKUP"'))
-        ->and($verify)->toBeLessThan(strpos($code, 'as_superuser "$CREATEDB_BIN" -O'))
+        ->and($verify)->toBeLessThan(strpos($code, 'REFUSED: this host never replays a backup'))
         ->and($code)->toContain('dms_restore_check_source "$BACKUP_FILE" "$RUNTIME_USER" "$(id -un)"')
-        ->and($code)->toContain('dms_restore_restricted_stream "$STAGED_BACKUP" "$RESTRICT_KEY" "$GUARD_TAG" | as_superuser "$PSQL_BIN"')
+        ->and($code)->not->toContain('dms_restore_restricted_stream')
         ->and($code)->not->toContain('< "$BACKUP_FILE"')
         ->and($code)->not->toContain('ls -1t');
 });
@@ -533,9 +549,9 @@ it('refuses, before reading any backup, a psql that is not PostgreSQL 16.15 or l
 it('accepts psql 16.15 and later minors of PostgreSQL 16', function (string $version) {
     $run = rdtbRun(['--expected-sha256', '{sha}', '{file}'], env: ['RDTB_PSQL_VERSION' => $version]);
 
-    expect($run['exit'])->toBe(0)
+    expect($run['exit'])->toBe(3, $run['output'])
         ->and($run['output'])->toContain('PSQL_CLIENT=VERIFIED 16.')
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO');
+        ->and($run['output'])->toContain('VERIFIED (read-only, on this host)');
 })->with(['psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)', 'psql (PostgreSQL) 16.16', 'psql (PostgreSQL) 16.20']);
 
 it('never runs a psql, createdb or dropdb that PATH offers instead of the pinned, verified ones', function () {
@@ -547,8 +563,7 @@ it('never runs a psql, createdb or dropdb that PATH offers instead of the pinned
         }
     });
 
-    expect($run['exit'])->toBe(0)
-        ->and($run['evidence']['decision'] ?? null)->toBe('GO')
+    expect($run['exit'])->toBe(3, $run['output'])
         ->and(collect($run['log'])->contains(fn (string $l): bool => str_starts_with($l, 'SHADOW ')))->toBeFalse()
         ->and(collect($run['log'])->contains(fn (string $l): bool => str_starts_with($l, 'AS[postgres] PGBIN/psql --version')))->toBeTrue();
 });
