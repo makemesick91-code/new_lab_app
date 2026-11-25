@@ -41,7 +41,7 @@ DMS_DRILL_EVIDENCE_LIMITS_D6="vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,task
 # P5-3: the two comma lists have fixed keys in a fixed order with typed values (no duplicate, unknown or reordered key).
 DMS_DRILL_EVIDENCE_EXPECTED_RE='^tables=[0-9]{1,9},rows=[0-9]{1,15},per_table_digest=[0-9a-f]{64},catalog_shape=[0-9]{1,9}(:[0-9]{1,9}){6}$'
 # R6C-9: the stages a refusal or an abort may name (the orchestrator's STAGE values), nothing else.
-DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed "
+DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed unclosed_after_boot "
 DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_table_digest=([0-9a-f]{64}|none|invalid),catalog_shape=[0-9:a-z]{1,80},user_code=[0-9a-z]{1,12},user_code_executed=[0-9a-z]{1,12},fidelity=[0-9:a-z]{1,40},vm_ifaces=[a-z0-9:]{1,40}$'
 
 # _dms_evidence_value_ok <key> <value>
@@ -200,14 +200,19 @@ dms_evidence_binding_check() {
   [ -n "$last" ] && [ "$ldec" = STARTED ] && [ "$lrun" = "$run" ] || { echo "evidence: run ${run} has no open STARTED record (an outcome closes only the newest start)"; return 1; }
 }
 
-# dms_evidence_verify_store <store> <allowed_signers anchor> [head log] [witness log]
+# dms_evidence_verify_store <store> <allowed_signers anchor> [head log] [witness log] [require root GO: 0|1]
 # Verifies every published record in sequence: signature (principal = its SIGNER, namespace above), exact key set and
 # order, valid values, SEQ equal to its directory, PREV equal to the previous record's sha256 (genesis first). With a
 # head log, the store's head must equal the log's last entry. Prints "VERIFIED <n> head=<sha256|genesis>" or the first
 # failure. Staging directories (.stage-*) are not records and are ignored.
+# R6F-E3: it also replays contract 4 across records: a STARTED opens a run id never seen before, only while no run is
+# open; every other record closes exactly the open run and carries its operator, host and start time; with the last
+# argument 1 (a drill host), every GO carries a verified root install equal to its start's.
 dms_evidence_verify_store() {
-  local store="${1:?store}" anchor="${2:?anchor}" headlog="${3:-}" witness="${4:-}" n=0 prev=genesis d f line k v signer keys last why storeid=""
+  local store="${1:?store}" anchor="${2:?anchor}" headlog="${3:-}" witness="${4:-}" rootgo="${5:-0}" n=0 prev=genesis d f line k v signer keys last why storeid=""
   local -a shas=()
+  local open="" o_op="" o_host="" o_at="" o_inst="" dec
+  local -A runs=()
   shopt -s nullglob
   local dirs=("$store"/[0-9][0-9][0-9][0-9][0-9][0-9])
   shopt -u nullglob
@@ -241,6 +246,23 @@ dms_evidence_verify_store() {
     fi
     [ "${seen[DMS_DRILL_EVIDENCE_SEQ]}" = "$(printf '%06d' "$n")" ] || { echo "FAIL $(basename "$d"): SEQ does not match its directory"; return 1; }
     [ "${seen[DMS_DRILL_EVIDENCE_PREV_SHA256]}" = "$prev" ] || { echo "FAIL $(basename "$d"): chain broken (PREV does not match the previous record)"; return 1; }
+    dec="${seen[DMS_DRILL_EVIDENCE_DECISION]}"
+    if [ "$dec" = STARTED ]; then
+      [ -z "$open" ] || { echo "FAIL $(basename "$d"): a start while run ${open} is still open"; return 1; }
+      [ -z "${runs[${seen[DMS_DRILL_EVIDENCE_RUN_ID]}]+x}" ] || { echo "FAIL $(basename "$d"): run ${seen[DMS_DRILL_EVIDENCE_RUN_ID]} started twice (replay)"; return 1; }
+      runs[${seen[DMS_DRILL_EVIDENCE_RUN_ID]}]=1
+      open="${seen[DMS_DRILL_EVIDENCE_RUN_ID]}"; o_op="${seen[DMS_DRILL_EVIDENCE_OPERATOR]}"; o_host="${seen[DMS_DRILL_EVIDENCE_DRILL_HOST]}"
+      o_at="${seen[DMS_DRILL_EVIDENCE_STARTED_AT]}"; o_inst="${seen[DMS_DRILL_EVIDENCE_INSTALL]}"
+    else
+      [ -n "$open" ] && [ "${seen[DMS_DRILL_EVIDENCE_RUN_ID]}" = "$open" ] || { echo "FAIL $(basename "$d"): an outcome without its open start"; return 1; }
+      [ "${seen[DMS_DRILL_EVIDENCE_OPERATOR]}" = "$o_op" ] && [ "${seen[DMS_DRILL_EVIDENCE_DRILL_HOST]}" = "$o_host" ] && [ "${seen[DMS_DRILL_EVIDENCE_STARTED_AT]}" = "$o_at" ] \
+        || { echo "FAIL $(basename "$d"): the outcome differs from its start (operator, host or start time)"; return 1; }
+      if [ "$dec" = GO ] && [ "$rootgo" = 1 ]; then
+        [ "${seen[DMS_DRILL_EVIDENCE_INSTALL]%%:*}" = root ] && [ "${seen[DMS_DRILL_EVIDENCE_INSTALL]}" = "$o_inst" ] \
+          || { echo "FAIL $(basename "$d"): a GO without the verified root install of its start"; return 1; }
+      fi
+      open=""
+    fi
     prev="$(sha256sum -- "$f" | cut -d' ' -f1)"
     shas+=("$prev")
     unset seen

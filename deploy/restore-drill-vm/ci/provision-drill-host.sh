@@ -62,7 +62,17 @@ sudo install -d -o "$R" -g "$R" -m 0700 /var/lib/dms-restore-drill/runner
 sudo mount -t tmpfs -o "size=1536m,mode=0700,uid=$(id -u "$R"),gid=$(id -g "$R"),nosuid,nodev,noexec" tmpfs /var/lib/dms-restore-drill/runner
 sudo install -d -o "$S" -g "$S" -m 0700 /var/lib/dmsdrill-signer /var/lib/dmsdrill-signer/store
 sudo install -d -o "$W" -g "$W" -m 0700 /var/lib/dmsdrill-witness
-sudo install -d -o "$Q" -g "$Q" -m 0700 /var/lib/dmsdrill-qemu /var/lib/dmsdrill-qemu/work /var/lib/dmsdrill-qemu/console
+# R6F-L10: the directory above the QEMU work directory is root's. R6F-L4: the work directory is its own bounded file
+# system (here a sparse 13 GiB ext4 image), so an escaped QEMU cannot fill the file system of the evidence store.
+sudo install -d -o root -g root -m 0755 /var/lib/dmsdrill-qemu
+sudo install -d -o "$Q" -g "$Q" -m 0700 /var/lib/dmsdrill-qemu/work /var/lib/dmsdrill-qemu/console
+sudo truncate -s 13G /var/lib/dmsdrill-qemu-work.img
+sudo mkfs.ext4 -q -m 0 -F /var/lib/dmsdrill-qemu-work.img
+sudo mount -o loop,nosuid,nodev,noexec /var/lib/dmsdrill-qemu-work.img /var/lib/dmsdrill-qemu/work
+sudo rmdir /var/lib/dmsdrill-qemu/work/lost+found
+sudo chown "$Q:$Q" /var/lib/dmsdrill-qemu/work && sudo chmod 0700 /var/lib/dmsdrill-qemu/work
+# R6F-L8: no swap on the drill host (the runner's run directory is RAM only).
+sudo swapoff -a
 sudo -u "$S" ssh-keygen -q -t ed25519 -N '' -C "$S" -f /var/lib/dmsdrill-signer/signing-key
 # R6C INFO: the anchor accepts the key for the evidence namespace only.
 sudo -u "$S" sh -c 'printf "drill-signer@ci namespaces=\"dms-restore-drill-evidence\" %s\n" "$(cat /var/lib/dmsdrill-signer/signing-key.pub)" > /var/lib/dmsdrill-signer/allowed_signers && chmod 0600 /var/lib/dmsdrill-signer/allowed_signers'
@@ -89,6 +99,7 @@ printf '%s\n' "DMS_QEMU_BINARY=/usr/bin/qemu-system-x86_64" "DMS_QEMU_IMG=/usr/b
   "DMS_QEMU_IMAGE_SHA256=${IMAGES%% *}" "DMS_QEMU_WORK_DIR=/var/lib/dmsdrill-qemu/work" "DMS_QEMU_CONSOLE_DIR=/var/lib/dmsdrill-qemu/console" | conf qemu.conf
 printf '%s\n' "DMS_SUPERVISOR_CALLER=${R}" "DMS_SUPERVISOR_QEMU_USER=${Q}" "DMS_SUPERVISOR_SIGNER_USER=${S}" \
   "DMS_SUPERVISOR_QEMU_LAUNCHER=${L}/qemu/restore-drill-qemu-launcher.sh" "DMS_SUPERVISOR_QEMU_WORK_DIR=/var/lib/dmsdrill-qemu/work" \
+  "DMS_SUPERVISOR_QEMU_CONSOLE_DIR=/var/lib/dmsdrill-qemu/console" \
   "DMS_SUPERVISOR_PG_BINDIR=/usr/lib/postgresql/16/bin" "DMS_SUPERVISOR_SIGNER_STORE=/var/lib/dmsdrill-signer/store" | conf supervisor.conf
 # The drill's own configuration is part of the install the signer verifies (R6C-8): its signer and supervisor paths.
 printf '%s\n' "DMS_DRILL_MANIFEST_ANCHOR=${E}/manifest-anchor" "DMS_DRILL_MANIFEST_REVOCATIONS=${E}/revocations" \
@@ -102,13 +113,19 @@ WIT="$L/witness/restore-drill-evidence-witness.sh"; SUP="$L/supervisor/restore-d
 {
   # R6A-6, R6A-10: no pseudo-terminal and no I/O logging for the drill's commands (the input disk is never logged).
   printf 'Defaults!%s,%s,%s,%s !use_pty, !log_input, !log_output\n' "$ORCH" "$SIGN" "$WIT" "$SUP"
+  # R6F-E1: the caller's resource limits never reach the drill's identities (a lowered process limit could make the
+  # signer fail between publication and the witness).
+  printf 'Defaults!%s,%s,%s,%s rlimit_nproc=infinity, rlimit_nofile=default, rlimit_as=infinity, rlimit_cpu=infinity, rlimit_data=infinity, rlimit_fsize=infinity, rlimit_stack=default, rlimit_memlock=default, rlimit_locks=infinity, rlimit_core=0\n' "$ORCH" "$SIGN" "$WIT" "$SUP"
   printf '%s ALL=(%s) NOPASSWD: %s *\n' "$OPERATOR" "$R" "$ORCH"
+  # R6F-E1: the operator reads the witness log (lock-free); it has no route to the signer at all.
   printf '%s ALL=(%s) NOPASSWD: %s show\n' "$OPERATOR" "$W" "$WIT"
-  printf '%s ALL=(%s) NOPASSWD: %s verify\n' "$OPERATOR" "$S" "$SIGN"
   printf '%s ALL=(%s) NOPASSWD: %s sign, %s verify\n' "$R" "$S" "$SIGN" "$SIGN"
   printf '%s ALL=(root) NOPASSWD: %s inspect *, %s vm *\n' "$R" "$SUP" "$SUP"
   printf '%s ALL=(%s) NOPASSWD: %s show\n' "$R" "$W" "$WIT"
   printf '%s ALL=(%s) NOPASSWD: %s append *, %s show\n' "$S" "$W" "$WIT" "$WIT"
 } | sudo install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/dms-restore-drill
 sudo visudo -cf /etc/sudoers.d/dms-restore-drill
+# R6F-E4: then readable (0444, root-owned, writable by nobody; sudo refuses only writable files), so the signer's
+# install digest covers these rules.
+sudo chmod 0444 /etc/sudoers.d/dms-restore-drill
 echo "drill host provisioned: operator=${OPERATOR} runner=${R} signer=${S} witness=${W} qemu=${Q}"

@@ -66,35 +66,38 @@ dms_trusted_canonical "$LOG" || { echo "WITNESS: the log path is not canonical a
 [ -e "$LOG" ] || : > "$LOG"
 
 # The log itself must be well formed and gapless before anything is read from it or added to it.
-log_ok() {
-  local n=0 seq sha
+log_ok() { # <file>
+  local n=0 seq sha f="$1"
   # R6C-6: exact lines only, each ending with its newline.
-  if [ -s "$LOG" ]; then
-    [ "$(tail -c 1 -- "$LOG" | od -An -tx1 | tr -d ' ')" = 0a ] || return 1
-    ! grep -qvE '^[0-9]{6} [0-9a-f]{64}$' -- "$LOG" || return 1
+  if [ -s "$f" ]; then
+    [ "$(tail -c 1 -- "$f" | od -An -tx1 | tr -d ' ')" = 0a ] || return 1
+    ! grep -qvE '^[0-9]{6} [0-9a-f]{64}$' -- "$f" || return 1
   fi
   while IFS=' ' read -r seq sha; do
     n=$((n + 1))
     [ "$seq" = "$(printf '%06d' "$n")" ] && [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || return 1
-  done < "$LOG"
-  [ "$(wc -l < "$LOG")" = "$n" ]
+  done < "$f"
+  [ "$(wc -l < "$f")" = "$n" ]
 }
 
 trap '' INT TERM HUP QUIT USR1 USR2 ALRM PIPE TSTP TTIN TTOU
-exec {lock_fd}>> "$(dirname -- "$LOG")/.lock"
-flock -w 30 "$lock_fd" || { echo "WITNESS: the log is locked"; exit 1; }
-log_ok || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
 
 case "$MODE" in
   show)
     [[ " ${C[DMS_WITNESS_SHOW_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not read"; exit 1; }
-    # R6C-2: copied under the lock, printed after it is released (a reader that never drains cannot hold the log).
-    copy="$(cat -- "$LOG")"
-    exec {lock_fd}>&-
-    [ -z "$copy" ] || printf '%s\n' "$copy"
+    # R6F-E1: no lock at all. The log is only ever replaced by a rename, so one read is a whole, consistent version;
+    # readers can never queue ahead of the signer's append.
+    snap="$(mktemp)" || { echo "WITNESS: cannot read"; exit 1; }
+    trap 'rm -f -- "$snap"' EXIT
+    cat -- "$LOG" > "$snap" || { echo "WITNESS: cannot read"; exit 1; }
+    log_ok "$snap" || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
+    cat -- "$snap"
     ;;
   append)
     [[ " ${C[DMS_WITNESS_APPEND_CALLERS]} " == *" ${SUDO_USER} "* ]] || { echo "WITNESS: refused: caller may not append"; exit 1; }
+    exec {lock_fd}>> "$(dirname -- "$LOG")/.lock"
+    flock -w 30 "$lock_fd" || { echo "WITNESS: the log is locked"; exit 1; }
+    log_ok "$LOG" || { echo "WITNESS: FAIL the witness log is malformed or has a gap"; exit 1; }
     SEQ="${2:-}"; SHA="${3:-}"
     [[ "$SEQ" =~ ^[0-9]{6}$ ]] && [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "WITNESS: refused: bad arguments"; exit 1; }
     want="$(printf '%06d' $(( $(wc -l < "$LOG") + 1 )))"

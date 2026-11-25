@@ -18,6 +18,8 @@
 #   DMS_SUPERVISOR_CALLER       the drill runner account (the only caller)
 #   DMS_SUPERVISOR_QEMU_USER    the QEMU account;  DMS_SUPERVISOR_SIGNER_USER  the signer account (must differ)
 #   DMS_SUPERVISOR_QEMU_LAUNCHER, DMS_SUPERVISOR_QEMU_WORK_DIR, DMS_SUPERVISOR_PG_BINDIR, DMS_SUPERVISOR_SIGNER_STORE
+#   DMS_SUPERVISOR_QEMU_CONSOLE_DIR  `none` on a drill host; on disposable CI only, the QEMU account's private (0700)
+#                                    directory for the guest console, the unit's one other writable path
 # Exit: the unit's outcome (inspect), 0 when the VM ran (vm; its own exit is in the launcher's status line), 2 refused.
 set -uo pipefail
 umask 077
@@ -42,7 +44,7 @@ for lib in trusted-path.sh restore-vm.sh restore-archive.sh; do
 done
 CONF=/etc/dms-restore-drill/supervisor.conf
 dms_trusted_file "supervisor configuration" "$CONF" 0 "$(cd "$HERE/.." && pwd)" > /dev/null || refuse config_untrusted
-KEYS="DMS_SUPERVISOR_CALLER DMS_SUPERVISOR_QEMU_USER DMS_SUPERVISOR_SIGNER_USER DMS_SUPERVISOR_QEMU_LAUNCHER DMS_SUPERVISOR_QEMU_WORK_DIR DMS_SUPERVISOR_PG_BINDIR DMS_SUPERVISOR_SIGNER_STORE"
+KEYS="DMS_SUPERVISOR_CALLER DMS_SUPERVISOR_QEMU_USER DMS_SUPERVISOR_SIGNER_USER DMS_SUPERVISOR_QEMU_LAUNCHER DMS_SUPERVISOR_QEMU_WORK_DIR DMS_SUPERVISOR_QEMU_CONSOLE_DIR DMS_SUPERVISOR_PG_BINDIR DMS_SUPERVISOR_SIGNER_STORE"
 declare -A C=()
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
@@ -57,49 +59,94 @@ for k in $KEYS; do [ -n "${C[$k]:-}" ] || refuse "config_missing_${k,,}"; done
 QUID="$(id -u -- "${C[DMS_SUPERVISOR_QEMU_USER]}" 2> /dev/null)" && SUID_="$(id -u -- "${C[DMS_SUPERVISOR_SIGNER_USER]}" 2> /dev/null)" || refuse accounts_missing
 [ "$QUID" != 0 ] && [ "$SUID_" != 0 ] && [ "$QUID" != "$SUDO_UID" ] && [ "$QUID" != "$SUID_" ] && [ "$SUID_" != "$SUDO_UID" ] || refuse identities_not_separate
 
-UNIT=""
-stop_unit() { [ -n "$UNIT" ] && systemctl stop "${UNIT}.service" > /dev/null 2>&1; [ -n "$UNIT" ] && systemctl reset-failed "${UNIT}.service" > /dev/null 2>&1; UNIT=""; return 0; }
+# R6F-L11: the launcher and the PostgreSQL binaries handed to a unit are root's, writable by nobody else.
+APP="$(cd "$HERE/.." && pwd)"
+dms_trusted_file "QEMU launcher" "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" 0 "$APP" > /dev/null || refuse launcher_untrusted
+dms_trusted_file "pg_restore" "${C[DMS_SUPERVISOR_PG_BINDIR]}/pg_restore" 0 "$APP" > /dev/null || refuse pg_bindir_untrusted
+
+UNIT=""; SR=""
+stop_unit() {
+  [ -n "$UNIT" ] && systemctl stop "${UNIT}.service" > /dev/null 2>&1
+  [ -n "$UNIT" ] && systemctl reset-failed "${UNIT}.service" > /dev/null 2>&1
+  [ -n "$SR" ] && kill -TERM "$SR" 2> /dev/null
+  UNIT=""; SR=""; return 0
+}
+# R6F-L1: the unit is stopped on EVERY catchable signal, at once: systemd-run runs in the background and the
+# supervisor waits for it with `wait`, which a trap interrupts (a foreground command would defer the trap until the
+# unit ended by itself).
 trap stop_unit EXIT
-trap 'stop_unit; exit 143' TERM INT HUP PIPE USR1 USR2 ALRM
+trap 'stop_unit; exit 143' TERM INT HUP PIPE USR1 USR2 ALRM QUIT XCPU XFSZ VTALRM PROF SYS
+trap '' TSTP TTIN TTOU
+# run_unit <unit> <systemd-run arguments…>: stdin and stdout are the caller's (a background job would get /dev/null).
+run_unit() {
+  local rc
+  UNIT="$1"; shift
+  exec 3<&0 4>&1
+  systemd-run --system --wait --pipe --collect --quiet --unit="$UNIT" "$@" <&3 >&4 3<&- 4>&- &
+  SR=$!
+  exec 3<&- 4>&-
+  while :; do
+    wait "$SR"; rc=$?
+    kill -0 "$SR" 2> /dev/null || break
+  done
+  UNIT=""; SR=""
+  return "$rc"
+}
+unit_idle() { case "$(systemctl show -P ActiveState "${1}.service" 2> /dev/null)" in inactive | failed | '') return 0 ;; *) return 1 ;; esac; }
 
 MODE="${1:-}"; NAME="${2:-}"
 case "$MODE" in
   inspect)
     [[ "$NAME" =~ ^dmsinspect-[0-9a-f]{12}$ ]] || refuse bad_name
+    # R6F-L6: one inspection at a time on the host (each unit may take 512 MiB for 300 s).
+    exec {ilock}> /run/dms-restore-drill-supervisor-inspect.lock
+    flock -n "$ilock" || refuse inspect_busy
     T="$(mktemp -d)" || refuse tmp
     trap 'stop_unit; rm -rf -- "$T"' EXIT
     awk_bin="$(dms_archive_awk_binary)" || refuse no_awk
     dms_archive_count_program > "$T/count.awk"
     chmod 0755 "$T"; chmod 0644 "$T/count.awk"
     mapfile -t PROPS < <(dms_archive_inspect_properties system "${C[DMS_SUPERVISOR_PG_BINDIR]}" "$awk_bin" "$T/count.awk")
-    UNIT="$NAME"
-    systemd-run --system --wait --pipe --collect --quiet --unit="$NAME" "${PROPS[@]}" -- /usr/bin/bash -c "$(dms_archive_inspect_script)"
-    rc=$?
-    UNIT=""
-    exit "$rc"
+    run_unit "$NAME" "${PROPS[@]}" -- /usr/bin/bash -c "$(dms_archive_inspect_script)"
+    exit $?
     ;;
   vm)
     [[ "$NAME" =~ ^dmsdrill-[0-9a-f]{12}$ ]] || refuse bad_name
-    # R6C-3: the newest record of the evidence store must be this run's signed STARTED record.
+    # R6F-L1: never while a VM still runs (an earlier drill's unit is stopped by its own supervisor, or by its limit).
+    unit_idle dmsqemu || refuse unit_busy
+    # R6C-3: the newest record of the evidence store must be this run's signed STARTED record (R6F-L5: a regular
+    # file of the signer's, read bounded; a run boots once).
     shopt -s nullglob
     recs=("${C[DMS_SUPERVISOR_SIGNER_STORE]}"/[0-9][0-9][0-9][0-9][0-9][0-9])
     shopt -u nullglob
     [ "${#recs[@]}" -ge 1 ] || refuse no_started_record
     last="${recs[${#recs[@]} - 1]}/record"
-    grep -qx "DMS_DRILL_EVIDENCE_RUN_ID=${NAME}" -- "$last" && grep -qx 'DMS_DRILL_EVIDENCE_DECISION=STARTED' -- "$last" || refuse run_not_started
+    [ ! -L "${recs[${#recs[@]} - 1]}" ] && [ ! -L "$last" ] && [ -f "$last" ] && [ "$(stat -c %u -- "$last")" = "$SUID_" ] || refuse record_unsafe
+    rec="$(head -c 65536 -- "$last")"
+    grep -qx "DMS_DRILL_EVIDENCE_RUN_ID=${NAME}" <<< "$rec" && grep -qx 'DMS_DRILL_EVIDENCE_DECISION=STARTED' <<< "$rec" || refuse run_not_started
+    # The marker is root's and readable: the signer closes a run whose VM booted as ABORTED:unclosed_after_boot.
+    B=/var/lib/dms-restore-drill/supervisor-booted
+    [ -d "$B" ] && [ ! -L "$B" ] || install -d -o root -g root -m 0755 -- "$B" || refuse booted_dir
+    _root_ok "$B" || refuse booted_dir
+    ( umask 022; set -C; : > "$B/$NAME" ) 2> /dev/null || refuse already_booted
     W="${C[DMS_SUPERVISOR_QEMU_WORK_DIR]}"
-    dms_trusted_dir "QEMU work directory" "$W" "$QUID" "$(cd "$HERE/.." && pwd)" > /dev/null || refuse work_dir_untrusted
-    # R6A-1: a run's VM files never outlive it; anything left by an earlier, interrupted run is removed first.
-    find "$W" -mindepth 1 -maxdepth 1 -name 'dmsdrill-*' -exec rm -rf -- {} + 2> /dev/null
+    dms_trusted_dir "QEMU work directory" "$W" "$QUID" "$APP" > /dev/null || refuse work_dir_untrusted
+    # R6F-L10: the directory above the work directory is root's, so nothing can swap the work directory itself.
+    _root_ok "$(dirname -- "$W")" || refuse work_dir_parent_unsafe
+    # R6F-L4: the work directory is a file system of its own, so a full disk there never reaches the evidence store.
+    mountpoint -q -- "$W" && [ "$(stat -c %d -- "$W")" != "$(stat -c %d -- "${C[DMS_SUPERVISOR_SIGNER_STORE]}")" ] || refuse work_dir_not_dedicated
+    # R6A-1, R6F-L4: a run's VM files never outlive it; everything left in the work directory is removed first.
+    find "$W" -mindepth 1 -maxdepth 1 -execdir rm -rf -- {} + 2> /dev/null
     # R6A-7: room for the overlay (the 10 GiB virtual disk) and a margin.
     free_kib="$(df -Pk -- "$W" | awk 'NR == 2 { print $4 }')"
     [[ "$free_kib" =~ ^[0-9]+$ ]] && [ "$free_kib" -ge $((11 * 1024 * 1024)) ] || refuse qemu_work_space
-    mapfile -t PROPS < <(dms_vm_qemu_unit_properties "${C[DMS_SUPERVISOR_QEMU_USER]}" "$W" 30)
-    UNIT=dmsqemu
-    systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu "${PROPS[@]}" -- /bin/bash "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" run "$NAME"
-    rc=$?
-    UNIT=""
-    exit "$rc"
+    CON="${C[DMS_SUPERVISOR_QEMU_CONSOLE_DIR]}"
+    if [ "$CON" != none ]; then
+      dms_trusted_canonical "$CON" && [ "$(stat -c '%u %a' -- "$CON" 2> /dev/null)" = "${QUID} 700" ] || refuse console_dir_not_private
+    fi
+    mapfile -t PROPS < <(dms_vm_qemu_unit_properties "${C[DMS_SUPERVISOR_QEMU_USER]}" "$W" 30 "$CON")
+    run_unit dmsqemu "${PROPS[@]}" -- /bin/bash "${C[DMS_SUPERVISOR_QEMU_LAUNCHER]}" run "$NAME"
+    exit $?
     ;;
   *) refuse usage ;;
 esac

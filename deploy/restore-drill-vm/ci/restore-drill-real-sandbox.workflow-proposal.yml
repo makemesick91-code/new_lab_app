@@ -41,10 +41,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - name: PostgreSQL 16.15+ binaries (Ubuntu archive); the packaged cluster is removed
+      - name: PostgreSQL 16.15+ binaries (Ubuntu archive); the packaged cluster is removed; QEMU (digested by the signer)
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q postgresql-16
+          sudo apt-get install -y -q postgresql-16 qemu-system-x86 qemu-utils
           sudo pg_dropcluster --stop 16 main || true
           /usr/lib/postgresql/16/bin/psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.(1[5-9]|[2-9][0-9])' || { echo "psql older than 16.15"; exit 1; }
       - name: Drill-host layout (runner, signer, witness and QEMU identities; root supervisor; root-owned code and configuration)

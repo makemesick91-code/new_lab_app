@@ -206,10 +206,12 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   SCMD="$L/signer/restore-drill-evidence-signer.sh"; WCMD="$L/witness/restore-drill-evidence-witness.sh"
   KEY=/var/lib/dmsdrill-signer/signing-key
   limit G0 "CI: the operator has passwordless root here, so identity separation is shown as a mechanism only" "github_hosted_sudo"
+  # R6F-E3: an outcome carries its start's start time, as the orchestrator's does.
+  SAT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   req() { # <decision> <run id> [guest per-table digest]
     local h; h="$(printf 'd%.0s' {1..64})"
     printf 'DMS_DRILL_EVIDENCE_RUN_ID=%s\nDMS_DRILL_EVIDENCE_OPERATOR=%s\nDMS_DRILL_EVIDENCE_DRILL_HOST=%s\nDMS_DRILL_EVIDENCE_STARTED_AT=%s\nDMS_DRILL_EVIDENCE_COMPLETED_AT=%s\n' \
-      "$2" "$(id -un)" "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      "$2" "$(id -un)" "$(hostname | tr -cd 'A-Za-z0-9._-' | head -c 64)" "$SAT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if [ "$1" = STARTED ]; then
       printf 'DMS_DRILL_EVIDENCE_BACKUP_SHA256=none\nDMS_DRILL_EVIDENCE_BACKUP_BYTES=0\nDMS_DRILL_EVIDENCE_DIGEST_SOURCE=none\nDMS_DRILL_EVIDENCE_MANIFEST_ID=none\nDMS_DRILL_EVIDENCE_MANIFEST_SHA256=none\nDMS_DRILL_EVIDENCE_IMAGE_SHA256=none\n'
       printf 'DMS_DRILL_EVIDENCE_LIMITS=%s\nDMS_DRILL_EVIDENCE_HOST_VERIFIED=none\nDMS_DRILL_EVIDENCE_EXPECTED=none\nDMS_DRILL_EVIDENCE_GUEST_ASSERTED=none\nDMS_DRILL_EVIDENCE_DECISION=STARTED\n' "$DMS_DRILL_EVIDENCE_LIMITS_D6"
@@ -225,6 +227,8 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   # The runner identity (which only ever runs the installed orchestrator on a drill host) asks the signer.
   sign() { sudo -n -u "$RUNR" -- sudo -n -u "$SIG" -- "$SCMD" sign 2>&1; }
   as() { local u="$1"; shift; sudo -n -u "$u" -- "$@" 2>&1; }
+  # R6F-E1: only the runner may ask the signer to verify; the operator has no route to the signer at all.
+  vrf() { sudo -n -u "$RUNR" -- sudo -n -u "$SIG" -- "$SCMD" verify 2>&1; }
   RUN1="$(dms_sandbox_unit_name)"
   r="$(req GO "$RUN1" | sign)"
   check G8 "an outcome without an open STARTED record is refused (contract 4, R6C-3)" "$([ "${r#*no open STARTED}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
@@ -244,13 +248,13 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   r="$(req GO "$RUN4" "$(printf 'e%.0s' {1..64})" | sign)"
   check G5b "the signer refuses a contradictory GO (guest digest differs from the expected one)" "$([ "${r#*refused}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   r="$(req "ABORTED:vm" "$RUN4" | bash -c 'ulimit -f 1; exec sudo -n -u "$0" -- sudo -n -u "$1" -- "$2" sign' "$RUNR" "$SIG" "$SCMD" 2>&1)"
-  v="$(as "$SIG" "$SCMD" verify)"
+  v="$(vrf)"
   check G6 "a caller's file-size limit never yields a truncated record: refused, or complete and verifying (P4V-5)" "$([ "${v#VERIFIED }" != "$v" ]; echo $?)" "$(printf '%s | %s' "${r:0:40}" "${v:0:40}")"
   RUN5="$(dms_sandbox_unit_name)"
   r="$(req STARTED "$RUN5" | sudo -n -u "$SIG" -- "$SCMD" sign 2>&1)"
   check G2 "the operator itself gets no record: the signer accepts only the runner identity (R6C-1)" "$([ "${r#*caller is not allowed}" != "$r" ] || [ "${r#*different identity}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"
   check G3 "the operator cannot read the signer's key" "$([ ! -r "$KEY" ]; echo $?)" "$(sudo stat -c '%U %a' "$KEY" 2> /dev/null)"
-  r="$(as "$SIG" "$SCMD" verify)"
+  r="$(vrf)"
   NREC="$(sudo find /var/lib/dmsdrill-signer/store -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | wc -l)"
   check G4 "the signer's store verifies against its head log and EVERY witnessed digest" "$(starts "$r" "VERIFIED ${NREC} ")" "$(printf '%s' "$r" | head -c 80) records=${NREC}"
   r="$(as "$WIT" "$WCMD" show)"
@@ -277,9 +281,21 @@ if [ "$MODE" = system ] && [ -d /usr/local/lib/dms-restore-drill/signer ]; then
   nap 2
   left="$(pgrep -u "$QEU" -c 2> /dev/null || true)"
   check Q6 "a process that leaves its parent does not outlive the QEMU unit (cgroup kill, R6A-1)" "$([ "${left:-0}" = 0 ]; echo $?)" "qemu_processes_left=${left:-0}"
+  # R6F-L2: io_uring (which opens sockets past RestrictAddressFamilies) is refused in the unit, and works outside it.
+  iou='import ctypes,os; l=ctypes.CDLL(None,use_errno=True); p=ctypes.create_string_buffer(120); r=l.syscall(425,4,p); print("IOURING_OK" if r>=0 else "IOURING_DENIED errno=%d" % ctypes.get_errno())'
+  r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /usr/bin/python3 -I -c "$iou" 2>&1)"
+  rc="$(sudo -n -u "$QEU" -- /usr/bin/python3 -I -c "$iou" 2>&1)"
+  check Q7 "io_uring is refused inside the QEMU unit (it is available outside: the control)" "$([ "${r#*IOURING_DENIED errno=1}" != "$r" ] && [ "${rc#*IOURING_OK}" != "$rc" ]; echo $?)" "unit=$(printf '%s' "$r" | head -c 40) control=$(printf '%s' "$rc" | head -c 20)"
+  # R6F-L3: nothing written to /dev/shm survives the unit; the journal and D-Bus sockets are out of reach.
+  sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'echo x > /dev/shm/dmsqemu-probe' > /dev/null 2>&1
+  check Q8 "a file the QEMU unit writes to /dev/shm is gone with the unit (a private /dev/shm, R6F-L3)" "$([ ! -e /dev/shm/dmsqemu-probe ]; echo $?)" "host_shm_file=$([ -e /dev/shm/dmsqemu-probe ] && echo present || echo absent)"
+  r="$(sudo systemd-run --system --wait --pipe --collect --quiet --unit=dmsqemu-probe "${QP[@]}" -- /bin/bash -c 'for s in /run/systemd/journal/socket /run/dbus/system_bus_socket; do [ -e "$s" ] && echo "REACH $s"; done; echo DONE' 2>&1)"
+  check Q9 "the QEMU unit reaches neither the journal nor the system D-Bus socket (R6F-L3)" "$([ "${r#*REACH}" = "$r" ] && [ "${r#*DONE}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | tr '\n' ' ' | head -c 80)"
+  r="$(sudo -n -l -U "$(id -un)" 2>&1 | grep -c "(${SIG})" || true)"
+  check G7 "the operator's sudo rules name no signer command (R6F-E1: no route to the signer, not even verify)" "$(is "$r" 0)" "signer_rules=${r}"
   # A compromised SIGNER that drops its newest record and rewrites its own head log to match is caught by the witness.
   sudo -n -u "$SIG" -- sh -c "rm -rf /var/lib/dmsdrill-signer/store/$(printf '%06d' "$NREC") && head -n $((NREC - 1)) /var/lib/dmsdrill-signer/head.log > /var/lib/dmsdrill-signer/head.tmp && mv /var/lib/dmsdrill-signer/head.tmp /var/lib/dmsdrill-signer/head.log"
-  r="$(as "$SIG" "$SCMD" verify)"
+  r="$(vrf)"
   check W4 "a rollback by the signer's own identity is detected against the witness" "$([ "${r#*rollback or truncation}" != "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 90)"
   r="$(req STARTED "$(dms_sandbox_unit_name)" | sign)"
   check W5 "and no new record is accepted onto the rolled-back store" "$([ "${r#RECORD }" = "$r" ]; echo $?)" "$(printf '%s' "$r" | head -c 80)"

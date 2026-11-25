@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner, vanish, rolebomb, timebomb (.dump).
+# launder, execbomb, dbowner, vanish, rolebomb, timebomb, xmlbomb, floatbomb, regbomb, regconst, idxbomb (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -134,7 +134,25 @@ dump rd_rolebomb rolebomb
 base rd_timebomb
 q -U app_runtime -d rd_timebomb -c "ALTER TABLE items ADD CONSTRAINT items_time CHECK (CURRENT_TIMESTAMP < (('2999-01-01 00:00:00'::text || '+00'::text))::timestamptz)"
 dump rd_timebomb timebomb
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# Fix verification of round 6 (R6F-P1, R6F-P2): IMMUTABLE by label, yet session- or cluster-dependent.
+base rd_xmlbomb
+q -U app_runtime -d rd_xmlbomb -c "CREATE TABLE stamps (ts timestamptz, CONSTRAINT stamps_tz CHECK ((xmlserialize(content xmlelement(name t, ts) AS text)) LIKE '%+00:00</t>'))" \
+  -c "SET TimeZone = 'UTC'" -c "INSERT INTO stamps VALUES ('2026-11-25 10:00:00+08')"
+dump rd_xmlbomb xmlbomb
+base rd_floatbomb
+q -U app_runtime -d rd_floatbomb -c "CREATE TABLE floats (f float8, CONSTRAINT floats_text CHECK ((f)::text = '0.30000000000000004'))" \
+  -c "INSERT INTO floats VALUES (0.1::float8 + 0.2::float8)"
+dump rd_floatbomb floatbomb
+base rd_regbomb
+q -U app_runtime -d rd_regbomb -c "CREATE TABLE reg (r regclass)" -c "INSERT INTO reg VALUES ('public.items')"
+dump rd_regbomb regbomb
+base rd_regconst
+q -U app_runtime -d rd_regconst -c "ALTER TABLE items ADD CONSTRAINT items_oid CHECK (id < ('public.items'::regclass)::integer)"
+dump rd_regconst regconst
+base rd_idxbomb
+q -U app_runtime -d rd_idxbomb -c "CREATE INDEX items_ftext ON items (((id::double precision / 3)::text))"
+dump rd_idxbomb idxbomb
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish rd_rolebomb rd_timebomb rd_xmlbomb rd_floatbomb rd_regbomb rd_regconst rd_idxbomb; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do

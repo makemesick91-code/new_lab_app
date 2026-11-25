@@ -75,10 +75,11 @@ for k in DMS_QEMU_BINARY DMS_QEMU_IMG DMS_QEMU_IMAGE; do
 done
 dms_trusted_dir DMS_QEMU_WORK_DIR "${C[DMS_QEMU_WORK_DIR]}" "$(id -u)" "$(cd "$HERE/.." && pwd)" > /dev/null || die work_dir_untrusted 2
 [ "$(stat -c '%u %a' -- "${C[DMS_QEMU_WORK_DIR]}")" = "$(id -u) 700" ] || die work_dir_not_private 2
-CONSOLE=""
+CONSOLE=""; QERR=/dev/null
 if [ "${C[DMS_QEMU_CONSOLE_DIR]}" != none ]; then
   dms_trusted_canonical "${C[DMS_QEMU_CONSOLE_DIR]}" && [ "$(stat -c '%u %a' -- "${C[DMS_QEMU_CONSOLE_DIR]}" 2> /dev/null)" = "$(id -u) 700" ] || die console_dir_not_private 2
   CONSOLE="${C[DMS_QEMU_CONSOLE_DIR]}/${RUN_ID}.log"
+  QERR="${C[DMS_QEMU_CONSOLE_DIR]}/${RUN_ID}.stderr"
 fi
 
 # --- D6, fixed here: the caller chooses none of it --------------------------------------------------------------------
@@ -115,7 +116,7 @@ if [ -n "$CONSOLE" ]; then
   # Disposable CI only: the guest console, for boot evidence. Never enabled on a drill host that restores real data.
   for i in "${!QARGS[@]}"; do [ "${QARGS[$i]}" = "-serial" ] && QARGS[$((i + 1))]="file:${CONSOLE}"; done
 fi
-timeout --kill-after=10 "$((MINUTES * 60))" "${C[DMS_QEMU_BINARY]}" "${QARGS[@]}" < /dev/null > /dev/null 2>&1 &
+timeout --kill-after=10 "$((MINUTES * 60))" "${C[DMS_QEMU_BINARY]}" "${QARGS[@]}" < /dev/null > /dev/null 2> "$QERR" &
 QEMU_PID=$!
 wait "$QEMU_PID"
 QEMU_EXIT=$?

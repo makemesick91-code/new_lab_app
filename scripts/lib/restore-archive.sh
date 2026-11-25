@@ -246,7 +246,7 @@ dms_archive_inspect_properties() {
     system) printf '%s\n' -p DynamicUser=yes ;;
     *) return 1 ;;
   esac
-  printf '%s\n' -p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M -p MemorySwapMax=0 -p TasksMax=16 -p LimitCORE=0 \
+  printf '%s\n' -p Type=oneshot -p TimeoutStartSec=300 -p MemoryMax=512M -p MemorySwapMax=0 -p TasksMax=16 -p LimitCORE=0 -p CoredumpFilter=0 \
     -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateDevices=yes -p PrivateIPC=yes \
     -p PrivateNetwork=yes -p RestrictAddressFamilies=AF_UNIX -p ProtectControlGroups=yes -p "InaccessiblePaths=/sys/fs/cgroup" \
     -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes -p ProtectClock=yes -p ProtectHostname=yes \

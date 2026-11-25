@@ -104,6 +104,22 @@ install_state() {
     "$sv" "$(dirname -- "$sv")"/lib/*.sh "$w" "$(dirname -- "$w")"/lib/*.sh "$HERE/$(basename "${BASH_SOURCE[0]}")" "$HERE"/lib/*.sh)
   cfg=(/etc/dms-restore-drill/*.conf)
   shopt -u nullglob
+  # R6F-E4: the binaries the drill runs (QEMU, qemu-img, pg_restore) are part of the install.
+  local qb qi pb
+  qb="$(sed -n 's/^DMS_QEMU_BINARY=//p' /etc/dms-restore-drill/qemu.conf 2> /dev/null | head -n 1)"
+  qi="$(sed -n 's/^DMS_QEMU_IMG=//p' /etc/dms-restore-drill/qemu.conf 2> /dev/null | head -n 1)"
+  pb="$(sed -n 's/^DMS_DRILL_PG_BINDIR=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
+  [ -n "$qb" ] && [ -n "$qi" ] && [ -n "$pb" ] || { echo "unverified:binaries_unknown"; return 0; }
+  files+=("$qb" "$qi" "$pb/pg_restore")
+  # R6F-E4: the trust roots (manifest anchor, revocations) and the sudoers rules the identity separation rests on.
+  local an rv
+  an="$(sed -n 's/^DMS_DRILL_MANIFEST_ANCHOR=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
+  rv="$(sed -n 's/^DMS_DRILL_MANIFEST_REVOCATIONS=//p' /etc/dms-restore-drill/drill.conf 2> /dev/null | head -n 1)"
+  [ -n "$an" ] && [ -n "$rv" ] || { echo "unverified:trust_roots_unknown"; return 0; }
+  local -a roots=()
+  for f in "$an" "$rv"; do [ -e "$f" ] && roots+=("$f"); done
+  [ -r /etc/sudoers.d/dms-restore-drill ] || { echo "unverified:sudoers_unreadable"; return 0; }
+  cfg+=("${roots[@]}" /etc/sudoers.d/dms-restore-drill)
   # R6C-8: the orchestrator's own library directory must be there in full, not only "enough files".
   for f in trusted-path.sh restore-integrity.sh restore-sandbox.sh restore-manifest.sh restore-evidence.sh restore-vm.sh restore-archive.sh; do
     [ -f "$o/scripts/lib/$f" ] || { echo "unverified:install_incomplete"; return 0; }
@@ -123,10 +139,14 @@ install_state() {
   # R6C-8: the drill configuration must point at exactly the signer and the supervisor this digest covers.
   grep -qx "DMS_DRILL_SIGNER_COMMAND=$HERE/$(basename "${BASH_SOURCE[0]}")" /etc/dms-restore-drill/drill.conf 2> /dev/null \
     && grep -qx "DMS_DRILL_SUPERVISOR_COMMAND=${sv}" /etc/dms-restore-drill/drill.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
+  # R6F-E4: the supervisor starts the very launcher this digest covers and checks the very store this signer keeps.
+  grep -qx "DMS_SUPERVISOR_QEMU_LAUNCHER=${q}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null \
+    && grep -qx "DMS_SUPERVISOR_SIGNER_STORE=${STORE}" /etc/dms-restore-drill/supervisor.conf 2> /dev/null || { echo "unverified:config_paths_differ"; return 0; }
   for f in "${files[@]}"; do lines+=("$(sha256sum -- "$f")"); done
   code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
   lines=()
   for f in "${cfg[@]}"; do lines+=("$(sha256sum -- "$f")"); done
+  for f in "$an" "$rv"; do [ -e "$f" ] || lines+=("absent  ${f}"); done
   echo "root:${code},config:$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 }
 # The witness (Phase 3): its log is read for every verification and extended after every publication.
@@ -174,12 +194,14 @@ unlock() { exec {lock_fd}>&-; }
 # The witness log, read under the store lock (drill-host). R6C-3: everything is printed only after the lock is gone,
 # so a reader that never drains its output cannot hold the store.
 read_witness() { [ "$PROFILE" = drill-host ] || return 0; witness_show > "$TMP/witness" 2> /dev/null; }
+# R6F-E3: on a drill host the verifier also requires every GO to stand on a verified root install, the same as its start.
+ROOTGO=0; [ "$PROFILE" = drill-host ] && ROOTGO=1
 WARG() { [ "$PROFILE" = drill-host ] && printf '%s' "$TMP/witness"; }
 
 case "$MODE" in
   verify)
     out="FAIL the witness log could not be read"
-    if read_witness; then out="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)")"; fi
+    if read_witness; then out="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)" "$ROOTGO")"; fi
     unlock
     printf '%s\n' "$out"
     [ "${out#VERIFIED }" != "$out" ]
@@ -228,7 +250,7 @@ esac
 # --- sign ----------------------------------------------------------------------------------------------------------
 # Before anything is added: the store, the head log and (drill-host) EVERY witnessed digest agree.
 read_witness || { unlock; echo "SIGNER: refused: the witness log could not be read"; exit 1; }
-v="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)")" || { unlock; echo "SIGNER: refused: the store does not verify (${v})"; exit 1; }
+v="$(dms_evidence_verify_store "$STORE" "${C[DMS_SIGNER_ANCHOR]}" "$HEADLOG" "$(WARG)" "$ROOTGO")" || { unlock; echo "SIGNER: refused: the store does not verify (${v})"; exit 1; }
 # R6C-11: the store's identity, fixed at its first record and carried by every record.
 [ -s "${STORE}/.store-id" ] || od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > "${STORE}/.store-id"
 STORE_ID="$(head -c 32 -- "${STORE}/.store-id")"
@@ -245,6 +267,23 @@ publish_one() {
 DEC="${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]}"
 RUN="${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_RUN_ID]}"
 bind="$(dms_evidence_binding_check "$STORE" "$DEC" "$RUN")" || { unlock; echo "SIGNER: refused: ${bind#evidence: }"; exit 1; }
+newest="$(find "$STORE" -mindepth 1 -maxdepth 1 -name '[0-9][0-9][0-9][0-9][0-9][0-9]' | LC_ALL=C sort | tail -n 1)"
+if [ "$DEC" != STARTED ]; then
+  # R6F-E3: an outcome carries its start's operator, host and start time; a GO also its start's verified install.
+  for k in DMS_DRILL_EVIDENCE_OPERATOR DMS_DRILL_EVIDENCE_DRILL_HOST DMS_DRILL_EVIDENCE_STARTED_AT; do
+    [ "$(sed -n "s/^${k}=//p" -- "${newest}/record" | head -n 1)" = "${DMS_EVIDENCE_REQUEST[$k]}" ] || { unlock; echo "SIGNER: refused: ${k#DMS_DRILL_EVIDENCE_} differs from the run's STARTED record"; exit 1; }
+  done
+  if [ "$DEC" = GO ] && [ "$(sed -n 's/^DMS_DRILL_EVIDENCE_INSTALL=//p' -- "${newest}/record" | head -n 1)" != "$INSTALL" ]; then
+    unlock; echo "SIGNER: refused: a GO from an install that changed since the run started"; exit 1
+  fi
+fi
+if [ "${bind%% *}" = open ] && [ "$PROFILE" = drill-host ]; then
+  # R6F-E1: never close a run whose VM may still be running.
+  case "$(systemctl show -P ActiveState dmsqemu.service 2> /dev/null)" in
+    inactive | failed | '') : ;;
+    *) unlock; echo "SIGNER: refused: a drill VM is still running; its run is not closed"; exit 1 ;;
+  esac
+fi
 if [ "${bind%% *}" = open ]; then
   # R6C-3: a run that never closed (its orchestrator was killed) is closed by the signer itself before a new start.
   OPEN_RUN="${bind#open }"
@@ -255,6 +294,8 @@ if [ "${bind%% *}" = open ]; then
   for k in $DMS_DRILL_EVIDENCE_REQUEST_KEYS; do DMS_EVIDENCE_REQUEST[$k]="$(sed -n "s/^${k}=//p" -- "$last" | head -n 1)"; done
   DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_COMPLETED_AT]="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]="ABORTED:unclosed"
+  # R6F-E1: the supervisor's root-owned marker says whether that run's VM had booted (its outcome was then suppressed).
+  [ -f "/var/lib/dms-restore-drill/supervisor-booted/${OPEN_RUN}" ] && DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_DECISION]="ABORTED:unclosed_after_boot"
   [ "${DMS_EVIDENCE_REQUEST[DMS_DRILL_EVIDENCE_RUN_ID]}" = "$OPEN_RUN" ] || { unlock; echo "SIGNER: the open run could not be read"; exit 1; }
   publish_one || { unlock; cat -- "$TMP/out"; exit 1; }
   CLOSED="closed ${OPEN_RUN} as ${PSEQ}; "

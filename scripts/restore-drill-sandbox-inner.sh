@@ -222,6 +222,16 @@ vsql() {
 }
 num() { [[ "$1" =~ ^[0-9]{1,15}$ ]]; }
 pub="n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE n.nspname OPERATOR(pg_catalog.=) 'public'"
+# R6F-P1, R6F-P2: index expressions and predicates exist only after post-data, so the load guard never saw them. Like
+# the guard for CHECKs: no XML expression, no text-form conversion, no domain coercion, no session-dependent output or
+# XML function and no object-id type in any expression of the dump's own objects; such an index (or constraint) can
+# build in the drill and fail in a real restore, so the drill FAILs.
+regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regrole','regnamespace','regcollation','regconfig','regdictionary'])"
+etrees="SELECT i.indexprs::pg_catalog.text AS t FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indexprs IS NOT NULL UNION ALL SELECT i.indpred::pg_catalog.text FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indpred IS NOT NULL UNION ALL SELECT k.conbin::pg_catalog.text FROM pg_catalog.pg_constraint k WHERE k.oid OPERATOR(pg_catalog.>=) 16384 AND k.conbin IS NOT NULL"
+efn="EXISTS (SELECT 1 FROM pg_catalog.regexp_matches(e.t, ':[a-z]*funcid ([0-9]+)', 'g') AS m JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) (m[1])::pg_catalog.oid WHERE p.proname OPERATOR(pg_catalog.=) ANY (ARRAY['float4out','float8out','byteaout','time_out','timetz_out','box_out','circle_out','line_out','lseg_out','path_out','point_out','poly_out']::pg_catalog.name[]) OR p.prorettype OPERATOR(pg_catalog.=) 'pg_catalog.xml'::pg_catalog.regtype OR 'pg_catalog.xml'::pg_catalog.regtype OPERATOR(pg_catalog.=) ANY ((p.proargtypes)::pg_catalog.oid[]))"
+envdep="$(vsql "WITH g AS (${regt}), e AS (${etrees}) SELECT pg_catalog.count(*) FROM e, g WHERE e.t OPERATOR(pg_catalog.~) '[{](XMLEXPR|COERCEVIAIO|COERCETODOMAIN) ' OR e.t OPERATOR(pg_catalog.~) (':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) (' OPERATOR(pg_catalog.||) g.r OPERATOR(pg_catalog.||) ')[ }]') OR ${efn}")" || fail verify 30
+num "$envdep" || fail verify_format 30
+if [ "$envdep" != 0 ]; then emit "replay_section=post_data_environment"; fail environment_dependent 22; fi
 tables="$(vsql "SELECT pg_catalog.count(*) FROM information_schema.tables WHERE table_schema OPERATOR(pg_catalog.=) 'public'")" || fail verify 30
 mig="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${pub} AND c.relname OPERATOR(pg_catalog.=) 'migrations' AND c.relkind OPERATOR(pg_catalog.=) 'r'")" || fail verify 30
 base="$(vsql "SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON ${pub} AND c.relkind OPERATOR(pg_catalog.=) ANY (ARRAY['r','p']::pg_catalog.\"char\"[])")" || fail verify 30
