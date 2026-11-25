@@ -134,9 +134,10 @@ pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.concat(pg_c
 SQL
 ENV_FROM="FROM pg_catalog.pg_database d WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
 ENV_SQL="SELECT ${ENV_EXPR} ${ENV_FROM}"
-# R6F-E12 (F3 review): the same digest, measured at the end of EVERY restore session (marked, so it can be found in that
-# session's output), so a setting changed inside a restore session is seen.
-ENV_MARK_SQL="SELECT pg_catalog.concat('DMSENV:', ${ENV_EXPR}) ${ENV_FROM};"
+# R6F-E12 (F3 review): the same digest, measured at the end of EVERY restore session, so a setting changed inside a
+# restore session is seen. R6F-E14 (fix verification): the marker carries a nonce drawn for that session after the
+# archive is fixed, so the archive's own output can neither forge it nor (by leaving a COPY open that swallows it)
+# hide a changed setting: a marker that is missing reads as "missing" and the drill reports "inconsistent".
 SECTION_ENV=()
 # --- Trusted setup (no backup byte has been read yet) -----------------------------------------------------------
 "$PGBIN/initdb" -D "$R/data" -U "$SU" --auth=trust -E UTF8 --locale="$LOCALE" > "$R/initdb.log" 2>&1 3>&- || fail initdb 10
@@ -220,11 +221,13 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
   local -a sect=()
   [ -n "$section" ] && sect=(--section="$section")
   key="$(printf '%08x%08x%08x%08x%08x%08x%08x%08x' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"
+  local nonce
+  nonce="$(printf '%08x%08x%08x%08x' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"
   # After the part, the session flushes its function-call statistics (track_functions=all, a superuser-only setting):
   # a defence-in-depth signal for verification, never the boundary (P5-2).
   { "$PGBIN/pg_restore" "${sect[@]}" -L "$list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
     echo "$?" > "$R/pg_restore.rc"
-    printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;' "$ENV_MARK_SQL"; } 3>&- \
+    printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;' "SELECT pg_catalog.concat('DMSENV:${nonce}:', ${ENV_EXPR}) ${ENV_FROM};"; } 3>&- \
     | PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -At -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-
   st=("${PIPESTATUS[@]}")
   prc="$(< "$R/pg_restore.rc")"
@@ -241,9 +244,9 @@ restore_part() { # <label> <list file> [section] -> 0, or emits the failure and 
     emit "replay_sqlstate=$state"
     fail replay 20
   fi
-  # The environment this session ended in (the last marked line; the session's own output comes before it).
+  # The environment this session ended in: the line with this session's nonce (no archive output can carry it).
   local env="missing" l
-  while IFS= read -r l; do [[ "$l" =~ ^DMSENV:([0-9a-f]{64})$ ]] && env="${BASH_REMATCH[1]}"; done < "$R/replay.out"
+  while IFS= read -r l; do [[ "$l" =~ ^DMSENV:${nonce}:([0-9a-f]{64})$ ]] && env="${BASH_REMATCH[1]}"; done < "$R/replay.out"
   SECTION_ENV+=("$env")
   : > "$R/replay.out"
 }
@@ -356,12 +359,14 @@ done
 # (scripts/lib/restore-envcontract.sh, dms_env_expected_digest); this is the guest's assertion, never production's.
 envd="$(PGOPTIONS="$PIN_OPTS -c search_path=pg_catalog -c default_transaction_read_only=on" "$PGBIN/psql" -X -Atq -v ON_ERROR_STOP=1 -h "$R/data" -U "$RR" -d "$DB" -c "$ENV_SQL" 2> /dev/null 3>&-)" || fail env_digest 30
 [[ "$envd" =~ ^[0-9a-f]{64}$ ]] || fail env_digest 30
-for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done
-[ "${#SECTION_ENV[@]}" -ge 3 ] || envd=inconsistent
-emit "env_digest=${envd}"
 restore_part functions "$R/list.functions"
 restore_part triggers "$R/list.triggers"
 restore_part acls "$R/list.acls"
+# All six restore sessions (pre-data, data, post-data, functions, triggers, ACLs) must have ended in the fresh
+# session's environment (R6F-E14: the last three were measured but not compared).
+for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done
+[ "${#SECTION_ENV[@]}" = 6 ] || envd=inconsistent
+emit "env_digest=${envd}"
 emit "replay=ok"
 
 # --- Verification, as the restore role, search_path pinned, names qualified --------------------------------------

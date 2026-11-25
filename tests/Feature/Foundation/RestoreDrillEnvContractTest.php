@@ -252,7 +252,13 @@ it('binds the contract into the drill: manifest contract 2 names it, the orchest
         ->and($inner)->toContain('| PGOPTIONS="$PIN_OPTS" "$PGBIN/psql" -X -q -At -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > "$R/replay.out" 2> "$R/replay.err" 3>&-')
         // F3 review: the digest is measured at the end of EVERY restore session too, not only in a fresh one.
         ->and($inner)->toContain('for e in "${SECTION_ENV[@]}"; do [ "$e" = "$envd" ] || envd=inconsistent; done')
-        ->and($inner)->toContain('[ "${#SECTION_ENV[@]}" -ge 3 ] || envd=inconsistent')
+        ->and($inner)->toContain('[ "${#SECTION_ENV[@]}" = 6 ] || envd=inconsistent')
+        // R6F-E14: each session's marker carries a nonce drawn after the archive is fixed; the archive cannot forge it.
+        ->and($inner)->toContain('nonce="$(printf \'%08x%08x%08x%08x\' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"')
+        ->and($inner)->toContain("\"SELECT pg_catalog.concat('DMSENV:\${nonce}:', \${ENV_EXPR}) \${ENV_FROM};\"")
+        ->and($inner)->toContain('[[ "$l" =~ ^DMSENV:${nonce}:([0-9a-f]{64})$ ]] && env="${BASH_REMATCH[1]}"')
+        // compared only after the last restore session (functions, triggers, ACLs included)
+        ->and(strpos($inner, 'emit "env_digest=${envd}"'))->toBeGreaterThan(strpos($inner, 'restore_part acls "$R/list.acls"'))
         ->and($inner)->toContain('emit "env_digest=${envd}"')
         // The image properties must describe the image QEMU is pinned to, checked before boot.
         ->and($orch)->toContain('refuse "the image properties describe another image than the pinned drill image"')
