@@ -489,3 +489,23 @@ it('keeps root confined to the supervisor: two fixed modes, root-owned code, the
         ->and($vm)->toContain('-p DevicePolicy=closed -p "DeviceAllow=/dev/kvm rw"')
         ->and($vm)->toContain('dump-guest-core=off');
 });
+
+it('provisions the drill configuration the signer verifies, and lets the unprivileged runner read the inbox by its group (CI run 9)', function () {
+    $prov = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/provision-drill-host.sh'));
+    $gate = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/vm-boot-gate.sh'));
+    $signer = (string) file_get_contents(base_path('scripts/restore-drill-evidence-signer.sh'));
+    $stage = (string) file_get_contents(base_path('scripts/lib/restore-integrity.sh'));
+    $fn = substr($stage, (int) strpos($stage, 'dms_restore_stage_copy() {'));
+    $fn = substr($fn, 0, (int) strpos($fn, "\n}\n"));
+
+    // The install the signer verifies includes the drill configuration naming exactly its signer and its supervisor.
+    expect($signer)->toContain('grep -qx "DMS_DRILL_SIGNER_COMMAND=$HERE/$(basename "${BASH_SOURCE[0]}")" /etc/dms-restore-drill/drill.conf')
+        ->and($prov)->toContain('"DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh"')
+        ->and($prov)->toContain('"DMS_DRILL_SUPERVISOR_COMMAND=${L}/supervisor/restore-drill-supervisor.sh"')
+        ->and($prov)->toContain('| conf drill.conf')
+        ->and($gate)->not->toContain('/etc/dms-restore-drill/drill.conf'."\n")
+        ->and($gate)->not->toContain('install -o root -g root -m 0644 /dev/stdin /etc/dms-restore-drill/drill.conf')
+        // Only root reads another account's file as that account; an unprivileged identity opens it with its own rights.
+        ->and($fn)->toContain('if [ "$owner" = "$(id -un)" ] || [ "$(id -u)" != 0 ]; then')
+        ->and(strpos($fn, 'dd if="$dump" iflag=nofollow,nonblock'))->toBeLessThan(strpos($fn, 'runuser -u "$owner"'));
+});

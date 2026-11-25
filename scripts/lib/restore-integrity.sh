@@ -83,9 +83,12 @@ dms_restore_stage_copy() {
   owner="$(stat -c '%U' -- "$dump")"
   staged="${staging}/dump.sql"
   ( umask 077 && set -C && : > "$staged" ) || { _dms_restore_err "could not create the staging copy"; return 1; }
-  if [ "$owner" = "$(id -un)" ]; then
+  if [ "$owner" = "$(id -un)" ] || [ "$(id -u)" != 0 ]; then
     # Opened without following a symlink and without blocking on a FIFO: the path
-    # may have been swapped since the check above (finding A-1 review, F2).
+    # may have been swapped since the check above (finding A-1 review, F2). An
+    # unprivileged identity (the drill runner reading the operator's inbox file
+    # through its group) opens it with its own permissions; only root, which would
+    # bypass them, reads another account's file as that account.
     dd if="$dump" iflag=nofollow,nonblock status=none > "$staged" \
       || { _dms_restore_err "could not read ${dump} (changed into a symlink or a special file?)"; return 1; }
   else

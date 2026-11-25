@@ -55,11 +55,8 @@ for f in clean bomb vanish ext; do cp -- "$FX/$f.dump" "$W/$f.dump"; done
 for f in manifest manifest.sig manifest-revoked manifest-revoked.sig manifest-tampered manifest-tampered.sig plain.sql clean.dump bomb.dump vanish.dump ext.dump; do
   sudo install -o "$(id -un)" -g dmsdrill-inbox -m 0640 "$W/$f" "$INBOX/$f"
 done
-printf '%s\n' "DMS_DRILL_MANIFEST_ANCHOR=/etc/dms-restore-drill/manifest-anchor" "DMS_DRILL_MANIFEST_REVOCATIONS=/etc/dms-restore-drill/revocations" \
-  "DMS_DRILL_EXTENSION_ALLOWLIST=none" "DMS_DRILL_SIGNER_USER=${SIG}" "DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh" \
-  "DMS_DRILL_SUPERVISOR_COMMAND=${L}/supervisor/restore-drill-supervisor.sh" "DMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin" \
-  "DMS_DRILL_WORK_DIR=/var/lib/dms-restore-drill/runner" "DMS_DRILL_LOCALE=C.UTF-8" \
-  | sudo install -o root -g root -m 0644 /dev/stdin /etc/dms-restore-drill/drill.conf
+# The drill configuration is the provisioned one (provision-drill-host.sh), verified by the signer as part of the install.
+sudo test -f /etc/dms-restore-drill/drill.conf || { echo "vm-boot-gate: the drill host is not provisioned"; exit 2; }
 # shellcheck disable=SC2024  # the operator, not the runner, writes the transcript
 drill() { sudo -n -u "$RUNR" -- "$ORCH" "$@" > "$OUT/last.txt" 2>&1; echo $?; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
