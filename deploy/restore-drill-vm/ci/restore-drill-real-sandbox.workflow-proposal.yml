@@ -102,7 +102,7 @@ jobs:
           sha="$(grep " \*$img\$" SHA256SUMS | cut -d' ' -f1)"
           echo "cloud image ${img} sha256 ${sha}"
           cd "$GITHUB_WORKSPACE"
-          bash scripts/restore-drill-vm-image.sh "$RUNNER_TEMP/img/$img" "$sha" "$RUNNER_TEMP/drill.qcow2" none
+          bash scripts/restore-drill-vm-image.sh "$RUNNER_TEMP/img/$img" "$sha" "$RUNNER_TEMP/drill.qcow2" none host-apt
       - name: Drill-host layout with the drill image (separate signer, witness and QEMU identities)
         run: bash deploy/restore-drill-vm/ci/provision-drill-host.sh "$(id -un)" "$(sha256sum "$RUNNER_TEMP/drill.qcow2" | cut -d' ' -f1)" "$RUNNER_TEMP/drill.qcow2"
       - name: VM boot gate (the installed orchestrator, end to end under KVM)
