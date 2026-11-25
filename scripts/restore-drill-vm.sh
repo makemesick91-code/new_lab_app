@@ -235,7 +235,13 @@ on_abort() {
     echo "NOTICE: a signal arrived after the VM had ended; its outcome is recorded"
     return 0
   fi
-  echo "ABORTED: signal at stage ${STAGE}"; stop_vm; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143
+  stop_vm
+  # R6F-E11: the VM may have ended while it was being stopped; then its outcome, not an abort, is recorded.
+  if [ "$STAGE" = vm ] && [ -n "$WORK" ] && grep -aqE '^QEMU_LAUNCH exit=[0-9]{1,3} image_sha256=[0-9a-f]{64}$' -- "$WORK/vm.status" 2> /dev/null; then
+    echo "NOTICE: the VM had ended while it was being stopped; its outcome is recorded"
+    return 0
+  fi
+  echo "ABORTED: signal at stage ${STAGE}"; ensure_started && { record "ABORTED:${STAGE}" || true; }; exit 143
 }
 # R6A-5: every catchable terminating signal is an abort, recorded (SIGKILL is closed at the next start: R6C-3).
 trap on_abort TERM HUP INT PIPE USR1 USR2 ALRM XCPU XFSZ VTALRM PROF

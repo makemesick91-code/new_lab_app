@@ -397,7 +397,9 @@ BEGIN
   SELECT string_agg(t.oid::text, '|') INTO regt FROM pg_type t
    WHERE t.typnamespace = 'pg_catalog'::regnamespace
      AND ltrim(t.typname, '_') = ANY (ARRAY['regclass', 'regtype', 'regproc', 'regprocedure', 'regoper', 'regoperator',
-       'regrole', 'regnamespace', 'regcollation', 'regconfig', 'regdictionary', 'aclitem']);
+       'regrole', 'regnamespace', 'regcollation', 'aclitem']);
+  -- (R6F-P13: regconfig and regdictionary are not in the list: the archive validator refuses text search objects of
+  -- the dump, so only the built-in configurations, identical in every cluster of a major version, can be named.)
   SELECT string_agg(t.oid::text, '|') INTO sens FROM pg_type t
    WHERE t.typnamespace = 'pg_catalog'::regnamespace
      AND ltrim(t.typname, '_') = ANY (ARRAY['float4', 'float8', 'bytea', 'time', 'timetz', 'interval', 'timestamptz',

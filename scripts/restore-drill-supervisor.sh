@@ -132,8 +132,10 @@ case "$MODE" in
     _root_ok "$B" || refuse booted_dir
     [ ! -e "$B/$NAME" ] || refuse already_booted
     W="${C[DMS_SUPERVISOR_QEMU_WORK_DIR]}"
-    # R6F-L10: the directory above the work directory is root's, so nothing can swap the work directory itself.
-    _root_ok "$(dirname -- "$W")" || refuse work_dir_parent_unsafe
+    # R6F-L10, R6F-L21: every directory above the work directory is root's, so nothing can swap the work directory
+    # itself before root repairs and empties it.
+    d="$(dirname -- "$W")"
+    while :; do _root_ok "$d" || refuse work_dir_parent_unsafe; [ "$d" = / ] && break; d="$(dirname -- "$d")"; done
     # R6F-L19: root repairs the work directory's owner and mode (an escaped QEMU may have changed them) and empties it,
     # before every boot and after it, so nothing a run left there survives into the next one.
     [ -d "$W" ] && [ ! -L "$W" ] || refuse work_dir_untrusted
@@ -147,7 +149,9 @@ case "$MODE" in
     free_kib="$(df -Pk -- "$W" | awk 'NR == 2 { print $4 }')"
     [[ "$free_kib" =~ ^[0-9]+$ ]] && [ "$free_kib" -ge $((11 * 1024 * 1024)) ] || refuse qemu_work_space
     CON="${C[DMS_SUPERVISOR_QEMU_CONSOLE_DIR]}"
+    # R6F-L22: a guest console only on a disposable CI runner, marked so by its provisioning (root-owned marker).
     if [ "$CON" != none ]; then
+      _root_ok /etc/dms-restore-drill/disposable-ci-runner 2> /dev/null || refuse console_dir_outside_ci
       dms_trusted_canonical "$CON" && [ "$(stat -c '%u %a' -- "$CON" 2> /dev/null)" = "${QUID} 700" ] || refuse console_dir_not_private
     fi
     mapfile -t PROPS < <(dms_vm_qemu_unit_properties "${C[DMS_SUPERVISOR_QEMU_USER]}" "$W" 30 "$CON")

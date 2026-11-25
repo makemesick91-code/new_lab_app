@@ -538,7 +538,7 @@ it('lets text conversions of values whose text form never depends on the session
     $call = rdtbGuard();
 
     expect(fn () => DB::transaction(function () use ($call) {
-        DB::unprepared("CREATE TABLE rdtb_ok (n int, u uuid, d json, CONSTRAINT rdtb_ok_n CHECK (length(n::text) <= 9), CONSTRAINT rdtb_ok_u CHECK (u::text ~ '^[0-9a-f-]{36}$'), CONSTRAINT rdtb_ok_d CHECK (jsonb_typeof(d::jsonb) = 'object'))");
+        DB::unprepared("CREATE TABLE rdtb_ok (n int, u uuid, d json, CONSTRAINT rdtb_ok_n CHECK (length(n::text) <= 9), CONSTRAINT rdtb_ok_u CHECK (u::text ~ '^[0-9a-f-]{36}$'), CONSTRAINT rdtb_ok_d CHECK (jsonb_typeof(d::jsonb) = 'object'), CONSTRAINT rdtb_ok_t CHECK (to_tsvector('simple', u::text) IS NOT NULL))");
         DB::select($call);
     }))->not->toThrow(Throwable::class);
 })->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
@@ -579,6 +579,8 @@ it('fails, on the restored rows, a CHECK or a generated column whose result depe
     'age() across a month end' => ["CREATE TABLE rdtb_d1 (s timestamptz, e timestamptz, CONSTRAINT rdtb_d1c CHECK (age(e, s) < interval '1 mon')); INSERT INTO rdtb_d1 VALUES ('2026-01-31 17:00+00', '2026-02-28 17:00+00');", "SET LOCAL TimeZone = 'Asia/Makassar';"],
     'a quote_ident() generated column' => ['CREATE TABLE rdtb_d2 (n text, g text GENERATED ALWAYS AS (quote_ident(n)) STORED); INSERT INTO rdtb_d2 (n) VALUES (\'abc\');', 'SET LOCAL quote_all_identifiers = on;'],
     // R6F-P11: a partial unique index whose predicate depends on TimeZone (two equal keys outside the predicate in UTC).
+    // R6F-P12: a planted "shadow" index whose predicate is the negated CHECK cannot answer the differential's query.
+    'an age() CHECK behind a shadow partial index' => ["CREATE TABLE rdtb_d4 (k int, s timestamptz, e timestamptz, CONSTRAINT rdtb_d4c CHECK (age(e, s) < interval '1 mon')); INSERT INTO rdtb_d4 SELECT g, '2026-01-31 17:00+00', '2026-02-28 17:00+00' FROM generate_series(1, 2000) g; CREATE INDEX rdtb_d4s ON rdtb_d4 (k) WHERE NOT (age(e, s) < interval '1 mon'); ANALYZE rdtb_d4;", "SET LOCAL TimeZone = 'Asia/Makassar';"],
     'a partial unique index on age()' => ["CREATE TABLE rdtb_d3 (k int, s timestamptz, e timestamptz); INSERT INTO rdtb_d3 VALUES (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'), (1, '2026-01-31 17:00+00', '2026-02-28 17:00+00'); CREATE UNIQUE INDEX rdtb_d3u ON rdtb_d3 (k) WHERE age(e, s) >= interval '1 mon';", "SET LOCAL TimeZone = 'Asia/Makassar';"],
 ])->skip(fn () => DB::getDriverName() !== 'pgsql', 'PostgreSQL catalog guard');
 

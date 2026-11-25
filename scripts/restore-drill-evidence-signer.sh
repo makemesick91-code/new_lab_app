@@ -150,8 +150,11 @@ install_state() {
   local wl hd
   wl="$(sed -n 's/^DMS_WITNESS_LOG=//p' /etc/dms-restore-drill/witness.conf 2> /dev/null | head -n 1)"
   hd="$(dirname -- "$HEADLOG")"
+  # (A bind mount of a directory of the root file system is a mount point too: the device must differ from /.)
   [ -n "$wl" ] && mountpoint -q -- "$hd" && mountpoint -q -- "$(dirname -- "$wl")" \
-    && [ "$(dirname -- "$STORE")" = "$hd" ] || { echo "unverified:evidence_not_on_dedicated_filesystems"; return 0; }
+    && [ "$(dirname -- "$STORE")" = "$hd" ] \
+    && [ "$(stat -c %d -- "$hd")" != "$(stat -c %d -- /)" ] && [ "$(stat -c %d -- "$(dirname -- "$wl")")" != "$(stat -c %d -- /)" ] \
+    || { echo "unverified:evidence_not_on_dedicated_filesystems"; return 0; }
   for f in "${files[@]}"; do lines+=("$(sha256sum -- "$f")"); done
   code="$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
   lines=()

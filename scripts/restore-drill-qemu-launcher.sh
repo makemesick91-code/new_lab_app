@@ -77,6 +77,8 @@ dms_trusted_dir DMS_QEMU_WORK_DIR "${C[DMS_QEMU_WORK_DIR]}" "$(id -u)" "$(cd "$H
 [ "$(stat -c '%u %a' -- "${C[DMS_QEMU_WORK_DIR]}")" = "$(id -u) 700" ] || die work_dir_not_private 2
 CONSOLE=""; QERR=/dev/null
 if [ "${C[DMS_QEMU_CONSOLE_DIR]}" != none ]; then
+  # R6F-L22: only on a disposable CI runner (root-owned marker written by its provisioning).
+  _owned_ok /etc/dms-restore-drill/disposable-ci-runner 2> /dev/null || die console_dir_outside_ci 2
   dms_trusted_canonical "${C[DMS_QEMU_CONSOLE_DIR]}" && [ "$(stat -c '%u %a' -- "${C[DMS_QEMU_CONSOLE_DIR]}" 2> /dev/null)" = "$(id -u) 700" ] || die console_dir_not_private 2
   CONSOLE="${C[DMS_QEMU_CONSOLE_DIR]}/${RUN_ID}.log"
   QERR="${C[DMS_QEMU_CONSOLE_DIR]}/${RUN_ID}.stderr"
@@ -121,6 +123,9 @@ QEMU_PID=$!
 wait "$QEMU_PID"
 QEMU_EXIT=$?
 QEMU_PID=""
+# R6F-E11: once QEMU has ended, the output and the status line are always delivered (a few milliseconds); a TERM in
+# that window cannot turn a finished VM into an abort.
+trap '' TERM INT HUP
 head -c "$DMS_VM_OUTPUT_BYTES" -- "$RT/output.raw"
 status "exit=${QEMU_EXIT} image_sha256=${IMAGE_SHA}"
 exit 0

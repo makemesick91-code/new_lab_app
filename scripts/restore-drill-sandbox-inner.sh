@@ -263,6 +263,10 @@ BEGIN
   PERFORM pg_catalog.set_config('TimeZone', s_tz, true), pg_catalog.set_config('IntervalStyle', s_is, true),
     pg_catalog.set_config('extra_float_digits', s_fd, true), pg_catalog.set_config('bytea_output', s_bo, true),
     pg_catalog.set_config('xmlbinary', s_xb, true), pg_catalog.set_config('quote_all_identifiers', s_qa, true);
+  -- R6F-P12: every row is read. No index (a partial index built in the drill holds only the rows that matched there,
+  -- and a planted "shadow" index can answer a query with nothing) and no constraint exclusion may shortcut a query.
+  PERFORM pg_catalog.set_config('enable_indexscan', 'off', true), pg_catalog.set_config('enable_bitmapscan', 'off', true),
+    pg_catalog.set_config('enable_indexonlyscan', 'off', true), pg_catalog.set_config('constraint_exclusion', 'off', true);
   FOR i IN 1 .. COALESCE(pg_catalog.array_length(q, 1), 0) LOOP
     EXECUTE q[i] INTO n;
     total := total OPERATOR(pg_catalog.+) n;
@@ -310,7 +314,7 @@ pub="n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE n.nspname OPERATOR(pg_cat
 # the guard for CHECKs: no XML expression, no text-form conversion, no domain coercion, no session-dependent output or
 # XML function and no object-id type in any expression of the dump's own objects; such an index (or constraint) can
 # build in the drill and fail in a real restore, so the drill FAILs.
-regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regrole','regnamespace','regcollation','regconfig','regdictionary','aclitem'])"
+regt="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS r FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['regclass','regtype','regproc','regprocedure','regoper','regoperator','regrole','regnamespace','regcollation','aclitem'])"
 sens="SELECT pg_catalog.string_agg(t.oid::pg_catalog.text, '|') AS s FROM pg_catalog.pg_type t WHERE t.typnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace AND pg_catalog.ltrim(t.typname::pg_catalog.text, '_') OPERATOR(pg_catalog.=) ANY (ARRAY['float4','float8','bytea','time','timetz','interval','timestamptz','timestamp','date','money','xml','point','lseg','path','box','polygon','line','circle','record'])"
 tf=':(consttype|vartype|paramtype|funcresulttype|opresulttype|resulttype|array_typeid|element_typeid|casetype|coalescetype|minmaxtype|typeId|refcontainertype|refelemtype|refrestype|row_typeid|aggtype) '
 etrees="SELECT i.indexprs::pg_catalog.text AS t FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indexprs IS NOT NULL UNION ALL SELECT i.indpred::pg_catalog.text FROM pg_catalog.pg_index i WHERE i.indexrelid OPERATOR(pg_catalog.>=) 16384 AND i.indpred IS NOT NULL UNION ALL SELECT k.conbin::pg_catalog.text FROM pg_catalog.pg_constraint k WHERE k.oid OPERATOR(pg_catalog.>=) 16384 AND k.conbin IS NOT NULL"
