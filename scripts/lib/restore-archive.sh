@@ -83,7 +83,12 @@ dms_archive_toc_validate() {
     fi
     # pg_restore lists an extension, and a comment on it, with an empty owner.
     if [ -z "$owner" ] && { [ "$type" = EXTENSION ] || { [ "$type" = COMMENT ] && [ "${tag#EXTENSION }" != "$tag" ]; }; }; then
-      :
+      # a comment on an extension only in pg_dump's form (no schema column) and only on an allowlisted extension: the
+      # guest drops exactly that form, so no other form may pass (R6-B8 re-review INFO-A)
+      if [ "$type" = COMMENT ]; then
+        [ "$schema" = "-" ] && [[ "$exts" == *" ${tag#EXTENSION } "* ]] \
+          || { _dms_archive_fail "TOC line ${n}: a comment on extension '${tag#EXTENSION }' is not listed the way pg_dump lists one, or the extension is not allowlisted"; return 1; }
+      fi
     elif ! [[ "$owner" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
       _dms_archive_fail "TOC line ${n} has an owner that is not a plain role name"
       return 1
