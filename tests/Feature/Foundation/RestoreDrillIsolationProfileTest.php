@@ -132,15 +132,20 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
 
     expect(preg_match('/(^|[;|&(]\s*|\$\(\s*)(cat|sed|awk|grep|rm|mkdir|sleep|head|tail|cut|tr|date|id|ls|cp|mv|chmod|env|python3?|perl|sh)\s/m', $code))->toBe(0)
         // PR-6 + D5: pg_restore emits each section under a fresh restricted-mode key; psql runs it as the restore role (D4).
-        ->and($code)->toContain('"$PGBIN/pg_restore" --section="$section" -L "$R/restore.list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-')
+        ->and($code)->toContain('"$PGBIN/pg_restore" "${sect[@]}" -L "$list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-')
+        // P5-1: dump functions, triggers and ACLs are restored only after every table, row, index and constraint.
+        ->and(strpos($code, 'restore_part post_data "$R/list.schema" post-data'))->toBeLessThan(strpos($code, 'restore_part functions "$R/list.functions"'))
+        ->and(strpos($code, 'restore_part functions "$R/list.functions"'))->toBeLessThan(strpos($code, 'restore_part triggers "$R/list.triggers"'))
+        ->and(strpos($code, 'restore_part triggers "$R/list.triggers"'))->toBeLessThan(strpos($code, 'restore_part acls "$R/list.acls"'))
+        ->and($code)->toContain("re_fn='^[0-9]+; [0-9]+ [0-9]+ (FUNCTION [^ ]+ |(COMMENT|ACL) [^ ]+ FUNCTION )'")
         ->and($code)->toContain('-U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-')
-        ->and($code)->toContain('restore_section pre-data')
-        ->and(strpos($code, 'restore_section pre-data'))->toBeLessThan(strpos($code, '-d "$DB" -f "$GUARD"'))
-        ->and(strpos($code, '-d "$DB" -f "$GUARD"'))->toBeLessThan(strpos($code, 'restore_section data'))
-        ->and(strpos($code, 'restore_section data'))->toBeLessThan(strpos($code, 'restore_section post-data'))
+        ->and($code)->toContain('restore_part pre_data "$R/list.schema" pre-data')
+        ->and(strpos($code, 'restore_part pre_data "$R/list.schema" pre-data'))->toBeLessThan(strpos($code, '-d "$DB" -f "$GUARD"'))
+        ->and(strpos($code, '-d "$DB" -f "$GUARD"'))->toBeLessThan(strpos($code, 'restore_part data "$R/list.schema" data'))
+        ->and(strpos($code, 'restore_part data "$R/list.schema" data'))->toBeLessThan(strpos($code, 'restore_part post_data "$R/list.schema" post-data'))
         ->and($code)->toContain('CREATE ROLE :"r" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;')
         // DR-5: the bootstrap superuser is NOLOGIN before the first byte of the archive is restored.
-        ->and(strpos($code, 'ALTER ROLE :"r" NOLOGIN;'))->toBeLessThan(strpos($code, 'restore_section pre-data'))
+        ->and(strpos($code, 'ALTER ROLE :"r" NOLOGIN;'))->toBeLessThan(strpos($code, 'restore_part pre_data "$R/list.schema" pre-data'))
         // DR-10: the server, pg_restore and every psql close the result channel.
         ->and($code)->toContain('> "$R/pg.log" 2>&1 3>&- &')
         ->and(preg_match_all('/"\$PGBIN\/(psql|pg_restore)"(?![^\n]*3>&-)/', $code))->toBe(0)
@@ -162,7 +167,7 @@ it('keeps the inner script to builtins and pinned binaries, restores the structu
         // archive's EXTENSION entries never reach the restore.
         ->and($code)->toContain('CREATE EXTENSION IF NOT EXISTS :"e" WITH SCHEMA public;')
         ->and(strpos($code, 'CREATE EXTENSION IF NOT EXISTS'))->toBeLessThan(strpos($code, "<<< 'ALTER ROLE :\"r\" NOLOGIN;'"))
-        ->and($code)->toContain('-L "$R/restore.list"')
+        ->and($code)->toContain('-L "$list"')
         // DR-3: the effective profile is attested before any input.
         ->and($code)->toContain('fail profile_exec_writable_mount 13')
         ->and($code)->toContain('fail profile_writable_persistent_fs 13')

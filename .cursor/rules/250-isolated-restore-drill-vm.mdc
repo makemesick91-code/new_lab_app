@@ -48,6 +48,10 @@ replaced it with isolation (design: `docs/architecture/r6-b6-isolated-restore-dr
      cgroup tree, `/etc` and the host's `/dev/shm` (P4V-3).
    - Allowlisted extensions are created by the bootstrap superuser before the backup is read, and the archive's
      EXTENSION entries are left out of the restore, so the restore role never owns an extension (P4P-1).
+   - **The restore order is the boundary (P5-1).** The dump's functions (with their comments and ACLs), its triggers
+     and its remaining ACLs are restored only after every table, row, index and constraint exists. Anything evaluated
+     before then that names a dump function fails with 42883. Never move a FUNCTION entry earlier. The post-restore
+     checks (call count, catalog shape) are defence in depth, not the boundary.
    - `pg_database_owner` may own only the public schema's ACL or comment (P4P-3).
 8. **GO** needs every host-checkable fact:
    - VM exit 0; the echoed run id and payload digest;

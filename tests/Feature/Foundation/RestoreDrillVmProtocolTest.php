@@ -374,17 +374,24 @@ it('runs only from an install nobody else can change, and accepts only its own p
         ->and(strpos($code, 'dms_archive_toc_validate "$WORK/inspect/toc.txt"'))->toBeLessThan(strpos($code, '[ -r /dev/kvm ] && [ -w /dev/kvm ]'));
 });
 
-it('refuses to run from a directory another identity can write (P4V-4)', function () {
+it('refuses to run when its code, its directories or the production identity file can be changed by another identity (P4V-4, P5-6)', function (string $target, int $mode) {
     $root = rdvmInstall();
-    chmod("{$root}/scripts/lib", 0777);
+    chmod("{$root}/{$target}", $mode);
     $process = new Process(['bash', "{$root}/scripts/restore-drill-vm.sh", '--expected-sha256', str_repeat('a', 64), '--manifest', '/nonexistent', '/nonexistent'], null, ['PATH' => getenv('PATH')]);
     $process->run();
-    chmod("{$root}/scripts/lib", 0755);
+    foreach (['scripts/lib' => 0755, 'scripts' => 0755, 'deploy' => 0755, '' => 0755] as $d => $m) {
+        chmod("{$root}/{$d}", $m);
+    }
     (new Process(['rm', '-rf', '--', $root]))->run();
 
     expect($process->getExitCode())->toBe(2)
-        ->and($process->getOutput())->toContain('is writable by another identity. Nothing ran.');
-});
+        ->and($process->getOutput())->toContain('writable by another identity. Nothing ran.');
+})->with([
+    'library directory' => ['scripts/lib', 0777],
+    'the script itself (P5-6)' => ['scripts/restore-drill-vm.sh', 0777],
+    'the production identity file (P5-6)' => ['deploy/production-host.conf', 0666],
+    'the install root, even sticky (P5-6)' => ['', 01777],
+]);
 
 it('retires the in-place replay of the production-side drill script (finding A-1)', function () {
     $code = (string) file_get_contents(base_path('scripts/rollout-restore-drill.sh'));

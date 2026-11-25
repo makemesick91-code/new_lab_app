@@ -20,7 +20,8 @@ The design went through three independent adversarial review rounds:
 - round 1 on the prototype (DR-1 to DR-19, §11);
 - round 2 on the implementation by two reviewers, Linux/systemd/VM and PostgreSQL restore security (VR-1..12 and
   PR-1..9, §0.2);
-- round 3 on the phase 2 hardening, by two new reviewers on the same two specialties (§0.7).
+- round 3 on the phase 2 hardening, by two new reviewers on the same two specialties (§0.7);
+- a fix-verification review of round 3 by a further independent reviewer (round 5, §0.9).
 
 ## 0. Version 2: owner decisions D1–D10 and the implemented architecture
 
@@ -223,7 +224,7 @@ Every fix below has an adversarial regression test. Experiments used synthetic d
 
 | ID | Sev. | Finding (proved by the reviewer unless marked) | Disposition and evidence |
 |---|---|---|---|
-| P4P-1 | HIGH | A generated column folds an immutable call at `CREATE TABLE`, so user code runs in pre-data, before the guard. It can drop its own function, or add it to a trusted extension, and the drill still said GO. | **Fixed**, with four independent layers (each tested): (1) the guard refuses a reference that no longer resolves (fixture `dangling`); (2) user code is decided from `pg_depend` and the stored trees of constraints, generated columns, indexes, partition keys, rules and types, including dangling references; (3) `track_functions=all` plus a per-section flush, so any user function that ran fails the drill (`execbomb`); (4) the guest's catalog shape must equal the host's TOC shape. Allowlisted extensions are created by the bootstrap superuser, and the archive's EXTENSION entries are left out, so laundering fails with 42501 (`launder`). With the guard disabled, layers 2–4 still fail `dangling` (user code 2, 1 call, shape 2 vs 3 functions) and `checkgen` (pack 51). |
+| P4P-1 (superseded by P5-1, §0.9) | HIGH | A generated column folds an immutable call at `CREATE TABLE`, so user code runs in pre-data, before the guard. It can drop its own function, or add it to a trusted extension, and the drill still said GO. | **Fixed**, with four independent layers (each tested): (1) the guard refuses a reference that no longer resolves (fixture `dangling`); (2) user code is decided from `pg_depend` and the stored trees of constraints, generated columns, indexes, partition keys, rules and types, including dangling references; (3) `track_functions=all` plus a per-section flush, so any user function that ran fails the drill (`execbomb`); (4) the guest's catalog shape must equal the host's TOC shape. Allowlisted extensions are created by the bootstrap superuser, and the archive's EXTENSION entries are left out, so laundering fails with 42501 (`launder`). With the guard disabled, layers 2–4 still fail `dangling` (user code 2, 1 call, shape 2 vs 3 functions) and `checkgen` (pack 51). |
 | P4P-2 | HIGH | The host cut the TOC at 8 MiB without failing, which hid refused entry types. | **Fixed:** the unit refuses a TOC above 8 MiB or a count list above 4 MiB; the stream must end with `@@END` and fit its cap; sizes are re-checked on the host. A real-unit test runs with a small limit. |
 | P4V-1 | HIGH | `user_code_reachable` ignored CHECK constraints and generated columns. | **Fixed** by P4P-1 layer 2. The guard already refused these in the drill (fixture `checkgen`: FAIL at the load guard). |
 | P4V-2 | MEDIUM | The orchestrator applied a plain-text header check, so it refused every custom-format archive. | **Fixed:** `dms_archive_verify_copy` (digest, then the `PGDMP` magic). Inputs are checked before the hypervisor. A behavioural test drives the installed orchestrator with real archives through integrity, sandboxed inspection and the TOC, up to the hypervisor stage. |
@@ -251,11 +252,13 @@ Every fix below has an adversarial regression test. Experiments used synthetic d
 |---|---|---|
 | VR-1 guest trust boundary | **RESOLVED as an explicit boundary**; residual inherent | HOST_VERIFIED vs GUEST_ASSERTED; the signer refuses inconsistent GO records; a GO is never stronger than the guest's (and the operator's) integrity |
 | VR-4 separate signer, protected interface | **PARTLY RESOLVED** | Separate account, one sudoers rule, self-checking signer, request policy. **NOT RUN:** real sudo separation (system-mode gate G1–G6). **Residual:** QEMU under the operator uid. |
-| PR-5 per-table completeness | **RESOLVED locally** | Per-table digest plus catalog shape; full application schema GO, 186/186, shape `5:186:631:337:623:22:177`. VM NOT RUN. |
+| PR-5 per-table completeness | **RESOLVED locally** | Per-table digest; full application schema GO, 186/186 tables, 238/238 rows. VM NOT RUN. |
+| Code from the backup running during the restore (P4P-1, P5-1) | **RESOLVED locally, structurally** | Restore order (§0.9): no dump function exists while anything is evaluated. Every code-bearing fixture fails with 42883; every honest one, including the full schema, is GO. |
 | PR-6 structured format, strict validation, limits | **RESOLVED locally** | Custom format only; TOC allowlist; sandboxed inspection; refused-not-truncated limits (P4P-2); P4V-2 path fixed |
 | PR-8 fail-closed extension allowlist | **RESOLVED locally** | TOC, inner unit, after the restore, image pruning; extensions owned by the bootstrap superuser |
 | PR-9 revocation, atomic publication, chain head | **PARTLY RESOLVED** | Revocation, atomic directory publication, robust writes, head log. **Residual:** independent retention of the head is manual (P4V-11). |
-| Round 3 HIGH (P4P-1, P4P-2, P4V-1) | **FIXED**, regression-tested | §0.7 |
+| Round 3 HIGH (P4P-1, P4P-2, P4V-1) | **FIXED**, regression-tested; P4P-1 superseded by the structural fix of P5-1 | §0.7, §0.9 |
+| Round 5 HIGH (P5-1) | **FIXED**: reproduced as GO on `e0e64389`, now FAIL 42883 | §0.9 |
 | Round 3 MEDIUM | **FIXED**, except the VR-4 residual | §0.7 |
 
 **D1–D10 acceptance (real evidence only; a configuration-only claim is not acceptance):**
@@ -278,7 +281,24 @@ Every fix below has an adversarial regression test. Experiments used synthetic d
   the workflow);
 - owner decisions on the residuals: a QEMU uid separate from the operator, off-host head retention, and recording
   refusals (P4P-6);
-- a re-review of the gate evidence.
+- a re-review of the gate evidence and of the round 5 fixes (§0.9).
+
+### 0.9 Review round 5: fix verification of round 3
+
+An independent reviewer verified the round 3 fixes on `e0e64389`. Result: 15 HOLD, 4 PARTIAL, 2 BROKEN, and one new HIGH.
+
+| ID | Sev. | Finding | Disposition |
+|---|---|---|---|
+| P5-1 | HIGH (proved) | Pre-data code (folded from a generated column at CREATE TABLE) can run and then erase every trace before the guard. It renames and recreates its functions, and a deferred trigger on a temp table drops the generation expression and the originals at commit. The guard, the user-code check, the call count and the shape all came out clean: GO. | **Fixed structurally:** the restore ORDER is now the boundary. Dump FUNCTION entries (with their comments and ACLs), TRIGGER entries and the remaining ACLs are restored only after pre-data, the guard, data and post-data. Anything evaluated before then that names a dump function fails with 42883, so no backup code can run as the restore role, and none can run and erase itself. Reproduced here as GO on `e0e64389`, and FAIL (pre-data 42883) after the change. Fixture `vanish`; every earlier code-bearing fixture now fails with 42883 too. Honest archives stay GO: the full application schema (5 trigger functions, 22 triggers, 186 tables) with unchanged fidelity `22:1045:5:968`. Cost: a DEFAULT naming a user function now fails, which is fail-closed (the application has none). |
+| P5-2 | MEDIUM | The call count (`track_functions`) and the catalog shape can be erased by code that runs. | **Accepted:** they are defence-in-depth signals, no longer the boundary (P5-1). They stay in the GO conditions. |
+| P5-3 | LOW | The signer took the first of duplicated keys in a comma list. | **Fixed:** EXPECTED and GUEST_ASSERTED must match one fixed-key, fixed-order, typed pattern (two new refusal tests). |
+| P5-4 | LOW | `install=root\|operator` is the operator's own statement. | **Recorded:** the field is operator-asserted. The signer does not inspect the drill host's install. |
+| P5-5 | LOW | Evidence was not durable across a power loss; `recover-head` appended in place. | **Fixed:** the record, its signature and the staging directory are synced before the rename, and the store and head-log directories after it; `recover-head` uses the atomic replace. |
+| P5-6 | LOW | The orchestrator did not check its own script's mode or the production-identity file, and accepted a sticky install root. | **Fixed:** the script, its directory, the install root, `deploy/` and `production-host.conf` must be owned by root or the trust owner and writable by nobody else, with no sticky exception (four refusal tests); the signer's install directory likewise. |
+| P5-7 | INFO | Inspection unit escape probes failed. Extension pre-creation is safe. The flush is ordered correctly. Inlined SQL functions are not a vector. | Recorded. `ProtectProc=invisible` is optional defence in depth (not added). |
+
+Round 5 fixes are verified by tests and by the fixture runs (pack 51). They have not had a further independent review:
+any closure review must include them.
 
 ## 1. Problem and objective
 

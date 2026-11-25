@@ -141,10 +141,21 @@ emit "roles_created=${#ROLES[@]}"
 # pg_restore turns the structured archive into SQL; psql runs it in restricted mode under a fresh key per section
 # (D5: no meta-command can run). The load guard runs between pre-data and data, as its own session: nothing is ever
 # injected into the stream (PR-6).
-# The restore list: the archive's TOC without EXTENSION entries and comments on extensions (P4P-1(b), above).
+# P5-1: the restore ORDER is the boundary. No function from the dump exists while the restore evaluates anything.
+# The archive's FUNCTION entries (with their comments and ACLs), its TRIGGER entries and its remaining ACLs are left out
+# of the schema, data and index phases and restored only at the end, when every table, row, index and constraint
+# exists. A generated column, CHECK, DEFAULT, partition key, index expression or predicate, exclusion constraint or
+# policy that names a dump function then fails with 42883 (undefined function), and the drill FAILs: no code from
+# the backup can run as the restore role, so none can run and then erase its traces (review round 5). Creating a
+# function or a trigger, or granting, evaluates nothing (pg_dump sets check_function_bodies = off).
+# The EXTENSION entries and comments on extensions are dropped entirely (P4P-1(b), above).
 "$PGBIN/pg_restore" -l "$ARCHIVE" > "$R/toc.full" 2> /dev/null 3>&- || fail toc_list 20
 re_ext='^[0-9]+; [0-9]+ [0-9]+ EXTENSION - '
 re_extc='^[0-9]+; [0-9]+ [0-9]+ COMMENT - EXTENSION '
+re_fn='^[0-9]+; [0-9]+ [0-9]+ (FUNCTION [^ ]+ |(COMMENT|ACL) [^ ]+ FUNCTION )'
+re_trg='^[0-9]+; [0-9]+ [0-9]+ (TRIGGER [^ ]+ |COMMENT [^ ]+ TRIGGER )'
+re_acl='^[0-9]+; [0-9]+ [0-9]+ ACL '
+: > "$R/list.schema"; : > "$R/list.functions"; : > "$R/list.triggers"; : > "$R/list.acls"
 while IFS= read -r l; do
   if [[ "$l" =~ $re_ext ]]; then
     # PR-8 again, inside the unit: an extension outside the allowlist is never left for the restore to skip silently.
@@ -152,14 +163,21 @@ while IFS= read -r l; do
     [[ " ${EXTS} " == *" ${e} "* ]] || fail extension_not_allowlisted 20
     continue
   fi
-  [[ "$l" =~ $re_extc ]] || printf '%s\n' "$l"
-done < "$R/toc.full" > "$R/restore.list"
-restore_section() { # <section> -> 0, or emits the failure and exits
-  local section="$1" key st prc
+  if [[ "$l" =~ $re_extc ]]; then continue
+  elif [[ "$l" =~ $re_fn ]]; then printf '%s\n' "$l" >> "$R/list.functions"
+  elif [[ "$l" =~ $re_trg ]]; then printf '%s\n' "$l" >> "$R/list.triggers"
+  elif [[ "$l" =~ $re_acl ]]; then printf '%s\n' "$l" >> "$R/list.acls"
+  else printf '%s\n' "$l" >> "$R/list.schema"
+  fi
+done < "$R/toc.full"
+restore_part() { # <label> <list file> [section] -> 0, or emits the failure and exits
+  local label="$1" list="$2" section="${3:-}" key st prc
+  local -a sect=()
+  [ -n "$section" ] && sect=(--section="$section")
   key="$(printf '%08x%08x%08x%08x%08x%08x%08x%08x' "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM" "$SRANDOM")"
-  # After the section, the session flushes its function-call statistics (track_functions=all, a superuser-only
-  # setting), so that verification sees every user function this session ran (P4P-1).
-  { "$PGBIN/pg_restore" --section="$section" -L "$R/restore.list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
+  # After the part, the session flushes its function-call statistics (track_functions=all, a superuser-only setting):
+  # a defence-in-depth signal for verification, never the boundary (P5-2).
+  { "$PGBIN/pg_restore" "${sect[@]}" -L "$list" --restrict-key="$key" -f - "$ARCHIVE" 2> "$R/pg_restore.err" 3>&-
     echo "$?" > "$R/pg_restore.rc"
     printf '%s\n' 'SELECT pg_catalog.pg_stat_force_next_flush();' 'SELECT 1;'; } 3>&- \
     | "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f - > /dev/null 2> "$R/replay.err" 3>&-
@@ -173,19 +191,22 @@ restore_section() { # <section> -> 0, or emits the failure and exits
       [[ "$l" =~ restricted ]] && state="restricted_meta"
     done < "$R/replay.err"
     [ "${st[0]}" -ne 0 ] && [ "$state" = unknown ] && state="pg_restore_failed"
-    emit "replay_section=${section//-/_}"
+    emit "replay_section=${label}"
     emit "replay_exit=${st[1]}"
     emit "replay_sqlstate=$state"
     fail replay 20
   fi
 }
-restore_section pre-data
+restore_part pre_data "$R/list.schema" pre-data
 if ! "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h "$R/data" -U "$RR" -d "$DB" -f "$GUARD" > /dev/null 2> "$R/guard.err" 3>&-; then
   emit "replay_section=load_guard"
   fail load_guard 21
 fi
-restore_section data
-restore_section post-data
+restore_part data "$R/list.schema" data
+restore_part post_data "$R/list.schema" post-data
+restore_part functions "$R/list.functions"
+restore_part triggers "$R/list.triggers"
+restore_part acls "$R/list.acls"
 emit "replay=ok"
 
 # --- Verification, as the restore role, search_path pinned, names qualified --------------------------------------

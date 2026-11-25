@@ -34,6 +34,9 @@ DMS_DRILL_EVIDENCE_KEYS="${DMS_DRILL_EVIDENCE_SIGNER_KEYS} ${DMS_DRILL_EVIDENCE_
 DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS="backup_sha256,archive_custom_format,manifest_signature,manifest_not_revoked,archive_toc,owners,extensions,per_table_counts,catalog_shape,image_sha256,no_nic_by_construction,limits"
 # The D6 limits, fixed: a record never states others.
 DMS_DRILL_EVIDENCE_LIMITS_D6="vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,tasks=64"
+# P5-3: the two comma lists have fixed keys in a fixed order with typed values (no duplicate, unknown or reordered key).
+DMS_DRILL_EVIDENCE_EXPECTED_RE='^tables=[0-9]{1,9},rows=[0-9]{1,15},per_table_digest=[0-9a-f]{64},catalog_shape=[0-9]{1,9}(:[0-9]{1,9}){6}$'
+DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_table_digest=([0-9a-f]{64}|none|invalid),catalog_shape=[0-9:a-z]{1,80},user_code=[0-9a-z]{1,12},user_code_executed=[0-9a-z]{1,12},fidelity=[0-9:a-z]{1,40},vm_ifaces=[a-z0-9:]{1,40}$'
 
 # _dms_evidence_value_ok <key> <value>
 _dms_evidence_value_ok() {
@@ -98,6 +101,8 @@ dms_evidence_request_policy() {
   [ "${R[DMS_DRILL_EVIDENCE_DRILL_HOST]:-}" = "$host" ] || { echo "evidence: DRILL_HOST is not this signer's host"; return 1; }
   [[ "$images" == *" ${R[DMS_DRILL_EVIDENCE_IMAGE_SHA256]:-x} "* ]] || { echo "evidence: IMAGE_SHA256 is not a drill image pinned in the signer's configuration"; return 1; }
   [ "${R[DMS_DRILL_EVIDENCE_LIMITS]:-}" = "$DMS_DRILL_EVIDENCE_LIMITS_D6" ] || { echo "evidence: LIMITS are not the D6 limits"; return 1; }
+  [[ "${R[DMS_DRILL_EVIDENCE_EXPECTED]:-}" =~ $DMS_DRILL_EVIDENCE_EXPECTED_RE ]] || { echo "evidence: EXPECTED is not the fixed key list"; return 1; }
+  [[ "${R[DMS_DRILL_EVIDENCE_GUEST_ASSERTED]:-}" =~ $DMS_DRILL_EVIDENCE_GUEST_RE ]] || { echo "evidence: GUEST_ASSERTED is not the fixed key list"; return 1; }
   hv="${R[DMS_DRILL_EVIDENCE_HOST_VERIFIED]:-}"
   [ "$hv" = "${DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS},install=root" ] || [ "$hv" = "${DMS_DRILL_EVIDENCE_HOST_VERIFIED_FACTS},install=operator" ] \
     || { echo "evidence: HOST_VERIFIED is not the fixed fact list"; return 1; }
@@ -210,8 +215,10 @@ dms_evidence_publish() {
     keys="${keys}${keys:+ }${v%%=*}"
   done < "${stage}/record"
   [ "$keys" = "$DMS_DRILL_EVIDENCE_KEYS" ] || { rm -rf -- "$stage"; echo "evidence: the record's key set differs from contract 2"; return 1; }
+  # P5-5: the record, its signature and the staging directory reach the disk before the rename publishes them.
   if ! ssh-keygen -Y sign -f "$key" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" "${stage}/record" > /dev/null 2>&1 \
-    || ! ssh-keygen -Y verify -f "$anchor" -I "$principal" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" -s "${stage}/record.sig" < "${stage}/record" > /dev/null 2>&1; then
+    || ! ssh-keygen -Y verify -f "$anchor" -I "$principal" -n "$DMS_DRILL_EVIDENCE_NAMESPACE" -s "${stage}/record.sig" < "${stage}/record" > /dev/null 2>&1 \
+    || ! sync -- "${stage}/record" "${stage}/record.sig" "$stage"; then
     rm -rf -- "$stage"
     echo "evidence: signing failed, or the signature does not verify against the anchor"
     return 1
@@ -222,11 +229,12 @@ dms_evidence_publish() {
     echo "evidence: could not publish ${seq} atomically"
     return 1
   fi
+  sync -- "$store" || { echo "evidence: record ${seq} published but the store directory could not be synced; run verify"; return 1; }
   # P4V-5: the head log is replaced atomically (copy, append, fsync, rename), so it never holds a partial line. If this
   # fails, the record is published and the head log is exactly one record behind: recover-head repairs that window.
   tmp="$(mktemp "${headlog}.XXXXXX")" || { echo "evidence: record ${seq} published but the head log was not updated; run recover-head"; return 1; }
   if ! { cat -- "$headlog" > "$tmp" && printf '%s %s\n' "$seq" "$rec_sha" >> "$tmp" && sync -- "$tmp" \
-    && [ "$(tail -n 1 -- "$tmp")" = "${seq} ${rec_sha}" ] && mv -f -- "$tmp" "$headlog"; }; then
+    && [ "$(tail -n 1 -- "$tmp")" = "${seq} ${rec_sha}" ] && mv -f -- "$tmp" "$headlog" && sync -- "$(dirname -- "$headlog")"; }; then
     rm -f -- "$tmp"
     echo "evidence: record ${seq} published but the head log was not updated; run recover-head"
     return 1

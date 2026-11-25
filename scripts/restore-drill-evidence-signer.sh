@@ -38,6 +38,8 @@ SELF="${HERE}/$(basename "${BASH_SOURCE[0]}")"
 _signer_owned_ok() { local st; st="$(stat -c '%u %a' -- "$1")" || return 1; { [ "${st% *}" = 0 ] || [ "${st% *}" = "$(id -u)" ]; } && [ $(( 8#${st#* } & 8#022 )) -eq 0 ]; }
 [ ! -L "$SELF" ] && [ -f "$SELF" ] && _signer_owned_ok "$SELF" || { echo "SIGNER: ${SELF} is not owned by root or the signer, or is writable by another identity"; exit 2; }
 _signer_sticky_root() { local st; st="$(stat -c '%u %a' -- "$1")" && [ "${st% *}" = 0 ] && [ $(( 8#${st#* } & 8#1000 )) -ne 0 ]; }
+# P5-6: the install directory itself never relies on the sticky exception; only directories above it may.
+_signer_owned_ok "$HERE" || { echo "SIGNER: ${HERE} is not owned by root or the signer, or is writable by another identity"; exit 2; }
 d="$HERE"
 while :; do
   _signer_owned_ok "$d" || _signer_sticky_root "$d" || { echo "SIGNER: ${d} is not owned by root or the signer, or is writable by another identity"; exit 2; }
@@ -110,7 +112,12 @@ case "$MODE" in
     prevseq="$(printf '%06d' $((10#$n - 1)))"
     if [ "$prevseq" = 000000 ]; then want_prev=""; else want_prev="${prevseq} $(sha256sum -- "${C[DMS_SIGNER_STORE]}/${prevseq}/record" | cut -d' ' -f1)"; fi
     [ "$last" = "$want_prev" ] || { echo "SIGNER: the head log is not exactly one record behind; refusing"; exit 1; }
-    printf '%s %s\n' "$(printf '%06d' "$n")" "${v##*head=}" >> "$HEADLOG"
+    # P5-5: the same atomic replace as publication (copy, append, fsync, rename), never an in-place append.
+    tmp="$(mktemp "${HEADLOG}.XXXXXX")" || { echo "SIGNER: cannot write the head log"; exit 1; }
+    if ! { cat -- "$HEADLOG" > "$tmp" && printf '%s %s\n' "$(printf '%06d' "$n")" "${v##*head=}" >> "$tmp" && sync -- "$tmp" \
+      && mv -f -- "$tmp" "$HEADLOG" && sync -- "$(dirname -- "$HEADLOG")"; }; then
+      rm -f -- "$tmp"; echo "SIGNER: the head log could not be replaced"; exit 1
+    fi
     echo "SIGNER: head log recovered to $(printf '%06d' "$n")"
     exit 0
     ;;

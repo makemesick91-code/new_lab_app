@@ -213,7 +213,7 @@ it('refuses, never truncates, a TOC above its limit, in the real inspection unit
 
 it('ships the fixture archives with their generator and digests (synthetic data only)', function () {
     $sums = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/SHA256SUMS'));
-    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner'] as $f) {
+    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish'] as $f) {
         $file = base_path("tests/Fixtures/restore-drill/{$f}.dump");
         expect($sums)->toContain(hash_file('sha256', $file)."  {$f}.dump");
     }

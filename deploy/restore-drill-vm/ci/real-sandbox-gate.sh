@@ -134,12 +134,14 @@ drill() { # <label> <archive> [extension allowlist] [tmpfs MiB] [timeout s] -> p
   "${RUNNER[@]}" rm -rf -- "$d"
 }
 fact() { sed -n "s/^$2=//p" "$OUT/$1.facts" | head -n 1; }
+# P5-1: no dump function exists while the restore evaluates anything, so code-bearing archives fail with 42883.
+undef() { [ "$(fact "$1" sandbox_replay_sqlstate)" = 42883 ] && [ "$(fact "$1" sandbox_replay_section)" = "$2" ] && [ "${3%%:*}" = FAIL ]; echo $?; }
 d="$(drill S-ok "$FX/clean.dump")"
 check S-ok "a synthetic runtime-owned archive restores: GO from the host's per-table digest" "$(is "$d" GO)" "$d tables=$(fact S-ok sandbox_base_table_count)"
 d="$(drill S-bomb "$FX/bomb.dump")"
-check S-bomb "an index-expression restore bomb is refused: user code on a restore path (PR-2)" "$(is "$d" FAIL:user_code_in_restore_path)" "$d"
+check S-bomb "an index-expression restore bomb fails: its function does not exist when the index is built (PR-2, P5-1)" "$(undef S-bomb post_data "$d")" "$d"
 d="$(drill S-rls "$FX/rls.dump")"
-check S-rls "row-security policy code never runs during verification; verification fails (PR-5)" "$([ "$(fact S-rls sandbox_stage)" = verify ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+check S-rls "row-security policy code never runs: the policy cannot be created before the functions (PR-5, P5-1)" "$(undef S-rls post_data "$d")" "$d"
 d="$(drill S-meta "$FX/metabody.dump")"
 check S-meta "a backslash line inside a function body stays text (D5)" "$(is "$d" GO)" "$d"
 d="$(drill S-ext-no "$FX/ext.dump")"
@@ -147,13 +149,15 @@ check S-ext "an extension outside the allowlist is refused inside the unit too (
 d="$(drill S-ext-yes "$FX/ext.dump" pgcrypto)"
 check S-ext-ok "an allowlisted extension is created by the bootstrap superuser and the drill is GO (P4P-1(b))" "$(is "$d" GO)" "$d"
 d="$(drill S-checkgen "$FX/checkgen.dump")"
-check S-checkgen "a CHECK or generated column calling user code is refused by the load guard (P4V-1)" "$([ "$(fact S-checkgen sandbox_stage)" = load_guard ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+check S-checkgen "a CHECK or generated column naming dump code fails before any code runs (P4V-1, P5-1)" "$(undef S-checkgen pre_data "$d")" "$d"
 d="$(drill S-dangling "$FX/dangling.dump")"
-check S-dangling "pre-data code that drops its own function leaves a dangling reference, refused (P4P-1)" "$([ "$(fact S-dangling sandbox_stage)" = load_guard ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+check S-dangling "pre-data code that would drop its own function never runs (P4P-1, P5-1)" "$(undef S-dangling pre_data "$d")" "$d"
 d="$(drill S-launder "$FX/launder.dump" pgcrypto)"
-check S-launder "the restore role cannot add its code to an allowlisted extension (P4P-1(b))" "$([ "$(fact S-launder sandbox_replay_sqlstate)" = 42501 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d"
+check S-launder "pre-data code that would launder itself into an extension never runs (P4P-1(b), P5-1)" "$(undef S-launder pre_data "$d")" "$d"
 d="$(drill S-execbomb "$FX/execbomb.dump")"
-check S-execbomb "user functions that ran during the restore are counted (track_functions) and refuse GO (P4P-1)" "$([ "$(fact S-execbomb sandbox_user_code_executed)" -gt 0 ] && [ "${d%%:*}" = FAIL ]; echo $?)" "$d executed=$(fact S-execbomb sandbox_user_code_executed)"
+check S-execbomb "a PL/pgSQL index expression never runs during the index build (P5-1)" "$(undef S-execbomb post_data "$d")" "$d"
+d="$(drill S-vanish "$FX/vanish.dump")"
+check S-vanish "self-erasing pre-data code (review round 5) never runs (P5-1)" "$(undef S-vanish pre_data "$d")" "$d"
 d="$(drill S-r6 "$FX/r6owner.dump")"
 check S-r6 "runtime-owned objects are counted from the restored catalog (P5, PR-3)" "$([ "$(fact S-r6 sandbox_runtime_owned_objects)" -gt 0 ]; echo $?)" "runtime_owned=$(fact S-r6 sandbox_runtime_owned_objects)"
 
@@ -170,9 +174,10 @@ SQL
 SET ROLE app_runtime;
 CREATE TABLE migrations (id int PRIMARY KEY);
 INSERT INTO migrations VALUES (1);
--- Environment-aware, as an attacker would write it: it stalls only inside the drill's database.
-CREATE FUNCTION slow(x int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN IF current_database() = 'dms_restore_drill' THEN PERFORM pg_catalog.pg_sleep(600); END IF; RETURN x; END $$;
-CREATE INDEX migrations_slow ON migrations (slow(id));
+-- No dump code can run any more (P5-1), so a long restore is plain volume: rows and a builtin expression index.
+CREATE TABLE heavy (t text);
+INSERT INTO heavy SELECT md5(i::text) FROM generate_series(1, 1500000) AS i;
+CREATE INDEX heavy_x ON heavy (md5(md5(md5(t))));
 SQL
 "$PGBIN/pg_dump" -h "$DSHM" -p "$DPORT" -U decoy_super -d xfill -Fc -f "$DWORK/xfill.dump"
 "$PGBIN/pg_dump" -h "$DSHM" -p "$DPORT" -U decoy_super -d xtime -Fc -f "$DWORK/xtime.dump"
@@ -180,8 +185,13 @@ s=$(date +%s)
 d="$(drill X-disk "$DWORK/xfill.dump" none 64)"
 check X-disk "a restore that outgrows the capped tmpfs ends as FAIL, quickly" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 180 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
 s=$(date +%s)
-d="$(drill X-time "$DWORK/xtime.dump" none 256 20)"
-check X-time "an endless restore step ends at the unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ $(( $(date +%s) - s )) -lt 90 ]; echo $?)" "$d secs=$(( $(date +%s) - s ))"
+# A control pair: the same archive is GO with a generous limit and FAIL under a 3 s limit, so the limit is the cause.
+d="$(drill X-time-control "$DWORK/xtime.dump" none 512 300)"
+check X-time-control "the volume archive restores within a generous time limit (control)" "$(is "$d" GO)" "$d"
+s=$(date +%s)
+d="$(drill X-time "$DWORK/xtime.dump" none 512 3)"
+e=$(( $(date +%s) - s ))
+check X-time "the same restore is stopped at a 3 s unit time limit (TimeoutStartSec, oneshot) as FAIL" "$([ "${d%%:*}" = FAIL ] && [ -z "$(fact X-time sandbox_result)" ] && [ "$e" -lt 90 ]; echo $?)" "$d secs=${e}"
 
 # --- G: the evidence signer is a separate identity (VR-4); only in system mode, provisioned by the CI job ---------------
 if [ "$MODE" = system ] && [ -n "${DMS_GATE_SIGNER_USER:-}" ]; then

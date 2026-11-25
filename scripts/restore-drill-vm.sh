@@ -43,6 +43,11 @@ TRUST_UID="$(stat -c '%u' -- "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")")"
 if [ "$TRUST_UID" = 0 ]; then INSTALL=root; elif [ "$TRUST_UID" = "$(id -u)" ]; then INSTALL=operator; else
   echo "FATAL: this script is owned by uid ${TRUST_UID}, neither root nor the operator. Nothing ran."; exit 2
 fi
+# P5-6: this script itself, and its own directory and the install root above it, never rely on the sticky exception.
+for node in "${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")" "$SCRIPT_DIR" "$REPO_DIR" "${REPO_DIR}/deploy" "${REPO_DIR}/deploy/production-host.conf"; do
+  st="$(stat -c '%u %a' -- "$node" 2> /dev/null)" && [ ! -L "$node" ] && { [ "${st% *}" = 0 ] || [ "${st% *}" = "$TRUST_UID" ]; } && [ $(( 8#${st#* } & 8#022 )) -eq 0 ] \
+    || { echo "FATAL: ${node} is missing, a symlink, not owned by root or uid ${TRUST_UID}, or writable by another identity. Nothing ran."; exit 2; }
+done
 d="${SCRIPT_DIR}/lib"
 while :; do
   st="$(stat -c '%u %a' -- "$d")"

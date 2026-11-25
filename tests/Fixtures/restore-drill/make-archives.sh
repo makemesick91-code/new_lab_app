@@ -5,7 +5,7 @@
 #
 # Usage: make-archives.sh <socket dir> <port> <superuser>
 # Writes, next to this script: clean, bomb, rls, ext, weirdname, otherschema, metabody, r6owner, checkgen, dangling,
-# launder, execbomb, dbowner (.dump).
+# launder, execbomb, dbowner, vanish (.dump).
 set -euo pipefail
 SOCK="${1:?socket dir}"; PORT="${2:?port}"; SU="${3:?superuser}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -103,7 +103,30 @@ dump rd_execbomb execbomb
 base rd_dbowner
 q -U "$SU" -d rd_dbowner -c "ALTER TABLE items OWNER TO pg_database_owner"
 dump rd_dbowner dbowner "$SU"
-for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
+# Review round 5 (P5-1): pre-data code that runs, then erases every trace before the guard (renames and recreates its
+# functions, and drops the generated column and the originals from a deferred trigger at commit).
+base rd_vanish
+q -U app_runtime -d rd_vanish <<'SQL'
+CREATE FUNCTION public.helper() RETURNS int LANGUAGE plpgsql VOLATILE AS $$
+BEGIN
+  IF session_user <> 'drill_restore' THEN RETURN 1; END IF;
+  EXECUTE 'CREATE VIEW public.p5_proof AS SELECT ' || quote_literal(session_user || '@' || current_database()) || '::text AS ran_as';
+  ALTER FUNCTION public.a() RENAME TO a_old;
+  ALTER FUNCTION public.helper() RENAME TO helper_old;
+  CREATE FUNCTION public.a() RETURNS int LANGUAGE sql IMMUTABLE AS 'SELECT 1';
+  CREATE FUNCTION public.helper() RETURNS int LANGUAGE sql VOLATILE AS 'SELECT 1';
+  CREATE TEMP TABLE q (x int);
+  CREATE FUNCTION pg_temp.fin() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN
+    ALTER TABLE public.zz_vanish ALTER COLUMN g DROP EXPRESSION; DROP FUNCTION public.a_old(); DROP FUNCTION public.helper_old(); RETURN NULL; END $f$;
+  CREATE CONSTRAINT TRIGGER fin AFTER INSERT ON pg_temp.q DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.fin();
+  INSERT INTO pg_temp.q VALUES (1);
+  RETURN 1;
+END $$;
+CREATE FUNCTION public.a() RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN public.helper(); END $$;
+CREATE TABLE public.zz_vanish (id int, g int GENERATED ALWAYS AS (public.a()) STORED);
+SQL
+dump rd_vanish vanish
+for d in rd_clean rd_bomb rd_rls rd_ext rd_weird rd_schema rd_meta rd_r6 rd_checkgen rd_dangling rd_launder rd_execbomb rd_dbowner rd_vanish; do q -U "$SU" -d postgres -c "DROP DATABASE $d"; done
 # Text forms for the parser tests (no PostgreSQL binary needed to run them): the TOC listing without its timestamped
 # header, and the data section as pg_restore emits it.
 for f in "$HERE"/*.dump; do

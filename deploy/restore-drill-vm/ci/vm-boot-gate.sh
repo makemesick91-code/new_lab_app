@@ -10,7 +10,7 @@
 #   V3 a tampered manifest is refused before any VM boots
 #   V4 a revoked manifest is refused before any VM boots (PR-9)
 #   V5 a plain-SQL backup is refused: a structured archive is required (PR-6)
-#   V6 the restore-bomb archive boots the VM and ends FAIL:user_code_in_restore_path, recorded (PR-2)
+#   V6 the restore-bomb archive boots the VM and ends FAIL (its function does not exist during the index build), recorded
 #   V7 the signer's store verifies with both records against its head log (D10, PR-9)
 #   V8 the operator cannot read the signer's key (VR-4)
 #   V9 pre-data code that drops its own function is refused in the VM (P4P-1), recorded
@@ -85,7 +85,7 @@ check V4 "a revoked manifest is refused before any VM boots (PR-9)" "$([ "$rc" =
 rc="$(drill --expected-sha256 "$(sha "$W/plain.sql")" --manifest "$W/manifest" "$W/plain.sql")"; cp "$OUT/last.txt" "$OUT/V5.txt"
 check V5 "a plain-SQL backup is refused: a structured archive is required (PR-6)" "$([ "$rc" = 2 ] && grep -q 'custom-format archive is required' "$OUT/V5.txt"; echo $?)" "exit=$rc"
 rc="$(drill --expected-sha256 "$(sha "$W/bomb.dump")" --manifest "$W/manifest" "$W/bomb.dump")"; cp "$OUT/last.txt" "$OUT/V6.txt"
-check V6 "the restore-bomb archive boots the VM and ends FAIL:user_code_in_restore_path, recorded" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:user_code_in_restore_path ' "$OUT/V6.txt" && grep -q '^Evidence: RECORD 000002 ' "$OUT/V6.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V6.txt" | head -c 70)"
+check V6 "the restore-bomb archive boots the VM and ends FAIL, recorded (PR-2, P5-1)" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:' "$OUT/V6.txt" && grep -q '^Evidence: RECORD 000002 ' "$OUT/V6.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V6.txt" | head -c 70)"
 rc="$(drill --expected-sha256 "$(sha "$W/dangling.dump")" --manifest "$W/manifest" "$W/dangling.dump")"; cp "$OUT/last.txt" "$OUT/V9.txt"
 check V9 "pre-data code that drops its own function is refused in the VM, recorded (P4P-1)" "$([ "$rc" = 1 ] && grep -q '^Decision: FAIL:' "$OUT/V9.txt" && grep -q '^Evidence: RECORD 000003 ' "$OUT/V9.txt"; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V9.txt" | head -c 70)"
 v="$(sudo -n -u "$DMS_GATE_SIGNER_USER" -- "$DMS_GATE_SIGNER_COMMAND" verify 2>&1)"

@@ -98,20 +98,23 @@ it('restores the synthetic archive section by section as the restore role and de
         ->and($facts['units_left'] ?? null)->toBe('0');
 });
 
-it('refuses GO for an index-expression restore bomb: user code on a restore path (PR-2)', function () {
-    $facts = rdsrDrill('bomb');
+/** P5-1: no dump function exists while the restore evaluates anything: code-bearing archives fail with 42883. */
+function rdsrUndefinedFunction(array $facts, string $section): void
+{
+    expect($facts['sandbox_stage'] ?? null)->toBe('replay', json_encode($facts))
+        ->and($facts['sandbox_replay_section'] ?? null)->toBe($section)
+        ->and($facts['sandbox_replay_sqlstate'] ?? null)->toBe('42883')
+        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_20');
+}
 
-    expect($facts['sandbox_replay'] ?? null)->toBe('ok', json_encode($facts))
-        ->and($facts['sandbox_user_code_reachable'] ?? null)->not->toBe('0')
-        ->and($facts['decision'] ?? null)->toBe('FAIL:user_code_in_restore_path');
+it('refuses an index-expression restore bomb: the function does not exist when the index is built (PR-2, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('bomb'), 'post_data');
+    rdsrUndefinedFunction(rdsrDrill('execbomb'), 'post_data');
 });
 
-it('never runs row-security policy code during verification: verification fails instead (PR-5)', function () {
+it('never runs row-security policy code: the policy cannot even be created before the functions (PR-5, P5-1)', function () {
     // The host refuses this archive at its TOC (ROW SECURITY); this drives the guest directly to prove the inner layer.
-    $facts = rdsrDrill('rls');
-
-    expect($facts['decision'] ?? null)->toStartWith('FAIL:')
-        ->and($facts['sandbox_stage'] ?? null)->toBe('verify');
+    rdsrUndefinedFunction(rdsrDrill('rls'), 'post_data');
 });
 
 it('keeps a backslash line inside a function body as text: no meta-command runs (D5, PR-6)', function () {
@@ -131,36 +134,17 @@ it('enforces the extension allowlist inside the unit too, with allowlisted exten
         ->and($refused['decision'] ?? null)->toBe('FAIL:unit_exit_20');
 });
 
-it('refuses a CHECK constraint or generated column that calls user code during the load (P4V-1)', function () {
-    $facts = rdsrDrill('checkgen');
-
-    expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', json_encode($facts))
-        ->and($facts['sandbox_stage'] ?? null)->toBe('load_guard')
-        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+it('refuses a CHECK constraint or generated column that calls dump code: CREATE TABLE fails before any code runs (P4V-1, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('checkgen'), 'pre_data');
 });
 
-it('refuses pre-data code that drops the function it was called from: the dangling reference is caught (P4P-1)', function () {
-    $facts = rdsrDrill('dangling');
-
-    expect($facts['sandbox_replay_section'] ?? null)->toBe('load_guard', json_encode($facts))
-        ->and($facts['sandbox_stage'] ?? null)->toBe('load_guard')
-        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_21');
+it('refuses pre-data code that would drop its own function, or launder it into an extension: it never runs (P4P-1, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('dangling'), 'pre_data');
+    rdsrUndefinedFunction(rdsrDrill('launder', 'pgcrypto'), 'pre_data');
 });
 
-it('never lets the restore role add its own code to an allowlisted extension (P4P-1(b))', function () {
-    $facts = rdsrDrill('launder', 'pgcrypto');
-
-    expect($facts['sandbox_replay_section'] ?? null)->toBe('pre_data', json_encode($facts))
-        ->and($facts['sandbox_replay_sqlstate'] ?? null)->toBe('42501')
-        ->and($facts['decision'] ?? null)->toBe('FAIL:unit_exit_20');
-});
-
-it('counts every user function that ran during the restore (track_functions) and refuses GO (P4P-1)', function () {
-    $facts = rdsrDrill('execbomb');
-
-    expect((int) ($facts['sandbox_user_code_executed'] ?? 0))->toBeGreaterThan(0, json_encode($facts))
-        ->and($facts['sandbox_user_code_reachable'] ?? null)->not->toBe('0')
-        ->and($facts['decision'] ?? null)->toStartWith('FAIL:user_code_');
+it('refuses self-erasing pre-data code that got GO before the restore order changed (review round 5, P5-1)', function () {
+    rdsrUndefinedFunction(rdsrDrill('vanish'), 'pre_data');
 });
 
 it('counts runtime-owned objects from the restored catalog, for P5 after R6 (PR-3)', function () {

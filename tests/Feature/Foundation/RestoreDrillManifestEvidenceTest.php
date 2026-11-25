@@ -408,6 +408,8 @@ it('never signs a contradictory or invented record: the signer checks the reques
         'an image the signer does not pin' => [['DMS_DRILL_EVIDENCE_IMAGE_SHA256' => str_repeat('c', 64)], 'is not a drill image pinned'],
         'completed before it started' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2030-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:00:00Z'], 'out of order or not recent'],
         'a drill from long ago' => [['DMS_DRILL_EVIDENCE_STARTED_AT' => '2001-01-01T00:00:00Z', 'DMS_DRILL_EVIDENCE_COMPLETED_AT' => '2001-01-01T00:10:00Z'], 'out of order or not recent'],
+        'a duplicated, contradictory guest key (P5-3)' => [['DMS_DRILL_EVIDENCE_GUEST_ASSERTED' => $guest('vm_ifaces=lo', 'vm_ifaces=lo,restore=failed,user_code=7')], 'GUEST_ASSERTED is not the fixed key list'],
+        'an extra expected key (P5-3)' => [['DMS_DRILL_EVIDENCE_EXPECTED' => 'tables=2,rows=6,per_table_digest='.$h.',catalog_shape=1:2:0:2:0:0:1,tables=999'], 'EXPECTED is not the fixed key list'],
     ];
 });
 
@@ -473,5 +475,8 @@ it('publishes the head log atomically and removes a crashed staging directory un
         ->and($leftovers)->toBe([])
         ->and($evidence)->toContain('sync -- "$tmp"')
         ->and($evidence)->toContain('mv -f -- "$tmp" "$headlog"')
-        ->and($evidence)->toContain('the written record differs from the built record');
+        ->and($evidence)->toContain('the written record differs from the built record')
+        // P5-5: record, signature and staging directory are synced before the rename, the store directory after.
+        ->and($evidence)->toContain('sync -- "${stage}/record" "${stage}/record.sig" "$stage"')
+        ->and($evidence)->toContain('sync -- "$store"');
 });
