@@ -491,6 +491,24 @@ it('keeps the real-isolation workflow audited: one validation branch, read-only,
         ->and((string) file_get_contents(base_path('deploy/restore-drill-vm/ci/provision-drill-host.sh')))->toContain('"DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements"');
 });
 
+it('refuses, before any VM, an archive extension the signed contract does not name, and lets the guest create only the archive\'s own (R6-B8 review)', function () {
+    $orch = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
+    $gate = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/vm-boot-gate.sh'));
+    $check = strpos($orch, 'STAGE=archive_extensions');
+    $toc = strpos($orch, 'STAGE=archive_toc');
+    $disk = strpos($orch, 'STAGE=input_disk');
+
+    expect($check)->not->toBeFalse()
+        ->and($toc)->toBeLessThan($check)->and($check)->toBeLessThan($disk)
+        ->and($orch)->toContain('[[ ",${DMS_ENV_CONTRACT[DMS_ENV_EXTENSIONS]}," == *",${e}:"* ]] || refuse "the archive creates extension ${e}, which the signed environment contract does not name')
+        ->and($orch)->toContain('[extension_allowlist]="${DMS_ARCHIVE_EXTENSIONS:-none}"')
+        ->and($orch)->not->toContain('[extension_allowlist]="${EXTENSIONS:-none}"')
+        ->and($gate)->toContain('--manifest "$INBOX/manifest" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V24.txt"')
+        ->and($gate)->toContain("has V24 'which the signed environment contract does not name' && ! has V24 'VM boot' && recorded V24")
+        ->and($gate)->toContain('[ "$starts" = 17 ] && [ "$NREC" = 34 ]')
+        ->and(substr_count($gate, 'clean_after V2'))->toBe(4);
+});
+
 it('prunes the drill image to exactly the allowlist: production\'s pg_stat_statements stays, every other extension goes (R6-B8)', function () {
     $dir = sys_get_temp_dir().'/rdvm-prune-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700, true);

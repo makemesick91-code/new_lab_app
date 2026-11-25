@@ -12,6 +12,8 @@
 #   V6, V9  code-bearing archives fail in the VM (P5-1), recorded;  V11  an interrupted drill is ABORTED, recorded
 #   V12 after every drill: no QEMU process or unit, no VM file, no runner run directory
 #   V14 the operator cannot open /dev/kvm;  V15 every drill has a STARTED record and exactly one outcome
+#   V21-V24 (R6-B8) the pg_stat_statements image: GO under a contract naming its exact version (V21); another version
+#       (V22) or a contract that does not name the archive's extension (V24) is refused before any VM; V23 image facts
 #   V7  the signer verifies its store; V13 the operator verifies the exported store against the witness log with the
 #       signer key pinned at provisioning, before any record existed (R6C-5);  V8 the operator cannot read the key
 # Usage: vm-boot-gate.sh <out dir> <pinned anchor written by provision-drill-host.sh>
@@ -205,6 +207,7 @@ check V19 "production pinned to array_nulls=off: an array with a NULL element fa
 clean_after V19
 rc="$(drill --expected-sha256 "$(sha "$W/arrnull.dump")" --manifest "$INBOX/manifest" "$INBOX/arrnull.dump")"; cp "$OUT/last.txt" "$OUT/V20.txt"
 check V20 "the same archive under the contract with array_nulls=on is GO, restored under that environment (F3)" "$([ "$rc" = 0 ] && has V20 '^Decision: GO ' && has V20 '^ENV_CONTRACT=VERIFIED ' && recorded V20; echo $?)" "exit=$rc $(grep '^Decision' "$OUT/V20.txt" | head -c 40)"
+clean_after V20
 
 # --- R6-B8: the production-compatible image (allowlist pg_stat_statements) -----------------------------------------
 # The image was pruned to exactly the allowlist: its properties name pg_stat_statements and nothing else.
@@ -214,7 +217,12 @@ check V21 "a production-shaped archive with pg_stat_statements restores GO under
 clean_after V21
 rc="$(ENVC="$INBOX/env-contract-pgstat-badver" drill --expected-sha256 "$(sha "$W/pgstat.dump")" --manifest "$INBOX/manifest-pgstat-badver" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V22.txt"
 check V22 "a contract naming another extension version is refused before any VM boots, and recorded (R6-B8, exact class)" "$([ "$rc" = 2 ] && has V22 'not the version the drill image has' && ! has V22 'VM boot' && recorded V22; echo $?)" "exit=$rc"
-clean_after V20
+clean_after V22
+# R6-B8 review MEDIUM-1: an archive that creates an extension the signed contract does not name (the default contract
+# says none) is refused before any VM boots: its version would otherwise restore unverified.
+rc="$(drill --expected-sha256 "$(sha "$W/pgstat.dump")" --manifest "$INBOX/manifest" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V24.txt"
+check V24 "an archive creating an extension the signed contract does not name is refused before any VM boots, and recorded (R6-B8)" "$([ "$rc" = 2 ] && has V24 'which the signed environment contract does not name' && ! has V24 'VM boot' && recorded V24; echo $?)" "exit=$rc"
+clean_after V24
 
 # --- V14: KVM belongs to the QEMU account only ------------------------------------------------------------------------
 if id -nG | tr ' ' '\n' | grep -qx kvm; then limit V14 "the CI user is in the kvm group on this runner image" "kvm_member"
@@ -236,7 +244,7 @@ check V13 "the operator verifies the exported store against the witness with the
 check V8 "the operator cannot read the signer's key" "$([ ! -r /var/lib/dmsdrill-signer/signing-key ]; echo $?)" "$(sudo stat -c '%U %a' /var/lib/dmsdrill-signer/signing-key 2> /dev/null)"
 for f in "$OUT"/evidence/store/*/record; do grep -h '^DMS_DRILL_EVIDENCE_\(SEQ\|RUN_ID\|INSTALL\|DECISION\)=' "$f" | tr '\n' ' '; echo; done > "$OUT/evidence/decisions.txt"
 starts="$(grep -c 'DECISION=STARTED' "$OUT/evidence/decisions.txt")"
-check V15 "every drill has a STARTED record and exactly one outcome (contract 5)" "$([ "$starts" = 16 ] && [ "$NREC" = 32 ]; echo $?)" "started=${starts} records=${NREC}"
+check V15 "every drill has a STARTED record and exactly one outcome (contract 5)" "$([ "$starts" = 17 ] && [ "$NREC" = 34 ]; echo $?)" "started=${starts} records=${NREC}"
 echo "TOTAL pass=${PASS} fail=${FAIL} limitation=${LIMIT}" >> "$RESULTS"
 cat "$RESULTS"
 [ "$FAIL" = 0 ]
