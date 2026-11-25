@@ -296,13 +296,18 @@ BEGIN
       q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE pg_catalog.char_length(pg_catalog.rtrim(CAST((%s) AS pg_catalog.text))) OPERATOR(pg_catalog.>) %s', r.rel, r.ex, r.tmod OPERATOR(pg_catalog.-) 4);
     END IF;
     -- R6F-P18 (fix verification): the same for every element of a length-limited character array, and for the bit
-    -- length of bit(n) (exactly n) and varbit(n) (at most n).
+    -- length of bit(n) (exactly n) and varbit(n) (at most n), and of every element of their arrays: these are the only
+    -- types whose explicit cast silently differs from the assignment COPY applies.
     IF r.tid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog._varchar'::pg_catalog.regtype, 'pg_catalog._bpchar'::pg_catalog.regtype]::pg_catalog.oid[]) AND r.tmod OPERATOR(pg_catalog.>) 4 THEN
       q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE EXISTS (SELECT 1 FROM pg_catalog.unnest(CAST((%s) AS pg_catalog.text[])) AS u(v) WHERE pg_catalog.char_length(pg_catalog.rtrim(u.v)) OPERATOR(pg_catalog.>) %s)', r.rel, r.ex, r.tmod OPERATOR(pg_catalog.-) 4);
     END IF;
     IF r.tid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog.bit'::pg_catalog.regtype, 'pg_catalog.varbit'::pg_catalog.regtype]::pg_catalog.oid[]) AND r.tmod OPERATOR(pg_catalog.>) 0 THEN
       q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE pg_catalog.bit_length(CAST((%s) AS pg_catalog.varbit)) OPERATOR(pg_catalog.%s) %s', r.rel, r.ex,
         CASE WHEN r.tid OPERATOR(pg_catalog.=) 'pg_catalog.bit'::pg_catalog.regtype THEN '<>' ELSE '>' END, r.tmod);
+    END IF;
+    IF r.tid OPERATOR(pg_catalog.=) ANY (ARRAY['pg_catalog._bit'::pg_catalog.regtype, 'pg_catalog._varbit'::pg_catalog.regtype]::pg_catalog.oid[]) AND r.tmod OPERATOR(pg_catalog.>) 0 THEN
+      q := q OPERATOR(pg_catalog.||) pg_catalog.format('SELECT pg_catalog.count(*) FROM ONLY %s WHERE EXISTS (SELECT 1 FROM pg_catalog.unnest(CAST((%s) AS pg_catalog.varbit[])) AS u(v) WHERE pg_catalog.bit_length(u.v) OPERATOR(pg_catalog.%s) %s)', r.rel, r.ex,
+        CASE WHEN r.tid OPERATOR(pg_catalog.=) 'pg_catalog._bit'::pg_catalog.regtype THEN '<>' ELSE '>' END, r.tmod);
     END IF;
   END LOOP;
   -- R6F-P11: every index with an expression or a predicate: its keys are evaluated (an error in a real build shows
