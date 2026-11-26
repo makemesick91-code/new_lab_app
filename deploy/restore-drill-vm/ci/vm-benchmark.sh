@@ -145,14 +145,17 @@ for n in B1 B2 B3; do
   dec="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_DECISION=//p')"; rsha="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_BACKUP_SHA256=//p')"
   dig() { printf '%s' "$1" | tr ',' '\n' | sed -n "s/^$2=//p"; }
   same=1; [ "$dec" = GO ] && { [ -z "$rsha" ] || [ "$rsha" = "$sha" ]; } && [ -n "$(dig "$exp" per_table_digest)" ] \
-    && [ "$(dig "$exp" per_table_digest)" = "$(dig "$gst" per_table_digest)" ] && [ "$(dig "$exp" rows)" = "$(dig "$gst" rows)" ] && same=0
+    && [ "$(dig "$exp" per_table_digest)" = "$(dig "$gst" per_table_digest)" ] && [ "$(dig "$exp" catalog_shape)" = "$(dig "$gst" catalog_shape)" ] \
+    && [ "$(dig "$exp" tables)" = "$(dig "$gst" tables)" ] && [ "$(dig "$gst" restore)" = ok ] && [ "$(dig "$gst" user_code_executed)" = 0 ] \
+    && [ "$(dig "$gst" vm_ifaces)" = lo ] && same=0
+  # (The guest asserts the per-table digest, which covers every table's row count; the host's row total is EXPECTED's.)
   printf '%s\n' "$rec" > "$OUT/$n-record.txt"
   peaks="$(cat "$OUT/$n-peaks.txt" 2> /dev/null)"
   isolated=1; [[ "$peaks" == *"user=${QEU} "* ]] && [[ "$peaks" == *"0::/system.slice/dmsqemu.service"* ]] \
     && [ "$(sed -n 's/.*netns_qemu=\([^ ]*\) .*/\1/p' <<< "$peaks")" != "$(sed -n 's/.*netns_host=//p' <<< "$peaks")" ] && isolated=0
   check "$n" "the synthetic archive restores GO in the VM, digests equal, signed and witnessed, QEMU isolated" \
     "$([ "$rc" = 0 ] && has "$n" 'Decision: GO ' && recorded "$n" && [ "$same" = 0 ] && [ "$isolated" = 0 ]; echo $?)" \
-    "exit=${rc} record=${seq:-none} decision=${dec:-none} backup_sha_bound=$([ "$rsha" = "$sha" ] && echo yes || echo "${rsha:-absent}") digests_equal=$([ "$same" = 0 ] && echo yes || echo no) isolated=$([ "$isolated" = 0 ] && echo yes || echo no) tables=$(dig "$gst" tables) rows=$(dig "$gst" rows)"
+    "exit=${rc} record=${seq:-none} decision=${dec:-none} backup_sha_bound=$([ "$rsha" = "$sha" ] && echo yes || echo "${rsha:-absent}") digests_equal=$([ "$same" = 0 ] && echo yes || echo no) isolated=$([ "$isolated" = 0 ] && echo yes || echo no) tables=$(dig "$gst" tables) rows_expected=$(dig "$exp" rows) guest_ifaces=$(dig "$gst" vm_ifaces) user_code_executed=$(dig "$gst" user_code_executed)"
   bench "$n-measured" "$(cat "$OUT/$n-wall.txt") $(vm_phase "$n") $(cpu_summary "$n") $(sed 's/ user=.*//' "$OUT/$n-peaks.txt" 2> /dev/null) tmpfs_mib_by_d6_formula=$(( $(sed -n "s/^BENCH  ${n}-archive .*copy_text_bytes=\([0-9]*\).*/\1/p" "$RESULTS") * 4 / 1048576 + 256 ))"
 done
 # B4: above the D6 envelope, refused before any VM boots (the limit is enforced, never relaxed), and recorded.
