@@ -1,0 +1,47 @@
+# OD-R6-1 — OS-level negatives for the dedicated migration OS account (DMS-SPN4-READY-PILOT-1; owner directive
+# "REL-1 FINAL CLOSURE AND MANDATORY ENGINEERING RESUMPTION" §7). Validation branch only: never on the base branch.
+#
+# Disposable infrastructure only: a fresh GitHub-hosted Linux VM, discarded afterwards (zero cost, public repository).
+#   Trigger:     push to the one validation branch below. No pull_request, no schedule, no workflow_run, no tags.
+#   Data:        synthetic only: design role names, a private PostgreSQL 16 cluster on a Unix socket, random
+#                disposable secrets. No production host, backup, credential or patient data; no secret, no environment.
+#   Identity:    a read-only checkout (persist-credentials: false). Permissions: contents: read.
+#   Actions:     pinned by full commit SHA (checkout v4.4.0; setup-php 2.40.0, the commit v2 resolves to).
+name: od-r6-1-migration-os-account
+
+on:
+  push:
+    branches:
+      - validation/od-r6-1-migration-os-account
+
+permissions:
+  contents: read
+
+concurrency:
+  group: od-r6-1-migration-os-account-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  os-negatives:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0 (= v2)
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath, gd, exif
+          coverage: none
+
+      - name: Composer install
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: OS-level negatives (root on the disposable VM)
+        run: sudo --preserve-env=GITHUB_ACTIONS bash deploy/od-r6-1/os-negatives.sh "$GITHUB_WORKSPACE"
