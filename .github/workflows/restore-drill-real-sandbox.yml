@@ -66,7 +66,8 @@ jobs:
 
   vm-boot:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # 180: the gate plus the R6-B17 synthetic benchmark (each drill keeps its own D6 30-minute limit).
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -104,10 +105,34 @@ jobs:
           sudo -n -u dmsdrill-qemu test -r /dev/kvm -a -w /dev/kvm || { echo "KVM is not usable by the QEMU account: the drill never falls back to emulation"; exit 1; }
       - name: VM boot gate (the installed orchestrator as the runner, end to end under KVM)
         run: bash deploy/restore-drill-vm/ci/vm-boot-gate.sh "$RUNNER_TEMP/gate-vm" "$RUNNER_TEMP/gate-vm/pinned-anchor"
+      - name: R6-B17 synthetic recovery benchmark (same drill host and D6 limits; synthetic archives only)
+        run: bash deploy/restore-drill-vm/ci/vm-benchmark.sh "$RUNNER_TEMP/gate-vm/benchmark"
       - name: Results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: restore-drill-vm-boot
           path: ${{ runner.temp }}/gate-vm/
+          retention-days: 30
+
+  clinical-asset-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: PostgreSQL 16, GNU time, gpg and zstd (Ubuntu archive); the packaged cluster is removed
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16 time gnupg zstd
+          sudo pg_dropcluster --stop 16 main || true
+      - name: R6-B17 synthetic clinical archive benchmark (about 1 GiB; synthetic files only)
+        run: bash deploy/restore-drill-vm/ci/clinical-asset-benchmark.sh "$RUNNER_TEMP/clinical-benchmark"
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clinical-asset-benchmark
+          path: ${{ runner.temp }}/clinical-benchmark/
           retention-days: 30
