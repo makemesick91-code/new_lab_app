@@ -22,8 +22,10 @@
 | disposable cluster provisioned for it. The private role-test environment
 | variables name the socket directory, port, database, login role, owner
 | role, a non-member role and the runtime login. Without them the group is
-| SKIPPED, and a skip is never reported as a pass; the CI role-separation job
-| (PB-7) runs it.
+| SKIPPED, and a skip is never reported as a pass. NO CI job provides them
+| yet (review round 2, finding 2): until PB-7 adds the PostgreSQL 16
+| role-separation job, group B SKIPS in CI, and its only evidence is the
+| private-cluster rehearsal recorded outside the repository.
 |
 | Selected by the `FoundationGovernance` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper
@@ -31,8 +33,12 @@
 */
 
 use App\Support\Database\MigrationConnection;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Connectors\ConnectionFactory;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\MigrationEnded;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Database\PostgresConnection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -95,7 +101,9 @@ function fgmcGoodSession(array $overrides = []): array
         'transport' => 'socket',
         'auth' => 'peer:dms-migrate',
         'login_kind' => 'plain',
+        'owner_kind' => 'plain',
         'membership' => 'noinherit',
+        'login_creates' => 'no',
     ], $overrides);
 }
 
@@ -183,7 +191,33 @@ it('fails closed before connecting on every misconfiguration', function (array $
     'owner role postgres' => [['server_options.role' => 'postgres'], 'owner role is not configured'],
     'owner role pg_ reserved' => [['server_options.role' => 'pg_write_all_data'], 'owner role is not configured'],
     'login equals owner' => [['username' => 'fgmc_owner'], 'must differ'],
+    // Review round 2, finding 1: a declared name would make the runtime connection
+    // the default inside every migration.
+    'a declared name' => [['name' => 'pgsql'], 'unsupported option'],
 ]);
+
+it('refuses before connecting when a libpq variable could redirect the session (review round 2, finding 6)', function (string $variable) {
+    putenv($variable.'=fgmc-redirect');
+
+    try {
+        expect(fgmcRefusal(fgmcConfig()))->toContain('libpq environment variable')
+            ->and(fgmcRefusal(fgmcConfig()))->not->toContain('fgmc-redirect');
+    } finally {
+        putenv($variable);
+    }
+})->with(['PGHOSTADDR', 'PGSERVICE', 'PGSERVICEFILE']);
+
+it('refuses a built connection that does not keep its own name (review round 2, finding 1)', function () {
+    $pdo = fgmcSessionPdo(fgmcGoodSession());
+    $factory = Mockery::mock(ConnectionFactory::class);
+    $factory->shouldReceive('make')->andReturnUsing(
+        fn (array $config, string $name) => new PostgresConnection(fn () => $pdo, $config['database'], '', $config + ['name' => 'pgsql'])
+    );
+    MigrationConnection::register(app('db'), $factory);
+    fgmcUse(fgmcConfig());
+
+    expect(fn () => DB::connection('pgsql_migrate'))->toThrow(RuntimeException::class, 'must keep its own name');
+});
 
 it('never echoes a configured value in any of its refusals', function (array $break) {
     $probe = fgmcConfig([
@@ -248,11 +282,84 @@ it('verifies the session through the wired extension before the PDO is handed ou
     'over TCP' => [fgmcGoodSession(['transport' => 'tcp']), false],
     'password authentication' => [fgmcGoodSession(['auth' => 'scram-sha-256:fgmc_login']), false],
     'trust (no identity)' => [fgmcGoodSession(['auth' => '']), false],
-    'a superuser login' => [fgmcGoodSession(['login_kind' => 'super']), false],
+    'a superuser login' => [fgmcGoodSession(['login_kind' => 'privileged']), false],
     'an inheriting membership' => [fgmcGoodSession(['membership' => 'inherit']), false],
-    'no membership' => [fgmcGoodSession(['membership' => null]), false],
+    'no membership' => [fgmcGoodSession(['membership' => 'none']), false],
+    'membership unknown' => [fgmcGoodSession(['membership' => null]), false],
+    // Review round 2, findings 3 and 5.
+    'an owner role that can log in or is elevated' => [fgmcGoodSession(['owner_kind' => 'privileged']), false],
+    'a login that can create in public itself' => [fgmcGoodSession(['login_creates' => 'yes']), false],
     'no row' => [false, false],
 ]);
+
+/** A migrator double whose current run uses $connection. */
+function fgmcMigrator(?string $connection): Migrator
+{
+    $migrator = Mockery::mock(Migrator::class);
+    $migrator->shouldReceive('getConnection')->andReturn($connection);
+
+    return $migrator;
+}
+
+/** A MigrationEnded event for a migration that declares $connection. */
+function fgmcMigrationEnded(?string $connection = null): MigrationEnded
+{
+    $migration = new class($connection) extends Migration
+    {
+        public function __construct(?string $connection)
+        {
+            $this->connection = $connection;
+        }
+    };
+
+    return new MigrationEnded($migration, 'up');
+}
+
+/** A database manager double whose pgsql_migrate catalog check returns $row. */
+function fgmcCatalogDb(array $row): DatabaseManager
+{
+    $connection = Mockery::mock(Connection::class);
+    $connection->shouldReceive('selectOne')->once()->andReturn((object) $row);
+    $db = Mockery::mock(DatabaseManager::class);
+    $db->shouldReceive('connection')->with('pgsql_migrate')->andReturn($connection);
+
+    return $db;
+}
+
+it('leaves every migration run on another connection untouched (review round 2, finding 4)', function () {
+    $db = Mockery::mock(DatabaseManager::class);
+    $db->shouldNotReceive('connection');
+
+    MigrationConnection::assertAfterMigration(fgmcMigrationEnded(), fgmcMigrator('pgsql'), $db);
+    MigrationConnection::assertAfterMigration(fgmcMigrationEnded(), fgmcMigrator(null), $db);
+
+    expect(true)->toBeTrue();
+});
+
+it('checks the server after every migration of a pgsql_migrate run and refuses what the scan cannot see (review round 2, finding 4)', function (?string $declared, array $row, ?string $refusal) {
+    config(['database.connections.pgsql_migrate.server_options.role' => 'fgmc_owner']);
+    $db = $declared === null || $declared === 'pgsql_migrate' ? fgmcCatalogDb($row) : Mockery::mock(DatabaseManager::class);
+
+    $check = fn () => MigrationConnection::assertAfterMigration(fgmcMigrationEnded($declared), fgmcMigrator('pgsql_migrate'), $db);
+
+    if ($refusal === null) {
+        $check();
+        expect(true)->toBeTrue();
+    } else {
+        expect($check)->toThrow(RuntimeException::class, $refusal);
+    }
+})->with([
+    'still the owner, nothing foreign' => [null, ['cur' => 'fgmc_owner', 'foreign_owned' => 0], null],
+    'the migration names pgsql_migrate itself' => ['pgsql_migrate', ['cur' => 'fgmc_owner', 'foreign_owned' => 0], null],
+    'the migration chose the runtime connection' => ['pgsql', [], 'selected another connection'],
+    'the session left the owner role' => [null, ['cur' => 'fgmc_login', 'foreign_owned' => 0], 'no longer runs as the owner role'],
+    'an object owned by another role' => [null, ['cur' => 'fgmc_owner', 'foreign_owned' => 1], 'owned by another role'],
+    'no answer' => [null, ['cur' => 'fgmc_owner'], 'owned by another role'],
+]);
+
+it('wires the backstop to MigrationEnded', function () {
+    expect(app('events')->hasListeners(MigrationEnded::class))->toBeTrue();
+});
 
 it('leaves no schema dump that would load around the startup role', function () {
     foreach (['sql', 'dump'] as $extension) {
@@ -311,7 +418,7 @@ function fgmcSqlState(PDO $pdo, string $sql): string
 }
 
 $fgmcSkip = fn () => ! fgmcClusterConfigured();
-$fgmcSkipReason = 'needs the private PostgreSQL 16 role-test cluster (R6_ROLE_TEST_*); run by PB-7';
+$fgmcSkipReason = 'needs the private PostgreSQL 16 role-test cluster (R6_ROLE_TEST_*); no CI job provides it until PB-7';
 
 it('runs every session as the owner role over a socket by peer, also after a reconnect and a RESET ROLE', function () {
     fgmcUse(fgmcClusterConfig());
@@ -374,9 +481,12 @@ it('migrates the whole schema from empty with every object owned by the owner ro
         "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
           where n.nspname = 'public' and c.relkind in ('r','p','S','v','m','i','I')"
     )->fetchColumn();
+    // Review round 2, finding 8: every relation kind (composite and foreign tables
+    // included), every type, and the schema itself; the earlier type filter
+    // (typtype 'c' with typrelid 0) could never match.
     $foreignRelations = $pdo->query(
         "select c.relname || ':' || pg_get_userbyid(c.relowner) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname = 'public' and c.relkind in ('r','p','S','v','m','i','I') and pg_get_userbyid(c.relowner) <> ".$pdo->quote($owner)
+          where n.nspname = 'public' and pg_get_userbyid(c.relowner) <> ".$pdo->quote($owner)
     )->fetchAll(PDO::FETCH_COLUMN);
     $foreignFunctions = $pdo->query(
         "select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -384,11 +494,44 @@ it('migrates the whole schema from empty with every object owned by the owner ro
     )->fetchAll(PDO::FETCH_COLUMN);
     $foreignTypes = $pdo->query(
         "select t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace
-          where n.nspname = 'public' and t.typtype in ('e','d','c') and t.typrelid = 0 and pg_get_userbyid(t.typowner) <> ".$pdo->quote($owner)
+          where n.nspname = 'public' and pg_get_userbyid(t.typowner) <> ".$pdo->quote($owner)
     )->fetchAll(PDO::FETCH_COLUMN);
+    $schemaOwner = $pdo->query("select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'public'")->fetchColumn();
 
     expect($relations)->toBeGreaterThan(186)
         ->and($foreignRelations)->toBe([])
         ->and($foreignFunctions)->toBe([])
-        ->and($foreignTypes)->toBe([]);
+        ->and($foreignTypes)->toBe([])
+        ->and($schemaOwner)->toBe($owner);
+})->skip($fgmcSkip, $fgmcSkipReason);
+
+it('rolls back a migration that leaves the owner role through dynamic SQL, by the backstop (review round 2, finding 4)', function () {
+    fgmcUse(fgmcClusterConfig());
+    $dir = sys_get_temp_dir().'/fgmc-backstop-'.bin2hex(random_bytes(4));
+    mkdir($dir);
+    $file = $dir.'/2099_01_01_000001_fgmc_backstop.php';
+    // No static scan can read this role change: the statement is assembled at run time.
+    file_put_contents($file, <<<'PHP'
+        <?php
+        use Illuminate\Database\Migrations\Migration;
+        use Illuminate\Support\Facades\DB;
+        return new class extends Migration {
+            public function up(): void {
+                DB::statement('create table public.fgmc_backstop (id int)');
+                DB::statement("do \$fgmc\$ begin execute format('%s %s none', 'set', 'role'); end \$fgmc\$");
+            }
+        };
+        PHP);
+
+    try {
+        expect(fn () => Artisan::call('migrate', ['--database' => 'pgsql_migrate', '--path' => $dir, '--realpath' => true, '--force' => true]))
+            ->toThrow(RuntimeException::class, 'no longer runs as the owner role');
+
+        $pdo = fgmcPdo(fgmcEnv('RUNTIME'), (string) fgmcEnv('RUNTIME_PASSWORD'));
+        expect($pdo->query("select to_regclass('public.fgmc_backstop') is not null")->fetchColumn())->toBeFalse()
+            ->and((int) $pdo->query("select count(*) from public.migrations where migration = '2099_01_01_000001_fgmc_backstop'")->fetchColumn())->toBe(0);
+    } finally {
+        @unlink($file);
+        @rmdir($dir);
+    }
 })->skip($fgmcSkip, $fgmcSkipReason);

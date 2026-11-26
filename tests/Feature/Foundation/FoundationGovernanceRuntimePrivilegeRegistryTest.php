@@ -206,9 +206,39 @@ it('refuses a migration that would grant, revoke, change a role or change owners
     ['SET SESSION AUTHORIZATION legacy_author', 'SET SESSION AUTHORIZATION'],
     ['RESET SESSION AUTHORIZATION', 'RESET SESSION AUTHORIZATION'],
     ['RESET ROLE', 'RESET ROLE'],
-    ["SELECT set_config('role', 'dms_owner', false)", 'set_config role'],
+    ["SELECT set_config('role', 'dms_owner', false)", 'set_config'],
     ['DISCARD ALL', 'DISCARD ALL'],
+    // R6-B2b review round 2: the spellings PostgreSQL 16 accepts that round 1 missed.
+    ['SET "role" = none', 'SET ROLE'],
+    ['SET SESSION "role" none', 'SET ROLE'],
+    ['SET/**/ROLE none', 'SET ROLE'],
+    ["SELECT set_config(E'role', 'x', false)", 'set_config'],
+    ['SELECT "set_config"(?, ?, false)', 'set_config'],
+    ['DISCARD/**/ALL', 'DISCARD ALL'],
 ]);
+
+it('scans code that follows a block comment and refuses a migration that picks its own connection (review round 2)', function (string $body, string $label) {
+    $dir = fgrprMigrations([
+        '2030_01_01_000002_own_connection' => fgrprMigration('', $body),
+    ]);
+
+    expect(fgrprRegistry([], $dir)->forbiddenSqlErrors())
+        ->toContain("migration 2030_01_01_000002_own_connection line 7 runs {$label}: privileges and roles are provisioning (R6-B3), never a migration (D-Q3-b)");
+})->with([
+    'code after a leading block comment' => ["/* harmless */ Illuminate\\Support\\Facades\\DB::statement('SET ROLE none');", 'SET ROLE'],
+    'a connection property' => ["protected \$connection = 'pgsql'; public function x(): void {}", 'connection property'],
+    'a typed connection property' => ['protected ?string $connection = null;', 'connection property'],
+    'a named DB connection' => ["Illuminate\\Support\\Facades\\DB::connection('pgsql')->statement('select 1');", 'named connection'],
+    'a named Schema connection' => ["Schema::connection(\"pgsql\")->create('x', fn (\$t) => null);", 'named connection'],
+]);
+
+it('still allows the unnamed default connection the migrations use to branch on the driver', function () {
+    $dir = fgrprMigrations([
+        '2030_01_01_000003_driver_branch' => fgrprMigration('', "if (Illuminate\\Support\\Facades\\DB::connection()->getDriverName() === 'pgsql') { /* SET ROLE in a comment only */ }"),
+    ]);
+
+    expect(fgrprRegistry([], $dir)->forbiddenSqlErrors())->toBe([]);
+});
 
 it('agrees with the guards PostgreSQL already enforces: a table that refuses UPDATE or DELETE is never FULL_DML', function () {
     $guarded = collect(DB::select(<<<'SQL'

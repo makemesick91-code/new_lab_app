@@ -30,6 +30,7 @@ use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\MigrationEnded;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -151,6 +152,21 @@ class AppServiceProvider extends ServiceProvider
         $this->registerPatientDocumentRateLimiter();
         $this->refuseForbiddenConsoleCommands();
         $this->registerDoctorSessionLeaseListener();
+        $this->registerMigrationConnectionBackstop();
+    }
+
+    /**
+     * DMS-SPN4-READY-PILOT-1 R6-B2b review round 2 (finding 4): after every
+     * migration of a `pgsql_migrate` run, the server must still report the owner
+     * role and no object in `public` owned by another role (see
+     * MigrationConnection::assertAfterMigration). Explicit Event::listen() in
+     * boot(), as the doctor session-lease listener below explains.
+     */
+    private function registerMigrationConnectionBackstop(): void
+    {
+        Event::listen(MigrationEnded::class, function (MigrationEnded $event): void {
+            MigrationConnection::assertAfterMigration($event, $this->app->make('migrator'), $this->app->make('db'));
+        });
     }
 
     /**
