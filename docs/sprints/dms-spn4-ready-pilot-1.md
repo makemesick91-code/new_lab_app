@@ -1668,7 +1668,7 @@ This closure record itself contains no credential, private key, raw dump or clin
 | Record / signature SHA-256 | `7185445227d75334d2293239bc1b5621cdaea3b498103fe8f3c73b9fe2d162fc` / `9ffd62161134de7738ec95dad23d6cb71bf08d74a338dc6fcbce3af776910ba7` |
 | Deploy | ID **`20261126-033148`**: `start` 03:31:48, runner finished 03:33:40 (11:31:48 → 11:33:40), outside 02:25–02:40 WITA. One start; no retry. |
 | `verify 20261126-033148` | `DEPLOY_APPROVED_TARGET_MATCH=YES (417d788c6f08b3354083629b002d7497ee8ec298)`, `DEPLOY RUNNER OK`, `final exit=0` |
-| Pre-deploy dump | `pre_auto_deploy_20261126-033150.sql`, 35,048,246 bytes, verified inside the deploy (9/9 GO) before the checkout |
+| Pre-deploy dump | The deploy's own database dump (35,048,246 bytes), verified inside the deploy (9/9 GO) before the checkout |
 | Post-deploy | Every read-only check passed. `HEAD=417d788c`, `TRACKED_MODIFIED=0`, units and timers unchanged, locks idle; privilege drift NONE; sudo policy LEAST_PRIVILEGE; HTTP smoke 200/403; unauthenticated protected pages redirect to login; application ERROR lines unchanged (166 before and after) |
 | Off-host backup before the release | BK-2 package `BK2-20261125T183002Z`, delivered and verified 2026-11-26 03:04 (25/25, 0 pending). Evidence, not a gate (rule 232). |
 
