@@ -53,6 +53,17 @@ const CTRG_CG19_PRE_REMOVAL_SHA256 = '4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d2
 const CTRG_CG19_TOKENS = ['BranchContext', 'PatientDataCompleteness', 'LabIntegration'];
 const CTRG_CG19_ANCHOR = "|LabClinicCalendarBoundary|InventoryClinicCalendarBoundary'";
 
+// O-CI-1 (owner decision "REL-1 ACCEPTANCE AND POST-DEPLOYMENT INTEGRATION" §5, 2026-11-26): the hosted critical gate
+// installs and selects the PostgreSQL 16 client. Like REM-1 it is NOT a CG-16 CI trigger class: it adds exactly one
+// pinned block of two steps after the Poppler step of `critical_test_gate`, released with its sprint. It applies onto
+// the REM-1 file and onto its B5 rollback target. Also pinned in the register and the SPN4 sprint record.
+const CTRG_OCI1_SHA256 = '70b84f346f00e79b2cb1fdd929208ed075011e61101c1c78026b150f28c7a740';
+const CTRG_OCI1_PRE_REMOVAL_SHA256 = '64d37f0cd350effa4fb668d9ad36515f4dde31f32dd395b0070426267e26099d';
+const CTRG_OCI1_BLOCK = 'tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt';
+const CTRG_OCI1_BLOCK_SHA256 = 'f39b773c13c9dc7961c3ca2fa5381a0050bb46e4464c43614b0666127f196562';
+const CTRG_OCI1_HEAD = "          pdftoppm -v\n\n";
+const CTRG_OCI1_TAIL = '      # CICD-CTRL-3 — hard production-database isolation guard. Runs BEFORE any';
+
 // The exact lines the removal deletes: pre-removal lines 7–9 and 55–56.
 const CTRG_PUSH_LINES = [
     '  push:',
@@ -159,21 +170,50 @@ function ctrgDeselect(string $content): string
     return str_replace($selected, CTRG_CG19_ANCHOR, $content);
 }
 
-/** The four approved contents, derived from the checked-in file in any of its approved states. */
+/** O-CI-1: the pinned block of two steps, verified against its pinned SHA-256. */
+function ctrgOci1Block(): string
+{
+    $block = (string) file_get_contents(base_path(CTRG_OCI1_BLOCK));
+    expect(hash('sha256', $block))->toBe(CTRG_OCI1_BLOCK_SHA256, 'the O-CI-1 block changed without a re-pin');
+
+    return $block;
+}
+
+/** O-CI-1: $content with exactly the pinned block inserted after the Poppler step of the hosted critical gate. */
+function ctrgOci1Apply(string $content): string
+{
+    expect(substr_count($content, CTRG_OCI1_HEAD.CTRG_OCI1_TAIL))->toBe(1);
+
+    return str_replace(CTRG_OCI1_HEAD.CTRG_OCI1_TAIL, CTRG_OCI1_HEAD.ctrgOci1Block().CTRG_OCI1_TAIL, $content);
+}
+
+/** The inverse of ctrgOci1Apply(), used only to derive the approved states from the checked-in file. */
+function ctrgOci1Strip(string $content): string
+{
+    $applied = CTRG_OCI1_HEAD.ctrgOci1Block().CTRG_OCI1_TAIL;
+    expect(substr_count($content, $applied))->toBe(1);
+
+    return str_replace($applied, CTRG_OCI1_HEAD.CTRG_OCI1_TAIL, $content);
+}
+
+/** The six approved contents, derived from the checked-in file in any of its approved states. */
 function ctrgStates(): array
 {
     $current = ctrgWorkflowRaw();
     $sha = hash('sha256', $current);
-    $approved = [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256, CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256];
+    $approved = [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256, CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256,
+        CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256];
     // (`toContain` is variadic, so the reason lives in `toBeTrue`.)
     expect(in_array($sha, $approved, true))
-        ->toBeTrue("the workflow ({$sha}) must be in one of the four approved states; any other change needs its own owner-approved re-pin");
+        ->toBeTrue("the workflow ({$sha}) must be in one of the six approved states; any other change needs its own owner-approved re-pin");
 
     $post = match ($sha) {
         CTRG_PRE_REMOVAL_SHA256 => ctrgRemove($current),
         CTRG_POST_REMOVAL_SHA256 => $current,
         CTRG_CG19_SHA256 => ctrgDeselect($current),
         CTRG_CG19_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove($current)),
+        CTRG_OCI1_SHA256 => ctrgDeselect(ctrgOci1Strip($current)),
+        CTRG_OCI1_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove(ctrgOci1Strip($current))),
     };
 
     return [
@@ -181,6 +221,8 @@ function ctrgStates(): array
         'post' => $post,
         'cg19' => ctrgSelect($post),
         'cg19pre' => ctrgSelect(ctrgRestore($post)),
+        'oci1' => ctrgOci1Apply(ctrgSelect($post)),
+        'oci1pre' => ctrgOci1Apply(ctrgSelect(ctrgRestore($post))),
     ];
 }
 
@@ -214,6 +256,17 @@ function ctrgClassify(string $before, string $after): string
         || ($from === CTRG_PRE_REMOVAL_SHA256 && $to === CTRG_CG19_PRE_REMOVAL_SHA256))
         && ctrgSelect($before) === $after) {
         return 'cg19-selection';
+    }
+    if ($from === CTRG_OCI1_PRE_REMOVAL_SHA256 && $to === CTRG_OCI1_SHA256 && ctrgRemove($before) === $after) {
+        return 'removal';
+    }
+    if ($from === CTRG_OCI1_SHA256 && $to === CTRG_OCI1_PRE_REMOVAL_SHA256 && ctrgRestore($before) === $after) {
+        return 'restoration';
+    }
+    if ((($from === CTRG_CG19_SHA256 && $to === CTRG_OCI1_SHA256)
+        || ($from === CTRG_CG19_PRE_REMOVAL_SHA256 && $to === CTRG_OCI1_PRE_REMOVAL_SHA256))
+        && ctrgOci1Apply($before) === $after) {
+        return 'oci1-alignment';
     }
 
     return 'rejected';
@@ -364,7 +417,25 @@ it('keeps the checked-in workflow in one of the pinned states, which differ by e
         ->and(ctrgRemove($states['pre']))->toBe($states['post'])
         ->and(ctrgRestore($states['post']))->toBe($states['pre'])
         ->and(ctrgRemove($states['cg19pre']))->toBe($states['cg19'])
-        ->and(ctrgRestore($states['cg19']))->toBe($states['cg19pre']);
+        ->and(ctrgRestore($states['cg19']))->toBe($states['cg19pre'])
+        ->and(hash('sha256', $states['oci1']))->toBe(CTRG_OCI1_SHA256)
+        ->and(hash('sha256', $states['oci1pre']))->toBe(CTRG_OCI1_PRE_REMOVAL_SHA256)
+        ->and(ctrgRemove($states['oci1pre']))->toBe($states['oci1'])
+        ->and(ctrgRestore($states['oci1']))->toBe($states['oci1pre']);
+
+    // O-CI-1 adds exactly the pinned block to the hosted critical gate, and changes no other job or key.
+    $cg19 = Yaml::parse($states['cg19']);
+    $oci1 = Yaml::parse($states['oci1']);
+    $hosted = array_map(fn (array $step) => (string) ($step['name'] ?? ''), $oci1['jobs']['critical_test_gate']['steps']);
+    $without = array_values(array_filter($oci1['jobs']['critical_test_gate']['steps'], fn (array $step) => ! str_ends_with((string) ($step['name'] ?? ''), '(O-CI-1)')));
+    expect(array_values(array_filter($hosted, fn (string $n) => str_ends_with($n, '(O-CI-1)'))))->toBe([
+        'Install and select the PostgreSQL 16 client (O-CI-1)',
+        'Verify the PostgreSQL client and server majors match (O-CI-1)',
+    ])
+        ->and($without)->toBe($cg19['jobs']['critical_test_gate']['steps'])
+        ->and(array_diff_key($oci1['jobs'], ['critical_test_gate' => 1]))->toBe(array_diff_key($cg19['jobs'], ['critical_test_gate' => 1]))
+        ->and(array_diff_key($oci1['jobs']['critical_test_gate'], ['steps' => 1]))->toBe(array_diff_key($cg19['jobs']['critical_test_gate'], ['steps' => 1]))
+        ->and(array_diff_key($oci1, ['jobs' => 1]))->toBe(array_diff_key($cg19, ['jobs' => 1]));
 
     // REM-1 changes exactly the two critical filter lines, and only by the three tokens.
     $post = explode("\n", $states['post']);
@@ -401,7 +472,16 @@ it('accepts only the exact removal and the exact restoration', function () {
         ->and(ctrgClassify($states['cg19'], $states['post']))->toBe('rejected')
         ->and(ctrgClassify($states['cg19pre'], $states['pre']))->toBe('rejected')
         // A restoration onto the selected file must keep the selection.
-        ->and(ctrgClassify($states['cg19'], $states['pre']))->toBe('rejected');
+        ->and(ctrgClassify($states['cg19'], $states['pre']))->toBe('rejected')
+        // O-CI-1: the alignment onto the REM-1 file and onto its rollback target, and the B5 classes after it.
+        ->and(ctrgClassify($states['cg19'], $states['oci1']))->toBe('oci1-alignment')
+        ->and(ctrgClassify($states['cg19pre'], $states['oci1pre']))->toBe('oci1-alignment')
+        ->and(ctrgClassify($states['oci1pre'], $states['oci1']))->toBe('removal')
+        ->and(ctrgClassify($states['oci1'], $states['oci1pre']))->toBe('restoration')
+        // Removing the alignment again, or applying it without REM-1, is outside every class.
+        ->and(ctrgClassify($states['oci1'], $states['cg19']))->toBe('rejected')
+        ->and(ctrgClassify($states['post'], ctrgOci1Apply($states['post'])))->toBe('rejected')
+        ->and(ctrgClassify($states['oci1'], $states['cg19pre']))->toBe('rejected');
 });
 
 it('rejects every workflow change other than the exact removal or restoration', function (Closure $mutate, string $from) {
@@ -433,6 +513,12 @@ it('rejects every workflow change other than the exact removal or restoration', 
     'REM-1 selection with a different token' => [fn (string $pre, string $post) => [$post, str_replace('|PatientDataCompleteness|', '|PatientData|', ctrgSelect($post))], 'post'],
     'REM-1 selection plus a job edit' => [fn (string $pre, string $post) => [$post, preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', ctrgSelect($post), 1)], 'post'],
     'REM-1 selection removed again (gate weakened)' => [fn (string $pre, string $post) => [ctrgSelect($post), $post], 'post'],
+    'O-CI-1 with the major check softened' => [fn (string $pre, string $post) => [ctrgSelect($post), str_replace('does not match the server major $smaj"; exit 1; }', 'does not match the server major $smaj"; }', ctrgOci1Apply(ctrgSelect($post)))], 'post'],
+    'O-CI-1 with the client left off PATH' => [fn (string $pre, string $post) => [ctrgSelect($post), str_replace('          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"'."\n", '', ctrgOci1Apply(ctrgSelect($post)))], 'post'],
+    'O-CI-1 install step only' => [fn (string $pre, string $post) => [ctrgSelect($post), preg_replace('/\n      - name: Verify the PostgreSQL client and server majors match \(O-CI-1\).*?(?=\n      # CICD-CTRL-3)/s', "\n", ctrgOci1Apply(ctrgSelect($post)))], 'post'],
+    'O-CI-1 marked continue-on-error' => [fn (string $pre, string $post) => [ctrgSelect($post), str_replace("      - name: Install and select the PostgreSQL 16 client (O-CI-1)\n        shell: bash\n", "      - name: Install and select the PostgreSQL 16 client (O-CI-1)\n        continue-on-error: true\n        shell: bash\n", ctrgOci1Apply(ctrgSelect($post)))], 'post'],
+    'O-CI-1 plus a job edit' => [fn (string $pre, string $post) => [ctrgSelect($post), preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', ctrgOci1Apply(ctrgSelect($post)), 1)], 'post'],
+    'O-CI-1 removed again' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), ctrgSelect($post)], 'post'],
 ]);
 
 /*
@@ -484,7 +570,7 @@ it('selects the CG-19 suites in both critical variants once REM-1 is applied, an
     $sha = hash('sha256', $raw);
     preg_match_all("/--filter='([^']+)'/", $raw, $filters);
     $critical = array_values(array_filter($filters[1], fn (string $f): bool => substr_count($f, '|') > 50));
-    $selected = in_array($sha, [CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256], true);
+    $selected = in_array($sha, [CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256, CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256], true);
 
     foreach ($critical as $filter) {
         foreach (CTRG_CG19_TOKENS as $token) {
@@ -502,9 +588,11 @@ it('selects the CG-19 suites in both critical variants once REM-1 is applied, an
         );
     }
 
-    // The SPN4 sprint record pins the two REM-1 states.
+    // The SPN4 sprint record pins the two REM-1 states and the two O-CI-1 states; the register pins O-CI-1 too.
     expect((string) file_get_contents(base_path('docs/sprints/dms-spn4-ready-pilot-1.md')))
-        ->toContain(CTRG_CG19_SHA256)->toContain(CTRG_CG19_PRE_REMOVAL_SHA256);
+        ->toContain(CTRG_CG19_SHA256)->toContain(CTRG_CG19_PRE_REMOVAL_SHA256)
+        ->toContain(CTRG_OCI1_SHA256)->toContain(CTRG_OCI1_PRE_REMOVAL_SHA256)->toContain(CTRG_OCI1_BLOCK_SHA256)
+        ->and(ctrgRegister())->toContain(CTRG_OCI1_SHA256)->toContain(CTRG_OCI1_PRE_REMOVAL_SHA256);
 });
 
 /*
