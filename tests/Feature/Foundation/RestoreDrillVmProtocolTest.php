@@ -485,7 +485,58 @@ it('keeps the real-isolation workflow audited: one validation branch, read-only,
         ->and($yml)->not->toContain('apparmor')
         ->and($yml)->not->toContain('0666')
         ->and(substr_count($yml, 'timeout-minutes: '))->toBe(2)
-        ->and($yml)->toContain('cancel-in-progress: true');
+        ->and($yml)->toContain('cancel-in-progress: true')
+        // R6-B8: the image is pruned to production's one extension; the drill host allowlists exactly that.
+        ->and($yml)->toContain('"$RUNNER_TEMP/drill.qcow2" pg_stat_statements host-apt')
+        ->and((string) file_get_contents(base_path('deploy/restore-drill-vm/ci/provision-drill-host.sh')))->toContain('"DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements"');
+});
+
+it('refuses, before any VM, an archive extension the signed contract does not name, and lets the guest create only the archive\'s own (R6-B8 review)', function () {
+    $orch = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
+    $gate = (string) file_get_contents(base_path('deploy/restore-drill-vm/ci/vm-boot-gate.sh'));
+    $check = strpos($orch, 'STAGE=archive_extensions');
+    $toc = strpos($orch, 'STAGE=archive_toc');
+    $disk = strpos($orch, 'STAGE=input_disk');
+
+    expect($check)->not->toBeFalse()
+        ->and($toc)->toBeLessThan($check)->and($check)->toBeLessThan($disk)
+        ->and($orch)->toContain('[[ ",${DMS_ENV_CONTRACT[DMS_ENV_EXTENSIONS]}," == *",${e}:"* ]] || refuse "the archive creates extension ${e}, which the signed environment contract does not name')
+        ->and($orch)->toContain('[extension_allowlist]="${DMS_ARCHIVE_EXTENSIONS:-none}"')
+        ->and($orch)->not->toContain('[extension_allowlist]="${EXTENSIONS:-none}"')
+        ->and($gate)->toContain('--manifest "$INBOX/manifest" "$INBOX/pgstat.dump")"; cp "$OUT/last.txt" "$OUT/V24.txt"')
+        ->and($gate)->toContain("has V24 'which the signed environment contract does not name' && ! has V24 'VM boot' && recorded V24")
+        ->and($gate)->toContain('[ "$starts" = 17 ] && [ "$NREC" = 34 ]')
+        ->and(substr_count($gate, 'clean_after V2'))->toBe(4);
+});
+
+it('records a refusal at every orchestrator stage: each stage the orchestrator sets is one the signer accepts (CI run 21)', function () {
+    $orch = (string) file_get_contents(base_path('scripts/restore-drill-vm.sh'));
+    $evidence = (string) file_get_contents(base_path('scripts/lib/restore-evidence.sh'));
+    preg_match('/^DMS_DRILL_EVIDENCE_STAGES=" ([a-z0-9_ ]+) "$/m', $evidence, $m);
+    preg_match_all('/\bSTAGE=([a-z0-9_]+)/', $orch, $set);
+    $accepted = explode(' ', $m[1] ?? '');
+
+    expect($set[1])->not->toBeEmpty()
+        ->and(array_values(array_diff(array_unique($set[1]), $accepted)))->toBe([]);
+});
+
+it('prunes the drill image to exactly the allowlist: production\'s pg_stat_statements stays, every other extension goes (R6-B8)', function () {
+    $dir = sys_get_temp_dir().'/rdvm-prune-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    foreach (['plpgsql', 'pg_stat_statements', 'pgcrypto', 'dblink'] as $e) {
+        file_put_contents("{$dir}/{$e}.control", "default_version = '1.0'\n");
+        file_put_contents("{$dir}/{$e}--1.0.sql", "-- synthetic\n");
+    }
+    $p = new Process(['bash', base_path('deploy/restore-drill-vm/prune-extensions.sh'), '--dry-run', $dir, 'pg_stat_statements']);
+    $p->run();
+    $bad = new Process(['bash', base_path('deploy/restore-drill-vm/prune-extensions.sh'), '--dry-run', $dir, 'pg_stat_statements;rm']);
+    $bad->run();
+    (new Process(['rm', '-rf', '--', $dir]))->run();
+
+    expect($p->getExitCode())->toBe(0, $p->getErrorOutput())
+        ->and($p->getOutput())->toContain('would-delete pgcrypto.control')->and($p->getOutput())->toContain('would-delete dblink.control')
+        ->and($p->getOutput())->not->toContain('pg_stat_statements')->and($p->getOutput())->not->toContain('plpgsql')
+        ->and($bad->getExitCode())->toBe(2);
 });
 
 it('keeps root confined to the supervisor: two fixed modes, root-owned code, the runner as its only caller (review round 6)', function () {

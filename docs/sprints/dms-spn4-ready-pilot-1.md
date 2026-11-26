@@ -404,6 +404,8 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G6-R6B6-INT | 2026-11-25 | Same decision §2. A controlled fast-forward integration of the R6-B6 work into PR #695 is authorized, with no force push. A merge is conditionally authorized: required CI green on the exact final remote head, no bypass or administrator override, no new security blocker, no unexpected scope, and no deployment triggered by the merge. Release and deployment are not authorized |
 | G6-R6B7 | 2026-11-25 | Same decision §3. A separate rollback reliability workstream (R6-B7) is authorized in an isolated local scope and tracked in the private evidence register, never in the public issue tracker. No production change |
 | G6-ROC | 2026-11-25 | Same decision §4–§9. Authorized: a limited read-only production collection for operational readiness, using the reviewed collector only (no table contents, no writes, no configuration change, no new access); a draft production environment contract, which the owner signs; proposals for the parallel custom-format backup, the drill host and RTO/RPO; and keeping the validation branch. HOLD: permanent infrastructure purchase and the backup transition. Production release and deployment: NOT AUTHORIZED |
+| G6-REL1-SIG | 2026-11-26 | The owner's written approval "OWNER WRITTEN APPROVAL — REL-1" of release `dms-spn4-r6b7-r1`. Target `417d788c6f08b3354083629b002d7497ee8ec298`, tree `84813058a274bc227ddcfae3481db2241ac49188`, release CI `workflow_dispatch` run 45670494493, production baseline `7f58a3af`. The owner acknowledges the release CI results, with the Full Suite DEFERRED and not passed; the independent recovery procedure (Evidence Pack 57 §18.5); the BK-2 off-host verification (catch-up GO, backlog CLOSED); and the remaining disaster-recovery limitations (clinical DR NO-GO). The owner approves the release ID and authorises final signing preparation, and signs and submits personally under rule 236. Production deployment stays HOLD until a separate explicit deployment authorisation, given after `check-approval` reports GO. Until then: no CI dispatch, no merge of #706 or #707, no GO tag, no production change. Recorded without moving the base tip: this row reaches the base with the post-deploy closure record |
+| G6-REL1-DEP | 2026-11-26 | The owner's message "EXPLICIT OWNER AUTHORIZATION — REL-1 PRODUCTION DEPLOYMENT". It authorises **one production deployment** of `dms-spn4-r6b7-r1` at `417d788c6f08b3354083629b002d7497ee8ec298` (approval `0ecb782fbaf3ba97b001080e6495e7de`, contract 3, CI 45670494493), subject to a final preflight. Authorised: the preflight, the deploy of the exact SHA, monitoring, post-deploy verification and evidence collection. Not authorised: another SHA, merging #706, #707 or O-CI-1, a GO tag, a CI dispatch, a PostgreSQL restart, WAL or checksum activation, backup scheduler changes or deletion, credential rotation, purchases, destructive rollback testing, unrelated production changes. The sprint stays open. Executed as deploy `20261126-033148` (§13.16) |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -1645,6 +1647,45 @@ This closure record itself contains no credential, private key, raw dump or clin
 - Merging it ends the release-2 base freeze (owner decision).
 - The remaining SPN4 work follows its own decisions: #695, #699, R6-B2, R6-B3/B4/B7/B8, R6-C, R6-D, and the
   conditions of G12, G13 and the pilot.
+
+### 13.16 REL-1 deployment record (2026-11-26) — DEPLOYED AND VERIFIED; closure pending owner approval
+
+**Status:**
+- REL-1 `dms-spn4-r6b7-r1` is deployed and verified.
+- This records REL-1 only. **It is not the sprint GO decision.** The SPN4 sprint stays **OPEN**, and **no GO tag is
+  created**.
+- This record reaches the base only after the deploy, so it never moved the release base tip.
+- Times are UTC, with WITA (UTC+8) in brackets.
+
+| Item | Record |
+|---|---|
+| Release ID | `dms-spn4-r6b7-r1` |
+| **Deployed runtime SHA** | **`417d788c6f08b3354083629b002d7497ee8ec298`** (tree `84813058a274bc227ddcfae3481db2241ac49188`): the squash merge of #705. The commit that adds this record is documentation only and is not deployed. |
+| Production before / after | `7f58a3afe11ac6beeaff26b0028646831f4b9793` (release-2) → `417d788c6f08b3354083629b002d7497ee8ec298` |
+| Scope | #704, #699, #695 and #705 (131 files, 74 of them test fixtures). **No migration**; `composer.lock`, routes, resources and `app/Modules` unchanged. Runtime effect: the deploy and rollback tooling (`rollback-vps.sh`, `backup-vps.sh`) and an inert privilege registry. |
+| CI | `workflow_dispatch` run `45670494493` on the exact SHA, `completed`/`success`. Critical tests **12386 passed, 19 skipped, 0 failed**. Full Suite DEFERRED, not passed (CG-18). Verified again by the host guard at check time and at `start`. |
+| Approval | Contract 3, ID `0ecb782fbaf3ba97b001080e6495e7de`. Signed and submitted by the owner (rule 236), approved 2026-11-26 03:26:37 (11:26:37), valid until 2026-11-28 03:26:37. **Spent by this deploy:** `check-approval` afterwards answers `DENIED … spent`. |
+| Record / signature SHA-256 | `7185445227d75334d2293239bc1b5621cdaea3b498103fe8f3c73b9fe2d162fc` / `9ffd62161134de7738ec95dad23d6cb71bf08d74a338dc6fcbce3af776910ba7` |
+| Deploy | ID **`20261126-033148`**: `start` 03:31:48, runner finished 03:33:40 (11:31:48 → 11:33:40), outside 02:25–02:40 WITA. One start; no retry. |
+| `verify 20261126-033148` | `DEPLOY_APPROVED_TARGET_MATCH=YES (417d788c6f08b3354083629b002d7497ee8ec298)`, `DEPLOY RUNNER OK`, `final exit=0` |
+| Pre-deploy dump | The deploy's own database dump (35,048,246 bytes), verified inside the deploy (9/9 GO) before the checkout |
+| Post-deploy | Every read-only check passed. `HEAD=417d788c`, `TRACKED_MODIFIED=0`, units and timers unchanged, locks idle; privilege drift NONE; sudo policy LEAST_PRIVILEGE; HTTP smoke 200/403; unauthenticated protected pages redirect to login; application ERROR lines unchanged (166 before and after) |
+| Off-host backup before the release | BK-2 package `BK2-20261125T183002Z`, delivered and verified 2026-11-26 03:04 (25/25, 0 pending). Evidence, not a gate (rule 232). |
+
+**Distinctions:**
+- Deployment succeeded.
+- Post-deployment acceptance passed.
+- The repaired rollback script is available on the host at its committed content, but **no production rollback was
+  executed**.
+- Disaster-recovery acceptance stays **NO-GO**: no restore is proven.
+- Production operational readiness stays **NO-GO**.
+
+**Open confirmations:**
+- **F-1:** the first nightly dump under the new `backup-vps.sh` (2026-11-26 18:30, 02:30 WITA on 27 Nov).
+- **F-2:** BK-2's next package records `app_head=417d788c…`, 238 migrations and 186 tables.
+
+**After this record:** merging it ends the REL-1 base freeze (owner decision). #706 and #707 then follow their own
+conditional-merge authorisations.
 
 ---
 
