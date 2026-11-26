@@ -137,17 +137,23 @@ for n in B1 B2 B3; do
   [ -f "$W/$n.dump" ] || continue
   rc="$(drill_measured "$n")"
   sha="$(sha256sum "$W/$n.dump" | cut -d' ' -f1)"
-  rec="$(sudo sh -c "grep -l '${sha}' /var/lib/dmsdrill-signer/store/*/record 2> /dev/null | xargs -r grep -l '^DMS_DRILL_EVIDENCE_DECISION=GO\$' | head -n 1 | xargs -r cat")"
+  # The outcome record is the one the transcript names ("Evidence: RECORD <seq> …"); the signer stores it as
+  # <store>/<seq>/record. Its decision must be GO and, where it names the backup, the digest must be this archive's.
+  seq="$(grep -oE 'Evidence: RECORD [0-9]{6}' "$OUT/$n.txt" | tail -n 1 | grep -oE '[0-9]{6}$')"
+  rec="$([ -n "$seq" ] && sudo cat "/var/lib/dmsdrill-signer/store/${seq}/record" 2> /dev/null)"
   exp="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_EXPECTED=//p')"; gst="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_GUEST_ASSERTED=//p')"
+  dec="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_DECISION=//p')"; rsha="$(printf '%s\n' "$rec" | sed -n 's/^DMS_DRILL_EVIDENCE_BACKUP_SHA256=//p')"
   dig() { printf '%s' "$1" | tr ',' '\n' | sed -n "s/^$2=//p"; }
-  same=1; [ -n "$(dig "$exp" per_table_digest)" ] && [ "$(dig "$exp" per_table_digest)" = "$(dig "$gst" per_table_digest)" ] && [ "$(dig "$exp" rows)" = "$(dig "$gst" rows)" ] && same=0
+  same=1; [ "$dec" = GO ] && { [ -z "$rsha" ] || [ "$rsha" = "$sha" ]; } && [ -n "$(dig "$exp" per_table_digest)" ] \
+    && [ "$(dig "$exp" per_table_digest)" = "$(dig "$gst" per_table_digest)" ] && [ "$(dig "$exp" rows)" = "$(dig "$gst" rows)" ] && same=0
+  printf '%s\n' "$rec" > "$OUT/$n-record.txt"
   peaks="$(cat "$OUT/$n-peaks.txt" 2> /dev/null)"
   isolated=1; [[ "$peaks" == *"user=${QEU} "* ]] && [[ "$peaks" == *"0::/system.slice/dmsqemu.service"* ]] \
     && [ "$(sed -n 's/.*netns_qemu=\([^ ]*\) .*/\1/p' <<< "$peaks")" != "$(sed -n 's/.*netns_host=//p' <<< "$peaks")" ] && isolated=0
   check "$n" "the synthetic archive restores GO in the VM, digests equal, signed and witnessed, QEMU isolated" \
     "$([ "$rc" = 0 ] && has "$n" 'Decision: GO ' && recorded "$n" && [ "$same" = 0 ] && [ "$isolated" = 0 ]; echo $?)" \
-    "exit=${rc} digests_equal=$([ "$same" = 0 ] && echo yes || echo no) isolated=$([ "$isolated" = 0 ] && echo yes || echo no) rows=$(dig "$gst" rows)"
-  bench "$n-measured" "$(cat "$OUT/$n-wall.txt") $(vm_phase "$n") $(cpu_summary "$n") $(sed 's/ user=.*//' "$OUT/$n-peaks.txt" 2> /dev/null) tmpfs=$(grep -o 'tmpfs_mib=[0-9]*' "$OUT/$n.txt" | head -n 1)"
+    "exit=${rc} record=${seq:-none} decision=${dec:-none} backup_sha_bound=$([ "$rsha" = "$sha" ] && echo yes || echo "${rsha:-absent}") digests_equal=$([ "$same" = 0 ] && echo yes || echo no) isolated=$([ "$isolated" = 0 ] && echo yes || echo no) tables=$(dig "$gst" tables) rows=$(dig "$gst" rows)"
+  bench "$n-measured" "$(cat "$OUT/$n-wall.txt") $(vm_phase "$n") $(cpu_summary "$n") $(sed 's/ user=.*//' "$OUT/$n-peaks.txt" 2> /dev/null) tmpfs_mib_by_d6_formula=$(( $(sed -n "s/^BENCH  ${n}-archive .*copy_text_bytes=\([0-9]*\).*/\1/p" "$RESULTS") * 4 / 1048576 + 256 ))"
 done
 # B4: above the D6 envelope, refused before any VM boots (the limit is enforced, never relaxed), and recorded.
 if [ -f "$W/B4.dump" ]; then
