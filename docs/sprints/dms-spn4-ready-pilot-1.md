@@ -947,8 +947,8 @@ other edit. The owner-approved amendment (#692) had to:
 | B5 post-removal (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
 | **REM-1 selected** (pinned since #692; the base state since #696) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
 | **REM-1 selected, B5 rollback target** (pinned since #692) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
-| **O-CI-1 aligned** (REM-1 file plus the O-CI-1 block; §13.17) | `70b84f346f00e79b2cb1fdd929208ed075011e61101c1c78026b150f28c7a740` |
-| **O-CI-1 aligned, B5 rollback target** (§13.17) | `64d37f0cd350effa4fb668d9ad36515f4dde31f32dd395b0070426267e26099d` |
+| **O-CI-1 aligned** (REM-1 file plus the O-CI-1 block; §13.17) | `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43` |
+| **O-CI-1 aligned, B5 rollback target** (§13.17) | `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3` |
 
 At preparation time, every CI suite passed with the change applied, except the 17 CTRG tests, which failed by design
 until the amendment landed. Pushing a workflow file needs the GitHub `workflow` scope, which was revoked then. The
@@ -1698,21 +1698,25 @@ conditional-merge authorisations.
 - A newer client restoring into an older server is outside what PostgreSQL supports. `pg_restore` 17+ sends
   `SET transaction_timeout = 0`, which a 16 server rejects.
 - The R6-B13 rehearsal therefore carries a one-line accommodation (#707).
+- The hosted image keeps no PostgreSQL apt source: CI run 45753635370 of this change found `postgresql-client-16`
+  unavailable from the image's own sources and failed closed, as designed.
 
 **Change:**
 - Two steps after the Poppler step of `critical_test_gate` only:
-  - install `postgresql-client-16` from the image's signed apt sources (the source is checked, fail closed);
+  - install `postgresql-client-16` from the PostgreSQL project's signed apt repository, added through
+    `postgresql-common` (from the signed Ubuntu archive) with its signing key's fingerprint
+    `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8` pinned, fail closed;
   - put `/usr/lib/postgresql/16/bin` first on `PATH`;
   - log `psql`, `pg_dump`, `pg_restore` and the server version;
   - fail unless every client resolves to that directory and its major equals the server's.
 - Pinned block: `tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt`, SHA-256
-  `f39b773c13c9dc7961c3ca2fa5381a0050bb46e4464c43614b0666127f196562`.
+  `779915fd9de322461dfe85b2322928b9640829f98bdc7ddba85b6edff744350d`.
 - Untouched: the `postgres:16` service, the R6-B6 pinned 16.15 drill binaries, every other job and the
   accommodation in `restore_db`.
 
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
-- O-CI-1 on the REM-1 file: `70b84f346f00e79b2cb1fdd929208ed075011e61101c1c78026b150f28c7a740`;
-- on its B5 rollback target: `64d37f0cd350effa4fb668d9ad36515f4dde31f32dd395b0070426267e26099d`.
+- O-CI-1 on the REM-1 file: `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43`;
+- on its B5 rollback target: `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3`.
 
 `CiTriggerRemovalGovernanceTest` classifies the alignment as `oci1-alignment` and keeps the B5 removal and
 restoration between the two new states. It rejects a partial alignment, a softened check, `continue-on-error`, an

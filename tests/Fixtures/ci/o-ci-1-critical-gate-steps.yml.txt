@@ -4,16 +4,33 @@
       # restoring into an older server is outside what PostgreSQL supports:
       # pg_restore 17+ opens each session with "SET transaction_timeout", which
       # a 16 server rejects. The gate therefore installs the 16 client from the
-      # image's signed apt sources and puts its directory first on PATH for
-      # every later step. The service image and the R6-B6 pinned 16.15
-      # binaries of the drill are not touched. Fails closed (`-eo pipefail`).
+      # PostgreSQL project's signed apt repository (its key fingerprint pinned)
+      # and puts its directory first on PATH for every later step. The service
+      # image and the R6-B6 pinned 16.15 binaries of the drill are not touched.
+      # Fails closed (`-eo pipefail`).
       - name: Install and select the PostgreSQL 16 client (O-CI-1)
         shell: bash
         run: |
+          # The image keeps no PostgreSQL apt source, so it is added the way the
+          # PostgreSQL project documents: postgresql-common, from the signed
+          # Ubuntu archive, ships the repository's signing key and setup script.
+          # The key's fingerprint is pinned before anything trusts it.
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          keys=0
+          for key in /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc; do
+            [ -e "$key" ] || continue
+            gpg --show-keys --with-colons "$key" > "$RUNNER_TEMP/pgdg-key.colons"
+            [ "$(grep -c '^pub:' "$RUNNER_TEMP/pgdg-key.colons")" = 1 ] \
+              && grep -qx 'fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' "$RUNNER_TEMP/pgdg-key.colons" \
+              || { echo "::error::$key is not exactly the PostgreSQL apt signing key B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"; exit 1; }
+            keys=$((keys + 1))
+          done
+          [ "$keys" -ge 1 ] || { echo "::error::postgresql-common ships no PostgreSQL apt signing key"; exit 1; }
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           policy="$(apt-cache policy postgresql-client-16)"
           printf '%s\n' "$policy"
-          grep -Eq '^ +[0-9]+ https?://(apt\.postgresql\.org/pub/repos/apt|([a-z0-9.-]+\.)?archive\.ubuntu\.com/ubuntu|security\.ubuntu\.com/ubuntu) ' <<< "$policy" \
-            || { echo "::error::postgresql-client-16 is not offered by a trusted, signed apt source"; exit 1; }
+          grep -Eq '^ +[0-9]+ https?://apt\.postgresql\.org/pub/repos/apt ' <<< "$policy" \
+            || { echo "::error::postgresql-client-16 is not offered by the signed PostgreSQL apt source"; exit 1; }
           sudo apt-get install -y --no-install-recommends postgresql-client-16
           dpkg-query -W -f='${Package} ${Version}\n' postgresql-client-16
           for t in psql pg_dump pg_restore; do

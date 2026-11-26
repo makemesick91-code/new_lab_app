@@ -78,8 +78,8 @@ Nothing else is an exception. In particular:
   The O-CI-1 PostgreSQL 16 client alignment of DMS-SPN4-READY-PILOT-1 (`docs/sprints/dms-spn4-ready-pilot-1.md`
   §13.17) is **not** one of these classes either. It adds one pinned block of two steps to the hosted critical gate
   (`tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt`) and is released with its sprint. It applies to the REM-1
-  file, giving `70b84f346f00e79b2cb1fdd929208ed075011e61101c1c78026b150f28c7a740`, and to its rollback target, giving
-  `64d37f0cd350effa4fb668d9ad36515f4dde31f32dd395b0070426267e26099d`. Between those two the removal and the
+  file, giving `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43`, and to its rollback target, giving
+  `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3`. Between those two the removal and the
   restoration apply as above. A change that removes the alignment again is outside them.
 
 ## Registry

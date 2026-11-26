@@ -57,10 +57,10 @@ const CTRG_CG19_ANCHOR = "|LabClinicCalendarBoundary|InventoryClinicCalendarBoun
 // installs and selects the PostgreSQL 16 client. Like REM-1 it is NOT a CG-16 CI trigger class: it adds exactly one
 // pinned block of two steps after the Poppler step of `critical_test_gate`, released with its sprint. It applies onto
 // the REM-1 file and onto its B5 rollback target. Also pinned in the register and the SPN4 sprint record.
-const CTRG_OCI1_SHA256 = '70b84f346f00e79b2cb1fdd929208ed075011e61101c1c78026b150f28c7a740';
-const CTRG_OCI1_PRE_REMOVAL_SHA256 = '64d37f0cd350effa4fb668d9ad36515f4dde31f32dd395b0070426267e26099d';
+const CTRG_OCI1_SHA256 = '4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43';
+const CTRG_OCI1_PRE_REMOVAL_SHA256 = 'b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3';
 const CTRG_OCI1_BLOCK = 'tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt';
-const CTRG_OCI1_BLOCK_SHA256 = 'f39b773c13c9dc7961c3ca2fa5381a0050bb46e4464c43614b0666127f196562';
+const CTRG_OCI1_BLOCK_SHA256 = '779915fd9de322461dfe85b2322928b9640829f98bdc7ddba85b6edff744350d';
 const CTRG_OCI1_HEAD = "          pdftoppm -v\n\n";
 const CTRG_OCI1_TAIL = '      # CICD-CTRL-3 — hard production-database isolation guard. Runs BEFORE any';
 
