@@ -230,10 +230,15 @@ it('inspects the untrusted archive only inside a hardened, network-less unit', f
 });
 
 it('refuses, never truncates, a TOC above its limit, in the real inspection unit (P4P-2)', function () {
-    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes', '--', '/usr/bin/true']);
+    // The inspection unit needs mount-namespace sandboxing in the per-user manager, not just a manager: the probe
+    // uses the unit's own namespace properties. O-CI-1 (2026-11-26) put PostgreSQL 16 client binaries on the hosted
+    // critical gate, whose per-user manager runs a plain unit but cannot start a namespaced one, so the old probe
+    // stopped telling the two apart.
+    $probe = new Process(['systemd-run', '--user', '--wait', '--pipe', '--collect', '--quiet', '-p', 'PrivateNetwork=yes',
+        '-p', 'TemporaryFileSystem=/etc:ro', '-p', 'ProtectControlGroups=yes', '-p', 'InaccessiblePaths=/sys/fs/cgroup', '--', '/usr/bin/true']);
     $probe->run();
     if ($probe->getExitCode() !== 0 || ! is_executable('/usr/lib/postgresql/16/bin/pg_restore')) {
-        $this->markTestSkipped('no per-user systemd manager or PostgreSQL 16 here (covered by the real-sandbox CI gate)');
+        $this->markTestSkipped('no per-user systemd manager with mount-namespace sandboxing, or no PostgreSQL 16, here (covered by the real-sandbox CI gate)');
     }
     $out = sys_get_temp_dir().'/rda-insp-'.bin2hex(random_bytes(6));
     mkdir($out, 0700);

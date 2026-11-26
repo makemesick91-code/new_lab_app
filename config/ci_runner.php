@@ -2075,6 +2075,12 @@ return [
         // Selected by the `RestoreDrill` token in BOTH critical variants;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/RestoreDrillClinicalAssetBackupTest.php',
+        // O-CI-1 (2026-11-26): the critical gate runs a PostgreSQL client of the
+        // server's major version, and restore_db never lets a restore failure
+        // pass silently (matched, older and newer client paths; one-transaction
+        // protection). Selected by the `RestoreDrill` token in BOTH critical
+        // variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/RestoreDrillCiPostgresClientAlignmentTest.php',
         // DMS-SPN4-READY-PILOT-1 R6-B6 finding A-1 (2026-11-25): the restore
         // drill replays only a root-only staged copy whose SHA-256 matches
         // trusted evidence (rule 235), refuses a symlinked, foreign-owned or

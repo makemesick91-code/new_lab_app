@@ -23,28 +23,8 @@ P=0; F=0
 ok() { if [ "$2" = 0 ]; then P=$((P + 1)); echo "PASS $1 ${3:-}"; else F=$((F + 1)); echo "FAIL $1 ${3:-}"; fi; }
 q() { psql -X -q -At -v ON_ERROR_STOP=1 -d "$1" -c "$2"; }
 sha() { sha256sum | cut -d' ' -f1; }
-# restore_db <archive> <database> <stderr file>: restore with --no-owner and FAIL on any error. A client whose major
-# version matches the server's is used when installed, with --exit-on-error. A newer client restoring into an older
-# server is outside what PostgreSQL supports: pg_restore 17+ opens every session with "SET transaction_timeout = 0",
-# which a 16 server rejects (CI runs client 18 against the 16 service). Only then is the archive rendered as SQL,
-# exactly that one session-header line dropped, and the rest applied in one transaction with ON_ERROR_STOP, so any
-# other error still fails. RESTORE_PATH names the path taken, for the case's detail.
-restore_db() {
-  local smaj cmaj
-  smaj="$(q postgres 'SHOW server_version_num')"; smaj=$((smaj / 10000))
-  cmaj="$(pg_restore --version | grep -oE '[0-9]+' | head -n 1)"
-  if [ -x "/usr/lib/postgresql/${smaj}/bin/pg_restore" ]; then
-    RESTORE_PATH="client ${smaj} = server ${smaj}"
-    "/usr/lib/postgresql/${smaj}/bin/pg_restore" --exit-on-error --no-owner -d "$2" "$1" 2> "$3"; return
-  fi
-  if [ "$cmaj" -le "$smaj" ]; then
-    RESTORE_PATH="client ${cmaj}, server ${smaj}"
-    pg_restore --exit-on-error --no-owner -d "$2" "$1" 2> "$3"; return
-  fi
-  RESTORE_PATH="client ${cmaj} > server ${smaj}: SQL with only the transaction_timeout header dropped, ON_ERROR_STOP"
-  pg_restore --no-owner -f - "$1" 2> "$3" | grep -vxF 'SET transaction_timeout = 0;' \
-    | psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$2" > /dev/null 2>> "$3"
-}
+# restore_db: the strict, version-aware database restore (O-CI-1 moved it into its own file, unchanged in logic).
+. "$REPO/tests/Fixtures/clinical-assets/restore-db.sh"
 # the first lines of a tool's stderr, folded onto one line (synthetic data only), so a CI failure explains itself
 errtail() { [ -s "$1" ] && printf ' | stderr: %s' "$(head -n 6 "$1" | tr '\n' ' ')"; return 0; }
 

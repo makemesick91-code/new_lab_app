@@ -1,0 +1,63 @@
+      # O-CI-1 — PostgreSQL 16 client alignment. The hosted image ships the
+      # newest PostgreSQL client (18.x on the current ubuntu-latest), while the
+      # database service of this gate and production run 16. A newer client
+      # restoring into an older server is outside what PostgreSQL supports:
+      # pg_restore 17+ opens each session with "SET transaction_timeout", which
+      # a 16 server rejects. The gate therefore installs the 16 client from the
+      # PostgreSQL project's signed apt repository (its key fingerprint pinned)
+      # and puts its directory first on PATH for every later step. The service
+      # image and the R6-B6 pinned 16.15 binaries of the drill are not touched.
+      # Fails closed (`-eo pipefail`).
+      - name: Install and select the PostgreSQL 16 client (O-CI-1)
+        shell: bash
+        run: |
+          # The image keeps no PostgreSQL apt source, so it is added the way the
+          # PostgreSQL project documents: postgresql-common, from the signed
+          # Ubuntu archive, ships the repository's signing key and setup script.
+          # The key's fingerprint is pinned before anything trusts it.
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          keys=0
+          for key in /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc; do
+            [ -e "$key" ] || continue
+            gpg --show-keys --with-colons "$key" > "$RUNNER_TEMP/pgdg-key.colons"
+            [ "$(grep -c '^pub:' "$RUNNER_TEMP/pgdg-key.colons")" = 1 ] \
+              && grep -qx 'fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' "$RUNNER_TEMP/pgdg-key.colons" \
+              || { echo "::error::$key is not exactly the PostgreSQL apt signing key B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"; exit 1; }
+            keys=$((keys + 1))
+          done
+          [ "$keys" -ge 1 ] || { echo "::error::postgresql-common ships no PostgreSQL apt signing key"; exit 1; }
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          policy="$(apt-cache policy postgresql-client-16)"
+          printf '%s\n' "$policy"
+          grep -Eq '^ +[0-9]+ https?://apt\.postgresql\.org/pub/repos/apt ' <<< "$policy" \
+            || { echo "::error::postgresql-client-16 is not offered by the signed PostgreSQL apt source"; exit 1; }
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          dpkg-query -W -f='${Package} ${Version}\n' postgresql-client-16
+          for t in psql pg_dump pg_restore; do
+            test -x "/usr/lib/postgresql/16/bin/$t" || { echo "::error::/usr/lib/postgresql/16/bin/$t is missing"; exit 1; }
+          done
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+
+      - name: Verify the PostgreSQL client and server majors match (O-CI-1)
+        shell: bash
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: testing
+        run: |
+          server_num="$(psql -X -At -v ON_ERROR_STOP=1 -c 'SHOW server_version_num')"
+          smaj=$((server_num / 10000))
+          echo "postgresql_server=$(psql -X -At -v ON_ERROR_STOP=1 -c 'SHOW server_version') (major ${smaj})"
+          for t in psql pg_dump pg_restore; do
+            path="$(command -v "$t")"
+            version="$("$t" --version)"
+            [[ "$version" =~ \(PostgreSQL\)\ ([0-9]+)\. ]] || { echo "::error::cannot read the major version of $t: $version"; exit 1; }
+            cmaj="${BASH_REMATCH[1]}"
+            echo "postgresql_client_${t}=${path} ${version}"
+            [ "$path" = "/usr/lib/postgresql/16/bin/$t" ] || { echo "::error::$t resolves to $path, not the selected 16 client"; exit 1; }
+            [ "$cmaj" = "$smaj" ] || { echo "::error::$t major $cmaj does not match the server major $smaj"; exit 1; }
+          done
+          echo "postgresql_client_server_major=MATCH (${smaj})" | tee -a "$GITHUB_STEP_SUMMARY"
+
