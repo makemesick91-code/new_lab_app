@@ -35,15 +35,19 @@ final class RuntimePrivilegeRegistry
         'role DDL' => '/\b(CREATE|ALTER|DROP)\s+(ROLE|USER|GROUP)\b/i',
         'OWNER TO' => '/\bOWNER\s+TO\b/i',
         'REASSIGN OWNED' => '/\bREASSIGN\s+OWNED\b/i',
-        'SET ROLE' => '/\bSET\s+(LOCAL\s+|SESSION\s+)?ROLE\b/i',
+        'SET ROLE' => '/\bSET\s+(LOCAL\s+|SESSION\s+)?"?ROLE\b/i',
         'SET SESSION AUTHORIZATION' => '/\bSET\s+SESSION\s+AUTHORIZATION\b/i',
         // R6-B2b review round 1: the other ways a session's role can change. The
         // migration connection's role is the session default, so these could only
         // drop it, never widen it; they still have no place in a migration.
         'RESET SESSION AUTHORIZATION' => '/\bRESET\s+SESSION\s+AUTHORIZATION\b/i',
         'RESET ROLE' => '/\bRESET\s+ROLE\b/i',
-        'set_config role' => "/\bset_config\s*\(\s*'role'/i",
+        // Review round 2: any set_config call (the setting name may be quoted,
+        // escaped or bound), and a migration choosing its own connection.
+        'set_config' => '/\bset_config\b/i',
         'DISCARD ALL' => '/\bDISCARD\s+ALL\b/i',
+        'connection property' => '/\b(?:public|protected|private|var)\s+(?:\??string\s+)?\$connection\b/i',
+        'named connection' => '/\bconnection\s*\(\s*[\'"]/i',
     ];
 
     /** @var array<string, mixed> */
@@ -155,9 +159,20 @@ final class RuntimePrivilegeRegistry
     {
         $errors = [];
         foreach ($this->migrationFiles() as $name => $path) {
-            foreach (explode("\n", (string) file_get_contents($path)) as $number => $line) {
+            // Review round 2: block comments are blanked first (newlines kept, so
+            // line numbers hold), so `SET/**/ROLE` reads as `SET ROLE` and code after a
+            // leading `/* … */` is scanned rather than skipped. This scan is a
+            // fast first line; the server-side check after every migration of a
+            // `pgsql_migrate` run (MigrationConnection::assertAfterMigration) is the
+            // backstop for what no static scan can see.
+            $source = (string) preg_replace_callback(
+                '#/\*.*?\*/#s',
+                static fn (array $comment): string => (string) preg_replace('/[^\n]/', ' ', $comment[0]),
+                (string) file_get_contents($path),
+            );
+            foreach (explode("\n", $source) as $number => $line) {
                 $code = ltrim($line);
-                if ($code === '' || str_starts_with($code, '//') || str_starts_with($code, '*') || str_starts_with($code, '/*') || str_starts_with($code, '#') || str_starts_with($code, '|')) {
+                if ($code === '' || str_starts_with($code, '//') || str_starts_with($code, '#')) {
                     continue;
                 }
                 foreach (self::FORBIDDEN_MIGRATION_SQL as $label => $pattern) {
