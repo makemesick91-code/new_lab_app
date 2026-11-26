@@ -85,7 +85,8 @@ ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scr
 The operator's tag is resolved to one exact commit **before** any mutation, and
 the rollback snapshot is taken from the **current** code — so INFRA-SEC-ENV-1
 secret hardening and the INFRA-SEC-RUNTIME-1 isolation verifier still run in
-their modern form even when the target predates them.
+their modern form even when the target predates them. That holds for the first
+run only: once the checkout has moved, the current code is the target's.
 
 Migration on the VPS is always `php artisan migrate --force` and never destructive.
 
@@ -135,6 +136,23 @@ Never run these during deploy or rollback on the pilot/production VPS:
 - Rollback records the current ref, takes a backup, checks out the target tag,
   re-verifies ENT-5..15 gates, rebuilds/restarts, and smokes — it never runs a
   destructive DB command and never auto-restores data.
+- The pre-rollback dump goes to the deploy backup directory (`pre_rollback_<stamp>.sql`),
+  which the NSF-10 verifier accepts; the scheduled backup's retention treats it like a
+  pre-deploy dump (stale files are pruned oldest first, above the floor). Before any backup
+  or checkout, a target that could not finish the rollback is refused (R6-B7): its verifier
+  must accept that directory and `.sql`, and it must ship every application command the
+  rollback runs after the switch.
+- Roll back **directly to the final target in one run**. Every later rollback runs the
+  rolled-back release's own rollback tooling; from a release older than R6-B7, recover with a
+  forward deploy instead.
+- If a rollback stops after the switch began (`ROLLBACK STATE: …`), the host is between
+  releases. Recover by either:
+  - a **forward deploy** through the runner: it needs a **new owner-signed approval under
+    a new release id** (the previous one is spent), and it runs the deploy tooling of the
+    checkout it finds (the rolled-back release's runner and approval guard), so rehearse it
+    for that release; or
+  - a **re-run of the rollback**, only if the target already contains R6-B7 (it re-checks
+    the target first). Never re-run blindly against an older target.
 
 - Private storage paths (SECURITY-F8-PRIVATE-STORAGE-PATHS-1): rolling back to
   an older tag keeps them private, because rollback reads the runtime identity

@@ -269,7 +269,8 @@ it('creates the pre-deploy and pre-rollback dumps as the runtime user', function
     expect(preg_match('/^\s*dms_(prepare_private_backup_dir|write_private_dump)\b/m', $code))->toBe(0);
 })->with([
     'deploy' => ['scripts/deploy-vps.sh', 'deploy'],
-    'rollback' => ['scripts/rollback-vps.sh', 'rollback'],
+    // R6-B7: the pre-rollback dump lives in the deploy backup directory, which the NSF-10 verifier accepts.
+    'rollback' => ['scripts/rollback-vps.sh', 'deploy'],
 ]);
 
 it('prepares before the first mutation and gates drift before the restart and the success marker', function (string $script, string $okMarker) {

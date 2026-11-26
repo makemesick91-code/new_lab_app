@@ -73,7 +73,9 @@ if [ "$TOTAL" -gt "$MIN_RETAINED" ]; then
     fi
     echo "Pruning stale backup: ${stale}"
     rm -f "$stale"
-  done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.sql' -mtime +"$BACKUP_DR_RETENTION_DAYS" | sort)
+  # Oldest first by modification time (R6-B7): pre-deploy, pre-rollback and scheduled dumps share this directory, and
+  # a name order would keep an older dump of one kind over a newer one of another when the floor applies.
+  done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.sql' -mtime +"$BACKUP_DR_RETENTION_DAYS" -printf '%T@ %p\n' | sort -n | cut -d' ' -f2-)
 else
   echo "Only ${TOTAL} backup(s) present; nothing pruned (floor ${MIN_RETAINED})."
 fi

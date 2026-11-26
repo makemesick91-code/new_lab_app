@@ -404,6 +404,9 @@ The pilot, Gate 1 RME-LAB-FEE-APPROVAL-1, G12 and G13 stay as recorded in §13.9
 | G6-R6B6-INT | 2026-11-25 | Same decision §2. A controlled fast-forward integration of the R6-B6 work into PR #695 is authorized, with no force push. A merge is conditionally authorized: required CI green on the exact final remote head, no bypass or administrator override, no new security blocker, no unexpected scope, and no deployment triggered by the merge. Release and deployment are not authorized |
 | G6-R6B7 | 2026-11-25 | Same decision §3. A separate rollback reliability workstream (R6-B7) is authorized in an isolated local scope and tracked in the private evidence register, never in the public issue tracker. No production change |
 | G6-ROC | 2026-11-25 | Same decision §4–§9. Authorized: a limited read-only production collection for operational readiness, using the reviewed collector only (no table contents, no writes, no configuration change, no new access); a draft production environment contract, which the owner signs; proposals for the parallel custom-format backup, the drill host and RTO/RPO; and keeping the validation branch. HOLD: permanent infrastructure purchase and the backup transition. Production release and deployment: NOT AUTHORIZED |
+| G6-REL1-SIG | 2026-11-26 | The owner's written approval "OWNER WRITTEN APPROVAL — REL-1" of release `dms-spn4-r6b7-r1`. Target `417d788c6f08b3354083629b002d7497ee8ec298`, tree `84813058a274bc227ddcfae3481db2241ac49188`, release CI `workflow_dispatch` run 45670494493, production baseline `7f58a3af`. The owner acknowledges the release CI results, with the Full Suite DEFERRED and not passed; the independent recovery procedure (Evidence Pack 57 §18.5); the BK-2 off-host verification (catch-up GO, backlog CLOSED); and the remaining disaster-recovery limitations (clinical DR NO-GO). The owner approves the release ID and authorises final signing preparation, and signs and submits personally under rule 236. Production deployment stays HOLD until a separate explicit deployment authorisation, given after `check-approval` reports GO. Until then: no CI dispatch, no merge of #706 or #707, no GO tag, no production change. Recorded without moving the base tip: this row reaches the base with the post-deploy closure record |
+| G6-REL1-DEP | 2026-11-26 | The owner's message "EXPLICIT OWNER AUTHORIZATION — REL-1 PRODUCTION DEPLOYMENT". It authorises **one production deployment** of `dms-spn4-r6b7-r1` at `417d788c6f08b3354083629b002d7497ee8ec298` (approval `0ecb782fbaf3ba97b001080e6495e7de`, contract 3, CI 45670494493), subject to a final preflight. Authorised: the preflight, the deploy of the exact SHA, monitoring, post-deploy verification and evidence collection. Not authorised: another SHA, merging #706, #707 or O-CI-1, a GO tag, a CI dispatch, a PostgreSQL restart, WAL or checksum activation, backup scheduler changes or deletion, credential rotation, purchases, destructive rollback testing, unrelated production changes. The sprint stays open. Executed as deploy `20261126-033148` (§13.16) |
+| G6-OCI1 | 2026-11-26 | Owner decision "REL-1 ACCEPTANCE AND POST-DEPLOYMENT INTEGRATION" §5: O-CI-1 approved, PostgreSQL 16 client alignment of the critical gate through a separate PR. Conditions: a trusted package source, explicit selection of the 16 binaries, mandatory client and server version logging, matching majors in the critical gate, strict error handling, transaction protection, regression tests proving that failures cannot pass silently, no reduction of required coverage, no change to the R6-B6 pinned 16.15 binaries, and the existing compatibility accommodation kept. Conditional merge after the preceding PR integrations and every gate and governance requirement, with no production deployment. The workflow re-pin (§13.17) is merged only on the owner's confirmation of its exact SHA-256 values |
 
 ## 11. Ringkasan keputusan Owner (Bahasa Indonesia)
 
@@ -944,6 +947,8 @@ other edit. The owner-approved amendment (#692) had to:
 | B5 post-removal (pinned) | `4cd0c3dbe7c374e30f05659f89e7c22a2f197005da3d0f92f423124622b98cd0` |
 | **REM-1 selected** (pinned since #692; the base state since #696) | `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a` |
 | **REM-1 selected, B5 rollback target** (pinned since #692) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
+| **O-CI-1 aligned** (REM-1 file plus the O-CI-1 block; §13.17) | `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43` |
+| **O-CI-1 aligned, B5 rollback target** (§13.17) | `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3` |
 
 At preparation time, every CI suite passed with the change applied, except the 17 CTRG tests, which failed by design
 until the amendment landed. Pushing a workflow file needs the GitHub `workflow` scope, which was revoked then. The
@@ -1645,6 +1650,97 @@ This closure record itself contains no credential, private key, raw dump or clin
 - Merging it ends the release-2 base freeze (owner decision).
 - The remaining SPN4 work follows its own decisions: #695, #699, R6-B2, R6-B3/B4/B7/B8, R6-C, R6-D, and the
   conditions of G12, G13 and the pilot.
+
+### 13.16 REL-1 deployment record (2026-11-26) — DEPLOYED AND VERIFIED; closure pending owner approval
+
+**Status:**
+- REL-1 `dms-spn4-r6b7-r1` is deployed and verified.
+- This records REL-1 only. **It is not the sprint GO decision.** The SPN4 sprint stays **OPEN**, and **no GO tag is
+  created**.
+- This record reaches the base only after the deploy, so it never moved the release base tip.
+- Times are UTC, with WITA (UTC+8) in brackets.
+
+| Item | Record |
+|---|---|
+| Release ID | `dms-spn4-r6b7-r1` |
+| **Deployed runtime SHA** | **`417d788c6f08b3354083629b002d7497ee8ec298`** (tree `84813058a274bc227ddcfae3481db2241ac49188`): the squash merge of #705. The commit that adds this record is documentation only and is not deployed. |
+| Production before / after | `7f58a3afe11ac6beeaff26b0028646831f4b9793` (release-2) → `417d788c6f08b3354083629b002d7497ee8ec298` |
+| Scope | #704, #699, #695 and #705 (131 files, 74 of them test fixtures). **No migration**; `composer.lock`, routes, resources and `app/Modules` unchanged. Runtime effect: the deploy and rollback tooling (`rollback-vps.sh`, `backup-vps.sh`) and an inert privilege registry. |
+| CI | `workflow_dispatch` run `45670494493` on the exact SHA, `completed`/`success`. Critical tests **12386 passed, 19 skipped, 0 failed**. Full Suite DEFERRED, not passed (CG-18). Verified again by the host guard at check time and at `start`. |
+| Approval | Contract 3, ID `0ecb782fbaf3ba97b001080e6495e7de`. Signed and submitted by the owner (rule 236), approved 2026-11-26 03:26:37 (11:26:37), valid until 2026-11-28 03:26:37. **Spent by this deploy:** `check-approval` afterwards answers `DENIED … spent`. |
+| Record / signature SHA-256 | `7185445227d75334d2293239bc1b5621cdaea3b498103fe8f3c73b9fe2d162fc` / `9ffd62161134de7738ec95dad23d6cb71bf08d74a338dc6fcbce3af776910ba7` |
+| Deploy | ID **`20261126-033148`**: `start` 03:31:48, runner finished 03:33:40 (11:31:48 → 11:33:40), outside 02:25–02:40 WITA. One start; no retry. |
+| `verify 20261126-033148` | `DEPLOY_APPROVED_TARGET_MATCH=YES (417d788c6f08b3354083629b002d7497ee8ec298)`, `DEPLOY RUNNER OK`, `final exit=0` |
+| Pre-deploy dump | The deploy's own database dump (35,048,246 bytes), verified inside the deploy (9/9 GO) before the checkout |
+| Post-deploy | Every read-only check passed. `HEAD=417d788c`, `TRACKED_MODIFIED=0`, units and timers unchanged, locks idle; privilege drift NONE; sudo policy LEAST_PRIVILEGE; HTTP smoke 200/403; unauthenticated protected pages redirect to login; application ERROR lines unchanged (166 before and after) |
+| Off-host backup before the release | BK-2 package `BK2-20261125T183002Z`, delivered and verified 2026-11-26 03:04 (25/25, 0 pending). Evidence, not a gate (rule 232). |
+
+**Distinctions:**
+- Deployment succeeded.
+- Post-deployment acceptance passed.
+- The repaired rollback script is available on the host at its committed content, but **no production rollback was
+  executed**.
+- Disaster-recovery acceptance stays **NO-GO**: no restore is proven.
+- Production operational readiness stays **NO-GO**.
+
+**Open confirmations:**
+- **F-1:** the first nightly dump under the new `backup-vps.sh` (2026-11-26 18:30, 02:30 WITA on 27 Nov).
+- **F-2:** BK-2's next package records `app_head=417d788c…`, 238 migrations and 186 tables.
+
+**After this record:** merging it ends the REL-1 base freeze (owner decision). #706 and #707 then follow their own
+conditional-merge authorisations.
+
+### 13.17 O-CI-1 — PostgreSQL 16 client alignment of the critical gate (2026-11-26) — PREPARED
+
+**Why:**
+- In CI run 45722853706 the hosted critical gate ran `pg_dump`/`pg_restore` **18.7** against its `postgres:16`
+  service (**16.16**). The `ubuntu-latest` image moved to Ubuntu 26.04 with the newest PostgreSQL client.
+- A newer client restoring into an older server is outside what PostgreSQL supports. `pg_restore` 17+ sends
+  `SET transaction_timeout = 0`, which a 16 server rejects.
+- The R6-B13 rehearsal therefore carries a one-line accommodation (#707).
+- The hosted image keeps no PostgreSQL apt source: CI run 45753635370 of this change found `postgresql-client-16`
+  unavailable from the image's own sources and failed closed, as designed.
+
+**Change:**
+- Two steps after the Poppler step of `critical_test_gate` only:
+  - install `postgresql-client-16` from the PostgreSQL project's signed apt repository, added through
+    `postgresql-common` (from the signed Ubuntu archive) with its signing key's fingerprint
+    `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8` pinned, fail closed;
+  - put `/usr/lib/postgresql/16/bin` first on `PATH`;
+  - log `psql`, `pg_dump`, `pg_restore` and the server version;
+  - fail unless every client resolves to that directory and its major equals the server's.
+- Pinned block: `tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt`, SHA-256
+  `779915fd9de322461dfe85b2322928b9640829f98bdc7ddba85b6edff744350d`.
+- Untouched: the `postgres:16` service, the R6-B6 pinned 16.15 drill binaries, every other job and the
+  accommodation in `restore_db`.
+
+**Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
+- O-CI-1 on the REM-1 file: `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43`;
+- on its B5 rollback target: `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3`.
+
+`CiTriggerRemovalGovernanceTest` classifies the alignment as `oci1-alignment` and keeps the B5 removal and
+restoration between the two new states. It rejects a partial alignment, a softened check, `continue-on-error`, an
+extra edit, and removal of the alignment.
+
+**Tests:** `RestoreDrillCiPostgresClientAlignmentTest` (mandatory, CG-19) covers:
+- the steps and their order;
+- the service image and the R6-B6 pin;
+- `restore_db`'s strictness;
+- `restore-db-guard.sh`: no restore failure passes silently on the matched, older or newer client path, and a late
+  error rolls the whole restore back (6/6).
+
+Mutations that remove `ON_ERROR_STOP`, remove `--single-transaction` or widen the header filter each fail the guard.
+
+**Probe correction:**
+- With PostgreSQL 16 client binaries present, the hosted gate un-skipped the R6-B6 P4P-2 case of
+  `RestoreDrillArchiveTest` (CI run 45756105404). Its per-user manager runs a plain unit but cannot start the
+  namespaced inspection unit.
+- The case's probe now uses the inspection unit's own mount-namespace properties. It runs wherever the real unit can
+  start: locally, 34/34 with P4P-2 executed.
+- No coverage is reduced: the case never ran in the hosted gate before O-CI-1.
+
+**Residual:** the self-hosted critical variant runs PHP inside its pinned runtime image, which has no PostgreSQL
+client. The clinical-asset suites need one there. Rebuilding that image is a separate, owner-decided change.
 
 ---
 

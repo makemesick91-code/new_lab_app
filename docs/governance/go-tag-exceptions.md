@@ -75,6 +75,13 @@ Nothing else is an exception. In particular:
   `82150b8b56ec96a23fc9406ea0d406bd4c4e5612a1ea14569429475bd76c555a`, and the restoration takes it back. A change
   that removes the selection again is outside them and weakens a gate (CG-17).
 
+  The O-CI-1 PostgreSQL 16 client alignment of DMS-SPN4-READY-PILOT-1 (`docs/sprints/dms-spn4-ready-pilot-1.md`
+  §13.17) is **not** one of these classes either. It adds one pinned block of two steps to the hosted critical gate
+  (`tests/Fixtures/ci/o-ci-1-critical-gate-steps.yml.txt`) and is released with its sprint. It applies to the REM-1
+  file, giving `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43`, and to its rollback target, giving
+  `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3`. Between those two the removal and the
+  restoration apply as above. A change that removes the alignment again is outside them.
+
 ## Registry
 
 ### `dms-biznet-first-production-deploy-infra-1-go`
