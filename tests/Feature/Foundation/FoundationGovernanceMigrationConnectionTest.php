@@ -4,14 +4,19 @@
 | DMS-SPN4-READY-PILOT-1 R6-B2b (rule 245 #2, A-17; OD-R6-1): the dedicated
 | migration connection `pgsql_migrate`.
 |
-| Group A (always runs, no database contact):
+| Group A (always runs, no database server contact):
 | - the connection's shape: driver `pgsql`, Unix socket, no URL, no password,
-|   the owner role carried as a server startup option;
-| - the guard fails closed on every misconfiguration, before any connect;
-| - the guard runs again on reconnect;
-| - the session-role assertion;
-| - no configured value appears in a refusal;
-| - the runtime connections are unchanged.
+|   the owner role carried as the only server startup option;
+| - the guard fails closed before any connect on every misconfiguration,
+|   including DSN injection through host, port, database, sslmode or charset,
+|   unknown keys (read/write, options, connect_via), extra startup options and
+|   reserved role names;
+| - the guard is wired in, and it runs again on reconnect;
+| - the server-side session assertion: the owner role, the configured login, a
+|   Unix socket, peer authentication, a non-superuser, a non-inheriting
+|   membership;
+| - no refusal of this class echoes a configured value;
+| - no schema dump can bypass the role.
 |
 | Group B (PostgreSQL 16 role scenarios) runs only against a private,
 | disposable cluster provisioned for it. The private role-test environment
@@ -26,6 +31,9 @@
 */
 
 use App\Support\Database\MigrationConnection;
+use Illuminate\Database\Connectors\ConnectionFactory;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\PostgresConnection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
@@ -68,19 +76,44 @@ function fgmcRefusal(array $config): ?string
     return null;
 }
 
+/** A PDO double whose session-verification query returns $row. */
+function fgmcSessionPdo(array|false $row): PDO
+{
+    $statement = Mockery::mock(PDOStatement::class);
+    $statement->shouldReceive('fetch')->with(PDO::FETCH_ASSOC)->andReturn($row);
+    $pdo = Mockery::mock(PDO::class);
+    $pdo->shouldReceive('query')->andReturn($statement);
+
+    return $pdo;
+}
+
+function fgmcGoodSession(array $overrides = []): array
+{
+    return array_replace([
+        'cur' => 'fgmc_owner',
+        'ses' => 'fgmc_login',
+        'transport' => 'socket',
+        'auth' => 'peer:dms-migrate',
+        'login_kind' => 'plain',
+        'membership' => 'noinherit',
+    ], $overrides);
+}
+
 afterEach(function () {
     DB::purge('pgsql_migrate');
 });
 
 // ---------------------------------------------------------------- Group A
 
-it('ships the migration connection unconfigured, peer-only and with no credential', function () {
+it('ships the migration connection unconfigured, peer-only, with the role as its only startup option', function () {
     $source = (string) file_get_contents(config_path('database.php'));
     preg_match("/'pgsql_migrate' => \[(.*?)\n        \],/s", $source, $block);
 
     expect($block)->not->toBe([]);
     expect($block[1])->not->toContain('PASSWORD')
         ->and($block[1])->not->toContain("'url'")
+        ->and($block[1])->not->toContain("'read'")
+        ->and($block[1])->not->toContain("'options'")
         ->and($block[1])->toContain("'password' => ''")
         ->and($block[1])->toContain("'driver' => 'pgsql'")
         ->and($block[1])->toContain("env('DB_MIGRATE_OWNER_ROLE')");
@@ -89,27 +122,27 @@ it('ships the migration connection unconfigured, peer-only and with no credentia
     expect($config['driver'])->toBe('pgsql')
         ->and($config['password'])->toBe('')
         ->and($config)->not->toHaveKey('url')
+        ->and(array_keys($config['server_options']))->toBe(['role'])
         ->and($config['search_path'])->toBe('public');
 });
 
-it('leaves the default and the runtime connections untouched', function () {
-    expect(config('database.default'))->not->toBe(MigrationConnection::NAME);
+it('registers the guard for the migration connection only, never for the pgsql driver', function () {
+    $extensions = (new ReflectionProperty(DatabaseManager::class, 'extensions'))->getValue(app('db'));
+
+    expect($extensions)->toHaveKey(MigrationConnection::NAME)
+        ->and($extensions)->not->toHaveKey('pgsql');
 
     foreach (['pgsql', 'pgsql_read'] as $name) {
         expect(config("database.connections.{$name}"))->not->toHaveKey('server_options');
     }
-
-    // The extension is keyed by name: resolving the default connection never consults it.
-    expect(DB::connection()->getName())->toBe(config('database.default'));
+    expect(config('database.default'))->not->toBe(MigrationConnection::NAME);
 });
 
 it('refuses the unconfigured default before any connect', function () {
-    $message = fgmcRefusal(config('database.connections.pgsql_migrate'));
-
-    expect($message)->toStartWith('pgsql_migrate refused: ');
+    expect(fgmcRefusal(config('database.connections.pgsql_migrate')))->toStartWith('pgsql_migrate refused: ');
 });
 
-it('fails closed on every misconfiguration', function (array $overrides, string $reason) {
+it('fails closed before connecting on every misconfiguration', function (array $overrides, string $reason) {
     $config = fgmcConfig();
     foreach ($overrides as $key => $value) {
         data_set($config, $key, $value);
@@ -119,67 +152,113 @@ it('fails closed on every misconfiguration', function (array $overrides, string 
 })->with([
     'driver renamed' => [['driver' => 'pgsql_migrate'], 'driver must stay pgsql'],
     'a URL' => [['url' => 'pgsql://fgmc_login@localhost/fgmc_database'], 'URL is configured'],
+    'read sub-array' => [['read' => ['host' => '127.0.0.1']], 'unsupported option'],
+    'write sub-array' => [['write' => ['host' => '127.0.0.1']], 'unsupported option'],
+    'PDO options' => [['options' => [PDO::ATTR_PERSISTENT => true]], 'unsupported option'],
+    'connect_via' => [['connect_via_database' => 'other'], 'unsupported option'],
+    'application_name' => [['application_name' => "x' host='127.0.0.1"], 'unsupported option'],
+    'extra startup option' => [['server_options.search_path' => 'evil'], 'only server option'],
     'a password' => [['password' => 'fgmc-secret'], 'password is configured'],
     'a TCP host' => [['host' => '127.0.0.1'], 'Unix socket directory'],
     'no host' => [['host' => null], 'Unix socket directory'],
+    'host injecting a second host' => [['host' => '/a;host=127.0.0.1'], 'Unix socket directory'],
+    'host list' => [['host' => '/a,/b'], 'Unix socket directory'],
+    'host with a space' => [['host' => '/a hostaddr=127.0.0.1'], 'Unix socket directory'],
+    'port injecting a host' => [['port' => '5432;host=127.0.0.1'], 'port must be a plain number'],
+    'port zero' => [['port' => '0'], 'port must be a plain number'],
+    'port too large' => [['port' => '70000'], 'port must be a plain number'],
+    'database injecting a host' => [['database' => "db' host='127.0.0.1"], 'database must be a plain name'],
+    'database with a semicolon' => [['database' => 'db;host=127.0.0.1'], 'database must be a plain name'],
+    'charset injection' => [['charset' => "utf8';x='"], 'charset must be utf8'],
+    'sslmode injection' => [['sslmode' => 'disable;host=127.0.0.1'], 'sslmode is not a known mode'],
+    'search_path changed' => [['search_path' => 'evil'], 'search_path must be public'],
     'no login role' => [['username' => null], 'login role is not configured'],
     'login with a quote' => [['username' => "fgmc'login"], 'login role is not configured'],
+    'login postgres' => [['username' => 'postgres'], 'login role is not configured'],
+    'login pg_ reserved' => [['username' => 'pg_monitor'], 'login role is not configured'],
     'no owner role' => [['server_options.role' => null], 'owner role is not configured'],
     'owner role with a space' => [['server_options.role' => 'fgmc owner'], 'owner role is not configured'],
     'owner role injecting an option' => [['server_options.role' => 'x -c search_path=evil'], 'owner role is not configured'],
     'owner role upper case' => [['server_options.role' => 'FGMC_OWNER'], 'owner role is not configured'],
+    'owner role postgres' => [['server_options.role' => 'postgres'], 'owner role is not configured'],
+    'owner role pg_ reserved' => [['server_options.role' => 'pg_write_all_data'], 'owner role is not configured'],
     'login equals owner' => [['username' => 'fgmc_owner'], 'must differ'],
 ]);
 
-it('never echoes a configured value in a refusal', function () {
+it('never echoes a configured value in any of its refusals', function (array $break) {
     $probe = fgmcConfig([
-        'host' => '/fgmc-leak-probe-dir',
-        'username' => 'fgmc_leak_probe_login',
-        'password' => 'fgmc-leak-probe-secret',
-        'server_options' => ['role' => 'fgmc_leak_probe_role'],
+        'host' => '/fgmcleakdir',
+        'port' => '5999',
+        'database' => 'fgmc_leak_db',
+        'username' => 'fgmc_leak_login',
+        'server_options' => ['role' => 'fgmc_leak_role'],
     ]);
+    foreach ($break as $key => $value) {
+        data_set($probe, $key, $value);
+    }
 
     $message = (string) fgmcRefusal($probe);
 
     expect($message)->toStartWith('pgsql_migrate refused: ')
-        ->and($message)->not->toContain('fgmc-leak-probe')
-        ->and($message)->not->toContain('fgmc_leak_probe');
-});
+        ->and($message)->not->toContain('fgmcleak')
+        ->and($message)->not->toContain('fgmc_leak')
+        ->and($message)->not->toContain('5999');
+})->with([
+    'password' => [['password' => 'fgmc_leak_secret']],
+    'host' => [['host' => 'fgmc_leak_tcp_host']],
+    'port' => [['port' => 'fgmc_leak_port']],
+    'database' => [['database' => 'fgmc_leak db']],
+    'login' => [['username' => 'fgmc_leak LOGIN']],
+    'role' => [['server_options.role' => 'fgmc_leak ROLE']],
+    'same roles' => [['username' => 'fgmc_leak_role']],
+    'unknown key' => [['options' => ['fgmc_leak_option']]],
+]);
 
-it('creates the connection lazily for a valid configuration and runs the guard again on reconnect', function () {
+it('runs the guard again on reconnect', function () {
     fgmcUse(fgmcConfig());
-
-    // Lazy PDO: no connect has been attempted yet.
     expect(DB::connection('pgsql_migrate')->getName())->toBe('pgsql_migrate');
 
-    // A reconnect rebuilds the connection through the same extension, so a
-    // configuration broken in between is refused instead of reconnecting.
     config(['database.connections.pgsql_migrate.server_options.role' => null]);
 
     expect(fn () => DB::reconnect('pgsql_migrate'))
         ->toThrow(RuntimeException::class, 'owner role is not configured');
 });
 
-it('asserts the session role after the server accepts the session', function (mixed $current, bool $accepted) {
-    $statement = Mockery::mock(PDOStatement::class);
-    $statement->shouldReceive('fetchColumn')->andReturn($current);
-    $pdo = Mockery::mock(PDO::class);
-    $pdo->shouldReceive('query')->with('select current_user')->andReturn($statement);
+it('verifies the session through the wired extension before the PDO is handed out', function (array|false $row, bool $accepted) {
+    $pdo = fgmcSessionPdo($row);
+    $factory = Mockery::mock(ConnectionFactory::class);
+    $factory->shouldReceive('make')->andReturnUsing(
+        fn (array $config, string $name) => new PostgresConnection(fn () => $pdo, $config['database'], '', $config + ['name' => $name])
+    );
+    MigrationConnection::register(app('db'), $factory);
+    fgmcUse(fgmcConfig());
 
-    $call = fn () => MigrationConnection::assertSessionRole($pdo, 'fgmc_owner');
+    $handOut = fn () => DB::connection('pgsql_migrate')->getPdo();
 
     if ($accepted) {
-        $call();
-        expect(true)->toBeTrue();
+        expect($handOut())->toBe($pdo);
     } else {
-        expect($call)->toThrow(RuntimeException::class, 'does not run as the configured owner role');
+        expect($handOut)->toThrow(RuntimeException::class, 'pgsql_migrate refused: ');
     }
 })->with([
-    'the owner role' => ['fgmc_owner', true],
-    'the bare login' => ['fgmc_login', false],
-    'another role' => ['fgmc_other', false],
+    'a verified session' => [fgmcGoodSession(), true],
+    'the bare login (SET ROLE NONE)' => [fgmcGoodSession(['cur' => 'fgmc_login']), false],
+    'another role' => [fgmcGoodSession(['cur' => 'fgmc_other']), false],
+    'another login' => [fgmcGoodSession(['ses' => 'fgmc_other_login']), false],
+    'over TCP' => [fgmcGoodSession(['transport' => 'tcp']), false],
+    'password authentication' => [fgmcGoodSession(['auth' => 'scram-sha-256:fgmc_login']), false],
+    'trust (no identity)' => [fgmcGoodSession(['auth' => '']), false],
+    'a superuser login' => [fgmcGoodSession(['login_kind' => 'super']), false],
+    'an inheriting membership' => [fgmcGoodSession(['membership' => 'inherit']), false],
+    'no membership' => [fgmcGoodSession(['membership' => null]), false],
     'no row' => [false, false],
 ]);
+
+it('leaves no schema dump that would load around the startup role', function () {
+    foreach (['sql', 'dump'] as $extension) {
+        expect(file_exists(database_path('schema/'.MigrationConnection::NAME."-schema.{$extension}")))->toBeFalse();
+    }
+});
 
 // ---------------------------------------------------------------- Group B
 
@@ -234,28 +313,40 @@ function fgmcSqlState(PDO $pdo, string $sql): string
 $fgmcSkip = fn () => ! fgmcClusterConfigured();
 $fgmcSkipReason = 'needs the private PostgreSQL 16 role-test cluster (R6_ROLE_TEST_*); run by PB-7';
 
-it('runs every session as the owner role, also after a reconnect and a RESET ROLE', function () {
+it('runs every session as the owner role over a socket by peer, also after a reconnect and a RESET ROLE', function () {
     fgmcUse(fgmcClusterConfig());
     $connection = DB::connection('pgsql_migrate');
 
-    $who = fn () => (array) $connection->selectOne('select current_user as cur, session_user as ses');
+    $who = fn () => (array) $connection->selectOne(
+        "select current_user as cur, session_user as ses, inet_server_addr() is null as via_socket, split_part(system_user, ':', 1) as method"
+    );
 
-    expect($who())->toBe(['cur' => fgmcEnv('OWNER'), 'ses' => fgmcEnv('MIGRATOR')]);
+    expect($who())->toBe(['cur' => fgmcEnv('OWNER'), 'ses' => fgmcEnv('MIGRATOR'), 'via_socket' => true, 'method' => 'peer']);
 
     DB::reconnect('pgsql_migrate');
-    expect($who())->toBe(['cur' => fgmcEnv('OWNER'), 'ses' => fgmcEnv('MIGRATOR')]);
+    expect($who()['cur'])->toBe(fgmcEnv('OWNER'));
 
-    // The startup option makes the owner role the session default, so a
-    // RESET ROLE returns to it rather than to the bare login.
+    // The startup option makes the owner role the session default, so RESET ROLE returns to it.
     $connection->statement('reset role');
     expect($who()['cur'])->toBe(fgmcEnv('OWNER'));
+})->skip($fgmcSkip, $fgmcSkipReason);
+
+it('fails closed after SET ROLE NONE: the bare login can create nothing', function () {
+    fgmcUse(fgmcClusterConfig());
+    $connection = DB::connection('pgsql_migrate');
+
+    $connection->statement('set role none');
+    expect($connection->selectOne('select current_user as cur')->cur)->toBe(fgmcEnv('MIGRATOR'));
+
+    expect(fn () => $connection->statement('create table public.fgmc_role_none (id int)'))
+        ->toThrow(PDOException::class, 'permission denied for schema public');
 })->skip($fgmcSkip, $fgmcSkipReason);
 
 it('is refused by the server for a role the login may not assume, and creates nothing', function () {
     fgmcUse(fgmcClusterConfig(fgmcEnv('NON_MEMBER')));
 
     expect(fn () => DB::connection('pgsql_migrate')->statement('create table public.fgmc_should_not_exist (id int)'))
-        ->toThrow(PDOException::class);
+        ->toThrow(PDOException::class, 'permission denied to set role');
 
     $exists = fgmcPdo(fgmcEnv('RUNTIME'), (string) fgmcEnv('RUNTIME_PASSWORD'))
         ->query("select to_regclass('public.fgmc_should_not_exist') is not null")->fetchColumn();

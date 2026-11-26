@@ -37,6 +37,13 @@ final class RuntimePrivilegeRegistry
         'REASSIGN OWNED' => '/\bREASSIGN\s+OWNED\b/i',
         'SET ROLE' => '/\bSET\s+(LOCAL\s+|SESSION\s+)?ROLE\b/i',
         'SET SESSION AUTHORIZATION' => '/\bSET\s+SESSION\s+AUTHORIZATION\b/i',
+        // R6-B2b review round 1: the other ways a session's role can change. The
+        // migration connection's role is the session default, so these could only
+        // drop it, never widen it; they still have no place in a migration.
+        'RESET SESSION AUTHORIZATION' => '/\bRESET\s+SESSION\s+AUTHORIZATION\b/i',
+        'RESET ROLE' => '/\bRESET\s+ROLE\b/i',
+        'set_config role' => "/\bset_config\s*\(\s*'role'/i",
+        'DISCARD ALL' => '/\bDISCARD\s+ALL\b/i',
     ];
 
     /** @var array<string, mixed> */

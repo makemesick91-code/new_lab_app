@@ -113,7 +113,7 @@ return [
             'driver' => 'pgsql',
             'host' => env('DB_MIGRATE_SOCKET_DIR'),
             'port' => env('DB_MIGRATE_PORT', '5432'),
-            'database' => env('DB_MIGRATE_DATABASE', env('DB_DATABASE', 'laravel')),
+            'database' => env('DB_MIGRATE_DATABASE', env('DB_DATABASE')),
             'username' => env('DB_MIGRATE_USERNAME'),
             'password' => '',
             'charset' => env('DB_CHARSET', 'utf8'),

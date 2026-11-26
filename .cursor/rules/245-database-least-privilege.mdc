@@ -20,8 +20,12 @@ implemented, a database guard (CHECK, trigger) protects against application bugs
 ## Locked target
 
 1. `dms_owner` NOLOGIN owns schema `public` and every application object.
-2. `dms_migrator` LOGIN, member of `dms_owner` WITH INHERIT FALSE, SET TRUE. The migration connection runs an explicit
-   `SET ROLE dms_owner` when it connects, so every new object is owned by `dms_owner` (A-17, proven by CI before use).
+2. `dms_migrator` LOGIN, member of `dms_owner` WITH INHERIT FALSE, SET TRUE. The migration connection (`pgsql_migrate`,
+   R6-B2b) sets `dms_owner` as its role at the start of every session (the startup option `-c role=dms_owner`, so a
+   reconnect re-applies it and a role the login may not assume refuses the session), so every new object is owned by
+   `dms_owner` (A-17, proven by CI before use). Unix socket and peer authentication only (OD-R6-1); the session is
+   asserted to be the owner role over a socket, by peer, from a non-superuser login with a non-inheriting
+   membership.
    Migrations connect to PostgreSQL directly, never through PgBouncer.
 3. `dms_runtime` (the application login role, web, queue and scheduler) is never a member of `dms_owner`; it has no
    CREATE on any schema, no TRUNCATE, no TRIGGER and no ownership.

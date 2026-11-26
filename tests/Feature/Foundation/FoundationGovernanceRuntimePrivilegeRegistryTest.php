@@ -202,6 +202,12 @@ it('refuses a migration that would grant, revoke, change a role or change owners
     ['ALTER TABLE users OWNER TO dms_owner', 'OWNER TO'],
     ['REASSIGN OWNED BY a TO b', 'REASSIGN OWNED'],
     ['SET LOCAL ROLE dms_owner', 'SET ROLE'],
+    // R6-B2b review round 1: every other way a session's role can change.
+    ['SET SESSION AUTHORIZATION legacy_author', 'SET SESSION AUTHORIZATION'],
+    ['RESET SESSION AUTHORIZATION', 'RESET SESSION AUTHORIZATION'],
+    ['RESET ROLE', 'RESET ROLE'],
+    ["SELECT set_config('role', 'dms_owner', false)", 'set_config role'],
+    ['DISCARD ALL', 'DISCARD ALL'],
 ]);
 
 it('agrees with the guards PostgreSQL already enforces: a table that refuses UPDATE or DELETE is never FULL_DML', function () {

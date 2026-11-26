@@ -29,6 +29,7 @@ use App\Support\Routing\DatabaseRouteKey;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -43,6 +44,17 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once app_path('Support/helpers.php');
+
+        // DMS-SPN4-READY-PILOT-1 R6-B2b — the migration connection fails closed on
+        // its first connect and on every reconnect (see MigrationConnection). It is
+        // registered as soon as the database manager exists, so nothing can resolve
+        // `pgsql_migrate` without it.
+        $this->app->afterResolving('db', function (DatabaseManager $db, $app): void {
+            MigrationConnection::register($db, $app['db.factory']);
+        });
+        if ($this->app->resolved('db')) {
+            MigrationConnection::register($this->app['db'], $this->app['db.factory']);
+        }
 
         // CICD-GOVERNANCE-EVALUATION-MEMO-1 — shared so every governance gate
         // reached during one evaluation sees the same memo. It caches only while
@@ -133,10 +145,6 @@ class AppServiceProvider extends ServiceProvider
         // to routes defined AFTER they are registered, so this runs before the
         // route files load (see DatabaseRouteKey).
         DatabaseRouteKey::register();
-
-        // DMS-SPN4-READY-PILOT-1 R6-B2b — the migration connection fails closed on
-        // its first connect and on every reconnect (see MigrationConnection).
-        MigrationConnection::register($this->app['db'], $this->app['db.factory']);
 
         $this->registerDoctorAppLoginRateLimiters();
         $this->registerKtpScanRateLimiter();
