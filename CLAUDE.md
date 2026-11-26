@@ -176,7 +176,10 @@ after you open a file it covers. When you plan work in a domain before opening a
 ### Working method
 
 - **CG-21 Evidence over claims.** "Pre-existing" requires reproducing the failure on the untouched base. Report
-  measured numbers, never estimates dressed as facts. A WATCH is reported as WATCH.
+  measured numbers, never estimates dressed as facts. A WATCH is reported as WATCH. Every completed sprint,
+  sub-sprint, phase, workstream, milestone or acceptance gate ends with the cumulative progress report of rule 251
+  (`docs/governance/mandatory-progress-reporting-policy.md`): twelve indicators counted against canonical registers,
+  NOT MEASURABLE rather than an invented figure, the deadline status, and a percentage never overrides a NO-GO gate.
 - **CG-22 Owner decisions are never inferred.** Activation, pilot scope, approvals and production data changes need
   an explicit owner decision, recorded in the sprint doc.
 - **CG-23 Keep context small.** Follow the `limit-saver` skill: targeted `grep` or graphify before reading files, and

@@ -142,6 +142,10 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   `241-rme-ptm-double-signature.mdc`, `242-rme-clinical-photos.mdc` (flag OFF),
   `243-rme-doctor-encounter-scope-downloads-fields.mdc` (cakupan encounter, flag OFF),
   `244-patient-rm-auto-number-core-fields.mdc`.
+- Laporan kemajuan wajib (rule 251, PERMANEN sejak 2026-11-26): setiap sprint, sub-sprint, fase, workstream, milestone
+  dan gate yang selesai diakhiri tabel 12 indikator terhadap register kanonik, NOT MEASURABLE bila register atau bukti
+  tidak ada, dan persentase tidak pernah mengalahkan gate NO-GO:
+  [mandatory-progress-reporting-policy](governance/mandatory-progress-reporting-policy.md).
 - Templat: [sprint-runtime-template](engineering/sprint-runtime-template.md),
   [foundation-sprint-template](engineering/foundation-sprint-template.md),
   [hotfix-runtime-template](engineering/hotfix-runtime-template.md).

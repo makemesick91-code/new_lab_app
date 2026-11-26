@@ -150,7 +150,8 @@ function aiCriticalGlobalRules(): array
         'CG-18' => ['GLOBAL TEMPORARY FULL-SUITE POLICY', 'never as passed', '--all-required', '--regression'],
         'CG-19' => ['--filter', 'both', 'critical_gate_mandatory_suites'],
         'CG-20' => ['Storage::fake', 'setTestNow', 'PostgreSQL', 'branch isolation'],
-        'CG-21' => ['Pre-existing', 'measured'],
+        // Rule 251 (owner, 2026-11-26): every completion ends with the cumulative progress report.
+        'CG-21' => ['Pre-existing', 'measured', 'rule 251', 'docs/governance/mandatory-progress-reporting-policy.md', 'NOT MEASURABLE', 'never overrides a NO-GO gate'],
         'CG-22' => ['owner decision'],
         'CG-23' => ['limit-saver', 'graphify query', 'graphify update .'],
         'CG-24' => ['docs/sprints/', '.cursor/rules/', 'DevflowAiInstructionSystemTest', 'the environment file', '-- never'],
