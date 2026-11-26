@@ -34,16 +34,20 @@ declare -gA DMS_ARCHIVE_OWNERS=()
 # P4P-1: the catalog shape the archive creates, "functions:tables:indexes:constraints:fk_constraints:triggers:sequences";
 # the guest reports the same shape from the restored catalog, and GO needs them equal.
 DMS_ARCHIVE_SHAPE=""
+# The extensions the archive creates (space list, sorted), each already checked against the allowlist.
+DMS_ARCHIVE_EXTENSIONS=""
 _dms_archive_fail() { echo "archive: $*"; return 1; }
 
 # dms_archive_toc_validate <pg_restore -l output> <allowed owner roles (space-separated)> <extension allowlist (space-separated, may be empty)>
-# Fills DMS_ARCHIVE_DATA_TABLES (schema.table, TOC order) and DMS_ARCHIVE_OWNERS. Returns 1 with the reason.
+# Fills DMS_ARCHIVE_DATA_TABLES (schema.table, TOC order), DMS_ARCHIVE_OWNERS and DMS_ARCHIVE_EXTENSIONS. Returns 1
+# with the reason.
 dms_archive_toc_validate() {
   local toc="${1:?toc}" owners=" ${2-} " exts=" ${3-} " line n=0 rest type schema tagowner tag owner t
-  local -A tables=() datas=() shape=()
+  local -A tables=() datas=() shape=() extset=()
   DMS_ARCHIVE_DATA_TABLES=()
   DMS_ARCHIVE_OWNERS=()
   DMS_ARCHIVE_SHAPE=""
+  DMS_ARCHIVE_EXTENSIONS=""
   local fmt_ok=0 ver_ok=0 dumpver_ok=0
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
@@ -79,7 +83,12 @@ dms_archive_toc_validate() {
     fi
     # pg_restore lists an extension, and a comment on it, with an empty owner.
     if [ -z "$owner" ] && { [ "$type" = EXTENSION ] || { [ "$type" = COMMENT ] && [ "${tag#EXTENSION }" != "$tag" ]; }; }; then
-      :
+      # a comment on an extension only in pg_dump's form (no schema column) and only on an allowlisted extension: the
+      # guest drops exactly that form, so no other form may pass (R6-B8 re-review INFO-A)
+      if [ "$type" = COMMENT ]; then
+        [ "$schema" = "-" ] && [[ "$exts" == *" ${tag#EXTENSION } "* ]] \
+          || { _dms_archive_fail "TOC line ${n}: a comment on extension '${tag#EXTENSION }' is not listed the way pg_dump lists one, or the extension is not allowlisted"; return 1; }
+      fi
     elif ! [[ "$owner" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
       _dms_archive_fail "TOC line ${n} has an owner that is not a plain role name"
       return 1
@@ -97,7 +106,11 @@ dms_archive_toc_validate() {
         [[ "$tag" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || { _dms_archive_fail "TOC line ${n}: ${type} name '${tag}' is not a plain lowercase identifier"; return 1; }
         [ "$schema" != "-" ] || { _dms_archive_fail "TOC line ${n}: ${type} without a schema"; return 1; } ;;
       EXTENSION)
-        [[ "$tag" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] && [[ "$exts" == *" ${tag} "* ]] || { _dms_archive_fail "the archive creates extension '${tag}', which is not in the allowlist (PR-8)"; return 1; } ;;
+        [[ "$tag" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] && [[ "$exts" == *" ${tag} "* ]] || { _dms_archive_fail "the archive creates extension '${tag}', which is not in the allowlist (PR-8)"; return 1; }
+        # Exactly as pg_dump lists an extension (no schema column, no owner): the guest drops only that form before the
+        # restore, so any other form would run its SQL (R6-B8 review INFO-4).
+        [ "$schema" = "-" ] && [ -z "$owner" ] || { _dms_archive_fail "TOC line ${n}: extension '${tag}' is not listed the way pg_dump lists one (schema -, no owner)"; return 1; }
+        extset[$tag]=1 ;;
     esac
     shape[$type]=$(( ${shape[$type]:-0} + 1 ))
     case "$type" in
@@ -113,6 +126,7 @@ dms_archive_toc_validate() {
   [ "${#tables[@]}" -ge 1 ] && [ "${#tables[@]}" -le "$DMS_ARCHIVE_MAX_TABLES" ] || { _dms_archive_fail "the archive has ${#tables[@]} tables"; return 1; }
   for t in "${!tables[@]}"; do [ -n "${datas[$t]:-}" ] || { _dms_archive_fail "table ${t} has no data entry"; return 1; }; done
   for t in "${!datas[@]}"; do [ -n "${tables[$t]:-}" ] || { _dms_archive_fail "data entry ${t} has no table"; return 1; }; done
+  DMS_ARCHIVE_EXTENSIONS="$(for t in "${!extset[@]}"; do printf '%s\n' "$t"; done | LC_ALL=C sort | paste -sd' ' -)"
   DMS_ARCHIVE_SHAPE="${shape[FUNCTION]:-0}:${shape[TABLE]:-0}:${shape[INDEX]:-0}:${shape[CONSTRAINT]:-0}:${shape["FK CONSTRAINT"]:-0}:${shape[TRIGGER]:-0}:${shape[SEQUENCE]:-0}"
   return 0
 }
