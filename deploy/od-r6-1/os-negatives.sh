@@ -62,9 +62,10 @@ host   all  all  0.0.0.0/0  reject
 host   all  all  ::/0       reject
 HBA
 chown postgres:postgres "$PGD/pg_ident.conf" "$PGD/pg_hba.conf"
-runuser -u postgres -- "$BIN/pg_ctl" -D "$PGD" -l "$W/postgres.log" -o "-k $SOCK -c listen_addresses='' -p $PORT" -w start >/dev/null
+runuser -u postgres -- "$BIN/pg_ctl" -D "$PGD" -l "$PGD/postgres.log" -o "-k $SOCK -c listen_addresses='' -p $PORT" -w start >/dev/null \
+  || { echo "HARNESS ERROR: the private cluster did not start"; cat "$PGD/postgres.log" 2>/dev/null | tail -20; exit 3; }
 SU=(runuser -u postgres -- "$BIN/psql" -X -q -v ON_ERROR_STOP=1 -h "$SOCK" -p "$PORT" -U postgres)
-"${SU[@]}" -d postgres <<SQL
+"${SU[@]}" -d postgres <<SQL || { echo "HARNESS ERROR: role provisioning failed"; exit 3; }
 CREATE ROLE r6t_owner NOLOGIN;
 CREATE ROLE r6t_migrator LOGIN;
 GRANT r6t_owner TO r6t_migrator WITH INHERIT FALSE, SET TRUE;
@@ -73,7 +74,7 @@ CREATE DATABASE r6t_db;
 REVOKE CREATE, TEMPORARY ON DATABASE r6t_db FROM PUBLIC;
 GRANT CONNECT ON DATABASE r6t_db TO r6t_migrator, r6t_runtime;
 SQL
-"${SU[@]}" -d r6t_db <<'SQL'
+"${SU[@]}" -d r6t_db <<'SQL' || { echo "HARNESS ERROR: schema provisioning failed"; exit 3; }
 ALTER SCHEMA public OWNER TO r6t_owner;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO r6t_runtime;
