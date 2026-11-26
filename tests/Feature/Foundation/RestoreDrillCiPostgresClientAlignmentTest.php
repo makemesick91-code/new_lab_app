@@ -76,7 +76,11 @@ it('keeps the gate database service at PostgreSQL 16 and leaves the R6-B6 pinned
 });
 
 it('keeps restore_db strict: one header line, one transaction, ON_ERROR_STOP, and exit-on-error on the direct paths (O-CI-1)', function () {
-    $helper = (string) file_get_contents(base_path('tests/Fixtures/clinical-assets/restore-db.sh'));
+    // Code lines only: the header comment describes the flags it requires.
+    $helper = implode("\n", array_filter(
+        explode("\n", (string) file_get_contents(base_path('tests/Fixtures/clinical-assets/restore-db.sh'))),
+        fn (string $line): bool => ! str_starts_with(ltrim($line), '#'),
+    ));
     $rehearsal = (string) file_get_contents(base_path('tests/Fixtures/clinical-assets/rehearsal.sh'));
 
     expect(substr_count($helper, "grep -vxF 'SET transaction_timeout = 0;'"))->toBe(1)
