@@ -159,7 +159,7 @@ the owner's explicit decision (CG-16, CG-22), never from a number reaching a tar
 | OD-PR-1 | The registers of indicators 2, 7, 8, 9 and 11 are confirmed with their exact scope, and so are the reference baselines of §9 | Full operational readiness (indicator 10) stays NO-GO and NOT MEASURABLE until its denominator is approved |
 | OD-PR-2 | Preparation of a canonical project completion register is approved, as documentation and evidence reconciliation only | The proposed domain structure is a proposal, not a denominator. Indicator 12 stays NOT MEASURABLE until the owner approves the register's denominator |
 | Memo | Reconciliation of the 20-requirement memo register is prioritised: releases 3 and 4 and every later approved change | Done and accepted on 2026-11-27 (next row). The audit authorises no implementation or deployment, and it preserves the LAB_FEE approval dependencies |
-| Memo acceptance (2026-11-27, decision "RULE 251 MERGE AND NEXT CRITICAL PATH") | The reconciliation (`docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md` §6) is accepted at its documented evidence level. Production deployment stays "code present in production", and active production is added as the supplementary indicator 4a | The flag states are those of the release 4 record, not re-verified on the host. The rise from 2/20 to 15/20 is actual progress, not a correction |
+| Memo acceptance (2026-11-27, decision "RULE 251 MERGE AND NEXT CRITICAL PATH") | The reconciliation (`docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md` §6) is accepted at its documented evidence level. Production deployment stays "code present in production", and active production is added as the supplementary indicator 4a | The flag states are those of the release 4 record, not re-verified on the host. ERRATUM before merge: M2.1 and M2.2 are partial (two rule 243 preconditions for ON open), so implementation and deployment are 13/20, not 15/20, and the rise from 2/20 is +55.0 pp of actual progress. The owner's acknowledgement of the corrected figures is pending |
 
 **Each register entry of the project completion register** records:
 - a stable requirement id;
@@ -183,15 +183,16 @@ pack 57 are kept as reference baselines and are cited in the evidence lines.
 | 8 | SPN4 pilot acceptance | 6/15 (40.0 %) | pack 57 §37.5 |
 | 9 | Pilot blockers resolved | 7/13 (53.8 %) | pack 57 §37.5 |
 | 11 | Full-readiness recovery requirements | 0/8 (0.0 %) | pack 57 §37.8 |
-| 3 | Internal Memo implementation | 15/20 (75.0 %) | traceability §6 (owner-accepted 2026-11-27) |
-| 4 | Internal Memo production deployment (code present) | 15/20 (75.0 %) | traceability §6 |
+| 3 | Internal Memo implementation | 13/20 (65.0 %); first presented as 15/20, corrected by ERRATUM | traceability §6 |
+| 4 | Internal Memo production deployment (code present) | 13/20 (65.0 %); first presented as 15/20, corrected by ERRATUM | traceability §6 |
 | 4a | Internal Memo active production (supplementary) | 12/20 (60.0 %) | traceability §6; flags per the release 4 record |
 | 5 | Internal Memo user acceptance | 3/20 (15.0 %) | traceability §6 |
 | 6 | Internal Memo overall closure | 3/20 (15.0 %) | traceability §6 |
 
 - **The SPN4 engineering figure** moved from 10/14 to 7/14 by an ERRATUM (pack 57 §39.0). That move is a correction
   of the count, not a regression, and is never reported as lost progress.
-- **The memo implementation figure** rose from 2/20 at the release-1 audit (`cab3a4c1`) to 15/20. That is actual
-  progress of +65.0 percentage points, releases 2–4.
+- **The memo implementation figure** rose from 2/20 at the release-1 audit (`cab3a4c1`) to 13/20. That is actual
+  progress of +55.0 percentage points, releases 2–4. The first presentation said 15/20 (+65.0 pp); the ERRATUM in
+  traceability §6 corrects it. The correction is not a regression.
 - **In the rule 251 table,** the memo rows' first measurable value is not an increase over a period. A row whose
   previous report said NOT MEASURABLE writes "—" for its change.

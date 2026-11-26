@@ -122,12 +122,12 @@ status column for progress reporting under rule 251 (`docs/governance/mandatory-
 | M1.1 | yes | rule 241, #663–#665 | yes / yes | PASS (items 7, 9) | yes |
 | M1.2 | yes | rule 241 | yes / yes | PASS (items 6, 8; front-office role) | yes |
 | M1.3 | yes | rule 241 | yes / yes | PASS (items 7, 9). Limit: the odontogram page itself was not opened; the gate message names both | yes |
-| M2.1 | yes | rule 243 §2, #668, #671 | yes / **no** (encounter-scope flag OFF) | NOT RUN: doctor UAT is a precondition of turning the flag on | no |
-| M2.2 | yes | rule 243 §2 | yes / **no** (same flag) | NOT RUN | no |
+| M2.1 | **partial** | rule 243 §2, #668, #671. Two code changes that rule 243 lists as "Preconditions for ON" are still open: (a) a book amendment's requester is locked out once out of service, because `MedicalRecordPolicy::viewAnchorContent` still starts from the patient-level `view`; (b) the author-stamp filter covers only the book | no (partial) / **no** (encounter-scope flag OFF) | NOT RUN: doctor UAT is a precondition of turning the flag on | no |
+| M2.2 | **partial** | rule 243 §2; the same two open preconditions | no (partial) / **no** (same flag) | NOT RUN | no |
 | M2.3 | yes | rules 227, 228 §5.2; the front-office single-branch part is ACCEPTED BY DESIGN, with owner confirmation not recorded | yes / yes | NOT RUN | no |
 | M2.4 | yes | rule 243 §1, #660 (not flag-gated) | yes / yes | NOT RUN | no |
 | M2.5 | yes | rule 238, #655 | yes / yes | NOT RUN | no |
-| M3.1 | yes | rule 243, #666, #669 | yes / yes | PARTIAL: items 10 and 16 PASS; occupation and planned treatment not checked | no |
+| M3.1 | yes | rule 243, #666, #669. The full doctor biodata (birth place, date and age; occupation; gender) is on the medical-record page; the visit page shows name, record number and age, without contact data | yes / yes | PARTIAL: items 10 and 16 PASS. Item 10's expected result named the visit page, but those fields render on the medical-record page, so re-test there; occupation and planned treatment not checked | no |
 | M3.2 | yes | rule 238, #655 | yes / yes | NOT RUN | no |
 | M3.3 | yes | rule 240, #667 | yes / yes | PARTIAL: items 11 and 18 PASS; amendment request and approval (items 12–14) NOT RUN | no |
 | M4.1 | yes | rule 244, #654, #666 | yes / yes | REVIEW REQUIRED (items 1, 2) | no |
@@ -137,26 +137,35 @@ status column for progress reporting under rule 251 (`docs/governance/mandatory-
 | M5.1 | **partial** | instalments and transfer reference (#655). The lab-fee line depends on RME-LAB-FEE-APPROVAL-1 (Gate 1 NO-GO, rules 245–249 not implemented); invoice editing stays immutable by owner decision | no | NOT RUN | no |
 | M5.2 | **no** | REQUIRES OWNER DECISION (payment-workflow discussion) | no | NOT RUN | no |
 | M6.1 | **no** | organizational; no approval evidenced | no | NOT RUN | no |
-| M6.2 | **partial** | read-only usage report (rule 239, #656); the cost from a verified rate is an owner action | no | NOT RUN | no |
+| M6.2 | **partial** | read-only usage report (rule 239, #656). The report has no clinical-photo category, which rule 239 §2 requires of the change that writes photos; the cost from a verified rate is an owner action | no | NOT RUN | no |
 | C4 | **no** | organizational; management UAT not held | no | NOT RUN | no |
 
 | Measure (rule 251) | Completed / Total | % |
 |---|---|---|
-| Implementation | 15 / 20 | 75.0 |
-| Production deployment (code present in production) | 15 / 20 | 75.0 |
+| Implementation | 13 / 20 | 65.0 |
+| Production deployment (code present in production) | 13 / 20 | 65.0 |
 | Active production (supplementary: deployed and enabled) | 12 / 20 | 60.0 |
 | User acceptance | 3 / 20 | 15.0 |
 | Overall closure | 3 / 20 | 15.0 |
 
 **Historical progress:** the release-1 audit at `cab3a4c1` (§1) recorded 2 of 20 IMPLEMENTED (10.0 %). The rise to
-15 of 20 is actual implementation progress of **+65.0 percentage points** (releases 2–4), not a correction of the count.
+13 of 20 is actual implementation progress of **+55.0 percentage points** (releases 2–4), not a correction of the count.
+
+**ERRATUM (2026-11-27, before this section was merged):** the figures first presented to the owner counted M2.1 and
+M2.2 as implemented. That gave implementation and deployment 15/20 (75.0 %) and the historical rise +65.0 pp. A
+code-level check found the two rule 243 "Preconditions for ON" still open, so both are partial. The corrected figures
+are 13/20 (65.0 %) and +55.0 pp. Active production (12/20), user acceptance (3/20) and closure (3/20) are unchanged.
+This is a correction of the count, not a regression. The owner's acknowledgement of the corrected figures is
+pending.
 
 **Remaining dependencies:**
 - **Re-runs and Phase 2:** re-test UAT items 1, 2, 4 and 5 with the front-office role; run Phase 2 (items 12–14).
 - **Missing UAT:** items for M2.3, M2.4, M2.5, M3.2 and M4.3, and the missing parts of M3.1.
-- **Flags:** separate owner decisions to enable the encounter scope (M2.1, M2.2; after a reviewed dry run and doctor
-  UAT, rule 243 §2) and clinical photos (M4.4). A disabled feature is never counted as user-accepted.
+- **M2.1 and M2.2:** the two open rule 243 "Preconditions for ON", each with its test, before any flag decision.
+- **Flags:** separate owner decisions to enable the encounter scope (M2.1, M2.2; after the preconditions, a reviewed
+  dry run and doctor UAT, rule 243 §2) and clinical photos (M4.4). A disabled feature is never counted as
+  user-accepted.
 - **M5.1:** the payment discussion, and the LAB_FEE approval program. Its Gate 1 NO-GO is not bypassed.
 - **M5.2:** the payment-workflow discussion.
-- **M6.2:** the verified storage rate.
+- **M6.2:** the clinical-photo category in the usage report (rule 239 §2), and the verified storage rate.
 - **M6.1 and C4:** the organizational approvals.
