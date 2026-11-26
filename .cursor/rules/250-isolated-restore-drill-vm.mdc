@@ -148,6 +148,16 @@ infrastructure only. The audited workflow is activated only on the dedicated bra
 (owner directive "R6-B6 — Phase 3"), never on a PR, base or production branch. A gate that did not run is NOT RUN,
 never PASS. `provision-drill-host.sh` runs only on a GitHub-hosted, disposable runner.
 
+## Production-compatible image (R6-B8)
+The production drill image is built with the extension allowlist `pg_stat_statements` (production's only extension).
+The drill host allowlists exactly that. Every other extension stays refused (V10, S-pgstat-no, the TOC allowlist).
+- Every extension an archive creates must be named in the signed contract, at the image's exact version; otherwise
+  the drill is refused before any VM boots (V22 wrong version, V24 not named).
+- The TOC accepts an extension entry only in the form `pg_dump` writes (no schema column, no owner).
+- The guest creates only the extensions the archive itself creates, as the bootstrap superuser, before any backup byte
+  is read (P4P-1(b)). An archive without the extension therefore restores exactly as it would in a real restore (V1
+  under the production `drill.conf`), with no extension present.
+
 ## A-1 closure (owner decision, 2026-11-25)
 Finding A-1 is **CLOSED** for implementation and security acceptance. The owner's decision followed Evidence Pack 53:
 final code `8f7e2807`, final real-isolation CI run 45593398043 (sprint record G6-R6B6-ACC). The acceptance holds only

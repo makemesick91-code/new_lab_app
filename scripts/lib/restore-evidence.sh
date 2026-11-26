@@ -41,7 +41,7 @@ DMS_DRILL_EVIDENCE_LIMITS_D6="vcpu=1,memory_mib=2048,disk_gib=10,minutes=30,task
 # P5-3: the two comma lists have fixed keys in a fixed order with typed values (no duplicate, unknown or reordered key).
 DMS_DRILL_EVIDENCE_EXPECTED_RE='^tables=[0-9]{1,9},rows=[0-9]{1,15},per_table_digest=[0-9a-f]{64},catalog_shape=[0-9]{1,9}(:[0-9]{1,9}){6},env_contract=[0-9a-f]{64},env=[0-9a-f]{64}$'
 # R6C-9: the stages a refusal or an abort may name (the orchestrator's STAGE values), nothing else.
-DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed unclosed_after_boot env_contract env_compatibility image_properties "
+DMS_DRILL_EVIDENCE_STAGES=" arguments production_host configuration configuration_values start limits lock pg_client work_dir manifest manifest_revoked backup_source backup_integrity archive_inspection archive_toc archive_extensions archive_counts archive_p5 archive_size input_disk vm vm_launch vm_no_status decision unclosed unclosed_after_boot env_contract env_compatibility image_properties "
 DMS_DRILL_EVIDENCE_GUEST_RE='^restore=[a-z_]{1,20},tables=[0-9a-z]{1,12},per_table_digest=([0-9a-f]{64}|none|invalid),catalog_shape=[0-9:a-z]{1,80},user_code=[0-9a-z]{1,12},user_code_executed=[0-9a-z]{1,12},fidelity=[0-9:a-z]{1,40},vm_ifaces=[a-z0-9:]{1,40},env=([0-9a-f]{64}|none|invalid)$'
 
 # _dms_evidence_value_ok <key> <value>

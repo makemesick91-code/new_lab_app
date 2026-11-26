@@ -109,7 +109,7 @@ printf '%s\n' "DMS_SUPERVISOR_CALLER=${R}" "DMS_SUPERVISOR_QEMU_USER=${Q}" "DMS_
   "DMS_SUPERVISOR_PG_BINDIR=/usr/lib/postgresql/16/bin" "DMS_SUPERVISOR_SIGNER_STORE=/var/lib/dmsdrill-signer/store" | conf supervisor.conf
 # The drill's own configuration is part of the install the signer verifies (R6C-8): its signer and supervisor paths.
 printf '%s\n' "DMS_DRILL_MANIFEST_ANCHOR=${E}/manifest-anchor" "DMS_DRILL_MANIFEST_REVOCATIONS=${E}/revocations" \
-  "DMS_DRILL_EXTENSION_ALLOWLIST=none" "DMS_DRILL_SIGNER_USER=${S}" "DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh" \
+  "DMS_DRILL_EXTENSION_ALLOWLIST=pg_stat_statements" "DMS_DRILL_SIGNER_USER=${S}" "DMS_DRILL_SIGNER_COMMAND=${L}/signer/restore-drill-evidence-signer.sh" \
   "DMS_DRILL_SUPERVISOR_COMMAND=${L}/supervisor/restore-drill-supervisor.sh" "DMS_DRILL_PG_BINDIR=/usr/lib/postgresql/16/bin" \
   "DMS_DRILL_WORK_DIR=/var/lib/dms-restore-drill/runner" "DMS_DRILL_LOCALE=C.UTF-8" \
   "DMS_DRILL_IMAGE_PROPERTIES=${E}/image.properties" | conf drill.conf

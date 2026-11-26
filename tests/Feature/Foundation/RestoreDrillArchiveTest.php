@@ -69,6 +69,39 @@ it('accepts an allowlisted extension and records both owners of a two-owner arch
         ->and($owners['out'])->toBe('app_runtime,dms_owner');
 });
 
+it('accepts production\'s pg_stat_statements only where it is allowlisted, and still refuses every other extension (R6-B8)', function () {
+    $refused = rdaLib('dms_archive_toc_validate "$FX/pgstat.toc" "app_runtime" ""');
+    $allowed = rdaLib('dms_archive_toc_validate "$FX/pgstat.toc" "app_runtime" "pg_stat_statements"');
+    $other = rdaLib('dms_archive_toc_validate "$FX/ext.toc" "app_runtime" "pg_stat_statements"');
+
+    expect($refused['exit'])->toBe(1)->and($refused['out'])->toContain("extension 'pg_stat_statements', which is not in the allowlist")
+        ->and($allowed['exit'])->toBe(0, $allowed['out'])
+        ->and($other['exit'])->toBe(1)->and($other['out'])->toContain("extension 'pgcrypto', which is not in the allowlist");
+});
+
+it('reports the extensions an archive creates, and accepts an extension entry only in the form pg_dump writes (R6-B8 review)', function () {
+    $clean = rdaLib('dms_archive_toc_validate "$FX/clean.toc" "app_runtime dms_owner" "pg_stat_statements" > /dev/null && echo "[$DMS_ARCHIVE_EXTENSIONS]"');
+    $pgstat = rdaLib('dms_archive_toc_validate "$FX/pgstat.toc" "app_runtime dms_owner" "pg_stat_statements" > /dev/null && echo "[$DMS_ARCHIVE_EXTENSIONS]"');
+    $toc = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/pgstat.toc'));
+    $crafted = [];
+    foreach (['public pg_stat_statements dms_owner', '- pg_stat_statements dms_owner', 'public pg_stat_statements '] as $form) {
+        $file = rdaTemp((string) preg_replace('/^(\d+; \d+ \d+ EXTENSION )- pg_stat_statements $/m', '${1}'.$form, $toc, 1));
+        $crafted[$form] = rdaLib('dms_archive_toc_validate "'.$file.'" "app_runtime dms_owner" "pg_stat_statements"');
+        unlink($file);
+    }
+
+    $file = rdaTemp((string) preg_replace('/^(\d+; \d+ \d+ COMMENT )- EXTENSION pg_stat_statements $/m', '${1}public EXTENSION pg_stat_statements ', $toc, 1));
+    $comment = rdaLib('dms_archive_toc_validate "'.$file.'" "app_runtime dms_owner" "pg_stat_statements"');
+    unlink($file);
+
+    expect($clean['out'])->toBe('[]')
+        ->and($pgstat['out'])->toBe('[pg_stat_statements]')
+        ->and($comment['exit'])->toBe(1)->and($comment['out'])->toContain("a comment on extension 'pg_stat_statements' is not listed the way pg_dump lists one");
+    foreach ($crafted as $form => $run) {
+        expect($run['exit'])->toBe(1, $form)->and($run['out'])->toContain("extension 'pg_stat_statements' is not listed the way pg_dump lists one");
+    }
+});
+
 it('refuses a TOC that is malformed, not custom format, not from PostgreSQL 16, or inconsistent', function (string $mutation, string $message) {
     $toc = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/clean.toc'));
     $file = rdaTemp(match ($mutation) {
@@ -223,7 +256,7 @@ it('refuses, never truncates, a TOC above its limit, in the real inspection unit
 
 it('ships the fixture archives with their generator and digests (synthetic data only)', function () {
     $sums = (string) file_get_contents(base_path('tests/Fixtures/restore-drill/SHA256SUMS'));
-    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish', 'rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'idxbomb', 'agebomb', 'aclbomb'] as $f) {
+    foreach (['clean', 'bomb', 'rls', 'ext', 'weirdname', 'otherschema', 'metabody', 'r6owner', 'checkgen', 'dangling', 'launder', 'execbomb', 'dbowner', 'vanish', 'rolebomb', 'timebomb', 'xmlbomb', 'floatbomb', 'regbomb', 'regconst', 'idxbomb', 'agebomb', 'aclbomb', 'arrnull', 'pgstat'] as $f) {
         $file = base_path("tests/Fixtures/restore-drill/{$f}.dump");
         expect($sums)->toContain(hash_file('sha256', $file)."  {$f}.dump");
     }
