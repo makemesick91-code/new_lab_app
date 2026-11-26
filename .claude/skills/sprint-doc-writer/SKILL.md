@@ -41,5 +41,8 @@ correction in the new sprint doc and cite the archived record by sprint id.
 - Deploy and production verification evidence
 - Durable rules created or superseded
 - Risks, residuals and follow-ups
+- The cumulative progress report of rule 251 (`docs/governance/mandatory-progress-reporting-policy.md`): the
+  twelve-indicator table, the evidence per indicator, the nine-item summary and the deadline status. Previous
+  figures come from the last recorded report; never invent a percentage
 
 Update only the relevant section of an existing doc. Do not rewrite another sprint's history.

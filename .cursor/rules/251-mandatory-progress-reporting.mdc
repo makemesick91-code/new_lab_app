@@ -1,0 +1,60 @@
+---
+description: Mandatory progress reporting, PERMANENT (owner directive "PERMANENT PROJECT RULE — MANDATORY PROGRESS REPORTING", 2026-11-26) — every completed sprint, sub-sprint, phase, workstream, milestone or acceptance gate ends with the twelve-indicator progress table (previous, current, change in pp, completed / total, remaining, verdict) counted against canonical registers, followed by the nine-item summary and the deadline status against 6 Dec 2026 23:59 WITA. A metric without a reliable register is NOT MEASURABLE, never invented, and a percentage never overrides a NO-GO gate.
+globs:
+alwaysApply: true
+---
+
+# Mandatory progress reporting (rule 251) — PERMANENT
+
+Canonical document: `docs/governance/mandatory-progress-reporting-policy.md`. This rule is its durable mirror; where
+they differ, the document governs. The always-loaded summary is CG-21 in `CLAUDE.md`. This rule extends CG-21 and
+supersedes nothing.
+
+## Invariants
+
+1. **Trigger.** Every completed sprint, sub-sprint, phase, workstream, milestone and acceptance gate ends with a
+   cumulative project progress report. The report goes in the session's completion message, the sprint doc, the PR
+   summary, the evidence pack and every roadmap update. A unit that closes as NO-GO, BLOCKED or partly done still
+   reports.
+2. **Twelve indicators, in this order:**
+   1. current sprint;
+   2. engineering;
+   3. Internal Memo implementation;
+   4. Internal Memo production deployment;
+   5. Internal Memo user acceptance;
+   6. Internal Memo overall closure;
+   7. Fast-Track;
+   8. SPN4 pilot acceptance;
+   9. pilot blocker resolution;
+   10. production operational readiness;
+   11. business continuity and disaster recovery readiness;
+   12. overall project.
+
+   Each is counted against the register named in §2 of the document and keeps its exact scope label. SPN4
+   engineering is not total engineering, and the full-readiness recovery requirements are not overall disaster-recovery
+   engineering. The indicators are never merged into one percentage without an owner-approved roll-up.
+3. **Each row states** the previous and current percentage, the change in percentage points, completed / total,
+   remaining and the evidence. Completed means verified: a record, a CI run on the exact SHA with its tests run, an
+   owner-reported result recorded in WITA, or a measurement.
+4. **Never counted as completed:** BLOCKED, DEFERRED, PARTIAL, PREPARED, NOT RUN, NOT AUTHORIZED, unverified or
+   estimated items. Synthetic validation is never production or user acceptance.
+5. **The denominator keeps blocked and deferred items.** When an approved denominator changes, state the reason and
+   restate the previous figure on the new denominator.
+6. **NOT MEASURABLE** is reported, with the missing evidence named, when no reliable register or evidence exists.
+   Management estimates go in a separate, labelled section and never into the table.
+7. **The table is fixed:** `| Progress indicator | Previous | Current | Change (pp) | Completed / Total | Remaining |
+   Verdict |`. It is followed by the evidence list and the summary: completed work, remaining work, critical
+   blockers, next priorities, owner actions, additional expenditure, production deployment status, deadline
+   feasibility, and the earliest defensible completion date (or UNKNOWN).
+8. **Deadline:** the current owner-approved target is 6 December 2026, 23:59 WITA. The status is one of ON TRACK, AT
+   RISK, BEHIND SCHEDULE, BLOCKED or COMPLETED. The critical path is updated after every completed unit. No date is
+   promised without the dependencies and the evidence to support it, and an acceptance criterion is never changed to
+   improve the deadline status.
+9. **A percentage never overrides a gate.** An unresolved mandatory security, privacy, financial-integrity,
+   operational or disaster-recovery gate keeps its NO-GO at any percentage. GO comes only from the gate's criteria
+   and the owner's explicit decision.
+10. **Persistence.**
+    - Every report is recorded in the sprint doc or the evidence pack, so the next session can read the previous
+      figures; a chat-only report is not a baseline.
+    - The first report writes `NO BASELINE` for the previous figure.
+    - A commit, push, merge or deployment of documentation still needs its own authorisation.

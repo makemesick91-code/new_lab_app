@@ -262,6 +262,7 @@ current behaviour. A mismatch is implementation drift: report it.
 | `.cursor/rules/107-global-temporary-full-suite-policy.mdc` | Full Suite deferred for fix sprints |
 | `.cursor/rules/210-application-key-rotation-and-reencryption.mdc` | Application key rotation, re-encryption, previous-key retirement |
 | `.cursor/rules/221-full-development-production-testing-policy.mdc` | Production development and testing allowed; operational device testing frozen |
+| `.cursor/rules/251-mandatory-progress-reporting.mdc` | Twelve-indicator progress report on every completion; NOT MEASURABLE, never invented; never overrides a gate |
 
 ## History
 
