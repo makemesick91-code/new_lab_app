@@ -1731,6 +1731,14 @@ extra edit, and removal of the alignment.
 
 Mutations that remove `ON_ERROR_STOP`, remove `--single-transaction` or widen the header filter each fail the guard.
 
+**Probe correction:**
+- With PostgreSQL 16 client binaries present, the hosted gate un-skipped the R6-B6 P4P-2 case of
+  `RestoreDrillArchiveTest` (CI run 45756105404). Its per-user manager runs a plain unit but cannot start the
+  namespaced inspection unit.
+- The case's probe now uses the inspection unit's own mount-namespace properties. It runs wherever the real unit can
+  start: locally, 34/34 with P4P-2 executed.
+- No coverage is reduced: the case never ran in the hosted gate before O-CI-1.
+
 **Residual:** the self-hosted critical variant runs PHP inside its pinned runtime image, which has no PostgreSQL
 client. The clinical-asset suites need one there. Rebuilding that image is a separate, owner-decided change.
 
