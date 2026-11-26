@@ -30,8 +30,9 @@ into one percentage unless the owner approves a roll-up (indicator 12).
 |---|---|---|---|---|
 | 1 | Current sprint completion | A declared scope item or acceptance criterion of the reported unit, verified | The unit's own design lock, owner directive or brief. The report names the unit and the section | Per unit |
 | 2 | Engineering completion, **SPN4 engineering** | An engineering item merged and verified on its exact SHA (CI with its tests run, CG-17) | The SPN4 engineering set: the R-2 Path B scope of the Design Lock §13.4, 14 items (evidence pack 57 §37.1 set 1, corrected by §39.0). It is never reported as total DaengtisiaMS engineering completion | CONFIRMED (OD-PR-1) |
-| 3 | Internal Memo implementation | The requirement is IMPLEMENTED in code with pinned tests. ACCEPTED BY DESIGN counts only with the owner's recorded confirmation | `docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md`: 20 requirements (M1.1…M6.2, C4) | REGISTERED; last audited at `cab3a4c1` (2026-11-17), so it must be reconciled before it is reported as current |
-| 4 | Internal Memo production deployment | An implemented requirement whose commit is in the production SHA, proven by `verify <deploy-id>` → `DEPLOY RUNNER OK` | The same 20 | As 3 |
+| 3 | Internal Memo implementation | The requirement is IMPLEMENTED in code with pinned tests. ACCEPTED BY DESIGN counts only with the owner's recorded confirmation | `docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md`: 20 requirements (M1.1…M6.2, C4) | REGISTERED; reconciled at the production SHA `417d788c` (traceability §6), accepted by the owner 2026-11-27 |
+| 4 | Internal Memo production deployment, **code present in production** | An implemented requirement whose commit is in the production SHA, proven by `verify <deploy-id>` → `DEPLOY RUNNER OK`. A feature behind an OFF flag counts here | The same 20 | As 3 |
+| 4a | Internal Memo **active production** (supplementary) | A deployed requirement that is also enabled in production. A feature behind an OFF flag or an inactive template does not count | The same 20 | As 3. Flag states come from the latest release record unless re-verified on the host, and the report says which |
 | 5 | Internal Memo user acceptance | The requirement's UAT item is PASS with evidence (owner-run; NOT RUN is never PASS) | The same 20 | As 3 |
 | 6 | Internal Memo overall closure | Deployed and UAT PASS, or an auditable owner disposition recorded under CG-22 | The same 20 | As 3 |
 | 7 | Fast-Track completion, **original Fast-Track plan** | A plan task DONE with verified evidence | The seven-day plan tasks of the Design Lock §6 (`docs/sprints/dms-spn4-ready-pilot-1.md`): 21 applicable tasks, with T5.2 and T7.3 excluded as N/A under Path B (evidence pack 57 §37.2.1) | CONFIRMED (OD-PR-1) |
@@ -81,7 +82,8 @@ Notes:
 
 ## 4. Report format
 
-At the end of every completion report, list the twelve indicators in the order of §2:
+At the end of every completion report, list the twelve indicators in the order of §2, with the supplementary row 4a
+directly after row 4:
 
 | Progress indicator | Previous | Current | Change (pp) | Completed / Total | Remaining | Verdict |
 |---|---|---|---|---|---|---|
@@ -156,7 +158,8 @@ the owner's explicit decision (CG-16, CG-22), never from a number reaching a tar
 | Acceptance | Rule 251 and this documentation structure are accepted. The rule extends CG-21 (no CG-25), and the 200-line `CLAUDE.md` limit stays | This document, the durable rule, the indexes, the sprint-record format and the enforcement test |
 | OD-PR-1 | The registers of indicators 2, 7, 8, 9 and 11 are confirmed with their exact scope, and so are the reference baselines of §9 | Full operational readiness (indicator 10) stays NO-GO and NOT MEASURABLE until its denominator is approved |
 | OD-PR-2 | Preparation of a canonical project completion register is approved, as documentation and evidence reconciliation only | The proposed domain structure is a proposal, not a denominator. Indicator 12 stays NOT MEASURABLE until the owner approves the register's denominator |
-| Memo | Reconciliation of the 20-requirement memo register is prioritised: releases 3 and 4 and every later approved change | Until it is reconciled against the production SHA, indicators 3–6 are NOT MEASURABLE. Their evidence line cites the last audit as historical: 2 of 20 IMPLEMENTED at `cab3a4c1`, 2026-11-17. The audit authorises no implementation or deployment, and it preserves the LAB_FEE approval dependencies |
+| Memo | Reconciliation of the 20-requirement memo register is prioritised: releases 3 and 4 and every later approved change | Done and accepted on 2026-11-27 (next row). The audit authorises no implementation or deployment, and it preserves the LAB_FEE approval dependencies |
+| Memo acceptance (2026-11-27, decision "RULE 251 MERGE AND NEXT CRITICAL PATH") | The reconciliation (`docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md` §6) is accepted at its documented evidence level. Production deployment stays "code present in production", and active production is added as the supplementary indicator 4a | The flag states are those of the release 4 record, not re-verified on the host. ERRATUM before merge: M2.1 and M2.2 are partial (two rule 243 preconditions for ON open), so implementation and deployment are 13/20, not 15/20, and the rise from 2/20 is +55.0 pp of actual progress. The owner's acknowledgement of the corrected figures is pending |
 
 **Each register entry of the project completion register** records:
 - a stable requirement id;
@@ -180,6 +183,16 @@ pack 57 are kept as reference baselines and are cited in the evidence lines.
 | 8 | SPN4 pilot acceptance | 6/15 (40.0 %) | pack 57 §37.5 |
 | 9 | Pilot blockers resolved | 7/13 (53.8 %) | pack 57 §37.5 |
 | 11 | Full-readiness recovery requirements | 0/8 (0.0 %) | pack 57 §37.8 |
+| 3 | Internal Memo implementation | 13/20 (65.0 %); first presented as 15/20, corrected by ERRATUM | traceability §6 |
+| 4 | Internal Memo production deployment (code present) | 13/20 (65.0 %); first presented as 15/20, corrected by ERRATUM | traceability §6 |
+| 4a | Internal Memo active production (supplementary) | 12/20 (60.0 %) | traceability §6; flags per the release 4 record |
+| 5 | Internal Memo user acceptance | 3/20 (15.0 %) | traceability §6 |
+| 6 | Internal Memo overall closure | 3/20 (15.0 %) | traceability §6 |
 
-The SPN4 engineering figure moved from 10/14 to 7/14 by an ERRATUM (pack 57 §39.0). That move is a correction of the
-count, not a regression, and is never reported as lost progress.
+- **The SPN4 engineering figure** moved from 10/14 to 7/14 by an ERRATUM (pack 57 §39.0). That move is a correction
+  of the count, not a regression, and is never reported as lost progress.
+- **The memo implementation figure** rose from 2/20 at the release-1 audit (`cab3a4c1`) to 13/20. That is actual
+  progress of +55.0 percentage points, releases 2–4. The first presentation said 15/20 (+65.0 pp); the ERRATUM in
+  traceability §6 corrects it. The correction is not a regression.
+- **In the rule 251 table,** the memo rows' first measurable value is not an increase over a period. A row whose
+  previous report said NOT MEASURABLE writes "—" for its change.

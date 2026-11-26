@@ -30,7 +30,8 @@ supersedes nothing.
    11. business continuity and disaster recovery readiness;
    12. overall project.
 
-   Each is counted against the register named in §2 of the document and keeps its exact scope label. SPN4
+   The supplementary row 4a follows row 4. It counts Internal Memo requirements active in production, that is,
+   deployed and enabled, while row 4 counts code present in production. Each is counted against the register named in §2 of the document and keeps its exact scope label. SPN4
    engineering is not total engineering, and the full-readiness recovery requirements are not overall disaster-recovery
    engineering. The indicators are never merged into one percentage without an owner-approved roll-up.
 3. **Each row states** the previous and current percentage, the change in percentage points, completed / total,
