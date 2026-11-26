@@ -16,6 +16,7 @@ use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
 use App\Support\Android\Phase4aPilotPreparationScanner;
 use App\Support\Android\SignerFingerprintResolver;
+use App\Support\Database\MigrationConnection;
 use App\Support\Deploy\ForbiddenConsoleCommandGuard;
 use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
@@ -132,6 +133,10 @@ class AppServiceProvider extends ServiceProvider
         // to routes defined AFTER they are registered, so this runs before the
         // route files load (see DatabaseRouteKey).
         DatabaseRouteKey::register();
+
+        // DMS-SPN4-READY-PILOT-1 R6-B2b — the migration connection fails closed on
+        // its first connect and on every reconnect (see MigrationConnection).
+        MigrationConnection::register($this->app['db'], $this->app['db.factory']);
 
         $this->registerDoctorAppLoginRateLimiters();
         $this->registerKtpScanRateLimiter();

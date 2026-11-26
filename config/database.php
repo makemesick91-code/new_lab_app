@@ -97,6 +97,35 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        // DMS-SPN4-READY-PILOT-1 R6-B2b (rule 245 #2, A-17; OD-R6-1): the migration
+        // connection. It is the same database over a direct Unix-socket connection
+        // (never a pooler), with local peer authentication only. There is no
+        // password and no URL here, so no migration credential can sit in the
+        // environment file.
+        //
+        // The server applies the owner role at the start of every session:
+        // `server_options.role` becomes the libpq startup option `-c role=…`, so a
+        // reconnect never runs as the bare migrator.
+        // App\Support\Database\MigrationConnection fails closed on every
+        // (re)connect. It is unconfigured by default, and nothing selects it
+        // before the R6-B4 host switch.
+        'pgsql_migrate' => [
+            'driver' => 'pgsql',
+            'host' => env('DB_MIGRATE_SOCKET_DIR'),
+            'port' => env('DB_MIGRATE_PORT', '5432'),
+            'database' => env('DB_MIGRATE_DATABASE', env('DB_DATABASE', 'laravel')),
+            'username' => env('DB_MIGRATE_USERNAME'),
+            'password' => '',
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => 'disable',
+            'server_options' => [
+                'role' => env('DB_MIGRATE_OWNER_ROLE'),
+            ],
+        ],
+
         'pgsql_read' => [
             'driver' => 'pgsql',
             'url' => env('DB_READ_URL'),

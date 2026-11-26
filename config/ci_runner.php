@@ -1452,6 +1452,13 @@ return [
         // revokes or changes a role. Selected by the `FoundationGovernance` token
         // in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceRuntimePrivilegeRegistryTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B2b (rule 245 #2, A-17; OD-R6-1): the
+        // `pgsql_migrate` connection fails closed (no password or URL, Unix socket,
+        // valid and distinct roles, `current_user` asserted) on connect and on
+        // every reconnect. The PostgreSQL role scenarios run against the private
+        // role-test cluster (PB-7). Selected by the `FoundationGovernance` token in
+        // BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceMigrationConnectionTest.php',
 
         // BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the clinical UI capability
         // must mirror the server capability for the same act.
