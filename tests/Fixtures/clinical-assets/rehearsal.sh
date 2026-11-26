@@ -23,6 +23,28 @@ P=0; F=0
 ok() { if [ "$2" = 0 ]; then P=$((P + 1)); echo "PASS $1 ${3:-}"; else F=$((F + 1)); echo "FAIL $1 ${3:-}"; fi; }
 q() { psql -X -q -At -v ON_ERROR_STOP=1 -d "$1" -c "$2"; }
 sha() { sha256sum | cut -d' ' -f1; }
+# restore_db <archive> <database> <stderr file>: restore with --no-owner and FAIL on any error. A client whose major
+# version matches the server's is used when installed, with --exit-on-error. A newer client restoring into an older
+# server is outside what PostgreSQL supports: pg_restore 17+ opens every session with "SET transaction_timeout = 0",
+# which a 16 server rejects (CI runs client 18 against the 16 service). Only then is the archive rendered as SQL,
+# exactly that one session-header line dropped, and the rest applied in one transaction with ON_ERROR_STOP, so any
+# other error still fails. RESTORE_PATH names the path taken, for the case's detail.
+restore_db() {
+  local smaj cmaj
+  smaj="$(q postgres 'SHOW server_version_num')"; smaj=$((smaj / 10000))
+  cmaj="$(pg_restore --version | grep -oE '[0-9]+' | head -n 1)"
+  if [ -x "/usr/lib/postgresql/${smaj}/bin/pg_restore" ]; then
+    RESTORE_PATH="client ${smaj} = server ${smaj}"
+    "/usr/lib/postgresql/${smaj}/bin/pg_restore" --exit-on-error --no-owner -d "$2" "$1" 2> "$3"; return
+  fi
+  if [ "$cmaj" -le "$smaj" ]; then
+    RESTORE_PATH="client ${cmaj}, server ${smaj}"
+    pg_restore --exit-on-error --no-owner -d "$2" "$1" 2> "$3"; return
+  fi
+  RESTORE_PATH="client ${cmaj} > server ${smaj}: SQL with only the transaction_timeout header dropped, ON_ERROR_STOP"
+  pg_restore --no-owner -f - "$1" 2> "$3" | grep -vxF 'SET transaction_timeout = 0;' \
+    | psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$2" > /dev/null 2>> "$3"
+}
 # the first lines of a tool's stderr, folded onto one line (synthetic data only), so a CI failure explains itself
 errtail() { [ -s "$1" ] && printf ' | stderr: %s' "$(head -n 6 "$1" | tr '\n' ' ')"; return 0; }
 
@@ -89,9 +111,9 @@ for i in 31 32; do p="handwritings/1/${i}/handwriting_p1_${i}.png"; put "clinica
 put "clinical-evidence-private/handwritings/2/99/handwriting_p1_uncommitted.png" 2048   # an upload whose row never committed
 out="$(bash "$B" snapshot --storage "$S" --roots "$ROOTS" --state "$STATE" --store "$STORE" --recipient "$FPR")"; ok C4-snapshot-after-T $? "$(echo "$out" | grep -o 'files=[0-9]*.*new_objects=[0-9]*')"
 # restore both sides into isolation: the database at T, the files from the first snapshot after T
-q postgres "CREATE DATABASE ${REST}"; pg_restore -d "$REST" --no-owner "$W/db-at-T.dump" 2> "$W/c4-restore.err"; r4=$?
+q postgres "CREATE DATABASE ${REST}"; restore_db "$W/db-at-T.dump" "$REST" "$W/c4-restore.err"; r4=$?
 out="$(bash "$B" restore --store "$STORE" --target "$W/restored" --storage "$S")"; rc=$?
-[ "$rc" = 0 ] && [ "$r4" = 0 ]; ok C4-restore-isolated $? "${out}; database at T: pg_restore exit ${r4}$(errtail "$W/c4-restore.err")"
+[ "$rc" = 0 ] && [ "$r4" = 0 ]; ok C4-restore-isolated $? "${out}; database at T: restore exit ${r4} (${RESTORE_PATH})$(errtail "$W/c4-restore.err")"
 out="$(PGDATABASE="$REST" bash "$R" --map "$MAP" --out "$W/rec2" --tree "$W/restored")"; rc=$?
 [ "$rc" = 1 ] && grep -q '^ASSET ktp .*missing=1' "$W/rec2/report.txt" && grep -q '^MISSING_RECOVERABLE_BY_SHA 1' "$W/rec2/report.txt"
 ok C4-db-file-inconsistency-detected $? "$(grep -E '^(ASSET ktp|ROOT clinical|VERDICT)' "$W/rec2/report.txt" | tr '\n' ' ')"
@@ -174,14 +196,14 @@ mkdir -p "$W/bk2/x"
 pg_dump -Fc -C -Z 6 -d "$LIVE" -f "$W/bk2/db.pgdump"
 put "backups/deploy/auto_backup_synthetic.sql" 100          # BK-2 leaves backups/ out of the documents archive
 ( cd "$W/live/storage" && tar --anchored --exclude=app/backups -cf - app ) | zstd -q -9 > "$W/bk2/docs.tar.zst"
-q postgres "CREATE DATABASE ${TAG}_bk2"; pg_restore -d "${TAG}_bk2" --no-owner "$W/bk2/db.pgdump" 2> "$W/bk2/restore.err"; rr=$?
+q postgres "CREATE DATABASE ${TAG}_bk2"; restore_db "$W/bk2/db.pgdump" "${TAG}_bk2" "$W/bk2/restore.err"; rr=$?
 zstd -dcq "$W/bk2/docs.tar.zst" | tar -C "$W/bk2/x" -xf -
 PGDATABASE="$LIVE" bash "$R" --map "$MAP" --out "$W/rec6" --storage "$S" --roots "$ROOTS" > /dev/null
 PGDATABASE="${TAG}_bk2" bash "$R" --map "$MAP" --out "$W/rec7" --storage "$W/bk2/x/app" --roots "$ROOTS" > /dev/null
 same=1; cmp -s <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec6/report.txt") <(grep -E '^(ASSET|ROOT|MISSING_RECOVERABLE|VERDICT)' "$W/rec7/report.txt") && same=0
 cp "$W/rec7/report.txt" "$W/bk2-report.txt" 2> /dev/null
 [ -e "$W/bk2/x/app/backups" ]; nb=$?
-[ "$rr" = 0 ] && [ "$same" = 0 ] && [ "$nb" = 1 ]; ok C11-bk2-shaped-package-reconciles-like-live "$?" "pg_restore (no --create) exit ${rr}; reports identical: $([ "$same" = 0 ] && echo yes || echo no); backups/ left out: $([ "$nb" = 1 ] && echo yes || echo no)$(errtail "$W/bk2/restore.err")"
+[ "$rr" = 0 ] && [ "$same" = 0 ] && [ "$nb" = 1 ]; ok C11-bk2-shaped-package-reconciles-like-live "$?" "restore without --create exit ${rr} (${RESTORE_PATH}); reports identical: $([ "$same" = 0 ] && echo yes || echo no); backups/ left out: $([ "$nb" = 1 ] && echo yes || echo no)$(errtail "$W/bk2/restore.err")"
 
 echo "TOTAL pass=${P} fail=${F}"
 [ "$F" = 0 ]
