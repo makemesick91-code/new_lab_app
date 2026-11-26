@@ -50,7 +50,7 @@ it('installs and selects the PostgreSQL 16 client in the hosted critical gate be
         ->and($install['run'])->toContain('echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"')
         ->and($install['run'])->not->toContain('--allow-unauthenticated')
         ->and($install['run'])->not->toContain('trusted=yes')
-        ->and($verify['run'])->toContain("SHOW server_version_num")
+        ->and($verify['run'])->toContain('SHOW server_version_num')
         ->and($verify['run'])->toContain('not the selected 16 client"; exit 1; }')
         ->and($verify['run'])->toContain('does not match the server major $smaj"; exit 1; }')
         ->and($verify['run'])->toContain('postgresql_client_server_major=MATCH');
