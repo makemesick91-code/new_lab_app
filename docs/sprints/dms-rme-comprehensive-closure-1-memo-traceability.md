@@ -80,3 +80,83 @@ documentation, cross-branch integration) is the umbrella of M1–M4; C2 is M6.1;
 ## 5. Owner decisions
 
 Recorded in the parent record §2 as they are given. No canonical workflow changes before its decision (CG-22).
+
+## 6. Reconciliation at production `417d788c` (2026-11-27, rule 251)
+
+**Status:** accepted by the owner (decision "RULE 251 MERGE AND NEXT CRITICAL PATH", 2026-11-27) at its documented
+evidence level. §1–§2 above are kept unchanged as the release-1 audit at `cab3a4c1`. This section supersedes their
+status column for progress reporting under rule 251 (`docs/governance/mandatory-progress-reporting-policy.md`).
+
+**Evidence base:**
+- **Code:** the four program releases are ancestors of the production SHA `417d788c`. Each was verified with `verify`
+  → `DEPLOY RUNNER OK` (parent record §9.3, §9.6, §9.8, §9.10):
+  - release 1, `cab3a4c1`;
+  - release 2, `0f3c3bb3`: #655 and #656;
+  - release 3, `4f59c347`, memo wave 1: #660 and #662–#668;
+  - release 4, `988c1a9a`, memo wave 2: #669–#671.
+- **No change since release 4:** the application changes after `988c1a9a` (#689, #690, #699, #702) do not change memo
+  behaviour.
+- **Flags:** as stated by the release 4 record (parent record §9.10), **not independently re-verified on the
+  production host**:
+  - `rme.doctor_encounter_scope` OFF;
+  - `rme.clinical_photos` OFF;
+  - consent template v2026.2 inactive.
+- **User acceptance:** the owner-run production UAT of 2026-11-19, Phase 1, run with test identities only.
+  - Its verdict is "executed, NOT GO". Items are cited by number. The record is held by the owner and is not
+    published.
+  - Items 1, 2, 4 and 5 are REVIEW REQUIRED (the front-office test account held another role when they ran).
+  - Items 12–14 are NOT RUN (Phase 2).
+  - A test is never counted as user acceptance.
+
+**Counting:**
+- **Implemented:** code and pinned tests exist for the owner-approved scope (parent record §2c).
+- **Deployed:** code present in the verified production SHA.
+- **Active:** deployed and enabled. An item behind an OFF flag is deployed but not active.
+- **UAT:** every behaviour of the requirement PASS in the production UAT. REVIEW REQUIRED, NOT RUN and partial coverage
+  count 0.
+- **Closed:** deployed and UAT PASS, or an auditable owner disposition. None exists yet.
+- **Denominator:** 20 for every measure. Nothing is excluded.
+
+| Id | Implemented | Evidence | Deployed / active | UAT | Closed |
+|---|---|---|---|---|---|
+| M1.1 | yes | rule 241, #663–#665 | yes / yes | PASS (items 7, 9) | yes |
+| M1.2 | yes | rule 241 | yes / yes | PASS (items 6, 8; front-office role) | yes |
+| M1.3 | yes | rule 241 | yes / yes | PASS (items 7, 9). Limit: the odontogram page itself was not opened; the gate message names both | yes |
+| M2.1 | yes | rule 243 §2, #668, #671 | yes / **no** (encounter-scope flag OFF) | NOT RUN: doctor UAT is a precondition of turning the flag on | no |
+| M2.2 | yes | rule 243 §2 | yes / **no** (same flag) | NOT RUN | no |
+| M2.3 | yes | rules 227, 228 §5.2; the front-office single-branch part is ACCEPTED BY DESIGN, with owner confirmation not recorded | yes / yes | NOT RUN | no |
+| M2.4 | yes | rule 243 §1, #660 (not flag-gated) | yes / yes | NOT RUN | no |
+| M2.5 | yes | rule 238, #655 | yes / yes | NOT RUN | no |
+| M3.1 | yes | rule 243, #666, #669 | yes / yes | PARTIAL: items 10 and 16 PASS; occupation and planned treatment not checked | no |
+| M3.2 | yes | rule 238, #655 | yes / yes | NOT RUN | no |
+| M3.3 | yes | rule 240, #667 | yes / yes | PARTIAL: items 11 and 18 PASS; amendment request and approval (items 12–14) NOT RUN | no |
+| M4.1 | yes | rule 244, #654, #666 | yes / yes | REVIEW REQUIRED (items 1, 2) | no |
+| M4.2 | yes | rule 244, #666, #669 | yes / yes | item 3 PASS; items 2 and 4 REVIEW REQUIRED | no |
+| M4.3 | yes | pre-existing (KTP scan optional) | yes / yes | NOT RUN | no |
+| M4.4 | yes | rule 242, #670 | yes / **no** (clinical-photo flag OFF; consent template inactive) | NOT RUN: item 15 shows only the absence of the section with the flag OFF | no |
+| M5.1 | **partial** | instalments and transfer reference (#655). The lab-fee line depends on RME-LAB-FEE-APPROVAL-1 (Gate 1 NO-GO, rules 245–249 not implemented); invoice editing stays immutable by owner decision | no | NOT RUN | no |
+| M5.2 | **no** | REQUIRES OWNER DECISION (payment-workflow discussion) | no | NOT RUN | no |
+| M6.1 | **no** | organizational; no approval evidenced | no | NOT RUN | no |
+| M6.2 | **partial** | read-only usage report (rule 239, #656); the cost from a verified rate is an owner action | no | NOT RUN | no |
+| C4 | **no** | organizational; management UAT not held | no | NOT RUN | no |
+
+| Measure (rule 251) | Completed / Total | % |
+|---|---|---|
+| Implementation | 15 / 20 | 75.0 |
+| Production deployment (code present in production) | 15 / 20 | 75.0 |
+| Active production (supplementary: deployed and enabled) | 12 / 20 | 60.0 |
+| User acceptance | 3 / 20 | 15.0 |
+| Overall closure | 3 / 20 | 15.0 |
+
+**Historical progress:** the release-1 audit at `cab3a4c1` (§1) recorded 2 of 20 IMPLEMENTED (10.0 %). The rise to
+15 of 20 is actual implementation progress of **+65.0 percentage points** (releases 2–4), not a correction of the count.
+
+**Remaining dependencies:**
+- **Re-runs and Phase 2:** re-test UAT items 1, 2, 4 and 5 with the front-office role; run Phase 2 (items 12–14).
+- **Missing UAT:** items for M2.3, M2.4, M2.5, M3.2 and M4.3, and the missing parts of M3.1.
+- **Flags:** separate owner decisions to enable the encounter scope (M2.1, M2.2; after a reviewed dry run and doctor
+  UAT, rule 243 §2) and clinical photos (M4.4). A disabled feature is never counted as user-accepted.
+- **M5.1:** the payment discussion, and the LAB_FEE approval program. Its Gate 1 NO-GO is not bypassed.
+- **M5.2:** the payment-workflow discussion.
+- **M6.2:** the verified storage rate.
+- **M6.1 and C4:** the organizational approvals.
