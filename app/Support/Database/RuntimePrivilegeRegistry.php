@@ -128,10 +128,12 @@ final class RuntimePrivilegeRegistry
      *
      * @return list<string>
      */
-    public function verify(ConnectionInterface $connection): array
+    public function verify(ConnectionInterface $connection, ?string $schemaName = null): array
     {
         [$entries, $errors] = $this->expected();
-        $schema = $this->schemaColumns($connection);
+        // R6-B3 review round 4, N1: the privilege check pins search_path to pg_catalog,
+        // so it names the schema instead of relying on current_schema().
+        $schema = $this->schemaColumns($connection, $schemaName);
 
         foreach (array_keys($schema) as $table) {
             if (! isset($entries[$table])) {
@@ -283,7 +285,7 @@ final class RuntimePrivilegeRegistry
     }
 
     /** @return array<string, list<string>> table => columns, for the connection's current schema */
-    private function schemaColumns(ConnectionInterface $connection): array
+    private function schemaColumns(ConnectionInterface $connection, ?string $schemaName = null): array
     {
         $columns = [];
 
@@ -293,9 +295,9 @@ final class RuntimePrivilegeRegistry
                 FROM pg_catalog.pg_class c
                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                 JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-                WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+                WHERE n.nspname = coalesce(?::name, current_schema()) AND c.relkind IN ('r', 'p') AND NOT c.relispartition
                 ORDER BY c.relname, a.attnum
-                SQL);
+                SQL, [$schemaName]);
             foreach ($rows as $row) {
                 $columns[(string) $row->table_name][] = (string) $row->column_name;
             }

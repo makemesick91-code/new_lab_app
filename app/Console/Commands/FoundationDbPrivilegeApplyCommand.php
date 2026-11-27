@@ -41,6 +41,9 @@ class FoundationDbPrivilegeApplyCommand extends Command
 
     protected $description = 'Per-deploy runtime grants from the privilege registry (R6-B3). Dry run by default; --print-sql; --apply on pgsql_migrate only.';
 
+    /** @var list<string> role names withheld from every line this command prints (review round 4, N3) */
+    private array $withheld = [];
+
     public function handle(RuntimeGrantPlan $plan, RuntimePrivilegeRegistry $registry): int
     {
         if ($this->option('apply') && $this->option('print-sql')) {
@@ -64,6 +67,7 @@ class FoundationDbPrivilegeApplyCommand extends Command
         if ($runtime === $owner) {
             return $this->refuse('the runtime role and the owner role must differ.');
         }
+        $this->withheld = [$runtime, $owner];
 
         try {
             if ($this->option('apply')) {
@@ -110,6 +114,7 @@ class FoundationDbPrivilegeApplyCommand extends Command
                 }
             }
             [$entries, $sequences, $errors] = $plan->inputs($connection);
+            $this->loadRoleNames($connection);
             if ($errors !== []) {
                 return $this->refuse('the registry does not agree with the schema', $errors);
             }
@@ -143,16 +148,16 @@ class FoundationDbPrivilegeApplyCommand extends Command
             ];
 
             if ($this->option('json')) {
-                $this->line((string) json_encode($report + ['changed' => $changed], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $this->say((string) json_encode($report + ['changed' => $changed], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
                 return self::SUCCESS;
             }
-            $this->line('DRY RUN: nothing is executed.');
+            $this->say('DRY RUN: nothing is executed.');
             foreach ($report as $key => $value) {
-                $this->line(sprintf('  %s: %s', $key, is_array($value) ? json_encode($value) : var_export($value, true)));
+                $this->say(sprintf('  %s: %s', $key, is_array($value) ? json_encode($value) : var_export($value, true)));
             }
             foreach (array_slice($changed, 0, 50) as $name) {
-                $this->line("  would change: {$name}");
+                $this->say("  would change: {$name}");
             }
 
             return self::SUCCESS;
@@ -181,6 +186,7 @@ class FoundationDbPrivilegeApplyCommand extends Command
                 $connection->statement("SET LOCAL lock_timeout = '5s'");
                 $connection->statement("SET LOCAL statement_timeout = '120s'");
                 [$entries, $sequences, $errors] = $plan->inputs($connection);
+                $this->loadRoleNames($connection);
                 if ($errors !== []) {
                     throw new RuntimeException('the registry does not agree with the schema: '.implode('; ', array_slice($errors, 0, 5)));
                 }
@@ -207,11 +213,11 @@ class FoundationDbPrivilegeApplyCommand extends Command
         }
 
         if ($this->option('json')) {
-            $this->line((string) json_encode(['mode' => 'apply'] + $applied, JSON_PRETTY_PRINT));
+            $this->say((string) json_encode(['mode' => 'apply'] + $applied, JSON_PRETTY_PRINT));
 
             return self::SUCCESS;
         }
-        $this->line("APPLIED: {$applied['statements']} statement(s) for {$applied['objects']} object(s) in one transaction; template_sha256 {$applied['template_sha256']}.");
+        $this->say("APPLIED: {$applied['statements']} statement(s) for {$applied['objects']} object(s) in one transaction; template_sha256 {$applied['template_sha256']}.");
 
         return self::SUCCESS;
     }
@@ -228,11 +234,27 @@ class FoundationDbPrivilegeApplyCommand extends Command
     /** @param  list<string>  $details */
     private function refuse(string $reason, array $details = []): int
     {
-        $this->error("db-privilege-apply refused: {$reason}");
+        $this->error(DatabasePrivilegeCheck::withholdRoleNames("db-privilege-apply refused: {$reason}", $this->withheld));
         foreach (array_slice($details, 0, 50) as $detail) {
-            $this->line("  {$detail}");
+            $this->say("  {$detail}");
         }
 
         return self::FAILURE;
+    }
+
+    /** Every line except --print-sql passes here: no role name is printed (review round 4, N3). */
+    private function say(string $line): void
+    {
+        $this->line(DatabasePrivilegeCheck::withholdRoleNames($line, $this->withheld));
+    }
+
+    /** Adds every non-predefined role name of the cluster to the withheld names. */
+    private function loadRoleNames(ConnectionInterface $connection): void
+    {
+        $names = array_map(fn (object $r): string => (string) $r->rolname, $connection->select('select rolname from pg_catalog.pg_roles'));
+        $this->withheld = array_values(array_unique(array_merge(
+            $this->withheld,
+            array_filter($names, fn (string $name): bool => ! str_starts_with($name, 'pg_'))
+        )));
     }
 }

@@ -230,8 +230,12 @@ final class RuntimeGrantPlan
         if ((string) $connection->selectOne('select current_schema() as s')->s !== 'public') {
             throw new RuntimeException('the connection does not resolve to the public schema.');
         }
+        // Review round 4, N1/N2: inside the caller's transaction, nothing the owner
+        // role can create in `public` may shadow an operator or function these
+        // queries use, and string literals keep their meaning.
+        self::pinSession($connection);
 
-        $errors = $this->registry->verify($connection);
+        $errors = $this->registry->verify($connection, 'public');
         [$entries] = $this->registry->expected();
         $sequences = array_map(
             fn (object $row): string => (string) $row->relname,
@@ -239,6 +243,17 @@ final class RuntimeGrantPlan
         );
 
         return [$entries, $sequences, $errors];
+    }
+
+    /**
+     * SET LOCAL for the current transaction: only pg_catalog is searched for
+     * functions and operators (no owner-created overload in `public` can win), and
+     * backslashes in string literals are literal.
+     */
+    public static function pinSession(ConnectionInterface $connection): void
+    {
+        $connection->statement('SET LOCAL search_path = pg_catalog');
+        $connection->statement('SET LOCAL standard_conforming_strings = on');
     }
 
     /**

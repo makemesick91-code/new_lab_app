@@ -588,7 +588,7 @@ it('fails on each injected drift and matches again once it is undone', function 
     'a database default switches triggers off' => ['ALTER DATABASE ":db" SET session_replication_role = replica', 'ALTER DATABASE ":db" RESET session_replication_role', 'a default sets session_replication_role for every role in this database'],
     'a role-in-database default switches triggers off' => ['ALTER ROLE ":runtime" IN DATABASE ":db" SET session_replication_role = replica', 'ALTER ROLE ":runtime" IN DATABASE ":db" RESET session_replication_role', 'a default sets session_replication_role for the runtime role in this database'],
     // Finding 2: owner rights through a SECURITY DEFINER function or a rewrite rule.
-    'a SECURITY DEFINER function the runtime can run' => ['CREATE FUNCTION public.fgdp_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ select 1 $$; ALTER FUNCTION public.fgdp_definer() OWNER TO ":owner"', 'DROP FUNCTION public.fgdp_definer()', 'SECURITY DEFINER function fgdp_definer() exists'],
+    'a SECURITY DEFINER function the runtime can run' => ['CREATE FUNCTION public.fgdp_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ select 1 $$; ALTER FUNCTION public.fgdp_definer() OWNER TO ":owner"', 'DROP FUNCTION public.fgdp_definer()', 'SECURITY DEFINER function public.fgdp_definer() exists'],
     'a rewrite rule on a table' => ['CREATE RULE fgdp_rule AS ON INSERT TO public.cache DO ALSO NOTHING', 'DROP RULE fgdp_rule ON public.cache', 'table cache carries rewrite rule fgdp_rule'],
     // Finding 3: a writable view.
     'an owner-owned updatable view' => ['CREATE VIEW public.fgdp_view AS SELECT * FROM public.migrations; ALTER VIEW public.fgdp_view OWNER TO ":owner"; GRANT UPDATE ON public.fgdp_view TO ":runtime"', 'DROP VIEW public.fgdp_view', 'relation public.fgdp_view (kind v): the runtime can write to it outside the table registry'],
@@ -631,7 +631,7 @@ it('fails on each injected drift and matches again once it is undone', function 
     'a withheld function granted to the runtime' => ['CREATE FUNCTION pg_catalog.fgdp_restricted() RETURNS int LANGUAGE sql AS $$ select 1 $$; REVOKE EXECUTE ON FUNCTION pg_catalog.fgdp_restricted() FROM PUBLIC; GRANT EXECUTE ON FUNCTION pg_catalog.fgdp_restricted() TO ":runtime"', 'DROP FUNCTION pg_catalog.fgdp_restricted()', 'the runtime can EXECUTE fgdp_restricted(), which PUBLIC may not'],
     // Finding 2: code the runtime runs without a grant.
     'an internal alias of a restricted built-in' => ["CREATE FUNCTION fgdp_ext.fgdp_rd(text) RETURNS bytea LANGUAGE internal STRICT AS 'pg_read_binary_file_all'", 'DROP FUNCTION fgdp_ext.fgdp_rd(text)', 'is internal or C code added after initdb, outside an extension'],
-    'an aggregate whose final function is restricted' => ['CREATE AGGREGATE public.fgdp_agg(text) (sfunc = textcat, stype = text, finalfunc = pg_catalog.pg_read_file)', 'DROP AGGREGATE public.fgdp_agg(text)', 'aggregate fgdp_agg(text) runs a support function the runtime may not execute'],
+    'an aggregate whose final function is restricted' => ['CREATE AGGREGATE public.fgdp_agg(text) (sfunc = textcat, stype = text, finalfunc = pg_catalog.pg_read_file)', 'DROP AGGREGATE public.fgdp_agg(text)', 'aggregate public.fgdp_agg(text) runs a support function the runtime may not execute'],
     'an extension outside the allowlist' => ['CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA fgdp_ext', 'DROP EXTENSION pgcrypto', 'extension pgcrypto is not on the allowlist'],
     // Finding 3: reads outside the registry.
     'a readable credential catalog' => ['GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC', 'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC', 'the runtime can reach system relation pg_authid beyond its initial privileges'],
@@ -651,6 +651,18 @@ it('fails on each injected drift and matches again once it is undone', function 
     'CONNECT on another database' => ['GRANT CONNECT ON DATABASE postgres TO PUBLIC', 'REVOKE CONNECT ON DATABASE postgres FROM PUBLIC', 'the runtime can connect to or create in 1 other database(s)'],
     // Finding 9: large-object ACL checks switched off by a default.
     'lo_compat_privileges switched on by a role default' => ['ALTER ROLE ":runtime" SET lo_compat_privileges = on', 'ALTER ROLE ":runtime" RESET lo_compat_privileges', 'lo_compat_privileges is not off in the runtime session'],
+    // Review round 4, N1: the check runs with only pg_catalog searched, and public holds nothing unexpected.
+    'a shadowing operator in public' => ['CREATE FUNCTION public.fgdp_oideq(oid, integer) RETURNS boolean LANGUAGE sql AS $$ select false $$; CREATE OPERATOR public.= (leftarg = oid, rightarg = integer, function = public.fgdp_oideq)', 'DROP OPERATOR public.= (oid, integer); DROP FUNCTION public.fgdp_oideq(oid, integer)', 'public holds operator public.=(oid,integer)'],
+    'a shadowing operator does not hide a real drift' => ['CREATE FUNCTION public.fgdp_oideq(oid, integer) RETURNS boolean LANGUAGE sql AS $$ select false $$; CREATE OPERATOR public.= (leftarg = oid, rightarg = integer, function = public.fgdp_oideq); GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC', 'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC; DROP OPERATOR public.= (oid, integer); DROP FUNCTION public.fgdp_oideq(oid, integer)', 'the runtime can reach system relation pg_authid beyond its initial privileges'],
+    'a shadowing function in public' => ['CREATE FUNCTION public.convert_to(text, text) RETURNS bytea LANGUAGE sql AS $$ select null::bytea $$', 'DROP FUNCTION public.convert_to(text, text)', 'public holds function public.convert_to(text,text), which is not a pinned guard function'],
+    'a type in public' => ['CREATE TYPE public.fgdp_mood AS ENUM (\'a\')', 'DROP TYPE public.fgdp_mood', 'public holds type fgdp_mood'],
+    // N2: a runtime default turning standard_conforming_strings off, alone and hiding a schema.
+    'standard_conforming_strings off by a role default' => ['ALTER ROLE ":runtime" SET standard_conforming_strings = off', 'ALTER ROLE ":runtime" RESET standard_conforming_strings', 'standard_conforming_strings is not on in the runtime session'],
+    'a schema LIKE-escapes would have hidden' => ['ALTER ROLE ":runtime" SET standard_conforming_strings = off; CREATE SCHEMA pgxtempxx; GRANT CREATE ON SCHEMA pgxtempxx TO ":runtime"', 'DROP SCHEMA pgxtempxx; ALTER ROLE ":runtime" RESET standard_conforming_strings', 'the runtime can CREATE in schema pgxtempxx'],
+    // N4: an information_schema relation initdb left without an ACL.
+    'an information_schema relation granted to PUBLIC' => ['GRANT SELECT ON information_schema._pg_user_mappings TO PUBLIC', 'REVOKE SELECT ON information_schema._pg_user_mappings FROM PUBLIC', 'system relation information_schema._pg_user_mappings beyond its initial privileges'],
+    // N5: any privilege on a sequence outside public.
+    'USAGE on a sequence outside public' => ['CREATE SEQUENCE fgdp_ext.fgdp_useq; GRANT USAGE ON SEQUENCE fgdp_ext.fgdp_useq TO ":runtime"', 'DROP SEQUENCE fgdp_ext.fgdp_useq', 'sequence fgdp_ext.fgdp_useq: the runtime holds a privilege on a sequence outside public'],
     'a wide default privilege' => ['ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT ALL ON TABLES TO ":runtime"', 'ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public REVOKE ALL ON TABLES FROM ":runtime"; ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT SELECT ON TABLES TO ":runtime"', 'a default privilege gives the runtime INSERT on new objects of type r'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 
@@ -779,9 +791,15 @@ it('reads only, in a read-only transaction, for the check and the dry run (revie
     expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH)
         ->and(fgdpRun('foundation:db-privilege-apply', ['--database' => 'pgsql_migrate'])[0])->toBe(0);
 
+    // Round 4, N1/N2: besides reads, the only statements are the two session pins.
+    $pins = ['SET LOCAL search_path = pg_catalog', 'SET LOCAL standard_conforming_strings = on'];
     foreach (['fgdp_runtime', 'pgsql_migrate'] as $name) {
-        expect($seen[$name][0] ?? null)->toBe('SET TRANSACTION READ ONLY');
+        expect($seen[$name][0] ?? null)->toBe('SET TRANSACTION READ ONLY')
+            ->and(array_values(array_intersect($seen[$name], $pins)))->toBe($pins);
         foreach (array_slice($seen[$name], 1) as $sql) {
+            if (in_array($sql, $pins, true)) {
+                continue;
+            }
             expect(preg_match('/^(select|with)\b/i', $sql))->toBe(1, "{$name} ran a statement that is not a read: {$sql}");
         }
     }
@@ -807,4 +825,36 @@ it('catches a replaced guard function body that keeps its owner, pin and trigger
 
     DB::purge('fgdp_runtime');
     expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('withholds every role name in the apply and dry-run output (review round 4, N3)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $noLeak = function (string $output): void {
+        expect(stripos($output, (string) fgdpEnv('RUNTIME')))->toBeFalse($output)
+            ->and(stripos($output, (string) fgdpEnv('OWNER')))->toBeFalse($output)
+            ->and(stripos($output, (string) fgdpEnv('MIGRATOR')))->toBeFalse($output);
+    };
+
+    // A public table named after a role: the dry run refuses with the registry error, name withheld.
+    $super->exec(fgdpSql('CREATE TABLE public.":runtime_notes" (id int)'));
+    try {
+        [$code, $output] = fgdpRun('foundation:db-privilege-apply', ['--database' => 'pgsql_migrate']);
+        expect($code)->toBe(1)->and($output)->toContain('<name withheld>_notes');
+        $noLeak($output);
+    } finally {
+        $super->exec(fgdpSql('DROP TABLE public.":runtime_notes"'));
+    }
+
+    // A writable relation in a schema named after a role: the apply's re-check refuses, name withheld.
+    $super->exec(fgdpSql('CREATE SCHEMA ":runtime_x"; CREATE TABLE ":runtime_x".t (id int); GRANT USAGE ON SCHEMA ":runtime_x" TO ":runtime"; GRANT INSERT ON ":runtime_x".t TO ":runtime"'));
+    try {
+        [$code, $output] = fgdpRun('foundation:db-privilege-apply', ['--apply' => true]);
+        expect($code)->toBe(1)->and($output)->toContain('<name withheld>_x');
+        $noLeak($output);
+    } finally {
+        $super->exec(fgdpSql('DROP SCHEMA ":runtime_x" CASCADE'));
+    }
 })->skip($fgdpSkip, $fgdpSkipReason);

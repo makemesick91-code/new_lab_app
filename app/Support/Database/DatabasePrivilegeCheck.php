@@ -76,7 +76,10 @@ final class DatabasePrivilegeCheck
     public const ALLOWED_EXTENSIONS = ['pg_stat_statements', 'plpgsql'];
 
     /** Round 3, findings 1 and 9: settings that must keep their safe value in every runtime session. */
-    private const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off'];
+    private const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off', 'standard_conforming_strings' => 'on'];
+
+    /** Round 4, N4: information_schema relations initdb leaves without an ACL (no PUBLIC SELECT baseline). */
+    private const INFORMATION_SCHEMA_WITHOUT_ACL = ['_pg_foreign_data_wrappers', '_pg_foreign_servers', '_pg_foreign_table_columns', '_pg_foreign_tables', '_pg_user_mappings', 'sql_parts', 'transforms'];
 
     /** Round 3, finding 5: the exact configuration of every guard function (the provisioning value). */
     public const GUARD_FUNCTION_CONFIG = ['search_path=pg_catalog, pg_temp'];
@@ -129,8 +132,18 @@ final class DatabasePrivilegeCheck
                 if ((int) $connection->selectOne('select count(*) as n from pg_catalog.pg_roles where rolname = ?', [$owner])->n !== 1) {
                     return $this->cannotVerify('the configured owner role does not exist.');
                 }
+                // Round 4, N2: the session values are read before the session is
+                // pinned, so a default the runtime set on itself is still seen.
+                $sessionValues = [];
+                foreach (array_keys(self::SAFE_SETTINGS) as $setting) {
+                    $sessionValues[$setting] = (string) $connection->selectOne('select pg_catalog.current_setting(?) as v', [$setting])->v;
+                }
+                // Round 4, N1/N2: from here on only pg_catalog is searched, so no
+                // overload the owner role creates in `public` can steer these
+                // queries, and string literals keep their meaning.
+                RuntimeGrantPlan::pinSession($connection);
 
-                return $this->evaluate($connection, (string) $session->ses, $owner);
+                return $this->evaluate($connection, (string) $session->ses, $owner, $sessionValues);
             } finally {
                 // Read only, and nothing to keep.
                 $connection->rollBack();
@@ -244,6 +257,18 @@ final class DatabasePrivilegeCheck
             SQL, [$runtime]) as $row) {
             $problems[] = "sequence {$row->nspname}.{$row->relname}: the runtime holds UPDATE (setval)";
         }
+        // Round 4, N5: any privilege on a sequence outside `public` that no extension owns.
+        foreach ($connection->select(<<<'SQL'
+            select n.nspname, c.relname
+            from pg_catalog.pg_class c
+            join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+            where c.relkind = 'S' and n.nspname not in ('public', 'pg_catalog', 'information_schema')
+              and not exists (select 1 from pg_catalog.pg_depend d where d.classid = 'pg_catalog.pg_class'::regclass and d.objid = c.oid and d.deptype = 'e')
+              and case when c.relkind = 'S' then pg_catalog.has_sequence_privilege(?, c.oid, 'USAGE') or pg_catalog.has_sequence_privilege(?, c.oid, 'SELECT') else false end
+            order by 1, 2
+            SQL, [$runtime, $runtime]) as $row) {
+            $problems[] = "sequence {$row->nspname}.{$row->relname}: the runtime holds a privilege on a sequence outside public";
+        }
 
         // Review round 1, finding 3: a view, materialized view, foreign table or
         // partition, in any schema, or a table outside `public`, runs its access
@@ -254,8 +279,8 @@ final class DatabasePrivilegeCheck
             select n.nspname, c.relname, c.relkind
             from pg_catalog.pg_class c
             join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-            where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg\_toast%'
-              and n.nspname not like 'pg\_temp\_%'
+            where n.nspname not in ('pg_catalog', 'information_schema') and not pg_catalog.starts_with(n.nspname, 'pg_toast')
+              and not pg_catalog.starts_with(n.nspname, 'pg_temp_')
               and c.relkind in ('r', 'p', 'v', 'm', 'f')
               and not (n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relispartition)
               and (pg_catalog.has_table_privilege(:r1, c.oid, 'INSERT') or pg_catalog.has_table_privilege(:r2, c.oid, 'UPDATE')
@@ -273,7 +298,8 @@ final class DatabasePrivilegeCheck
     }
 
     /** @return array{status: int, problems: list<string>, passed: list<string>} */
-    private function evaluate(ConnectionInterface $connection, string $runtime, string $owner): array
+    /** @param  array<string, string>  $sessionValues */
+    private function evaluate(ConnectionInterface $connection, string $runtime, string $owner, array $sessionValues): array
     {
         $problems = [];
         $passed = [];
@@ -286,7 +312,7 @@ final class DatabasePrivilegeCheck
             array_push($problems, ...$found);
         };
 
-        $record('the registry agrees with the schema', array_map(fn (string $e): string => "registry: {$e}", $this->registry->verify($connection)));
+        $record('the registry agrees with the schema', array_map(fn (string $e): string => "registry: {$e}", $this->registry->verify($connection, 'public')));
 
         // 1. Attributes.
         $role = $connection->selectOne('select rolsuper, rolcreaterole, rolcreatedb, rolbypassrls, rolreplication from pg_catalog.pg_roles where rolname = ?', [$runtime]);
@@ -389,7 +415,7 @@ final class DatabasePrivilegeCheck
         $creates = array_map(fn (object $r): string => "the runtime can CREATE in schema {$r->nspname}", $connection->select(<<<'SQL'
             select n.nspname from pg_catalog.pg_namespace n
             where pg_catalog.has_schema_privilege(?, n.oid, 'CREATE')
-              and n.nspname not like 'pg\_temp\_%' and n.nspname not like 'pg\_toast\_temp\_%'
+              and not pg_catalog.starts_with(n.nspname, 'pg_temp_') and not pg_catalog.starts_with(n.nspname, 'pg_toast_temp_')
             order by n.nspname
             SQL, [$runtime]));
         if (! (bool) $connection->selectOne("select pg_catalog.has_schema_privilege(?, 'public', 'USAGE') as u", [$runtime])->u) {
@@ -474,7 +500,9 @@ final class DatabasePrivilegeCheck
             where n.nspname = 'public' and not t.tgisinternal
             order by c.relname, t.tgname
             SQL) as $row) {
-            $live[(string) $row->def] = true;
+            // Under the pinned search_path the trigger function prints qualified;
+            // the configured definitions name it as the migrations do.
+            $live[str_replace(' EXECUTE FUNCTION public.', ' EXECUTE FUNCTION ', (string) $row->def)] = true;
             if (! in_array($row->tgenabled, ['O', 'A'], true)) {
                 $functions[] = "trigger {$row->tgname} on {$row->relname} does not fire (state {$row->tgenabled})";
             }
@@ -585,7 +613,7 @@ final class DatabasePrivilegeCheck
         // checks, in the runtime's sessions (finding 1; round 3, finding 9).
         $replication = [];
         foreach (self::SAFE_SETTINGS as $setting => $safe) {
-            if ((string) $connection->selectOne('select current_setting(?) as v', [$setting])->v !== $safe) {
+            if (($sessionValues[$setting] ?? '') !== $safe) {
                 $replication[] = "{$setting} is not {$safe} in the runtime session".($setting === 'session_replication_role' ? ': triggers and rules do not fire' : '');
             }
             foreach ($connection->select(<<<'SQL'
@@ -654,6 +682,7 @@ final class DatabasePrivilegeCheck
                 -- its relations are granted exactly SELECT to PUBLIC, so that is their baseline.
                 select c.oid, 0, 0::oid, 'SELECT' from pg_catalog.pg_class c
                 where c.relnamespace = 'information_schema'::regnamespace and c.oid < 16384
+                  and c.relname <> all (?::name[])
                   and not exists (select 1 from pg_catalog.pg_init_privs i where i.classoid = 'pg_catalog.pg_class'::regclass and i.objoid = c.oid)
             )
             select distinct c.oid::regclass::text as relation, c.sub
@@ -661,14 +690,14 @@ final class DatabasePrivilegeCheck
             where (c.grantee = 0 or c.grantee in (select oid from reach))
               and not exists (select 1 from ini where ini.oid = c.oid and ini.sub = c.sub and ini.grantee = c.grantee and ini.privilege_type = c.privilege_type)
             order by 1, 2
-            SQL, [$runtime]) as $row) {
+            SQL, [$runtime, '{'.implode(',', self::INFORMATION_SCHEMA_WITHOUT_ACL).'}']) as $row) {
             $reads[] = "the runtime can reach system relation {$row->relation}".((int) $row->sub > 0 ? ' (a column)' : '').' beyond its initial privileges';
         }
         $allowedExtensions = "'".implode("', '", self::ALLOWED_EXTENSIONS)."'";
         foreach ($connection->select(<<<SQL
             select n.nspname, c.relname, c.relkind
             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-            where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg\\_toast%' and n.nspname not like 'pg\\_temp\\_%'
+            where n.nspname not in ('pg_catalog', 'information_schema') and not pg_catalog.starts_with(n.nspname, 'pg_toast') and not pg_catalog.starts_with(n.nspname, 'pg_temp_')
               and (c.relkind in ('v', 'm', 'f') or (c.relkind in ('r', 'p') and n.nspname <> 'public'))
               and (pg_catalog.has_table_privilege(?, c.oid, 'SELECT') or pg_catalog.has_any_column_privilege(?, c.oid, 'SELECT'))
               and not exists (
@@ -696,6 +725,57 @@ final class DatabasePrivilegeCheck
             $reads[] = "the runtime can use foreign server {$row->srvname}";
         }
         $record('the runtime reads nothing outside the registry tables, its initial system privileges and allowlisted extensions', $reads);
+
+        // 18. Exact inventory of `public` (round 4, N1): besides the registry's
+        // tables, their sequences and row types, `public` holds only the pinned guard
+        // functions; no other function, aggregate, operator, type, cast, conversion,
+        // collation, view, materialized view or foreign table, extension members aside.
+        $inventory = [];
+        $notExtension = "not exists (select 1 from pg_catalog.pg_depend d where d.classid = %s and d.objid = %s and d.deptype = 'e')";
+        $guardNames = array_keys((array) config('runtime_privilege_classes.guard_functions', []));
+        foreach ($connection->select(
+            "select p.oid::regprocedure::text as signature, p.proname from pg_catalog.pg_proc p where p.pronamespace = 'public'::regnamespace and "
+            .sprintf($notExtension, "'pg_catalog.pg_proc'::regclass", 'p.oid').' order by 1'
+        ) as $row) {
+            if (! in_array((string) $row->proname, $guardNames, true)) {
+                $inventory[] = "public holds function {$row->signature}, which is not a pinned guard function";
+            }
+        }
+        foreach ([
+            'operator' => ['pg_operator', 'oprnamespace', 'o.oid::regoperator::text'],
+            'conversion' => ['pg_conversion', 'connamespace', 'o.conname::text'],
+            'collation' => ['pg_collation', 'collnamespace', 'o.collname::text'],
+        ] as $kind => [$catalog, $column, $label]) {
+            foreach ($connection->select(
+                "select {$label} as name from pg_catalog.{$catalog} o where o.{$column} = 'public'::regnamespace and "
+                .sprintf($notExtension, "'pg_catalog.{$catalog}'::regclass", 'o.oid').' order by 1'
+            ) as $row) {
+                $inventory[] = "public holds {$kind} {$row->name}";
+            }
+        }
+        foreach ($connection->select(
+            "select t.typname from pg_catalog.pg_type t where t.typnamespace = 'public'::regnamespace and t.typrelid = 0"
+            .' and not exists (select 1 from pg_catalog.pg_type e where e.oid = t.typelem and e.typrelid <> 0) and '
+            .sprintf($notExtension, "'pg_catalog.pg_type'::regclass", 't.oid').' order by 1'
+        ) as $row) {
+            $inventory[] = "public holds type {$row->typname}";
+        }
+        foreach ($connection->select(
+            "select c.relname, c.relkind from pg_catalog.pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm', 'f') and "
+            .sprintf($notExtension, "'pg_catalog.pg_class'::regclass", 'c.oid').' order by 1'
+        ) as $row) {
+            $inventory[] = "public holds relation {$row->relname} (kind {$row->relkind}) outside the table registry";
+        }
+        $casts = (int) $connection->selectOne(<<<'SQL'
+            select count(*) as n from pg_catalog.pg_cast k
+            where k.castfunc in (select oid from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace)
+               or k.castsource in (select oid from pg_catalog.pg_type where typnamespace = 'public'::regnamespace)
+               or k.casttarget in (select oid from pg_catalog.pg_type where typnamespace = 'public'::regnamespace)
+            SQL)->n;
+        if ($casts > 0) {
+            $inventory[] = "public is involved in {$casts} cast(s)";
+        }
+        $record('public holds only the registry tables, their sequences and row types, and the pinned guard functions', $inventory);
 
         // 16. Table inheritance (round 2, N3): DML on a parent is checked on the
         // parent only, so it would reach a child of another class.
@@ -826,7 +906,10 @@ final class DatabasePrivilegeCheck
             }
         }
 
-        $roles = array_map(fn (object $r): string => (string) $r->rolname, $connection->select("select rolname from pg_catalog.pg_roles where rolname not like 'pg\_%'"));
+        $roles = array_values(array_filter(
+            array_map(fn (object $r): string => (string) $r->rolname, $connection->select('select rolname from pg_catalog.pg_roles')),
+            fn (string $r): bool => ! str_starts_with($r, 'pg_')
+        ));
         $problems = array_values(array_unique(array_map(fn (string $p): string => self::withholdRoleNames($p, $roles), $problems)));
         $notes = array_map(fn (string $n): string => self::withholdRoleNames($n, $roles), $notes);
         sort($problems);
@@ -841,12 +924,12 @@ final class DatabasePrivilegeCheck
      *
      * @param  list<string>  $roles
      */
-    private static function withholdRoleNames(string $text, array $roles): string
+    public static function withholdRoleNames(string $text, array $roles): string
     {
         foreach ($roles as $role) {
             // Round 3, finding 4: case-insensitive and inside longer names too;
             // over-withholding is the accepted price.
-            $text = (string) preg_replace('/'.preg_quote($role, '/').'/i', '<name withheld>', $text);
+            $text = (string) preg_replace('/'.preg_quote($role, '/').'/iu', '<name withheld>', $text);
         }
 
         return $text;
