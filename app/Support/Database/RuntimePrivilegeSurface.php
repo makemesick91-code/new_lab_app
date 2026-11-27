@@ -26,9 +26,11 @@ use RuntimeException;
  *   role OWNER, PUBLIC is PUBLIC, OID 10 is BOOTSTRAP_SUPERUSER, a predefined
  *   role keeps its documented `pg_*` name, any other role is OTHER_ROLE;
  * - a database is CURRENT_DATABASE, template0, template1, postgres or
- *   OTHER_DATABASE; a member of an allowlisted extension is named
- *   `extension:<name>.<object>`, and so is that extension's own schema, so the
- *   placement of pg_stat_statements does not change a line;
+ *   OTHER_DATABASE; a member of an allowlisted extension that lives in that
+ *   extension's own schema is named `extension:<name>.<object>`, and so is that
+ *   schema, so the placement of pg_stat_statements does not change a line; a
+ *   member added in any other schema keeps its real schema (review round 1,
+ *   #1: otherwise a member named like a real one reproduces a baseline line);
  * - every field is escaped (`|`, `\`, control and non-ASCII bytes as \xHH), so
  *   an object name can never forge or merge lines; names are quote_ident()ed.
  *
@@ -90,17 +92,20 @@ final class RuntimePrivilegeSurface
             curdb as (select d.oid from pg_catalog.pg_database d where d.datname = pg_catalog.current_database()),
             dbs as (
                 select d.oid, case when d.oid = (select oid from curdb) then 'CURRENT_DATABASE'
-                                   when d.oid < {$first} and d.datname in ('template0', 'template1', 'postgres') then d.datname::text
+                                   when d.oid < {$first} and d.datname in ('template0', 'template1', 'postgres') then d.datname::pg_catalog.text
                                    else 'OTHER_DATABASE' end as token
                 from pg_catalog.pg_database d
             ),
             member as (
-                select d.classid, d.objid, e.extname::text as extname
+                -- Review round 1, #1: a member is renamed only in its extension's own
+                -- schema (the joins below compare it), so a member added elsewhere under
+                -- a member's name keeps its real schema and cannot reproduce a baseline line.
+                select d.classid, d.objid, e.extname::pg_catalog.text as extname, e.extnamespace
                 from pg_catalog.pg_depend d join pg_catalog.pg_extension e on e.oid = d.refobjid
                 where d.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass and d.deptype = 'e' and e.extname in ({$allowed})
             ),
             extnsp as (
-                select e.extnamespace as oid, pg_catalog.min(e.extname::text) as extname
+                select e.extnamespace as oid, pg_catalog.min(e.extname::pg_catalog.text) as extname
                 from pg_catalog.pg_extension e
                 where e.extname in ({$allowed}) and e.extnamespace not in ('pg_catalog'::pg_catalog.regnamespace, 'public'::pg_catalog.regnamespace)
                 group by 1
@@ -109,7 +114,7 @@ final class RuntimePrivilegeSurface
                 select c.oid, c.relkind, c.relacl, c.relowner, c.reltoastrelid,
                        coalesce('extension:' || m.extname, pg_catalog.quote_ident(n.nspname)) || '.' || pg_catalog.quote_ident(c.relname) as ident
                 from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-                left join member m on m.classid = 'pg_catalog.pg_class'::pg_catalog.regclass and m.objid = c.oid
+                left join member m on m.classid = 'pg_catalog.pg_class'::pg_catalog.regclass and m.objid = c.oid and m.extnamespace = c.relnamespace
             ),
             own as (
                 select 'pg_catalog.pg_class'::pg_catalog.regclass as cls, oid, relowner as owner from pg_catalog.pg_class
@@ -143,7 +148,7 @@ final class RuntimePrivilegeSurface
                                   when 't' then 'toast table' when 'c' then 'composite type' else 'relation' end as kind,
                    case when r.relkind = 't' then coalesce((select 'toast of ' || p.ident from rel p where p.reltoastrelid = r.oid), r.ident) else r.ident end as ident,
                    a.privilege_type as privilege, a.grantee, a.is_grantable as grantable, null::pg_catalog.oid as role
-            from rel r cross join lateral pg_catalog.aclexplode(coalesce(r.relacl, pg_catalog.acldefault((case when r.relkind = 'S' then 's' else 'r' end)::"char", r.relowner))) a
+            from rel r cross join lateral pg_catalog.aclexplode(coalesce(r.relacl, pg_catalog.acldefault((case when r.relkind = 'S' then 's' else 'r' end)::pg_catalog."char", r.relowner))) a
             where a.grantee in (select oid from grantees)
             union all
             -- Columns.
@@ -159,7 +164,7 @@ final class RuntimePrivilegeSurface
                                 from pg_catalog.unnest(p.proargtypes::pg_catalog.oid[]) with ordinality as t(typ, ord)), '') || ')',
                    a.privilege_type, a.grantee, a.is_grantable, null
             from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-            left join member m on m.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass and m.objid = p.oid
+            left join member m on m.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass and m.objid = p.oid and m.extnamespace = p.pronamespace
             cross join lateral pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
             where a.grantee in (select oid from grantees)
             union all
@@ -168,8 +173,8 @@ final class RuntimePrivilegeSurface
             select 'type', coalesce('extension:' || coalesce(mt.extname, mr.extname), pg_catalog.quote_ident(n.nspname)) || '.' || pg_catalog.quote_ident(t.typname),
                    a.privilege_type, a.grantee, a.is_grantable, null
             from pg_catalog.pg_type t join pg_catalog.pg_namespace n on n.oid = t.typnamespace
-            left join member mt on mt.classid = 'pg_catalog.pg_type'::pg_catalog.regclass and mt.objid = t.oid
-            left join member mr on t.typrelid <> 0 and mr.classid = 'pg_catalog.pg_class'::pg_catalog.regclass and mr.objid = t.typrelid
+            left join member mt on mt.classid = 'pg_catalog.pg_type'::pg_catalog.regclass and mt.objid = t.oid and mt.extnamespace = t.typnamespace
+            left join member mr on t.typrelid <> 0 and mr.classid = 'pg_catalog.pg_class'::pg_catalog.regclass and mr.objid = t.typrelid and mr.extnamespace = t.typnamespace
             cross join lateral pg_catalog.aclexplode(coalesce(t.typacl, pg_catalog.acldefault('T', t.typowner))) a
             where not (t.typelem <> 0 and t.typsubscript = 'pg_catalog.array_subscript_handler'::pg_catalog.regproc) and t.typtype <> 'm'
               and a.grantee in (select oid from grantees)
@@ -204,7 +209,7 @@ final class RuntimePrivilegeSurface
             from pg_catalog.pg_largeobject_metadata lo cross join lateral pg_catalog.aclexplode(coalesce(lo.lomacl, pg_catalog.acldefault('L', lo.lomowner))) a
             where a.grantee in (select oid from grantees)
             union all
-            select 'parameter', pa.parname::text, a.privilege_type, a.grantee, a.is_grantable, null
+            select 'parameter', pa.parname::pg_catalog.text, a.privilege_type, a.grantee, a.is_grantable, null
             from pg_catalog.pg_parameter_acl pa cross join lateral pg_catalog.aclexplode(coalesce(pa.paracl, pg_catalog.acldefault('p', 10::pg_catalog.oid))) a
             where a.grantee in (select oid from grantees)
             union all
@@ -215,7 +220,7 @@ final class RuntimePrivilegeSurface
             -- Default privileges.
             select 'default privilege',
                    '{role} ' || case when d.defaclnamespace = 0 then 'in every schema' else 'in schema ' || coalesce('extension:' || en.extname, pg_catalog.quote_ident(n.nspname)) end
-                   || ': ' || case d.defaclobjtype when 'r' then 'tables' when 'S' then 'sequences' when 'f' then 'functions' when 'T' then 'types' when 'n' then 'schemas' else d.defaclobjtype::text end,
+                   || ': ' || case d.defaclobjtype when 'r' then 'tables' when 'S' then 'sequences' when 'f' then 'functions' when 'T' then 'types' when 'n' then 'schemas' else d.defaclobjtype::pg_catalog.text end,
                    a.privilege_type, a.grantee, a.is_grantable, d.defaclrole
             from pg_catalog.pg_default_acl d
             left join pg_catalog.pg_namespace n on n.oid = d.defaclnamespace
@@ -261,7 +266,7 @@ final class RuntimePrivilegeSurface
               and d.dbid in (0, (select oid from curdb)) and d.refobjid in (select oid from reach)
             union all
             -- ... and in every other database, whose catalogs this session cannot read.
-            select 'object in another database', 'OTHER_DATABASE ' || d.classid::pg_catalog.regclass::text,
+            select 'object in another database', 'OTHER_DATABASE ' || d.classid::pg_catalog.regclass::pg_catalog.text,
                    case d.deptype when 'o' then 'OWNER' when 'a' then 'PRIVILEGE' when 'r' then 'POLICY' else 'DEPENDENCY' end, d.refobjid, false, null
             from pg_catalog.pg_shdepend d
             where d.refclassid = 'pg_catalog.pg_authid'::pg_catalog.regclass and d.dbid <> 0
@@ -459,7 +464,9 @@ final class RuntimePrivilegeSurface
     /**
      * C3: the baseline document of a fresh database, as the session user (a
      * plain login holding exactly the two monitoring roles). Refuses a database
-     * that is visibly not fresh. Must run inside a pinned transaction.
+     * that is visibly not fresh: an object initdb or an allowlisted extension did
+     * not create, a privilege that differs from its initial privileges, a
+     * parameter ACL, a default. Must run inside a pinned transaction.
      *
      * @return array{text: ?string, problems: list<string>}
      */
@@ -490,7 +497,10 @@ final class RuntimePrivilegeSurface
             preg_match_all('/[A-Za-z0-9_$]+/', $line, $words);
             $identifiers = array_fill_keys(array_map('strtolower', $words[0]), true);
             foreach ($roles as $role) {
-                $named = preg_match('/\A[A-Za-z0-9_$]+\z/', $role) === 1 ? isset($identifiers[strtolower($role)]) : stripos($line, $role) !== false;
+                // Review round 1, #4: a name is also looked for in its escaped and quoted forms.
+                $named = preg_match('/\A[A-Za-z0-9_$]+\z/', $role) === 1
+                    ? isset($identifiers[strtolower($role)])
+                    : array_filter(self::roleForms($role), fn (string $form): bool => stripos($line, $form) !== false) !== [];
                 if ($named) {
                     return ['text' => null, 'problems' => ['a baseline line names a role of this cluster; generate the baseline in a fresh cluster with other role names']];
                 }
@@ -506,7 +516,9 @@ final class RuntimePrivilegeSurface
             '# R6-B3c PostgreSQL 16 runtime privilege baseline (DMS-SPN4-READY-PILOT-1, rule 245, pack 63c C2/C3).',
             '# Generated by `php artisan foundation:db-privilege-check --print-baseline`, connected as a plain login that holds',
             '# pg_read_all_settings and pg_read_all_stats WITH INHERIT TRUE, in a fresh database of a fresh initdb cluster.',
-            '# Server: PostgreSQL '.intdiv($version, 10000).'.'.($version % 10000),
+            // Review round 1, #2: the major only, so the pinned bytes do not depend on the 16.x minor
+            // (catalog contents are fixed per major); the generator's exact minor goes into the evidence.
+            '# Server: PostgreSQL '.intdiv($version, 10000),
             "# Extensions: {$extensions}",
             '# Excluded (governed by the deployment layout): '.implode(', ', self::LAYOUT_KINDS).', and the public and extension schemas.',
             '# Format: kind|object identity|privilege|via role|grantable; sorted bytewise; no OID; role names replaced by tokens.',
@@ -579,7 +591,94 @@ final class RuntimePrivilegeSurface
             $problems[] = "the database is not fresh: {$leftovers} object(s) or default(s) exist beyond initdb and the allowlisted extensions";
         }
 
+        // Review round 1, #3: a privilege changed on an object initdb or an allowlisted
+        // extension created would be pinned as baseline (and become required). Every
+        // ACL must grant what its initial privileges grant (pg_init_privs, initdb's 'i'
+        // or the extension's 'e' entry; PostgreSQL's default ACL when there is none),
+        // compared as (grantee, privilege, grant option). initdb creates
+        // information_schema after recording initial privileges: its schema keeps
+        // initdb's PUBLIC USAGE, and its relations initdb's PUBLIC SELECT, except
+        // the ones it leaves without an ACL (DatabasePrivilegeCheck::INFORMATION_SCHEMA_WITHOUT_ACL).
+        $withoutAcl = '{'.implode(',', DatabasePrivilegeCheck::INFORMATION_SCHEMA_WITHOUT_ACL).'}';
+        $changed = (int) $connection->selectOne(<<<'SQL'
+            with cur as (
+                select 'pg_catalog.pg_class'::pg_catalog.regclass as cls, c.oid, 0 as sub, c.relacl as acl,
+                       pg_catalog.acldefault((case when c.relkind = 'S' then 's' else 'r' end)::pg_catalog."char", c.relowner) as dflt,
+                       case when c.relnamespace = 'information_schema'::pg_catalog.regnamespace and c.relname <> all (?::pg_catalog.name[])
+                            then 'SELECT' end as initdb_public, c.relowner as owner
+                from pg_catalog.pg_class c
+                union all
+                -- A column has no default privilege; NULL, not '{}' (aclexplode refuses a zero-dimensional array).
+                select 'pg_catalog.pg_class'::pg_catalog.regclass, a.attrelid, a.attnum, a.attacl, null::pg_catalog.aclitem[], null, 0::pg_catalog.oid
+                from pg_catalog.pg_attribute a where a.attacl is not null
+                union all
+                select 'pg_catalog.pg_proc'::pg_catalog.regclass, p.oid, 0, p.proacl, pg_catalog.acldefault('f', p.proowner), null, p.proowner from pg_catalog.pg_proc p
+                union all
+                select 'pg_catalog.pg_type'::pg_catalog.regclass, t.oid, 0, t.typacl, pg_catalog.acldefault('T', t.typowner), null, t.typowner from pg_catalog.pg_type t
+                union all
+                select 'pg_catalog.pg_namespace'::pg_catalog.regclass, n.oid, 0, n.nspacl, pg_catalog.acldefault('n', n.nspowner),
+                       case when n.nspname = 'information_schema' then 'USAGE' end, n.nspowner
+                from pg_catalog.pg_namespace n
+                union all
+                select 'pg_catalog.pg_language'::pg_catalog.regclass, l.oid, 0, l.lanacl, pg_catalog.acldefault('l', l.lanowner), null, l.lanowner from pg_catalog.pg_language l
+                union all
+                select 'pg_catalog.pg_foreign_data_wrapper'::pg_catalog.regclass, w.oid, 0, w.fdwacl, pg_catalog.acldefault('F', w.fdwowner), null, w.fdwowner from pg_catalog.pg_foreign_data_wrapper w
+                union all
+                select 'pg_catalog.pg_foreign_server'::pg_catalog.regclass, s.oid, 0, s.srvacl, pg_catalog.acldefault('S', s.srvowner), null, s.srvowner from pg_catalog.pg_foreign_server s
+                union all
+                -- Shared: no initial privileges are recorded for a tablespace.
+                select 'pg_catalog.pg_tablespace'::pg_catalog.regclass, s.oid, 0, s.spcacl, pg_catalog.acldefault('t', s.spcowner), null, s.spcowner from pg_catalog.pg_tablespace s
+            ),
+            compared as (
+                select (select pg_catalog.string_agg(a.grantee::pg_catalog.text || ':' || a.privilege_type || ':' || a.is_grantable::pg_catalog.text, ',' order by a.grantee, a.privilege_type, a.is_grantable)
+                        from pg_catalog.aclexplode(coalesce(x.acl, x.dflt)) a) as now,
+                       (select pg_catalog.string_agg(a.grantee::pg_catalog.text || ':' || a.privilege_type || ':' || a.is_grantable::pg_catalog.text, ',' order by a.grantee, a.privilege_type, a.is_grantable)
+                        from pg_catalog.aclexplode(coalesce(
+                            i.initprivs,
+                            case when x.initdb_public is null then x.dflt
+                                 else pg_catalog.array_append(x.dflt, pg_catalog.makeaclitem(0, x.owner, x.initdb_public, false)) end)) a) as initial
+                from cur x
+                left join pg_catalog.pg_init_privs i on i.classoid = x.cls and i.objoid = x.oid and i.objsubid = x.sub
+            )
+            select count(*) as n from compared where now is distinct from initial
+            SQL, [$withoutAcl])->n;
+        if ($changed > 0) {
+            $problems[] = "the database is not fresh: {$changed} object(s) carry privileges that differ from their initial privileges (initdb's or their extension's)";
+        }
+        $parameters = (int) $connection->selectOne('select count(*) as n from pg_catalog.pg_parameter_acl')->n;
+        if ($parameters > 0) {
+            $problems[] = "the cluster is not fresh: pg_parameter_acl holds {$parameters} row(s)";
+        }
+
         return $problems;
+    }
+
+    /**
+     * Review round 1, #4: the forms in which a role name can reach the output: as
+     * written, and as escape() prints it, plainly or quoted (quote_ident doubles a
+     * double quote), in its own, lower and upper case.
+     *
+     * @return list<string>
+     */
+    public static function roleForms(string $role): array
+    {
+        $variants = [$role];
+        if (mb_check_encoding($role, 'UTF-8')) {
+            $variants[] = mb_strtolower($role, 'UTF-8');
+            $variants[] = mb_strtoupper($role, 'UTF-8');
+        }
+        $forms = [];
+        foreach ($variants as $variant) {
+            foreach ([$variant, str_replace('"', '""', $variant)] as $form) {
+                $forms[] = $form;
+                $forms[] = self::escape($form);
+            }
+        }
+        $forms = array_values(array_unique(array_filter($forms, fn (string $f): bool => $f !== '')));
+        // Longest first, so a longer form is withheld before a shorter one inside it.
+        usort($forms, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        return $forms;
     }
 
     /**

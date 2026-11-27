@@ -100,7 +100,7 @@ return [
     */
     'baseline' => [
         'path' => 'tests/Fixtures/r6/pg16-runtime-baseline.txt',
-        'sha256' => '995bcfad0f41696516f73eb85c620f94877bfa7c2a2ea7d14fe551424b8dd44f',
+        'sha256' => '178dad6499b5f8fc1028860364408049e5927db567b83ad4b778415e95497bce',
     ],
 
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',

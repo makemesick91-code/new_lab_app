@@ -26,6 +26,7 @@ use App\Support\Database\RuntimePrivilegeClass;
 use App\Support\Database\RuntimePrivilegeRegistry;
 use App\Support\Database\RuntimePrivilegeSurface;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\PostgresConnection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
@@ -298,7 +299,7 @@ it('is declared a critical-gate suite (CG-19)', function () {
 
 // R6-B3c (pack 63c, C2): the repo-pinned PostgreSQL 16 baseline. Re-pinning it is a reviewed change of this
 // literal, of config/runtime_privilege_classes.php and of the fixture, in one PR.
-const FGDP_BASELINE_SHA256 = '995bcfad0f41696516f73eb85c620f94877bfa7c2a2ea7d14fe551424b8dd44f';
+const FGDP_BASELINE_SHA256 = '178dad6499b5f8fc1028860364408049e5927db567b83ad4b778415e95497bce';
 
 it('pins the PostgreSQL 16 baseline fixture by SHA-256 and keeps it canonical (R6-B3c, C2)', function () {
     $relative = 'tests/Fixtures/r6/pg16-runtime-baseline.txt';
@@ -310,7 +311,7 @@ it('pins the PostgreSQL 16 baseline fixture by SHA-256 and keeps it canonical (R
     expect(hash('sha256', $text))->toBe(FGDP_BASELINE_SHA256)
         ->and(config('runtime_privilege_classes.baseline'))->toBe(['path' => $relative, 'sha256' => FGDP_BASELINE_SHA256])
         ->and(RuntimePrivilegeSurface::baseline())->toBe(['lines' => $lines, 'sha256' => FGDP_BASELINE_SHA256])
-        ->and($text)->toMatch('/^# Server: PostgreSQL 16\.\d+$/m')
+        ->and($text)->toMatch('/^# Server: PostgreSQL 16$/m')
         ->and($text)->toContain("\n# Items: ".count($lines)."\n")
         ->and($lines)->toBe($canonical)
         ->and(count($lines))->toBeGreaterThan(3000);
@@ -381,6 +382,37 @@ it('refuses a baseline fixture that is missing or does not match its pin (R6-B3c
 
     config(['runtime_privilege_classes.baseline' => ['path' => 'tests/Fixtures/r6/fgdp-no-such-baseline.txt', 'sha256' => FGDP_BASELINE_SHA256]]);
     expect(fn () => RuntimePrivilegeSurface::baseline())->toThrow(RuntimeException::class, 'is missing');
+});
+
+it('cannot verify, and generates no baseline, on a server that is not PostgreSQL 16 (R6-B3c, review round 1, #5d)', function () {
+    fgdpRoles('fgdp_runtime', 'fgdp_owner');
+    // A fake PostgreSQL 17 session: every session assertion holds, only the major version differs.
+    $fake = Mockery::mock(PostgresConnection::class)->shouldIgnoreMissing();
+    $fake->shouldReceive('setReadWriteType')->andReturnSelf();
+    $fake->shouldReceive('getDriverName')->andReturn('pgsql');
+    $fake->shouldReceive('transactionLevel')->andReturn(1);
+    $fake->shouldReceive('selectOne')->andReturnUsing(fn (string $sql): object => match (true) {
+        str_contains($sql, 'transaction_read_only') => (object) ['ro' => 'on'],
+        str_contains($sql, 'session_user as ses') => (object) ['ses' => 'fgdp_runtime', 'cur' => 'fgdp_runtime', 'sch' => 'public'],
+        str_contains($sql, 'from pg_catalog.pg_roles where rolname = ?') => (object) ['n' => 1],
+        str_contains($sql, 'server_version_num') => (object) ['v' => '170002'],
+        default => (object) ['v' => 'origin'],
+    });
+    config(['database.connections.fgdp_fake' => ['driver' => 'fgdp_fake']]);
+    DB::extend('fgdp_fake', fn () => $fake);
+    try {
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fake']);
+        [$generated, $document] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fake', '--print-baseline' => true]);
+    } finally {
+        DB::purge('fgdp_fake');
+    }
+
+    expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)
+        ->and($output)->toContain('ERROR the server is not PostgreSQL 16, the major version the privilege baseline is pinned for.')
+        ->and($generated)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)
+        ->and($document)->toContain('ERROR the server is not PostgreSQL 16.');
+    // Neither reached the enumeration: the gate comes before any catalog read beyond the session's own.
+    $fake->shouldNotHaveReceived('select');
 });
 
 // ---------------------------------------------------------------- Group B
@@ -1014,20 +1046,26 @@ function fgdpNoRoleName(string $output, bool $withSuperuser = true): void
 /**
  * A fresh database with the allowlisted extensions, reachable as the runtime through the `fgdp_fresh`
  * connection; the runtime is then a plain login holding exactly the two monitoring roles WITH INHERIT TRUE
- * (the provisioning). Dropped afterwards whatever happens.
+ * (the provisioning). Dropped afterwards whatever happens. $body receives a superuser handle on it.
+ *
+ * Review round 1, #5a: the database is copied from template0, which accepts no connection and so still
+ * holds initdb's catalogs exactly, however the drift cases changed the role-test database or template1.
+ * The shared catalogs (roles, memberships, databases, tablespaces, parameter ACLs) cannot be made fresh
+ * inside a shared cluster; the generator refuses them when they differ (round 1, #3), and a truly fresh
+ * initdb is PB-7's CI step (`--print-baseline`, then a byte comparison with the fixture).
  */
 function fgdpWithFreshDatabase(Closure $body): void
 {
     $super = fgdpSuper();
     $super->exec('DROP DATABASE IF EXISTS fgdp_fresh WITH (FORCE)');
-    $super->exec('CREATE DATABASE fgdp_fresh');
+    $super->exec('CREATE DATABASE fgdp_fresh TEMPLATE template0');
     try {
         $fresh = new PDO(sprintf('pgsql:host=%s;port=%s;dbname=fgdp_fresh', fgdpEnv('SOCKET_DIR'), fgdpEnv('PORT')), fgdpEnv('SUPERUSER'), '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $fresh->exec('CREATE EXTENSION pg_stat_statements');
-        $fresh = null;
         config(['database.connections.fgdp_fresh' => array_merge((array) config('database.connections.fgdp_runtime'), ['database' => 'fgdp_fresh'])]);
         DB::purge('fgdp_fresh');
-        $body();
+        $body($fresh);
+        $fresh = null;
     } finally {
         DB::purge('fgdp_fresh');
         $super->exec('DROP DATABASE IF EXISTS fgdp_fresh WITH (FORCE)');
@@ -1077,6 +1115,35 @@ it('generates the baseline beside a role whose name is part of a built-in name, 
         }
     });
 })->skip($fgdpSkip, $fgdpSkipReason);
+
+it('refuses to generate a baseline when an initial privilege was changed, and generates it again once undone (R6-B3c, review round 1, #3)', function (string $inject, string $undo, string $reason) {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+
+    fgdpWithFreshDatabase(function (PDO $fresh) use ($inject, $undo, $reason): void {
+        $fresh->exec($inject);
+        try {
+            [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
+            expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY, $output)
+                ->and($output)->toContain("ERROR {$reason}")
+                ->and($output)->toContain('DB PRIVILEGE BASELINE: CANNOT GENERATE');
+        } finally {
+            $fresh->exec($undo);
+        }
+        DB::purge('fgdp_fresh');
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
+        expect($code)->toBe(0, $output)->and(hash('sha256', $output))->toBe(FGDP_BASELINE_SHA256);
+    });
+})->with([
+    'a catalog readable by PUBLIC' => ['GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC', 'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges that differ from their initial privileges'],
+    'a catalog column readable by PUBLIC' => ['GRANT SELECT (subconninfo) ON pg_catalog.pg_subscription TO PUBLIC', 'REVOKE SELECT (subconninfo) ON pg_catalog.pg_subscription FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
+    'a restricted built-in executable by PUBLIC' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO PUBLIC', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
+    'an information_schema view revoked from PUBLIC' => ['REVOKE SELECT ON information_schema.tables FROM PUBLIC', 'GRANT SELECT ON information_schema.tables TO PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
+    'an extension member beyond its extension\'s initial privilege' => ['GRANT EXECUTE ON FUNCTION public.pg_stat_statements_reset(oid, oid, bigint) TO PUBLIC', 'REVOKE EXECUTE ON FUNCTION public.pg_stat_statements_reset(oid, oid, bigint) FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
+    'a tablespace grant' => ['GRANT CREATE ON TABLESPACE pg_default TO PUBLIC', 'REVOKE CREATE ON TABLESPACE pg_default FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
+    'a parameter ACL' => ['GRANT SET ON PARAMETER log_statement TO PUBLIC', 'REVOKE SET ON PARAMETER log_statement FROM PUBLIC', 'the cluster is not fresh: pg_parameter_acl holds 1 row(s)'],
+])->skip($fgdpSkip, $fgdpSkipReason);
 
 it('refuses to generate a baseline from a database that is not fresh, and names no role (R6-B3c, C3)', function () {
     fgdpUseCluster();
@@ -1161,7 +1228,32 @@ it('reports a privilege no R6-B3 rule enumerates as an extra surface item, and m
     'a restricted built-in whose initial privilege was forged (round 3, 1b)' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO pg_read_all_stats; ALTER EXTENSION plpgsql ADD FUNCTION pg_catalog.pg_read_binary_file(text)', 'ALTER EXTENSION plpgsql DROP FUNCTION pg_catalog.pg_read_binary_file(text); REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM pg_read_all_stats; '.FGDP_RESTORE_INIT_PRIVS, 'function|extension:plpgsql.pg_read_binary_file(text)|EXECUTE|pg_read_all_stats|NO'],
     // Review round 4 residual: a readable view moved into an allowlisted extension.
     'a credential view moved into an allowlisted extension' => ['CREATE VIEW fgdp_ext.fgdp_authview AS SELECT rolname FROM pg_catalog.pg_authid; GRANT SELECT ON fgdp_ext.fgdp_authview TO PUBLIC; ALTER EXTENSION pg_stat_statements ADD VIEW fgdp_ext.fgdp_authview', 'ALTER EXTENSION pg_stat_statements DROP VIEW fgdp_ext.fgdp_authview; DROP VIEW fgdp_ext.fgdp_authview', 'view|extension:pg_stat_statements.fgdp_authview|SELECT|PUBLIC|NO'],
+    // R6-B3c review round 1, #1: a member added outside its extension's schema under a real member's name
+    // keeps its real schema, so it cannot reproduce the baseline's line for that member.
+    'a credential view named like a member, added to the extension from public' => ['CREATE VIEW public.pg_stat_statements AS SELECT rolname, rolpassword FROM pg_catalog.pg_authid; GRANT SELECT ON public.pg_stat_statements TO PUBLIC; ALTER EXTENSION pg_stat_statements ADD VIEW public.pg_stat_statements', 'ALTER EXTENSION pg_stat_statements DROP VIEW public.pg_stat_statements; DROP VIEW public.pg_stat_statements', 'view|public.pg_stat_statements|SELECT|PUBLIC|NO'],
+    'a function named like a member, added to the extension from pg_catalog' => ["CREATE FUNCTION pg_catalog.pg_stat_statements(boolean) RETURNS integer LANGUAGE sql AS 'select 1'; ALTER EXTENSION pg_stat_statements ADD FUNCTION pg_catalog.pg_stat_statements(boolean)", 'ALTER EXTENSION pg_stat_statements DROP FUNCTION pg_catalog.pg_stat_statements(boolean); DROP FUNCTION pg_catalog.pg_stat_statements(boolean)', 'function|pg_catalog.pg_stat_statements(boolean)|EXECUTE|PUBLIC|NO'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
+
+it('matches with pg_stat_statements in public as well as in its own schema (R6-B3c, review round 1, #1)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+
+    // PB-8 §5: production keeps the extension in `public`; the runtime then needs no USAGE on another schema.
+    $super->exec(fgdpSql('ALTER EXTENSION pg_stat_statements SET SCHEMA public; REVOKE USAGE ON SCHEMA fgdp_ext FROM ":runtime"'));
+    try {
+        DB::purge('fgdp_runtime');
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output)
+            ->and(fgdpSurfaceDifference())->toBe(['extra' => [], 'missing' => []]);
+    } finally {
+        $super->exec(fgdpSql('ALTER EXTENSION pg_stat_statements SET SCHEMA fgdp_ext; GRANT USAGE ON SCHEMA fgdp_ext TO ":runtime"'));
+    }
+
+    DB::purge('fgdp_runtime');
+    expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
+})->skip($fgdpSkip, $fgdpSkipReason);
 
 it('finds an unenumerated kind and a missing item with the structural comparison alone, no R6-B3 rule involved (R6-B3c)', function () {
     fgdpUseCluster();
@@ -1185,6 +1277,19 @@ it('finds an unenumerated kind and a missing item with the structural comparison
     } finally {
         $super->exec(fgdpSql('GRANT INSERT ON public.users TO ":runtime"'));
     }
+
+    // Review round 1, #5f: missing items of other kinds. A monitoring membership dropped (no R6-B3 rule
+    // asks for it), and a baseline function revoked from PUBLIC (a hardening the exact set also reports).
+    $super->exec(fgdpSql('REVOKE pg_read_all_settings FROM ":runtime"; REVOKE EXECUTE ON FUNCTION pg_catalog.pg_sleep(double precision) FROM PUBLIC'));
+    try {
+        expect(fgdpSurfaceDifference())->toBe(['extra' => [], 'missing' => [
+            'function|pg_catalog.pg_sleep(double precision)|EXECUTE|PUBLIC|NO',
+            'membership|pg_read_all_settings|INHERIT|RUNTIME|NO',
+            'membership|pg_read_all_settings|MEMBER|RUNTIME|NO',
+        ]]);
+    } finally {
+        $super->exec(fgdpSql('GRANT pg_read_all_settings TO ":runtime"; GRANT EXECUTE ON FUNCTION pg_catalog.pg_sleep(double precision) TO PUBLIC'));
+    }
     expect(fgdpSurfaceDifference())->toBe(['extra' => [], 'missing' => []]);
 })->skip($fgdpSkip, $fgdpSkipReason);
 
@@ -1193,15 +1298,28 @@ it('never prints a role name: not in the surface lines, the JSON or the capped t
     fgdpMigrated();
     fgdpProvisionedAndGranted();
     $super = fgdpSuper();
-    // A schema named after the runtime, and the owner role reached: hundreds of extra items.
+    // A schema named after the runtime, and the owner role reached: hundreds of extra items. Review round 1,
+    // #4: two more roles, one with a non-ASCII byte and one with `|`, each owning a schema the runtime can use,
+    // whose names a surface line prints escaped and quoted.
+    $unusual = ["fgdp_r\u{F4}le_x", 'fgdp_ops|admin'];
     $super->exec(fgdpSql('CREATE SCHEMA ":runtime_s"; GRANT USAGE ON SCHEMA ":runtime_s" TO ":runtime"; GRANT ":owner" TO ":runtime"'));
+    foreach ($unusual as $role) {
+        $super->exec(fgdpSql("CREATE ROLE \"{$role}\" NOLOGIN; CREATE SCHEMA AUTHORIZATION \"{$role}\"; GRANT USAGE ON SCHEMA \"{$role}\" TO \":runtime\""));
+    }
     try {
         [$code, $json] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--json' => true]);
         [, $text] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
         $report = json_decode($json, true);
+        $printed = implode("\n", [$text, ...$report['problems'], ...$report['surface']['extra'], ...$report['surface']['missing']]);
+        foreach ($unusual as $role) {
+            foreach ([$role, RuntimePrivilegeSurface::escape($role)] as $form) {
+                expect(stripos($printed, $form))->toBeFalse("role name printed as {$form}");
+            }
+        }
 
         expect($code)->toBe(DatabasePrivilegeCheck::DRIFT)
             ->and($report['surface']['verdict'])->toBe('DRIFT')
+            ->and($report['surface']['extra'])->toContain('schema|"<name withheld>"|USAGE|RUNTIME|NO')
             ->and($report['surface']['extra'])->toContain('schema|<name withheld>_s|USAGE|RUNTIME|NO')
             ->and($report['surface']['extra'])->toContain('membership|OWNER|MEMBER|RUNTIME|NO')
             ->and($report['surface']['extra'])->toContain('ownership|table public.users|OWNER|OWNER|NO')
@@ -1212,5 +1330,8 @@ it('never prints a role name: not in the surface lines, the JSON or the capped t
         fgdpNoRoleName($text);
     } finally {
         $super->exec(fgdpSql('REVOKE ":owner" FROM ":runtime"; DROP SCHEMA ":runtime_s"'));
+        foreach ($unusual as $role) {
+            $super->exec("DROP SCHEMA \"{$role}\"; DROP ROLE \"{$role}\"");
+        }
     }
 })->skip($fgdpSkip, $fgdpSkipReason);

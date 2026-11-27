@@ -86,7 +86,7 @@ final class DatabasePrivilegeCheck
     public const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off', 'standard_conforming_strings' => 'on'];
 
     /** Round 4, N4: information_schema relations initdb leaves without an ACL (no PUBLIC SELECT baseline). */
-    private const INFORMATION_SCHEMA_WITHOUT_ACL = ['_pg_foreign_data_wrappers', '_pg_foreign_servers', '_pg_foreign_table_columns', '_pg_foreign_tables', '_pg_user_mappings', 'sql_parts', 'transforms'];
+    public const INFORMATION_SCHEMA_WITHOUT_ACL = ['_pg_foreign_data_wrappers', '_pg_foreign_servers', '_pg_foreign_table_columns', '_pg_foreign_tables', '_pg_user_mappings', 'sql_parts', 'transforms'];
 
     /** Round 3, finding 5: the exact configuration of every guard function (the provisioning value). */
     public const GUARD_FUNCTION_CONFIG = ['search_path=pg_catalog, pg_temp'];
@@ -1039,6 +1039,14 @@ final class DatabasePrivilegeCheck
             // Round 3, finding 4: case-insensitive and inside longer names too;
             // over-withholding is the accepted price.
             $text = (string) preg_replace('/'.preg_quote($role, '/').'/iu', '<name withheld>', $text);
+            // R6-B3c review round 1, #4: a surface line escapes `|`, `\`, control and
+            // non-ASCII bytes and prints names quote_ident()ed, so the name is also
+            // withheld in those forms (they are ASCII: a byte-wise caseless match).
+            foreach (RuntimePrivilegeSurface::roleForms($role) as $form) {
+                if ($form !== $role) {
+                    $text = str_ireplace($form, '<name withheld>', $text);
+                }
+            }
         }
 
         return $text;
