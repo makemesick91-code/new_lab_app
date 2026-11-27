@@ -1825,8 +1825,9 @@ row R6-B7.
     and no wildcard.
   - **Owner check before Gate A / R6-D (read-only):** `SHOW server_version_num` on production.
     - Production is recorded at 16.15 (160015), which is covered.
-    - If it reports a minor above 160016, check 19 compares it with the 16.16 set. It reports DRIFT only if that
-      minor's catalog differs, which fails closed. A reviewed delta must then be added before R6-D.
+    - If it reports a minor above 160016, check 19 compares it with the 16.16 set. It reports DRIFT only if this
+      cluster's catalog differs from the 16.16 set (an in-place-updated cluster keeps its initdb catalog), which
+      fails closed. A reviewed delta must then be added before R6-D.
 
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
 - PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;

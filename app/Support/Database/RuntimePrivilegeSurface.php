@@ -526,6 +526,9 @@ final class RuntimePrivilegeSurface
                 || ($parts[3] !== self::PUBLIC && ! str_starts_with($parts[3], 'pg_'))) {
                 throw $refuse('an item is not a baseline line');
             }
+            if (! self::deltaObjectAllowed($parts[0], $parts[1])) {
+                throw $refuse('an item\'s object is outside pg_catalog, information_schema and the allowlisted extensions');
+            }
             if (isset($seen[$line])) {
                 throw $refuse('an item is listed twice');
             }
@@ -545,6 +548,24 @@ final class RuntimePrivilegeSurface
         }
 
         return ['items' => $items, 'base' => $base, 'reviewed_through' => $reviewed, 'sha256' => $sha256];
+    }
+
+    /**
+     * Whether a delta item names an object the base itself can contain: one in pg_catalog or information_schema, a
+     * member of an allowlisted extension, one of those two schemas, or a language initdb creates. A minor release
+     * changes only what initdb writes, so `public`, any other schema, another extension, a tablespace or any other
+     * kind is refused (review of a3c54af9, finding 3).
+     */
+    private static function deltaObjectAllowed(string $kind, string $identity): bool
+    {
+        return match ($kind) {
+            'schema' => in_array($identity, ['pg_catalog', 'information_schema'], true),
+            'language' => in_array($identity, ['internal', 'c', 'sql', 'plpgsql'], true),
+            'aggregate', 'column', 'function', 'procedure', 'sequence', 'table', 'type', 'view', 'materialized view', 'window function' => str_starts_with($identity, 'pg_catalog.')
+                || str_starts_with($identity, 'information_schema.')
+                || array_filter(DatabasePrivilegeCheck::ALLOWED_EXTENSIONS, fn (string $extension): bool => str_starts_with($identity, "extension:{$extension}.")) !== [],
+            default => false,
+        };
     }
 
     /** @return array{0: string, 1: string} a committed file's text and SHA-256, refused when missing or unpinned */

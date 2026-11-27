@@ -407,6 +407,7 @@ it('refuses a baseline fixture that is missing or does not match its pin (R6-B3c
 // change of this literal, of config/runtime_privilege_classes.php and of the delta file, in one PR.
 const FGDP_BASELINE_DELTAS_SHA256 = '2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62';
 const FGDP_PG1616_ITEM = 'function|pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])|EXECUTE|PUBLIC|NO';
+const FGDP_DELTA_OBJECT = "an item's object is outside pg_catalog, information_schema and the allowlisted extensions";
 
 /**
  * The baseline document a fresh initdb of minor $version prints: the base with every reviewed delta up to that minor
@@ -504,6 +505,14 @@ it('refuses a baseline delta file that is missing, unpinned or malformed (R6-B3c
     'a pattern instead of an exact line' => ["base|160015\nreviewed-through|160016\n160016|+|function|pg_catalog.binary_upgrade_*|EXECUTE|PUBLIC\n", 'an item is not a baseline line'],
     'a layout kind' => ["base|160015\nreviewed-through|160016\n160016|+|membership|pg_monitor|MEMBER|RUNTIME|NO\n", 'an item is not a baseline line'],
     'a grant to the runtime, which no initdb makes' => ["base|160015\nreviewed-through|160016\n160016|+|table|pg_catalog.pg_authid|SELECT|RUNTIME|NO\n", 'an item is not a baseline line'],
+    // Review of a3c54af9, finding 3: only objects initdb or an allowlisted extension creates.
+    'an object in public' => ["base|160015\nreviewed-through|160016\n160016|+|function|public.fgdp_f()|EXECUTE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'an object in another schema' => ["base|160015\nreviewed-through|160016\n160016|+|table|fgdp_ext.fgdp_t|SELECT|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'a schema name that only looks like the catalog' => ["base|160015\nreviewed-through|160016\n160016|+|function|pg_catalogx.fgdp_f()|EXECUTE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'a member of an extension that is not allowlisted' => ["base|160015\nreviewed-through|160016\n160016|+|function|extension:dblink.dblink(text)|EXECUTE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'the public schema' => ["base|160015\nreviewed-through|160016\n160016|+|schema|public|USAGE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'a language initdb does not create' => ["base|160015\nreviewed-through|160016\n160016|+|language|plperl|USAGE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
+    'a tablespace' => ["base|160015\nreviewed-through|160016\n160016|+|tablespace|pg_default|CREATE|PUBLIC|NO\n", FGDP_DELTA_OBJECT],
     'a + item the base already has' => ["base|160015\nreviewed-through|160016\n160016|+|function|pg_catalog.binary_upgrade_set_missing_value(oid,text,text)|EXECUTE|PUBLIC|NO\n", "an item's sign contradicts the base"],
     'a - item the base does not have' => ["base|160015\nreviewed-through|160016\n160016|-|".FGDP_PG1616_ITEM."\n", "an item's sign contradicts the base"],
     'an item listed twice' => ["base|160015\nreviewed-through|160017\n160016|+|".FGDP_PG1616_ITEM."\n160017|+|".FGDP_PG1616_ITEM."\n", 'an item is listed twice'],
@@ -1511,6 +1520,26 @@ function fgdpHasPg1616Function(): bool
 const FGDP_PG1616_CREATE = "CREATE FUNCTION pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[]) RETURNS void LANGUAGE sql AS 'select 1'";
 const FGDP_PG1616_DROP = 'DROP FUNCTION pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])';
 
+/**
+ * Runs $body with PUBLIC EXECUTE revoked from $function (a built-in, or one made here), then restores its ACL exactly:
+ * a NULL (default) ACL is NULL again, not an equivalent explicit one.
+ */
+function fgdpWithoutPublicExecute(PDO $super, string $function, Closure $body): void
+{
+    $acl = fn (): mixed => $super->query("select proacl::text from pg_catalog.pg_proc where oid = '{$function}'::pg_catalog.regprocedure")->fetchColumn();
+    $before = $acl();
+    $super->exec("REVOKE EXECUTE ON FUNCTION {$function} FROM PUBLIC");
+    try {
+        $body();
+    } finally {
+        $super->exec("GRANT EXECUTE ON FUNCTION {$function} TO PUBLIC");
+        if ($before === null) {
+            $super->exec("UPDATE pg_catalog.pg_proc SET proacl = NULL WHERE oid = '{$function}'::pg_catalog.regprocedure");
+        }
+        expect($acl())->toBe($before);
+    }
+}
+
 /** @return list<string> the FAIL lines of a check's output */
 function fgdpFailures(string $output): array
 {
@@ -1548,12 +1577,54 @@ it('checks a 16.16 server against the base and the reviewed delta: the new funct
             [$code, $output] = $check(160016);
             expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)->and(fgdpFailures($output))->toBe($extra);
         });
+
+        // Optional, never required (review of a3c54af9, finding 1): with the function present but its PUBLIC EXECUTE
+        // revoked, the item is absent from the surface, and 16.16 still matches. This runs on a native 16.16 cluster
+        // too, where the block above that checks an absent function cannot.
+        fgdpWithoutPublicExecute($super, 'pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])', function () use ($check): void {
+            [$code, $output] = $check(160016);
+            expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output);
+        });
     } finally {
         if (! $native) {
             $super->exec(FGDP_PG1616_DROP);
         }
     }
 
+    DB::purge('fgdp_runtime');
+    expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('treats a reviewed "-" delta as optional from its minor on: a built-in grant a newer initdb drops may be absent there, and is missing below it (R6-B3c, review of a3c54af9, finding 2)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $check = fn (int $version): array => fgdpRun('foundation:db-privilege-check', ['--database' => fgdpSimulatedMinor($version)]);
+    $function = 'pg_catalog.binary_upgrade_set_missing_value(oid,text,text)';
+    $item = "function|{$function}|EXECUTE|PUBLIC|NO";
+    // A 16.16 cluster (PB-7 in CI) also has the 16.16 function from initdb, which is extra below 16.16.
+    $below = fgdpHasPg1616Function() ? ['FAIL  surface: extra '.FGDP_PG1616_ITEM, "FAIL  surface: missing {$item}"] : ["FAIL  surface: missing {$item}"];
+    $committed = config('runtime_privilege_classes.baseline_deltas');
+
+    // A temporary delta file: the committed 16.16 item, and a hypothetical 16.16 initdb that no longer grants PUBLIC
+    // EXECUTE on a base function.
+    fgdpWithDeltaFile("base|160015\nreviewed-through|160016\n160016|+|".FGDP_PG1616_ITEM."\n160016|-|{$item}\n", function () use ($super, $check, $function, $below): void {
+        fgdpWithoutPublicExecute($super, $function, function () use ($check, $below): void {
+            [$code, $output] = $check(160016);
+            expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output);
+
+            // Below its minor the item keeps its base state: required, so exactly that missing line.
+            [$code, $output] = $check(160015);
+            expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)->and(fgdpFailures($output))->toBe($below);
+        });
+
+        // Restored: the grant is back, and 16.16 still matches (an in-place-updated cluster keeps it).
+        [$code, $output] = $check(160016);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output);
+    });
+
+    expect(config('runtime_privilege_classes.baseline_deltas'))->toBe($committed);
     DB::purge('fgdp_runtime');
     expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
 })->skip($fgdpSkip, $fgdpSkipReason);
