@@ -45,3 +45,10 @@ jobs:
 
       - name: OS-level negatives (root on the disposable VM)
         run: sudo --preserve-env=GITHUB_ACTIONS bash deploy/od-r6-1/os-negatives.sh "$GITHUB_WORKSPACE"
+
+      # F1-B (R6-B4 preparation; owner evidence "F1 PRODUCTION CONFIG CACHE VERIFICATION" §4): the config cache in the
+      # production layout (2770/0640), the deploy's own normalization and isolation gate, and the migration without the
+      # runtime secrets. Synthetic only, on this disposable VM.
+      - name: F1-B config-cache isolation (root on the disposable VM)
+        if: success() || failure()
+        run: sudo --preserve-env=GITHUB_ACTIONS bash deploy/od-r6-1/f1b-cache.sh "$GITHUB_WORKSPACE"
