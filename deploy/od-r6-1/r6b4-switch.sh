@@ -95,7 +95,8 @@ echo "== R6-B4-1 the switch file must be trusted"
 chmod 0620 "$SWITCH"; step >/dev/null 2>&1 && fail "R6-B4-1 a group-writable switch file was accepted" || pass "R6-B4-1 a group-writable switch file is refused"
 chmod 0600 "$SWITCH"
 usermod -a -G "$RT" "$MIG"; dms_r6_switch_read 0 "$RT" "$RT" "$CO" >/dev/null 2>&1 && fail "R6-B4-1 a migration account in the runtime group was accepted" || pass "R6-B4-1 a migration account in the runtime group is refused"
-gpasswd -q -d "$MIG" "$RT" >/dev/null
+gpasswd -d "$MIG" "$RT" >/dev/null
+id -nG "$MIG" | tr ' ' '\n' | grep -qx "$RT" && { echo "HARNESS ERROR: $MIG is still in $RT"; exit 3; }
 usermod -s /bin/bash "$MIG"; dms_r6_switch_read 0 "$RT" "$RT" "$CO" >/dev/null 2>&1 && fail "R6-B4-1 a migration account with a login shell was accepted" || pass "R6-B4-1 a migration account with a login shell is refused"
 usermod -s /usr/sbin/nologin "$MIG"
 dms_r6_switch_read 0 "$RT" "$RT" "$MIG" >/dev/null 2>&1 && fail "R6-B4-1 a forbidden (build/admin) account was accepted" || pass "R6-B4-1 an account on the forbidden list is refused"
