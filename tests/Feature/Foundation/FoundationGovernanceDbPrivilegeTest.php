@@ -357,7 +357,7 @@ function fgdpState(PDO $pdo, string $sql): string
 /** $sql with the design role names substituted (:runtime, :owner, :db, :super). */
 function fgdpSql(string $sql): string
 {
-    return strtr($sql, [':runtime' => fgdpEnv('RUNTIME'), ':owner' => fgdpEnv('OWNER'), ':db' => fgdpEnv('DATABASE'), ':super' => fgdpEnv('SUPERUSER')]);
+    return strtr($sql, [':RUNTIMEUPPER' => strtoupper((string) fgdpEnv('RUNTIME')), ':runtime' => fgdpEnv('RUNTIME'), ':owner' => fgdpEnv('OWNER'), ':db' => fgdpEnv('DATABASE'), ':super' => fgdpEnv('SUPERUSER')]);
 }
 
 /**
@@ -430,6 +430,8 @@ function fgdpProvisionedAndGranted(): void
     $super->exec(fgdpSql('CREATE SCHEMA IF NOT EXISTS fgdp_ext; CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA fgdp_ext; GRANT USAGE ON SCHEMA fgdp_ext TO ":runtime"'));
     // The production design (D-Q1): the runtime holds exactly the two monitoring roles.
     $super->exec(fgdpSql('GRANT pg_read_all_stats, pg_read_all_settings TO ":runtime"'));
+    // Round 3, finding 7: PUBLIC loses CONNECT and TEMPORARY on every other database (an R6-D provisioning step).
+    $super->exec('REVOKE CONNECT, TEMPORARY ON DATABASE postgres FROM PUBLIC; REVOKE CONNECT, TEMPORARY ON DATABASE template1 FROM PUBLIC');
     [$code, $output] = fgdpRun('foundation:db-privilege-apply', ['--apply' => true]);
     expect($code)->toBe(0, $output);
 }
@@ -548,8 +550,9 @@ it('fails on each injected drift and matches again once it is undone', function 
         [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
         expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)
             ->and($output)->toContain($expected)
-            ->and($output)->not->toContain(fgdpEnv('RUNTIME'))
-            ->and($output)->not->toContain(fgdpEnv('OWNER'));
+            // Round 3, finding 4: no role name in any case, not even inside a longer name.
+            ->and(stripos($output, (string) fgdpEnv('RUNTIME')))->toBeFalse()
+            ->and(stripos($output, (string) fgdpEnv('OWNER')))->toBeFalse();
     } finally {
         $super->exec(fgdpSql($undo));
     }
@@ -624,6 +627,30 @@ it('fails on each injected drift and matches again once it is undone', function 
     'a sequence outside public' => ['CREATE SEQUENCE fgdp_ext.fgdp_seq; GRANT UPDATE ON SEQUENCE fgdp_ext.fgdp_seq TO ":runtime"', 'DROP SEQUENCE fgdp_ext.fgdp_seq', 'sequence fgdp_ext.fgdp_seq: the runtime holds UPDATE (setval)'],
     // T4: a writable partition.
     'a writable partition' => ['CREATE TABLE public.fgdp_part (id int) PARTITION BY RANGE (id); CREATE TABLE public.fgdp_part_1 PARTITION OF public.fgdp_part FOR VALUES FROM (0) TO (10); GRANT INSERT ON public.fgdp_part_1 TO ":runtime"', 'DROP TABLE public.fgdp_part', 'relation public.fgdp_part_1 (kind r): the runtime can write to it outside the table registry'],
+    // Review round 3 (verification), finding 1c: the round-1 current-ACL rule, kept.
+    'a withheld function granted to the runtime' => ['CREATE FUNCTION pg_catalog.fgdp_restricted() RETURNS int LANGUAGE sql AS $$ select 1 $$; REVOKE EXECUTE ON FUNCTION pg_catalog.fgdp_restricted() FROM PUBLIC; GRANT EXECUTE ON FUNCTION pg_catalog.fgdp_restricted() TO ":runtime"', 'DROP FUNCTION pg_catalog.fgdp_restricted()', 'the runtime can EXECUTE fgdp_restricted(), which PUBLIC may not'],
+    // Finding 2: code the runtime runs without a grant.
+    'an internal alias of a restricted built-in' => ["CREATE FUNCTION fgdp_ext.fgdp_rd(text) RETURNS bytea LANGUAGE internal STRICT AS 'pg_read_binary_file_all'", 'DROP FUNCTION fgdp_ext.fgdp_rd(text)', 'is internal or C code added after initdb, outside an extension'],
+    'an aggregate whose final function is restricted' => ['CREATE AGGREGATE public.fgdp_agg(text) (sfunc = textcat, stype = text, finalfunc = pg_catalog.pg_read_file)', 'DROP AGGREGATE public.fgdp_agg(text)', 'aggregate fgdp_agg(text) runs a support function the runtime may not execute'],
+    'an extension outside the allowlist' => ['CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA fgdp_ext', 'DROP EXTENSION pgcrypto', 'extension pgcrypto is not on the allowlist'],
+    // Finding 3: reads outside the registry.
+    'a readable credential catalog' => ['GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC', 'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC', 'the runtime can reach system relation pg_authid beyond its initial privileges'],
+    'a readable credential column' => ['GRANT SELECT (rolpassword) ON pg_catalog.pg_authid TO pg_read_all_stats', 'REVOKE SELECT (rolpassword) ON pg_catalog.pg_authid FROM pg_read_all_stats', 'the runtime can reach system relation pg_authid (a column) beyond its initial privileges'],
+    'a readable view outside the registry' => ['CREATE VIEW fgdp_ext.fgdp_auth AS SELECT rolname FROM pg_catalog.pg_authid; GRANT SELECT ON fgdp_ext.fgdp_auth TO PUBLIC', 'DROP VIEW fgdp_ext.fgdp_auth', 'the runtime can read relation fgdp_ext.fgdp_auth (kind v) outside the table registry'],
+    'a privilege on a large object' => ['SELECT lo_create(424242); GRANT SELECT ON LARGE OBJECT 424242 TO ":runtime"', 'SELECT lo_unlink(424242)', 'holds a privilege on 1 large object(s)'],
+    // Finding 4: withholding is case-insensitive and inside longer names.
+    'a schema whose name contains the runtime name' => ['CREATE SCHEMA ":runtime_data"; GRANT CREATE ON SCHEMA ":runtime_data" TO ":runtime"', 'DROP SCHEMA ":runtime_data"', 'the runtime can CREATE in schema <name withheld>_data'],
+    'a schema named after the runtime in upper case' => ['CREATE SCHEMA ":RUNTIMEUPPER"; GRANT CREATE ON SCHEMA ":RUNTIMEUPPER" TO ":runtime"', 'DROP SCHEMA ":RUNTIMEUPPER"', 'the runtime can CREATE in schema <name withheld>'],
+    // Finding 5: a guard's search_path widened without touching its body.
+    'a guard whose search_path lets public shadow pg_catalog' => ['ALTER FUNCTION public.dms_inventory_ledger_guard() SET search_path = public, pg_catalog, pg_temp', 'ALTER FUNCTION public.dms_inventory_ledger_guard() SET search_path = pg_catalog, pg_temp', 'guard function dms_inventory_ledger_guard settings are not exactly search_path=pg_catalog, pg_temp'],
+    'a guard pinned with public after pg_catalog' => ['ALTER FUNCTION public.dms_inventory_ledger_guard() SET search_path = pg_catalog, public, pg_temp', 'ALTER FUNCTION public.dms_inventory_ledger_guard() SET search_path = pg_catalog, pg_temp', 'guard function dms_inventory_ledger_guard settings are not exactly search_path=pg_catalog, pg_temp'],
+    // Finding 6: ownership of a language or another database by a reached built-in role.
+    'a language owned by a monitoring role' => ['ALTER LANGUAGE plpgsql OWNER TO pg_read_all_stats', 'ALTER LANGUAGE plpgsql OWNER TO ":super"', 'a built-in role the runtime reaches owns 1 object(s)'],
+    'another database owned by a monitoring role' => ['ALTER DATABASE postgres OWNER TO pg_read_all_stats', 'ALTER DATABASE postgres OWNER TO ":super"', 'a built-in role the runtime reaches owns 1 object(s)'],
+    // Finding 7: another database reachable.
+    'CONNECT on another database' => ['GRANT CONNECT ON DATABASE postgres TO PUBLIC', 'REVOKE CONNECT ON DATABASE postgres FROM PUBLIC', 'the runtime can connect to or create in 1 other database(s)'],
+    // Finding 9: large-object ACL checks switched off by a default.
+    'lo_compat_privileges switched on by a role default' => ['ALTER ROLE ":runtime" SET lo_compat_privileges = on', 'ALTER ROLE ":runtime" RESET lo_compat_privileges', 'lo_compat_privileges is not off in the runtime session'],
     'a wide default privilege' => ['ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT ALL ON TABLES TO ":runtime"', 'ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public REVOKE ALL ON TABLES FROM ":runtime"; ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT SELECT ON TABLES TO ":runtime"', 'a default privilege gives the runtime INSERT on new objects of type r'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 

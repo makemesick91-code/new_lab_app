@@ -72,6 +72,15 @@ final class DatabasePrivilegeCheck
     /** Default privileges the runtime (or PUBLIC) may receive, per object type (pg_default_acl.defaclobjtype). */
     private const ALLOWED_DEFAULTS = ['r' => ['SELECT'], 'S' => ['USAGE', 'SELECT']];
 
+    /** Round 3, finding 2: the only extensions the design uses. */
+    public const ALLOWED_EXTENSIONS = ['pg_stat_statements', 'plpgsql'];
+
+    /** Round 3, findings 1 and 9: settings that must keep their safe value in every runtime session. */
+    private const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off'];
+
+    /** Round 3, finding 5: the exact configuration of every guard function (the provisioning value). */
+    public const GUARD_FUNCTION_CONFIG = ['search_path=pg_catalog, pg_temp'];
+
     public function __construct(private readonly RuntimePrivilegeRegistry $registry) {}
 
     /**
@@ -358,7 +367,12 @@ final class DatabasePrivilegeCheck
                 union all
                 select spcowner as owner from pg_catalog.pg_tablespace
                 union all
-                select datdba from pg_catalog.pg_database where datname = current_database()
+                select lanowner from pg_catalog.pg_language
+                union all
+                select subowner from pg_catalog.pg_subscription
+                union all
+                -- Round 3, finding 6: every database, not only this one.
+                select datdba from pg_catalog.pg_database
             ) o
             where o.owner in (select oid from reach)
             SQL, [$runtime])->n;
@@ -388,7 +402,19 @@ final class DatabasePrivilegeCheck
         if ((bool) $database->t) {
             $creates[] = 'the runtime can create TEMPORARY objects in the database';
         }
-        $record('the runtime can create no schema object, nothing in the database and no temporary object', $creates);
+        // Round 3, finding 7: no other database is reachable at all (PostgreSQL
+        // grants CONNECT and TEMPORARY to PUBLIC by default; provisioning revokes
+        // them). The databases' names are never printed.
+        $others = (int) $connection->selectOne(<<<'SQL'
+            select count(*) as n from pg_catalog.pg_database d
+            where d.datname <> current_database() and d.datallowconn
+              and (pg_catalog.has_database_privilege(?, d.oid, 'CONNECT') or pg_catalog.has_database_privilege(?, d.oid, 'TEMPORARY')
+                   or pg_catalog.has_database_privilege(?, d.oid, 'CREATE'))
+            SQL, [$runtime, $runtime, $runtime])->n;
+        if ($others > 0) {
+            $creates[] = "the runtime can connect to or create in {$others} other database(s)";
+        }
+        $record('the runtime can create no schema object, nothing in the database and no temporary object, and reaches no other database', $creates);
 
         // 6. N-9.
         $databaseOwnerIsSuperuser = (bool) $connection->selectOne(
@@ -401,7 +427,8 @@ final class DatabasePrivilegeCheck
         foreach ($connection->select(<<<'SQL'
             select distinct p.oid, p.proname, pg_catalog.pg_get_userbyid(p.proowner) as owner, p.prosecdef,
                    coalesce(array_to_string(p.proconfig, chr(1)), '') as config,
-                   encode(pg_catalog.sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as body
+                   encode(pg_catalog.sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as body,
+                   (select l.lanname from pg_catalog.pg_language l where l.oid = p.prolang) as language
             from pg_catalog.pg_trigger t
             join pg_catalog.pg_class c on c.oid = t.tgrelid
             join pg_catalog.pg_namespace n on n.oid = c.relnamespace
@@ -419,6 +446,15 @@ final class DatabasePrivilegeCheck
             $searchPath = array_values(array_filter($settings, fn (string $s): bool => str_starts_with($s, 'search_path=')));
             if ($searchPath === [] || ! self::pinnedSearchPath(substr($searchPath[0], strlen('search_path=')))) {
                 $functions[] = "trigger function {$row->proname} does not pin search_path with pg_temp last";
+            }
+            // Round 3, finding 5: a guard's settings are exactly the provisioning
+            // value, so no search_path entry can put a public overload in front of
+            // what the body calls; and it stays plpgsql.
+            if ($settings !== self::GUARD_FUNCTION_CONFIG) {
+                $functions[] = "guard function {$row->proname} settings are not exactly ".implode(' ', self::GUARD_FUNCTION_CONFIG);
+            }
+            if ($row->language !== 'plpgsql') {
+                $functions[] = "guard function {$row->proname} is not plpgsql";
             }
             // Round 2, N4: the body itself is pinned, so a replaced guard that keeps
             // its owner, pin and trigger text is still caught.
@@ -496,25 +532,75 @@ final class DatabasePrivilegeCheck
             SQL, [$runtime]) as $row) {
             $guards[] = "the runtime can EXECUTE {$row->signature}";
         }
-        $record('the runtime can execute no restricted function beyond its initial privileges (statistics reset, server files, other withheld built-ins)', $guards);
-
-        // 9. Triggers are not switched off for the runtime's sessions (finding 1).
-        $replication = [];
-        if ((string) $connection->selectOne("select current_setting('session_replication_role') as r")->r !== 'origin') {
-            $replication[] = 'session_replication_role is not origin in the runtime session: triggers and rules do not fire';
-        }
+        // Round 3, finding 1c: the round-1 current-ACL rule is kept as well, so an
+        // erased or forged initial-privilege row does not hide a function whose
+        // ACL withholds EXECUTE from PUBLIC yet grants it to the runtime.
         foreach ($connection->select(<<<'SQL'
-            select case when s.setrole = 0 then 'every role' else 'the runtime role' end as who,
-                   case when s.setdatabase = 0 then 'every database' else 'this database' end as scope
-            from pg_catalog.pg_db_role_setting s
-            cross join lateral unnest(s.setconfig) as cfg(setting)
-            where s.setrole in (0, (select oid from pg_catalog.pg_roles where rolname = ?))
-              and s.setdatabase in (0, (select oid from pg_catalog.pg_database where datname = current_database()))
-              and lower(split_part(cfg.setting, '=', 1)) = 'session_replication_role'
-            SQL, [$runtime]) as $row) {
-            $replication[] = "a default sets session_replication_role for {$row->who} in {$row->scope}";
+            select p.oid::regprocedure::text as signature
+            from pg_catalog.pg_proc p
+            where p.proacl is not null
+              and not exists (select 1 from pg_catalog.aclexplode(p.proacl) a
+                              where a.privilege_type = 'EXECUTE'
+                                and (a.grantee = 0 or a.grantee in (select oid from pg_catalog.pg_roles where rolname in ('pg_read_all_settings', 'pg_read_all_stats'))))
+              and pg_catalog.has_function_privilege(?, p.oid, 'EXECUTE')
+              and p.proowner <> (select oid from pg_catalog.pg_roles where rolname = ?)
+            order by 1
+            SQL, [$runtime, $runtime]) as $row) {
+            $guards[] = "the runtime can EXECUTE {$row->signature}, which PUBLIC may not";
         }
-        $record('triggers and rules fire in the runtime session, and no role or database default switches them off', $replication);
+        // Round 3, finding 2: an aggregate runs its support functions under the
+        // aggregate owner's EXECUTE check, so each must be executable by the runtime itself.
+        foreach ($connection->select(<<<'SQL'
+            select distinct a.aggfnoid::regprocedure::text as aggregate
+            from pg_catalog.pg_aggregate a
+            cross join lateral unnest(array[a.aggtransfn, a.aggfinalfn, a.aggcombinefn, a.aggserialfn, a.aggdeserialfn,
+                                            a.aggmtransfn, a.aggminvtransfn, a.aggmfinalfn]::oid[]) as f(fn)
+            where f.fn <> 0
+              and pg_catalog.has_function_privilege(?, a.aggfnoid, 'EXECUTE')
+              and not pg_catalog.has_function_privilege(?, f.fn, 'EXECUTE')
+            order by 1
+            SQL, [$runtime, $runtime]) as $row) {
+            $guards[] = "aggregate {$row->aggregate} runs a support function the runtime may not execute";
+        }
+        // Round 3, finding 2: internal or C code added after initdb, outside an extension.
+        foreach ($connection->select(<<<'SQL'
+            select p.oid::regprocedure::text as signature
+            from pg_catalog.pg_proc p join pg_catalog.pg_language l on l.oid = p.prolang
+            where l.lanname in ('internal', 'c') and p.oid >= 16384
+              and not exists (select 1 from pg_catalog.pg_depend d where d.classid = 'pg_catalog.pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')
+            order by 1
+            SQL) as $row) {
+            $guards[] = "function {$row->signature} is internal or C code added after initdb, outside an extension";
+        }
+        $allowed = "'".implode("', '", self::ALLOWED_EXTENSIONS)."'";
+        foreach ($connection->select("select extname from pg_catalog.pg_extension where extname not in ({$allowed}) order by 1") as $row) {
+            $guards[] = "extension {$row->extname} is not on the allowlist";
+        }
+        foreach ($connection->select("select lanname from pg_catalog.pg_language where not lanpltrusted and lanname not in ('internal', 'c') order by 1") as $row) {
+            $guards[] = "untrusted language {$row->lanname} is installed";
+        }
+        $record('the runtime can execute no restricted function beyond its initial privileges (statistics reset, server files, other withheld built-ins), and no foreign code is installed', $guards);
+
+        // 9. Triggers are not switched off, and large objects keep their ACL
+        // checks, in the runtime's sessions (finding 1; round 3, finding 9).
+        $replication = [];
+        foreach (self::SAFE_SETTINGS as $setting => $safe) {
+            if ((string) $connection->selectOne('select current_setting(?) as v', [$setting])->v !== $safe) {
+                $replication[] = "{$setting} is not {$safe} in the runtime session".($setting === 'session_replication_role' ? ': triggers and rules do not fire' : '');
+            }
+            foreach ($connection->select(<<<'SQL'
+                select case when s.setrole = 0 then 'every role' else 'the runtime role' end as who,
+                       case when s.setdatabase = 0 then 'every database' else 'this database' end as scope
+                from pg_catalog.pg_db_role_setting s
+                cross join lateral unnest(s.setconfig) as cfg(setting)
+                where s.setrole in (0, (select oid from pg_catalog.pg_roles where rolname = ?))
+                  and s.setdatabase in (0, (select oid from pg_catalog.pg_database where datname = current_database()))
+                  and lower(split_part(cfg.setting, '=', 1)) = ?
+                SQL, [$runtime, $setting]) as $row) {
+                $replication[] = "a default sets {$setting} for {$row->who} in {$row->scope}";
+            }
+        }
+        $record('triggers and rules fire, and large-object checks hold, in the runtime session; no default changes either', $replication);
 
         // 10. Owner rights reachable by the runtime (finding 2).
         // Round 2, N2: EVERY SECURITY DEFINER function, in any schema and whatever
@@ -541,6 +627,75 @@ final class DatabasePrivilegeCheck
             $definer[] = "table {$row->relname} carries rewrite rule {$row->rulename} (its actions run with the owner's rights)";
         }
         $record('no SECURITY DEFINER function, event trigger or rewrite rule on a table exists', $definer);
+
+        // 17. Reads (round 3, finding 3). Every class includes SELECT, so reading a
+        // registry table is by design; reading anything else is not. System
+        // relations may be read only as far as their initial privileges allow;
+        // no view, materialized view, foreign table, or table outside `public` may
+        // be readable unless it belongs to an allowlisted extension.
+        $reads = [];
+        foreach ($connection->select(<<<'SQL'
+            with reach as (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER')),
+            cur as (
+                select c.oid, 0 as sub, a.grantee, a.privilege_type from pg_catalog.pg_class c
+                cross join lateral pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault((case when c.relkind = 'S' then 's' else 'r' end)::"char", c.relowner))) a
+                where c.relnamespace in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+                union all
+                select att.attrelid, att.attnum, a.grantee, a.privilege_type from pg_catalog.pg_attribute att
+                cross join lateral pg_catalog.aclexplode(att.attacl) a
+                where att.attacl is not null and att.attrelid in (select oid from pg_catalog.pg_class where relnamespace in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace))
+            ),
+            ini as (
+                select i.objoid as oid, i.objsubid as sub, a.grantee, a.privilege_type from pg_catalog.pg_init_privs i
+                cross join lateral pg_catalog.aclexplode(i.initprivs) a
+                where i.classoid = 'pg_catalog.pg_class'::regclass
+                union all
+                -- initdb creates information_schema after recording initial privileges;
+                -- its relations are granted exactly SELECT to PUBLIC, so that is their baseline.
+                select c.oid, 0, 0::oid, 'SELECT' from pg_catalog.pg_class c
+                where c.relnamespace = 'information_schema'::regnamespace and c.oid < 16384
+                  and not exists (select 1 from pg_catalog.pg_init_privs i where i.classoid = 'pg_catalog.pg_class'::regclass and i.objoid = c.oid)
+            )
+            select distinct c.oid::regclass::text as relation, c.sub
+            from cur c
+            where (c.grantee = 0 or c.grantee in (select oid from reach))
+              and not exists (select 1 from ini where ini.oid = c.oid and ini.sub = c.sub and ini.grantee = c.grantee and ini.privilege_type = c.privilege_type)
+            order by 1, 2
+            SQL, [$runtime]) as $row) {
+            $reads[] = "the runtime can reach system relation {$row->relation}".((int) $row->sub > 0 ? ' (a column)' : '').' beyond its initial privileges';
+        }
+        $allowedExtensions = "'".implode("', '", self::ALLOWED_EXTENSIONS)."'";
+        foreach ($connection->select(<<<SQL
+            select n.nspname, c.relname, c.relkind
+            from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+            where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg\\_toast%' and n.nspname not like 'pg\\_temp\\_%'
+              and (c.relkind in ('v', 'm', 'f') or (c.relkind in ('r', 'p') and n.nspname <> 'public'))
+              and (pg_catalog.has_table_privilege(?, c.oid, 'SELECT') or pg_catalog.has_any_column_privilege(?, c.oid, 'SELECT'))
+              and not exists (
+                  select 1 from pg_catalog.pg_depend d join pg_catalog.pg_extension e on e.oid = d.refobjid
+                  where d.classid = 'pg_catalog.pg_class'::regclass and d.objid = c.oid and d.deptype = 'e' and e.extname in ({$allowedExtensions}))
+            order by 1, 2
+            SQL, [$runtime, $runtime]) as $row) {
+            $reads[] = "the runtime can read relation {$row->nspname}.{$row->relname} (kind {$row->relkind}) outside the table registry";
+        }
+        foreach ($connection->select(<<<'SQL'
+            select count(*) as n from pg_catalog.pg_largeobject_metadata lo
+            cross join lateral pg_catalog.aclexplode(lo.lomacl) a
+            where lo.lomacl is not null and (a.grantee = 0 or a.grantee in (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER')))
+            SQL, [$runtime]) as $row) {
+            if ((int) $row->n > 0) {
+                $reads[] = "the runtime or a role it reaches holds a privilege on {$row->n} large object(s)";
+            }
+        }
+        foreach ($connection->select(<<<'SQL'
+            select s.srvname from pg_catalog.pg_foreign_server s where pg_catalog.has_server_privilege(?, s.oid, 'USAGE')
+            union
+            select m.srvname from pg_catalog.pg_user_mappings m where m.umuser = 0 or m.umuser in (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER'))
+            order by 1
+            SQL, [$runtime, $runtime]) as $row) {
+            $reads[] = "the runtime can use foreign server {$row->srvname}";
+        }
+        $record('the runtime reads nothing outside the registry tables, its initial system privileges and allowlisted extensions', $reads);
 
         // 16. Table inheritance (round 2, N3): DML on a parent is checked on the
         // parent only, so it would reach a child of another class.
@@ -689,7 +844,9 @@ final class DatabasePrivilegeCheck
     private static function withholdRoleNames(string $text, array $roles): string
     {
         foreach ($roles as $role) {
-            $text = (string) preg_replace('/(?<![A-Za-z0-9_$])'.preg_quote($role, '/').'(?![A-Za-z0-9_$])/', '<name withheld>', $text);
+            // Round 3, finding 4: case-insensitive and inside longer names too;
+            // over-withholding is the accepted price.
+            $text = (string) preg_replace('/'.preg_quote($role, '/').'/i', '<name withheld>', $text);
         }
 
         return $text;
