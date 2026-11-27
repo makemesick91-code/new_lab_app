@@ -73,7 +73,7 @@ const CTRG_PB7_SHA256 = '345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6
 const CTRG_PB7_PRE_REMOVAL_SHA256 = 'd11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09';
 // The script holds all of PB-7's fail-closed logic, so it is pinned with the workflow (an edit is a re-pin).
 const CTRG_PB7_SCRIPT = 'scripts/ci/r6-role-test-cluster.sh';
-const CTRG_PB7_SCRIPT_SHA256 = '922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b';
+const CTRG_PB7_SCRIPT_SHA256 = 'd9ee606651e8c4188c2e85b3336a8872334e89b79eaf275b1e7e5e5e263c39d6';
 const CTRG_PB7_BLOCKS = [
     'hosted' => ['tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt', '0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a',
         "      - name: Run governance audit commands\n        # Always runs — governance is never gated by the classifier.\n        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only\n"],

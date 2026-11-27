@@ -1785,7 +1785,7 @@ row R6-B7.
     `5512d748c336ed35ac4ba5ad80c430ce4591e49a02e548366e382673d4f31079`.
 
 - Pinned script (it holds every fail-closed part, so it is pinned with the workflow): `scripts/ci/r6-role-test-cluster.sh`,
-  SHA-256 `922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b`. It also requires:
+  SHA-256 `d9ee606651e8c4188c2e85b3336a8872334e89b79eaf275b1e7e5e5e263c39d6`. It also requires:
   - a JUnit log of at least 230 tests with no failure, error or skip, and no `todo` or `pending`;
   - no `->only(` or `->todo(` in either suite;
   - the PostgreSQL 16 server at exactly the client's package version.
@@ -1793,6 +1793,17 @@ row R6-B7.
   Its acceptance runs on a fresh database: migrated through `pgsql_migrate`, provisioned as R6-D would provision it,
   then the first apply must change objects, the check must reach MATCH, and a second apply must change nothing. The
   password mask goes only to the job log; a password-free step summary is written.
+
+  **Re-pin with R6-B3c (review round 2, N1).** As merged in #714 the script was `922ce913…`. R6-B3c's structural
+  surface check (check 19) compares the runtime's whole surface with the pinned PostgreSQL 16 baseline, so the
+  acceptance now:
+  - drops the suites' database before it starts, instead of revoking CONNECT on it. The runtime's leftover grants
+    there (schema, tables, default privileges) would count as 3 extra "object in another database" items;
+  - installs `pg_stat_statements` in `public` as the bootstrap superuser after the migration, as R6-D provisions
+    it. Without it the 6 baseline items of the extension are missing, and the check reports DRIFT.
+
+  The workflow and its pinned states are unchanged; only the script SHA-256 is re-pinned, here and in
+  `CiTriggerRemovalGovernanceTest`.
 
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
 - PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;
