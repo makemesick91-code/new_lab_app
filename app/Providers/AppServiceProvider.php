@@ -16,6 +16,7 @@ use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
 use App\Support\Android\Phase4aPilotPreparationScanner;
 use App\Support\Android\SignerFingerprintResolver;
+use App\Support\Database\MigrationConnection;
 use App\Support\Deploy\ForbiddenConsoleCommandGuard;
 use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
@@ -28,6 +29,8 @@ use App\Support\Routing\DatabaseRouteKey;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\MigrationEnded;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -42,6 +45,17 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once app_path('Support/helpers.php');
+
+        // DMS-SPN4-READY-PILOT-1 R6-B2b — the migration connection fails closed on
+        // its first connect and on every reconnect (see MigrationConnection). It is
+        // registered as soon as the database manager exists, so nothing can resolve
+        // `pgsql_migrate` without it.
+        $this->app->afterResolving('db', function (DatabaseManager $db, $app): void {
+            MigrationConnection::register($db, $app['db.factory']);
+        });
+        if ($this->app->resolved('db')) {
+            MigrationConnection::register($this->app['db'], $this->app['db.factory']);
+        }
 
         // CICD-GOVERNANCE-EVALUATION-MEMO-1 — shared so every governance gate
         // reached during one evaluation sees the same memo. It caches only while
@@ -138,6 +152,21 @@ class AppServiceProvider extends ServiceProvider
         $this->registerPatientDocumentRateLimiter();
         $this->refuseForbiddenConsoleCommands();
         $this->registerDoctorSessionLeaseListener();
+        $this->registerMigrationConnectionBackstop();
+    }
+
+    /**
+     * DMS-SPN4-READY-PILOT-1 R6-B2b review round 2 (finding 4): after every
+     * migration of a `pgsql_migrate` run, the server must still report the owner
+     * role and no object in `public` owned by another role (see
+     * MigrationConnection::assertAfterMigration). Explicit Event::listen() in
+     * boot(), as the doctor session-lease listener below explains.
+     */
+    private function registerMigrationConnectionBackstop(): void
+    {
+        Event::listen(MigrationEnded::class, function (MigrationEnded $event): void {
+            MigrationConnection::assertAfterMigration($event, $this->app->make('migrator'), $this->app->make('db'));
+        });
     }
 
     /**
