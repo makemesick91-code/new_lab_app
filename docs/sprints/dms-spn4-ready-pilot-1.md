@@ -1784,6 +1784,16 @@ row R6-B7.
   - `tests/Fixtures/ci/pb-7-critical-gate-step-self-hosted.yml.txt`, SHA-256
     `5512d748c336ed35ac4ba5ad80c430ce4591e49a02e548366e382673d4f31079`.
 
+- Pinned script (it holds every fail-closed part, so it is pinned with the workflow): `scripts/ci/r6-role-test-cluster.sh`,
+  SHA-256 `922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b`. It also requires:
+  - a JUnit log of at least 230 tests with no failure, error or skip, and no `todo` or `pending`;
+  - no `->only(` or `->todo(` in either suite;
+  - the PostgreSQL 16 server at exactly the client's package version.
+
+  Its acceptance runs on a fresh database: migrated through `pgsql_migrate`, provisioned as R6-D would provision it,
+  then the first apply must change objects, the check must reach MATCH, and a second apply must change nothing. The
+  password mask goes only to the job log; a password-free step summary is written.
+
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
 - PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;
 - on its B5 rollback target: `d11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09`.

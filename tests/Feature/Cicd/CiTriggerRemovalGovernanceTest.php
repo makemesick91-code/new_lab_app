@@ -71,6 +71,9 @@ const CTRG_OCI1_TAIL = '      # CICD-CTRL-3 — hard production-database isolati
 // the O-CI-1 file and onto its B5 rollback target. Also pinned in the register and the SPN4 sprint record.
 const CTRG_PB7_SHA256 = '345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472';
 const CTRG_PB7_PRE_REMOVAL_SHA256 = 'd11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09';
+// The script holds all of PB-7's fail-closed logic, so it is pinned with the workflow (an edit is a re-pin).
+const CTRG_PB7_SCRIPT = 'scripts/ci/r6-role-test-cluster.sh';
+const CTRG_PB7_SCRIPT_SHA256 = '922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b';
 const CTRG_PB7_BLOCKS = [
     'hosted' => ['tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt', '0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a',
         "      - name: Run governance audit commands\n        # Always runs — governance is never gated by the classifier.\n        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only\n"],
@@ -693,7 +696,41 @@ it('selects the CG-19 suites in both critical variants once REM-1 is applied, an
     expect((string) file_get_contents(base_path('docs/sprints/dms-spn4-ready-pilot-1.md')))
         ->toContain(CTRG_PB7_SHA256)->toContain(CTRG_PB7_PRE_REMOVAL_SHA256)
         ->toContain(CTRG_PB7_BLOCKS['hosted'][1])->toContain(CTRG_PB7_BLOCKS['self-hosted'][1])
-        ->and(ctrgRegister())->toContain(CTRG_PB7_SHA256)->toContain(CTRG_PB7_PRE_REMOVAL_SHA256);
+        ->and(ctrgRegister())->toContain(CTRG_PB7_SHA256)->toContain(CTRG_PB7_PRE_REMOVAL_SHA256)
+        ->and((string) file_get_contents(base_path('docs/sprints/dms-spn4-ready-pilot-1.md')))->toContain(CTRG_PB7_SCRIPT_SHA256);
+});
+
+it('pins the PB-7 script, which keeps every fail-closed part (independent review of PB-7, finding 1)', function () {
+    $sha = hash('sha256', ctrgWorkflowRaw());
+    if (! in_array($sha, [CTRG_PB7_SHA256, CTRG_PB7_PRE_REMOVAL_SHA256], true)) {
+        expect(file_exists(base_path(CTRG_PB7_SCRIPT)))->toBeFalse('the PB-7 script exists while the workflow has no PB-7 step');
+
+        return;
+    }
+    $script = (string) file_get_contents(base_path(CTRG_PB7_SCRIPT));
+    expect(hash('sha256', $script))->toBe(CTRG_PB7_SCRIPT_SHA256, 'the PB-7 script changed without a re-pin');
+
+    // What the pin protects, stated so a re-pin cannot drop it unnoticed.
+    expect($script)->toContain('set -euo pipefail')
+        ->toContain('export R6_ROLE_TEST_REQUIRED=1')
+        ->toContain('TEST_STATUS="${PIPESTATUS[0]}"')
+        ->toContain("grep -Eqi 'skipped|failed|incomplete|risky|todo|pending'")
+        ->toContain('--log-junit')
+        ->toContain('PB7_MIN_TESTS=')
+        ->toContain("-- '->(only|todo)\\('")
+        ->toContain("listen_addresses=''")
+        ->toContain('show listen_addresses')
+        ->toContain('echo "::add-mask::${RT_PW}" >&3')
+        ->toContain('run_as foundation:db-privilege-check')
+        ->toContain("grep -q 'APPLIED: 0 statement(s) for 0 object(s)'")
+        ->not->toContain('continue-on-error');
+    foreach (preg_split('/\R/', $script) ?: [] as $line) {
+        if (preg_match('/artisan (test|foundation:db-privilege)/', $line) === 1) {
+            expect($line)->not->toContain('|| true', $line);
+        }
+    }
+    preg_match('/PB7_MIN_TESTS=(\d+)/', $script, $min);
+    expect((int) $min[1])->toBeGreaterThanOrEqual(230);
 });
 
 /*
