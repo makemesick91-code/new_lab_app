@@ -881,3 +881,29 @@ it('accepts a default that sets a protected setting to its safe value (review ro
         $super->exec(fgdpSql('ALTER DATABASE ":db" RESET standard_conforming_strings; ALTER ROLE ":runtime" RESET session_replication_role'));
     }
 })->skip($fgdpSkip, $fgdpSkipReason);
+
+it('reports the split state read-only: not split where the login owns every table (R6-B4)', function () {
+    [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--split-state' => true]);
+
+    expect($code)->toBe(0)->and(trim($output))->toBe('split=0');
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
+
+it('reports the split state read-only as the runtime: split, and unknown when ownership is mixed (R6-B4)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+
+    [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true]);
+    expect($code)->toBe(0)->and(trim($output))->toBe('split=1');
+
+    $super = fgdpSuper();
+    $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":runtime"'));
+    try {
+        DB::purge('fgdp_runtime');
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true]);
+        expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)->and(trim($output))->toBe('split=unknown');
+    } finally {
+        // An ownership round trip folds the runtime's explicit grants into owner rights;
+        // restore its FULL_DML class grant too, as the per-deploy apply would.
+        $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":owner"; GRANT SELECT, INSERT, UPDATE, DELETE ON public.cache TO ":runtime"'));
+    }
+})->skip($fgdpSkip, $fgdpSkipReason);

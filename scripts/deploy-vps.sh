@@ -458,7 +458,17 @@ dms_build_claim "$BUILD_USER" node_modules public/build
 dms_build_assert_no_symlinks public/build
 
 echo "== Laravel migrate =="
-as_runtime php artisan migrate --force
+# R6-B4: behind the host switch for the migrator (scripts/lib/r6-migrate.sh). With
+# the switch absent or 0 this is exactly `php artisan migrate --force` as the
+# runtime user; with 1 the migration OS account migrates through pgsql_migrate, the
+# runtime grants are applied, and a privilege check that is not MATCH stops the
+# deploy here, before any smoke.
+# shellcheck source=lib/r6-migrate.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_migrate "$RUNTIME_USER" "$RUNTIME_GROUP"; then
+  echo "FATAL: the migrate step failed — NOT GO" >&2
+  exit 1
+fi
 
 echo "== NSF-10 backup verify =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP"
@@ -598,6 +608,7 @@ if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --app-dir "$APP_DIR" \
       --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \
       --additional-private-paths "$DMS_PRIVATE_PATHS" \
+      --additional-forbidden-users "$([ "${DMS_R6_MIGRATOR:-0}" = 1 ] && printf '%s' "${DMS_R6_MIGRATION_OS_USER:-}")" \
       --require-host; then
   echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
   exit 1

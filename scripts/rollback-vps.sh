@@ -284,6 +284,17 @@ if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"; then
   exit 2
 fi
 
+# R6-B4 (IAR-A12): while the database role split is active (host switch
+# DMS_R6_MIGRATOR=1), a target that predates R6-B4 is refused before anything is
+# backed up or checked out: its deploy would migrate as the runtime user, which can
+# no longer create anything. With the switch off this changes nothing.
+# shellcheck source=lib/r6-migrate.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
+if ! dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA"; then
+  echo "FATAL: the R6 rollback guard refused target ${ROLLBACK_TARGET_SHA} — nothing was backed up or checked out — NOT GO" >&2
+  exit 2
+fi
+
 # R6-B7: everything after the checkout runs the TARGET's code. Before any backup
 # or checkout, refuse a target that could not finish this rollback: its shipped
 # backup verifier (config/backup_governance.php at that commit) must accept the
@@ -494,6 +505,7 @@ echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
 if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --app-dir "$APP_DIR" \
       --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \
+      --additional-forbidden-users "$([ "${DMS_R6_MIGRATOR:-0}" = 1 ] && printf '%s' "${DMS_R6_MIGRATION_OS_USER:-}")" \
       --require-host; then
   echo "FATAL: runtime identity isolation is broken after rollback — NOT GO" >&2
   exit 1

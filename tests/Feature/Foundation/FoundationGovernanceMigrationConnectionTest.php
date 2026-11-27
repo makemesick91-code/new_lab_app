@@ -542,3 +542,39 @@ it('rolls back a migration that leaves the owner role through dynamic SQL, by th
         @rmdir($dir);
     }
 })->skip($fgmcSkip, $fgmcSkipReason);
+
+it('exempts exactly the members of pg_stat_statements in public from the backstop, nothing else (R6-B4)', function () {
+    if (fgmcEnv('SUPERUSER') === null) {
+        expect(getenv('R6_ROLE_TEST_REQUIRED') !== '1')->toBeTrue('R6_ROLE_TEST_REQUIRED=1 but R6_ROLE_TEST_SUPERUSER is not configured');
+        $this->markTestSkipped('needs R6_ROLE_TEST_SUPERUSER');
+    }
+    fgmcUse(fgmcClusterConfig());
+    $super = fgmcPdo((string) fgmcEnv('SUPERUSER'));
+    $schemaOf = fn (): ?string => $super->query("select n.nspname from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pg_stat_statements'")->fetchColumn() ?: null;
+    $previous = $schemaOf();
+    $super->exec($previous === null ? 'CREATE EXTENSION pg_stat_statements SCHEMA public' : 'ALTER EXTENSION pg_stat_statements SET SCHEMA public');
+
+    $dir = sys_get_temp_dir().'/fgmc-ext-'.bin2hex(random_bytes(4));
+    mkdir($dir);
+    $migrate = function (string $name, string $table) use ($dir): void {
+        file_put_contents("{$dir}/{$name}.php", "<?php\nuse Illuminate\\Database\\Migrations\\Migration;\nuse Illuminate\\Support\\Facades\\DB;\nreturn new class extends Migration { public function up(): void { DB::statement('create table public.{$table} (id int)'); } };\n");
+        Artisan::call('migrate', ['--database' => 'pgsql_migrate', '--path' => $dir, '--realpath' => true, '--force' => true]);
+    };
+    try {
+        // The superuser-owned extension members in public do not stop a migration.
+        $migrate('2099_01_01_000101_fgmc_ext_ok', 'fgmc_ext_ok');
+        expect((bool) $super->query("select to_regclass('public.fgmc_ext_ok') is not null")->fetchColumn())->toBeTrue();
+
+        // Any other foreign-owned object in public still does, and the migration rolls back.
+        $super->exec('CREATE FUNCTION public.fgmc_foreign() RETURNS int LANGUAGE sql AS $$ select 1 $$');
+        expect(fn () => $migrate('2099_01_01_000102_fgmc_ext_refused', 'fgmc_ext_refused'))
+            ->toThrow(RuntimeException::class, 'an object in public is owned by another role');
+        expect((bool) $super->query("select to_regclass('public.fgmc_ext_refused') is not null")->fetchColumn())->toBeFalse();
+    } finally {
+        $super->exec('DROP FUNCTION IF EXISTS public.fgmc_foreign(); DROP TABLE IF EXISTS public.fgmc_ext_ok, public.fgmc_ext_refused');
+        $super->exec("DELETE FROM public.migrations WHERE migration LIKE '2099_01_01_0001%_fgmc_ext_%'");
+        $super->exec($previous === null ? 'DROP EXTENSION pg_stat_statements' : 'ALTER EXTENSION pg_stat_statements SET SCHEMA "'.$previous.'"');
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        @rmdir($dir);
+    }
+})->skip($fgmcSkip, $fgmcSkipReason);

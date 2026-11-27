@@ -52,6 +52,7 @@ REQUIRE_HOST=0
 SKIP_OS_ACCOUNT=0
 QUIET=0
 ADDITIONAL_PRIVATE_PATHS=""
+ADDITIONAL_FORBIDDEN_USERS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,6 +64,7 @@ while [ $# -gt 0 ]; do
     --require-host) REQUIRE_HOST=1; shift ;;
     --skip-os-account) SKIP_OS_ACCOUNT=1; shift ;;
     --additional-private-paths) ADDITIONAL_PRIVATE_PATHS="${2?--additional-private-paths needs a value}"; shift 2 ;;
+    --additional-forbidden-users) ADDITIONAL_FORBIDDEN_USERS="${2?--additional-forbidden-users needs a value}"; shift 2 ;;
     --quiet) QUIET=1; shift ;;
     -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "verify-runtime-isolation: unknown option '$1'" >&2; exit 2 ;;
@@ -211,6 +213,16 @@ elif command -v getent >/dev/null 2>&1; then
       bad "group '${RUNTIME_GROUP}' has non-runtime member(s):${INTRUDERS} — co-tenant isolation broken"
     else
       ok "group '${RUNTIME_GROUP}' has no foreign member"
+    fi
+    # R6-B4 / F1-B (F1B-12): the member list above names only SUPPLEMENTARY
+    # members; an account whose PRIMARY group is the runtime group reads every
+    # group-readable secret just the same.
+    RUNTIME_GID="$(getent group "$RUNTIME_GROUP" | cut -d: -f3)"
+    PRIMARY_INTRUDERS="$(getent passwd | awk -F: -v gid="$RUNTIME_GID" -v me="$RUNTIME_USER" '$4 == gid && $1 != me { printf " %s", $1 }')"
+    if [ -n "$PRIMARY_INTRUDERS" ]; then
+      bad "account(s) with '${RUNTIME_GROUP}' as their primary group:${PRIMARY_INTRUDERS} — co-tenant isolation broken"
+    else
+      ok "no other account has '${RUNTIME_GROUP}' as its primary group"
     fi
   else
     skip "group '${RUNTIME_GROUP}' exists"
@@ -451,6 +463,21 @@ for rel in ${DMS_PRIVATE_PATHS:-}; do
     else
       ok "${rel} is private to ${RUNTIME_USER} (mode ${D_MODE})"
     fi
+    # R6-B4 / F1-B (F1B-13): a mode says nothing about an access ACL. A named or
+    # default ACL entry anywhere in a private tree can give another account
+    # traverse and read (a traverse-only entry on the directory plus read on a
+    # file is enough), so any one is a FAIL. Without the ACL tools the kernel
+    # still marks an extended ACL with a trailing '+' in the mode string.
+    if command -v getfacl >/dev/null 2>&1; then
+      ACL_ENTRIES="$(getfacl -R -p --skip-base --omit-header "$p" 2>/dev/null | grep -cE '^(default:)?(user|group):[^:]+:' || true)"
+    else
+      ACL_ENTRIES="$(find -P "$p" -exec ls -ld {} + 2>/dev/null | awk '{print $1}' | grep -c '+$' || true)"
+    fi
+    if [ "${ACL_ENTRIES:-0}" -gt 0 ]; then
+      bad "${rel} carries ${ACL_ENTRIES} extended ACL entr(ies) — another account may reach it despite the mode"
+    else
+      ok "${rel} carries no extended ACL"
+    fi
   else
     # Same reasoning: a private directory that does not exist holds no clinical
     # evidence and therefore exposes nothing.
@@ -465,7 +492,7 @@ done
 section "CO-TENANT NEGATIVE PROOF"
 
 if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
-  for intruder in ${DMS_FORBIDDEN_RUNTIME_USERS:-www-data}; do
+  for intruder in ${DMS_FORBIDDEN_RUNTIME_USERS:-www-data} ${ADDITIONAL_FORBIDDEN_USERS}; do
     [ "$intruder" = "root" ] && continue
     getent passwd "$intruder" >/dev/null 2>&1 || continue
 
@@ -485,7 +512,23 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
       else
         ok "'${intruder}' cannot read ${rel}"
       fi
+      # R6-B4 / F1-B (F1B-13): read on a directory is not the whole question;
+      # traverse alone lets a known file name be opened.
+      if runuser -u "$intruder" -- test -x "$p" 2>/dev/null; then
+        bad "'${intruder}' CAN traverse ${rel} — a known file inside it is reachable"
+      else
+        ok "'${intruder}' cannot traverse ${rel}"
+      fi
     done
+    # The compiled configuration carries the runtime secrets (rule 211): prove the
+    # file itself, not only its directory.
+    if [ -e "${APP_DIR}/bootstrap/cache/config.php" ] || runuser -u "$RUNTIME_USER" -- test -e "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
+      if runuser -u "$intruder" -- test -r "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
+        bad "'${intruder}' CAN read bootstrap/cache/config.php — the runtime secrets are exposed"
+      else
+        ok "'${intruder}' cannot read bootstrap/cache/config.php"
+      fi
+    fi
   done
 
   # Positive counterpart: the dedicated runtime must actually be able to work.

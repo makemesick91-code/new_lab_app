@@ -331,7 +331,8 @@ dms_privsep_repair_runtime_ownership() {
 #       directories 2775, files 0664 (setgid keeps the runtime group); never 0777
 #   storage/app/backups: directories 2750, files 0640 (AIR-DEP-14)
 #   every declared private path: owner rw (u+rwX), nothing for "other" (o-rwx),
-#       group bits as found — private trees are never widened (rule 209)
+#       group bits as found — private trees are never widened (rule 209) — and
+#       no extended ACL (R6-B4, F1-B): any is removed, in these trees only
 dms_privsep_normalize_modes() {
   local rel tree
   local -a prune=()
@@ -364,6 +365,15 @@ dms_privsep_normalize_modes() {
   for rel in "$@"; do
     [ -d "$rel" ] || continue
     chmod -R u+rwX,o-rwx -- "$rel"
+    # R6-B4 / F1-B (F1B-13): chmod leaves an extended ACL in place, and a named
+    # entry can give another account traverse and read whatever the mode says. A
+    # declared private tree carries no ACL by design (rules 209, 211), so every
+    # extended entry is removed — in these trees only, never elsewhere. Without the
+    # ACL tools nothing is removed here; the isolation gate after this step then
+    # fails the deploy if an ACL is present.
+    if command -v setfacl >/dev/null 2>&1; then
+      setfacl -R -b -- "$rel" 2>/dev/null || _dms_privsep_err "an extended ACL could not be removed from ${rel}; the isolation gate decides"
+    fi
   done
 }
 

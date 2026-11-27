@@ -154,6 +154,38 @@ final class DatabasePrivilegeCheck
     }
 
     /**
+     * R6-B4: whether the role split is in place, read-only, as the login the
+     * connection uses: false when that login owns every table in `public` (or
+     * there is none yet), true when it owns none, null when it owns some (or the
+     * catalog cannot be read) — a state no deploy may continue from.
+     */
+    public function splitState(?string $connectionName): ?bool
+    {
+        try {
+            $connection = DB::connection($connectionName);
+            if ($connection->getDriverName() !== 'pgsql') {
+                return null;
+            }
+            $row = $connection->selectOne(<<<'SQL'
+                select count(*) filter (where c.relowner = (select oid from pg_catalog.pg_roles where rolname = session_user)) as own,
+                       count(*) as total
+                from pg_catalog.pg_class c
+                join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public' and c.relkind in ('r', 'p')
+                SQL);
+            $own = (int) $row->own;
+            $total = (int) $row->total;
+            if ($own === $total) {
+                return false;
+            }
+
+            return $own === 0 ? true : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Only the grant checks (4) for a given runtime: the apply step re-checks its
      * own transaction with this before it commits.
      *
