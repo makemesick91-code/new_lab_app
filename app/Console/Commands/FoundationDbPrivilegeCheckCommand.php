@@ -44,6 +44,9 @@ class FoundationDbPrivilegeCheckCommand extends Command
         foreach ($result['passed'] as $passed) {
             $this->line("PASS  {$passed}");
         }
+        foreach ($result['notes'] ?? [] as $note) {
+            $this->line("NOTE  {$note}");
+        }
         foreach ($result['problems'] as $problem) {
             $this->line(($result['status'] === DatabasePrivilegeCheck::CANNOT_VERIFY ? 'ERROR ' : 'FAIL  ').$problem);
         }

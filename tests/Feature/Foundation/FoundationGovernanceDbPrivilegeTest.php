@@ -271,6 +271,20 @@ it('lists exactly the guard triggers of the migrated schema (review round 1, fin
     expect($expected)->toHaveCount(22)->and($live)->toBe($expected);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
 
+it('pins exactly the guard function bodies of the migrated schema (review round 2, N4)', function () {
+    $live = [];
+    foreach (DB::select(
+        "select p.proname, encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as body from pg_proc p where p.oid in (select t.tgfoid from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = current_schema() and not t.tgisinternal)"
+    ) as $row) {
+        $live[(string) $row->proname] = (string) $row->body;
+    }
+    ksort($live);
+    $pinned = (array) config('runtime_privilege_classes.guard_functions');
+    ksort($pinned);
+
+    expect($pinned)->toHaveCount(5)->and($live)->toBe($pinned);
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
+
 it('is declared a critical-gate suite (CG-19)', function () {
     expect(config('ci_runner.critical_gate_mandatory_suites'))->toContain('tests/Feature/Foundation/FoundationGovernanceDbPrivilegeTest.php');
 });
@@ -414,6 +428,8 @@ function fgdpProvisionedAndGranted(): void
     // Its own schema, as an administrator would install it: in `public` its views
     // would be objects the owner role does not own.
     $super->exec(fgdpSql('CREATE SCHEMA IF NOT EXISTS fgdp_ext; CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA fgdp_ext; GRANT USAGE ON SCHEMA fgdp_ext TO ":runtime"'));
+    // The production design (D-Q1): the runtime holds exactly the two monitoring roles.
+    $super->exec(fgdpSql('GRANT pg_read_all_stats, pg_read_all_settings TO ":runtime"'));
     [$code, $output] = fgdpRun('foundation:db-privilege-apply', ['--apply' => true]);
     expect($code)->toBe(0, $output);
 }
@@ -508,7 +524,7 @@ it('applies idempotently and its printed rollback restores the pre-state digest 
         ->and(fgdpDigest())->toBe($granted);
 })->skip($fgdpSkip, $fgdpSkipReason);
 
-it('matches once provisioned and granted', function () {
+it('matches once provisioned and granted, and notes the foreign-key actions an owner must decide (round 2, N5)', function () {
     fgdpUseCluster();
     fgdpMigrated();
     fgdpProvisionedAndGranted();
@@ -517,7 +533,8 @@ it('matches once provisioned and granted', function () {
 
     expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output)
         ->and($output)->toContain('DB PRIVILEGE CHECK: MATCH')
-        ->and($output)->not->toContain('FAIL');
+        ->and($output)->not->toContain('FAIL')
+        ->and($output)->toMatch('/NOTE  foreign key \\S+ on trx_rme_payments \\(not FULL_DML, no guard trigger\\)/');
 })->skip($fgdpSkip, $fgdpSkipReason);
 
 it('fails on each injected drift and matches again once it is undone', function (string $inject, string $undo, string $expected) {
@@ -554,27 +571,27 @@ it('fails on each injected drift and matches again once it is undone', function 
     'membership of the owner role' => ['GRANT ":owner" TO ":runtime"', 'REVOKE ":owner" FROM ":runtime"', 'the runtime is a member of the owner role'],
     'all of pg_monitor' => ['GRANT pg_monitor TO ":runtime"', 'REVOKE pg_monitor FROM ":runtime"', 'the runtime is a member of pg_monitor'],
     'server file writes' => ['GRANT pg_write_server_files TO ":runtime"', 'REVOKE pg_write_server_files FROM ":runtime"', 'the runtime is a member of pg_write_server_files'],
-    'an object the runtime owns' => ['CREATE FUNCTION public.fgdp_owned() RETURNS int LANGUAGE sql AS $$ select 1 $$; ALTER FUNCTION public.fgdp_owned() OWNER TO ":runtime"', 'DROP FUNCTION public.fgdp_owned()', 'the runtime owns 1 object(s) in this database'],
+    'an object the runtime owns' => ['CREATE FUNCTION public.fgdp_owned() RETURNS int LANGUAGE sql AS $$ select 1 $$; ALTER FUNCTION public.fgdp_owned() OWNER TO ":runtime"', 'DROP FUNCTION public.fgdp_owned()', 'the runtime or a role it reaches owns 1 object(s) in this database'],
     'a disabled guard trigger' => ['ALTER TABLE public.trx_rme_record_versions DISABLE TRIGGER trx_rme_record_versions_immutable', 'ALTER TABLE public.trx_rme_record_versions ENABLE TRIGGER trx_rme_record_versions_immutable', 'trigger trx_rme_record_versions_immutable on trx_rme_record_versions does not fire'],
     'an unpinned trigger function' => ['ALTER FUNCTION public.trx_rme_record_versions_immutable() RESET search_path', 'ALTER FUNCTION public.trx_rme_record_versions_immutable() SET search_path = pg_catalog, pg_temp', 'trigger function trx_rme_record_versions_immutable does not pin search_path with pg_temp last'],
     'a SECURITY DEFINER trigger function' => ['ALTER FUNCTION public.trx_rme_record_versions_immutable() SECURITY DEFINER', 'ALTER FUNCTION public.trx_rme_record_versions_immutable() SECURITY INVOKER', 'trigger function trx_rme_record_versions_immutable is SECURITY DEFINER'],
     'a trigger function another role owns' => ['ALTER FUNCTION public.trx_rme_record_versions_immutable() OWNER TO ":super"', 'ALTER FUNCTION public.trx_rme_record_versions_immutable() OWNER TO ":owner"', 'trigger function trx_rme_record_versions_immutable is not owned by the owner role'],
     'a database owned by a non-superuser (N-9)' => ['ALTER DATABASE ":db" OWNER TO ":owner"', 'ALTER DATABASE ":db" OWNER TO ":super"', 'the database owner is not a superuser (N-9)'],
     'a statistics reset' => ['GRANT EXECUTE ON FUNCTION fgdp_ext.pg_stat_statements_reset(oid, oid, bigint) TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION fgdp_ext.pg_stat_statements_reset(oid, oid, bigint) FROM ":runtime"', 'pg_stat_statements_reset'],
-    'a server-file export' => ['GRANT EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) FROM ":runtime"', 'the runtime can EXECUTE lo_export(oid,text), which PUBLIC may not'],
+    'a server-file export' => ['GRANT EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) FROM ":runtime"', 'the runtime can EXECUTE lo_export(oid,text)'],
     'switching triggers off' => ['GRANT SET ON PARAMETER session_replication_role TO ":runtime"', 'REVOKE SET ON PARAMETER session_replication_role FROM ":runtime"', 'the runtime holds SET on parameter session_replication_role'],
     // Review round 1, finding 1: triggers switched off by a default, not by the runtime.
     'a role default switches triggers off' => ['ALTER ROLE ":runtime" SET session_replication_role = replica', 'ALTER ROLE ":runtime" RESET session_replication_role', 'session_replication_role is not origin in the runtime session'],
     'a database default switches triggers off' => ['ALTER DATABASE ":db" SET session_replication_role = replica', 'ALTER DATABASE ":db" RESET session_replication_role', 'a default sets session_replication_role for every role in this database'],
     'a role-in-database default switches triggers off' => ['ALTER ROLE ":runtime" IN DATABASE ":db" SET session_replication_role = replica', 'ALTER ROLE ":runtime" IN DATABASE ":db" RESET session_replication_role', 'a default sets session_replication_role for the runtime role in this database'],
     // Finding 2: owner rights through a SECURITY DEFINER function or a rewrite rule.
-    'a SECURITY DEFINER function the runtime can run' => ['CREATE FUNCTION public.fgdp_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ select 1 $$; ALTER FUNCTION public.fgdp_definer() OWNER TO ":owner"', 'DROP FUNCTION public.fgdp_definer()', 'the runtime can EXECUTE SECURITY DEFINER function fgdp_definer()'],
+    'a SECURITY DEFINER function the runtime can run' => ['CREATE FUNCTION public.fgdp_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ select 1 $$; ALTER FUNCTION public.fgdp_definer() OWNER TO ":owner"', 'DROP FUNCTION public.fgdp_definer()', 'SECURITY DEFINER function fgdp_definer() exists'],
     'a rewrite rule on a table' => ['CREATE RULE fgdp_rule AS ON INSERT TO public.cache DO ALSO NOTHING', 'DROP RULE fgdp_rule ON public.cache', 'table cache carries rewrite rule fgdp_rule'],
     // Finding 3: a writable view.
     'an owner-owned updatable view' => ['CREATE VIEW public.fgdp_view AS SELECT * FROM public.migrations; ALTER VIEW public.fgdp_view OWNER TO ":owner"; GRANT UPDATE ON public.fgdp_view TO ":runtime"', 'DROP VIEW public.fgdp_view', 'relation public.fgdp_view (kind v): the runtime can write to it outside the table registry'],
     // Finding 4: a restricted built-in.
-    'reading server files' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM ":runtime"', 'the runtime can EXECUTE pg_read_binary_file(text), which PUBLIC may not'],
-    'resetting statistics' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() FROM ":runtime"', 'the runtime can EXECUTE pg_stat_reset(), which PUBLIC may not'],
+    'reading server files' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM ":runtime"', 'the runtime can EXECUTE pg_read_binary_file(text) beyond its initial privileges (granted to the runtime)'],
+    'resetting statistics' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() TO ":runtime"', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() FROM ":runtime"', 'the runtime can EXECUTE pg_stat_reset() beyond its initial privileges (granted to the runtime)'],
     // Finding 5: parameter privileges.
     'ALTER SYSTEM on a parameter' => ['GRANT ALTER SYSTEM ON PARAMETER archive_command TO ":runtime"', 'REVOKE ALTER SYSTEM ON PARAMETER archive_command FROM ":runtime"', 'the runtime holds ALTER SYSTEM on parameter archive_command'],
     'SET on a superuser parameter' => ['GRANT SET ON PARAMETER log_statement TO ":runtime"', 'REVOKE SET ON PARAMETER log_statement FROM ":runtime"', 'the runtime holds SET on parameter log_statement'],
@@ -582,11 +599,31 @@ it('fails on each injected drift and matches again once it is undone', function 
     'a dropped guard trigger' => ['DROP TRIGGER trx_rme_record_versions_immutable ON public.trx_rme_record_versions', 'CREATE TRIGGER trx_rme_record_versions_immutable BEFORE UPDATE OR DELETE ON public.trx_rme_record_versions FOR EACH ROW EXECUTE FUNCTION trx_rme_record_versions_immutable()', 'an expected guard trigger is missing or changed: trx_rme_record_versions_immutable on public.trx_rme_record_versions'],
     'an unexpected trigger' => ['CREATE TRIGGER fgdp_extra AFTER INSERT ON public.cache FOR EACH STATEMENT EXECUTE FUNCTION trx_prpcr_refuse_change()', 'DROP TRIGGER fgdp_extra ON public.cache', 'a trigger that is not in the expected list exists: fgdp_extra on public.cache'],
     // Finding 8: a grant option.
-    'a grant option' => ['GRANT SELECT ON public.users TO ":runtime" WITH GRANT OPTION', 'REVOKE GRANT OPTION FOR SELECT ON public.users FROM ":runtime"', 'the runtime holds a grant option (SELECT) on relation users'],
+    'a grant option' => ['GRANT SELECT ON public.users TO ":runtime" WITH GRANT OPTION', 'REVOKE GRANT OPTION FOR SELECT ON public.users FROM ":runtime"', 'the runtime or a role it reaches holds a grant option (SELECT) on relation users'],
     // Finding 9: TEMPORARY, and a search_path without pg_temp last.
     'TEMPORARY on the database' => ['GRANT TEMPORARY ON DATABASE ":db" TO ":runtime"', 'REVOKE TEMPORARY ON DATABASE ":db" FROM ":runtime"', 'the runtime can create TEMPORARY objects in the database'],
     'a trigger function pinned without pg_temp' => ['ALTER FUNCTION public.trx_rme_amendments_guard() SET search_path = public', 'ALTER FUNCTION public.trx_rme_amendments_guard() SET search_path = pg_catalog, pg_temp', 'trigger function trx_rme_amendments_guard does not pin search_path with pg_temp last'],
     // Finding 13: default privileges.
+    // Review round 2 (fix verification), N1: a restricted built-in granted to PUBLIC or to a monitoring role.
+    'a restricted built-in granted to PUBLIC' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO PUBLIC', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM PUBLIC', 'the runtime can EXECUTE pg_read_binary_file(text) beyond its initial privileges (granted to PUBLIC)'],
+    'a restricted built-in granted to a monitoring role' => ['GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() TO pg_read_all_stats', 'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_reset() FROM pg_read_all_stats', 'the runtime can EXECUTE pg_stat_reset() beyond its initial privileges (granted to pg_read_all_stats)'],
+    // N2: SECURITY DEFINER in pg_catalog, and an event trigger.
+    'a SECURITY DEFINER function in pg_catalog' => ['CREATE FUNCTION pg_catalog.fgdp_cat_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ select 1 $$', 'DROP FUNCTION pg_catalog.fgdp_cat_definer()', 'SECURITY DEFINER function fgdp_cat_definer() exists'],
+    'an event trigger' => ['CREATE FUNCTION public.fgdp_evt() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN END $$; CREATE EVENT TRIGGER fgdp_evt ON ddl_command_end EXECUTE FUNCTION public.fgdp_evt()', 'DROP EVENT TRIGGER fgdp_evt; DROP FUNCTION public.fgdp_evt()', 'event trigger fgdp_evt exists'],
+    // N3: table inheritance.
+    'table inheritance' => ['CREATE TABLE public.fgdp_parent (key varchar(255)); ALTER TABLE public.cache INHERIT public.fgdp_parent', 'ALTER TABLE public.cache NO INHERIT public.fgdp_parent; DROP TABLE public.fgdp_parent', 'table cache inherits from fgdp_parent'],
+    // N6: an object named after a role never prints the role name.
+    'a schema named after the runtime' => ['CREATE SCHEMA ":runtime"; GRANT CREATE ON SCHEMA ":runtime" TO ":runtime"', 'DROP SCHEMA ":runtime"', 'the runtime can CREATE in schema <name withheld>'],
+    // N7: grant options and ADMIN OPTION held through a reached role, and on a language.
+    'a grant option held by a monitoring role' => ['GRANT SELECT ON public.users TO pg_read_all_stats WITH GRANT OPTION', 'REVOKE SELECT ON public.users FROM pg_read_all_stats', 'the runtime or a role it reaches holds a grant option (SELECT) on relation users'],
+    'ADMIN OPTION on a monitoring role' => ['GRANT pg_read_all_stats TO ":runtime" WITH ADMIN OPTION', 'REVOKE ADMIN OPTION FOR pg_read_all_stats FROM ":runtime"', 'the runtime or a role it reaches holds ADMIN OPTION on pg_read_all_stats'],
+    'a grant option on a language' => ['GRANT USAGE ON LANGUAGE plpgsql TO ":runtime" WITH GRANT OPTION', 'REVOKE USAGE ON LANGUAGE plpgsql FROM ":runtime"', 'holds a grant option (USAGE) on language plpgsql'],
+    // N8: ownership and defaults through a reached role; a sequence outside public.
+    'an object owned by a monitoring role' => ['CREATE FUNCTION public.fgdp_stats_owned() RETURNS int LANGUAGE sql AS $$ select 1 $$; ALTER FUNCTION public.fgdp_stats_owned() OWNER TO pg_read_all_stats', 'DROP FUNCTION public.fgdp_stats_owned()', 'a built-in role the runtime reaches owns 1 object(s)'],
+    'a default privilege for a monitoring role' => ['ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT ALL ON TABLES TO pg_read_all_stats', 'ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public REVOKE ALL ON TABLES FROM pg_read_all_stats', 'a default privilege gives pg_read_all_stats'],
+    'a sequence outside public' => ['CREATE SEQUENCE fgdp_ext.fgdp_seq; GRANT UPDATE ON SEQUENCE fgdp_ext.fgdp_seq TO ":runtime"', 'DROP SEQUENCE fgdp_ext.fgdp_seq', 'sequence fgdp_ext.fgdp_seq: the runtime holds UPDATE (setval)'],
+    // T4: a writable partition.
+    'a writable partition' => ['CREATE TABLE public.fgdp_part (id int) PARTITION BY RANGE (id); CREATE TABLE public.fgdp_part_1 PARTITION OF public.fgdp_part FOR VALUES FROM (0) TO (10); GRANT INSERT ON public.fgdp_part_1 TO ":runtime"', 'DROP TABLE public.fgdp_part', 'relation public.fgdp_part_1 (kind r): the runtime can write to it outside the table registry'],
     'a wide default privilege' => ['ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT ALL ON TABLES TO ":runtime"', 'ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public REVOKE ALL ON TABLES FROM ":runtime"; ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT SELECT ON TABLES TO ":runtime"', 'a default privilege gives the runtime INSERT on new objects of type r'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 
@@ -721,4 +758,26 @@ it('reads only, in a read-only transaction, for the check and the dry run (revie
             expect(preg_match('/^(select|with)\b/i', $sql))->toBe(1, "{$name} ran a statement that is not a read: {$sql}");
         }
     }
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('catches a replaced guard function body that keeps its owner, pin and trigger (review round 2, N4)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $original = (string) $super->query("select pg_get_functiondef('public.trx_rme_amendments_guard()'::regprocedure)")->fetchColumn();
+
+    $super->exec('CREATE OR REPLACE FUNCTION public.trx_rme_amendments_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $f$ BEGIN RETURN NEW; END $f$');
+    try {
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
+        expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)
+            ->and($output)->toContain('guard function trx_rme_amendments_guard body differs from its pinned SHA-256')
+            ->and($output)->not->toContain('does not pin search_path')
+            ->and($output)->not->toContain('missing or changed');
+    } finally {
+        $super->exec($original);
+    }
+
+    DB::purge('fgdp_runtime');
+    expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
 })->skip($fgdpSkip, $fgdpSkipReason);

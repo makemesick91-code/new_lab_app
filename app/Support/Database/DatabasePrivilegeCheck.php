@@ -78,7 +78,7 @@ final class DatabasePrivilegeCheck
      * The full check, as the runtime itself.
      *
      * @param  string|null  $connectionName  the runtime connection; null = the default connection
-     * @return array{status: int, problems: list<string>, passed: list<string>}
+     * @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>}
      */
     public function run(?string $connectionName, string $owner, ?string $expectedRuntime): array
     {
@@ -206,9 +206,9 @@ final class DatabasePrivilegeCheck
 
         foreach ($connection->select(<<<'SQL'
             select c.relname,
-                   pg_catalog.has_sequence_privilege(:r1, c.oid, 'USAGE') as can_use,
-                   pg_catalog.has_sequence_privilege(:r2, c.oid, 'SELECT') as can_select,
-                   pg_catalog.has_sequence_privilege(:r3, c.oid, 'UPDATE') as can_update
+                   case when c.relkind = 'S' then pg_catalog.has_sequence_privilege(:r1, c.oid, 'USAGE') end as can_use,
+                   case when c.relkind = 'S' then pg_catalog.has_sequence_privilege(:r2, c.oid, 'SELECT') end as can_select,
+                   case when c.relkind = 'S' then pg_catalog.has_sequence_privilege(:r3, c.oid, 'UPDATE') end as can_update
             from pg_catalog.pg_class c
             join pg_catalog.pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'public' and c.relkind = 'S'
@@ -220,6 +220,20 @@ final class DatabasePrivilegeCheck
             if ((bool) $row->can_update) {
                 $problems[] = "sequence {$row->relname}: the runtime holds UPDATE (setval)";
             }
+        }
+
+        // Round 2, N8: a sequence outside `public` may not be advanced either.
+        foreach ($connection->select(<<<'SQL'
+            select n.nspname, c.relname
+            from pg_catalog.pg_class c
+            join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+            where c.relkind = 'S' and n.nspname not in ('public', 'pg_catalog', 'information_schema')
+              -- The CASE keeps has_sequence_privilege() off non-sequences: the planner may
+              -- evaluate it before the relkind filter (SQLSTATE 42809 otherwise).
+              and case when c.relkind = 'S' then pg_catalog.has_sequence_privilege(?, c.oid, 'UPDATE') else false end
+            order by 1, 2
+            SQL, [$runtime]) as $row) {
+            $problems[] = "sequence {$row->nspname}.{$row->relname}: the runtime holds UPDATE (setval)";
         }
 
         // Review round 1, finding 3: a view, materialized view, foreign table or
@@ -292,15 +306,66 @@ final class DatabasePrivilegeCheck
                    count(*) filter (where d.dbid <> 0 and d.dbid <> (select oid from pg_catalog.pg_database where datname = current_database())) as elsewhere
             from pg_catalog.pg_shdepend d
             where d.refclassid = 'pg_catalog.pg_authid'::regclass and d.deptype = 'o'
-              and d.refobjid = (select oid from pg_catalog.pg_roles where rolname = ?)
+              and d.refobjid in (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER'))
             SQL, [$runtime]);
         $ownership = [];
         foreach (['here' => 'in this database', 'shared' => 'among shared objects (databases, tablespaces)', 'elsewhere' => 'in other databases'] as $key => $where) {
             if ((int) $owned->{$key} > 0) {
-                $ownership[] = "the runtime owns {$owned->{$key}} object(s) {$where}";
+                $ownership[] = "the runtime or a role it reaches owns {$owned->{$key}} object(s) {$where}";
             }
         }
-        $record('the runtime owns nothing', $ownership);
+        // Round 2 (verification run): PostgreSQL records no pg_shdepend row for a
+        // built-in (pinned) role, so an object owned by a reached predefined role
+        // such as pg_read_all_stats is found only through the owner columns.
+        $pinnedOwned = (int) $connection->selectOne(<<<'SQL'
+            with reach as (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER') and b.oid < 16384)
+            select count(*) as n from (
+                select relowner as owner from pg_catalog.pg_class
+                union all
+                select proowner as owner from pg_catalog.pg_proc
+                union all
+                select typowner as owner from pg_catalog.pg_type
+                union all
+                select nspowner as owner from pg_catalog.pg_namespace
+                union all
+                select lomowner as owner from pg_catalog.pg_largeobject_metadata
+                union all
+                select extowner as owner from pg_catalog.pg_extension
+                union all
+                select collowner as owner from pg_catalog.pg_collation
+                union all
+                select conowner as owner from pg_catalog.pg_conversion
+                union all
+                select oprowner as owner from pg_catalog.pg_operator
+                union all
+                select opcowner as owner from pg_catalog.pg_opclass
+                union all
+                select opfowner as owner from pg_catalog.pg_opfamily
+                union all
+                select cfgowner as owner from pg_catalog.pg_ts_config
+                union all
+                select dictowner as owner from pg_catalog.pg_ts_dict
+                union all
+                select fdwowner as owner from pg_catalog.pg_foreign_data_wrapper
+                union all
+                select srvowner as owner from pg_catalog.pg_foreign_server
+                union all
+                select evtowner as owner from pg_catalog.pg_event_trigger
+                union all
+                select pubowner as owner from pg_catalog.pg_publication
+                union all
+                select stxowner as owner from pg_catalog.pg_statistic_ext
+                union all
+                select spcowner as owner from pg_catalog.pg_tablespace
+                union all
+                select datdba from pg_catalog.pg_database where datname = current_database()
+            ) o
+            where o.owner in (select oid from reach)
+            SQL, [$runtime])->n;
+        if ($pinnedOwned > 0) {
+            $ownership[] = "a built-in role the runtime reaches owns {$pinnedOwned} object(s)";
+        }
+        $record('the runtime, and every role it reaches, owns nothing', $ownership);
 
         // 4. Class grants, sequences, and no write to any other relation.
         [$entries] = $this->registry->expected();
@@ -335,7 +400,8 @@ final class DatabasePrivilegeCheck
         $functions = [];
         foreach ($connection->select(<<<'SQL'
             select distinct p.oid, p.proname, pg_catalog.pg_get_userbyid(p.proowner) as owner, p.prosecdef,
-                   coalesce(array_to_string(p.proconfig, chr(1)), '') as config
+                   coalesce(array_to_string(p.proconfig, chr(1)), '') as config,
+                   encode(pg_catalog.sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as body
             from pg_catalog.pg_trigger t
             join pg_catalog.pg_class c on c.oid = t.tgrelid
             join pg_catalog.pg_namespace n on n.oid = c.relnamespace
@@ -353,6 +419,14 @@ final class DatabasePrivilegeCheck
             $searchPath = array_values(array_filter($settings, fn (string $s): bool => str_starts_with($s, 'search_path=')));
             if ($searchPath === [] || ! self::pinnedSearchPath(substr($searchPath[0], strlen('search_path=')))) {
                 $functions[] = "trigger function {$row->proname} does not pin search_path with pg_temp last";
+            }
+            // Round 2, N4: the body itself is pinned, so a replaced guard that keeps
+            // its owner, pin and trigger text is still caught.
+            $pinned = (array) config('runtime_privilege_classes.guard_functions', []);
+            if (! isset($pinned[$row->proname])) {
+                $functions[] = "trigger function {$row->proname} is not a pinned guard function";
+            } elseif (! hash_equals((string) $pinned[$row->proname], (string) $row->body)) {
+                $functions[] = "guard function {$row->proname} body differs from its pinned SHA-256";
             }
         }
         $live = [];
@@ -381,24 +455,48 @@ final class DatabasePrivilegeCheck
         }
         $record('exactly the expected guard triggers exist and fire; their functions are owned by the owner role and pinned', $functions);
 
-        // 8 and 12. Functions the runtime must not execute.
+        // 8 and 12. Functions the runtime must not execute. Round 2, N1: the
+        // baseline is each function's INITIAL privileges (pg_init_privs, recorded
+        // by initdb and by CREATE EXTENSION), not its current ACL, so a restricted
+        // built-in granted later to PUBLIC, to a monitoring role or to the runtime
+        // is caught however it was granted.
         $guards = [];
+        foreach ($connection->select(<<<'SQL'
+            with reach as (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER')),
+            cur as (
+                select p.oid, a.grantee
+                from pg_catalog.pg_proc p
+                cross join lateral pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
+                where a.privilege_type = 'EXECUTE'
+            ),
+            ini as (
+                select i.objoid as oid, a.grantee
+                from pg_catalog.pg_init_privs i
+                cross join lateral pg_catalog.aclexplode(i.initprivs) a
+                where i.classoid = 'pg_catalog.pg_proc'::regclass and i.objsubid = 0 and a.privilege_type = 'EXECUTE'
+            )
+            select distinct c.oid::regprocedure::text as signature,
+                   case when c.grantee = 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(c.grantee) end as grantee
+            from cur c
+            where exists (select 1 from pg_catalog.pg_init_privs ip where ip.objoid = c.oid and ip.classoid = 'pg_catalog.pg_proc'::regclass and ip.objsubid = 0)
+              and (c.grantee = 0 or c.grantee in (select oid from reach))
+              and not exists (select 1 from ini where ini.oid = c.oid and ini.grantee = c.grantee)
+            order by 1, 2
+            SQL, [$runtime]) as $row) {
+            $to = $row->grantee === 'PUBLIC' ? 'PUBLIC' : ($row->grantee === $runtime ? 'the runtime' : self::roleLabel((string) $row->grantee));
+            $guards[] = "the runtime can EXECUTE {$row->signature} beyond its initial privileges (granted to {$to})";
+        }
         foreach ($connection->select(<<<'SQL'
             select p.oid::regprocedure::text as signature
             from pg_catalog.pg_proc p
             where (p.proname = 'pg_stat_statements_reset'
-                   or p.oid in ('pg_catalog.lo_export(oid, text)'::regprocedure, 'pg_catalog.lo_import(text)'::regprocedure, 'pg_catalog.lo_import(text, oid)'::regprocedure)
-                   or (p.proacl is not null
-                       and not exists (select 1 from pg_catalog.aclexplode(p.proacl) a
-                                       where a.privilege_type = 'EXECUTE'
-                                         and (a.grantee = 0 or a.grantee in (select oid from pg_catalog.pg_roles where rolname in ('pg_read_all_settings', 'pg_read_all_stats'))))))
+                   or p.oid in ('pg_catalog.lo_export(oid, text)'::regprocedure, 'pg_catalog.lo_import(text)'::regprocedure, 'pg_catalog.lo_import(text, oid)'::regprocedure))
               and pg_catalog.has_function_privilege(?, p.oid, 'EXECUTE')
-              and p.proowner <> (select oid from pg_catalog.pg_roles where rolname = ?)
             order by 1
-            SQL, [$runtime, $runtime]) as $row) {
-            $guards[] = "the runtime can EXECUTE {$row->signature}, which PUBLIC may not";
+            SQL, [$runtime]) as $row) {
+            $guards[] = "the runtime can EXECUTE {$row->signature}";
         }
-        $record('the runtime can execute no restricted function (statistics reset, server files, other withheld built-ins)', $guards);
+        $record('the runtime can execute no restricted function beyond its initial privileges (statistics reset, server files, other withheld built-ins)', $guards);
 
         // 9. Triggers are not switched off for the runtime's sessions (finding 1).
         $replication = [];
@@ -419,13 +517,19 @@ final class DatabasePrivilegeCheck
         $record('triggers and rules fire in the runtime session, and no role or database default switches them off', $replication);
 
         // 10. Owner rights reachable by the runtime (finding 2).
-        $definer = array_map(fn (object $r): string => "the runtime can EXECUTE SECURITY DEFINER function {$r->signature}", $connection->select(<<<'SQL'
+        // Round 2, N2: EVERY SECURITY DEFINER function, in any schema and whatever
+        // its EXECUTE privilege (an aggregate's support function or an event
+        // trigger runs it without the runtime calling it). PostgreSQL 16 ships
+        // none, and migrations may not create one.
+        $definer = array_map(fn (object $r): string => "SECURITY DEFINER function {$r->signature} exists", $connection->select(<<<'SQL'
             select p.oid::regprocedure::text as signature
-            from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-            where p.prosecdef and n.nspname not in ('pg_catalog', 'information_schema')
-              and pg_catalog.has_function_privilege(?, p.oid, 'EXECUTE')
+            from pg_catalog.pg_proc p
+            where p.prosecdef
             order by 1
-            SQL, [$runtime]));
+            SQL));
+        foreach ($connection->select('select evtname from pg_catalog.pg_event_trigger order by 1') as $row) {
+            $definer[] = "event trigger {$row->evtname} exists";
+        }
         foreach ($connection->select(<<<'SQL'
             select c.relname, r.rulename
             from pg_catalog.pg_rewrite r
@@ -436,7 +540,21 @@ final class DatabasePrivilegeCheck
             SQL) as $row) {
             $definer[] = "table {$row->relname} carries rewrite rule {$row->rulename} (its actions run with the owner's rights)";
         }
-        $record('the runtime reaches no owner rights through a SECURITY DEFINER function or a rewrite rule', $definer);
+        $record('no SECURITY DEFINER function, event trigger or rewrite rule on a table exists', $definer);
+
+        // 16. Table inheritance (round 2, N3): DML on a parent is checked on the
+        // parent only, so it would reach a child of another class.
+        $record('no table inherits from another (declared partitions aside)', array_map(
+            fn (object $r): string => "table {$r->child} inherits from {$r->parent}",
+            $connection->select(<<<'SQL'
+                select c.relname as child, p.relname as parent
+                from pg_catalog.pg_inherits i
+                join pg_catalog.pg_class c on c.oid = i.inhrelid
+                join pg_catalog.pg_class p on p.oid = i.inhparent
+                where not c.relispartition
+                order by 1, 2
+                SQL)
+        ));
 
         // 13. Parameter privileges (finding 5).
         $parameters = array_map(fn (object $r): string => "the runtime holds {$r->privilege} on parameter {$r->parname}", $connection->select(<<<'SQL'
@@ -448,42 +566,82 @@ final class DatabasePrivilegeCheck
             SQL, [$runtime]));
         $record('the runtime holds no SET or ALTER SYSTEM privilege on any parameter', $parameters);
 
-        // 14. Grant options (finding 8).
-        $grantable = array_map(fn (object $r): string => "the runtime holds a grant option ({$r->privilege_type}) on {$r->kind} {$r->name}", $connection->select(<<<'SQL'
-            with rt as (select oid from pg_catalog.pg_roles where rolname = ?)
+        // 14. Grant options (finding 8; round 2, N7): for the runtime and every
+        // role it reaches, on every ACL-bearing object kind; and ADMIN OPTION on
+        // any membership. The database's name is never printed.
+        $grantable = array_map(fn (object $r): string => "the runtime or a role it reaches holds a grant option ({$r->privilege_type}) on {$r->kind} {$r->name}", $connection->select(<<<'SQL'
+            with reach as (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER'))
             select 'relation' as kind, c.relname as name, a.privilege_type
               from pg_catalog.pg_class c cross join lateral pg_catalog.aclexplode(c.relacl) a
-             where c.relacl is not null and a.is_grantable and a.grantee = (select oid from rt)
+             where c.relacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'function' as kind, p.oid::regprocedure::text as name, a.privilege_type
+              from pg_catalog.pg_proc p cross join lateral pg_catalog.aclexplode(p.proacl) a
+             where p.proacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'schema' as kind, n.nspname as name, a.privilege_type
+              from pg_catalog.pg_namespace n cross join lateral pg_catalog.aclexplode(n.nspacl) a
+             where n.nspacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'type' as kind, t.oid::regtype::text as name, a.privilege_type
+              from pg_catalog.pg_type t cross join lateral pg_catalog.aclexplode(t.typacl) a
+             where t.typacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'language' as kind, l.lanname as name, a.privilege_type
+              from pg_catalog.pg_language l cross join lateral pg_catalog.aclexplode(l.lanacl) a
+             where l.lanacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'foreign-data wrapper' as kind, w.fdwname as name, a.privilege_type
+              from pg_catalog.pg_foreign_data_wrapper w cross join lateral pg_catalog.aclexplode(w.fdwacl) a
+             where w.fdwacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'foreign server' as kind, fs.srvname as name, a.privilege_type
+              from pg_catalog.pg_foreign_server fs cross join lateral pg_catalog.aclexplode(fs.srvacl) a
+             where fs.srvacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'large object' as kind, lo.oid::text as name, a.privilege_type
+              from pg_catalog.pg_largeobject_metadata lo cross join lateral pg_catalog.aclexplode(lo.lomacl) a
+             where lo.lomacl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'parameter' as kind, pa.parname as name, a.privilege_type
+              from pg_catalog.pg_parameter_acl pa cross join lateral pg_catalog.aclexplode(pa.paracl) a
+             where pa.paracl is not null and a.is_grantable and a.grantee in (select oid from reach)
+            union all
+            select 'tablespace' as kind, ts.spcname as name, a.privilege_type
+              from pg_catalog.pg_tablespace ts cross join lateral pg_catalog.aclexplode(ts.spcacl) a
+             where ts.spcacl is not null and a.is_grantable and a.grantee in (select oid from reach)
             union all
             select 'column', c.relname || '.' || att.attname, a.privilege_type
               from pg_catalog.pg_attribute att join pg_catalog.pg_class c on c.oid = att.attrelid
               cross join lateral pg_catalog.aclexplode(att.attacl) a
-             where att.attacl is not null and a.is_grantable and a.grantee = (select oid from rt)
+             where att.attacl is not null and a.is_grantable and a.grantee in (select oid from reach)
             union all
-            select 'function', p.oid::regprocedure::text, a.privilege_type
-              from pg_catalog.pg_proc p cross join lateral pg_catalog.aclexplode(p.proacl) a
-             where p.proacl is not null and a.is_grantable and a.grantee = (select oid from rt)
-            union all
-            select 'schema', n.nspname, a.privilege_type
-              from pg_catalog.pg_namespace n cross join lateral pg_catalog.aclexplode(n.nspacl) a
-             where n.nspacl is not null and a.is_grantable and a.grantee = (select oid from rt)
-            union all
-            select 'database', d.datname, a.privilege_type
+            select 'database', 'the database', a.privilege_type
               from pg_catalog.pg_database d cross join lateral pg_catalog.aclexplode(d.datacl) a
-             where d.datname = current_database() and d.datacl is not null and a.is_grantable and a.grantee = (select oid from rt)
+             where d.datname = current_database() and d.datacl is not null and a.is_grantable and a.grantee in (select oid from reach)
             order by 1, 2, 3
             SQL, [$runtime]));
-        $record('the runtime holds no grant option', $grantable);
+        foreach ($connection->select(<<<'SQL'
+            select pg_catalog.pg_get_userbyid(m.roleid) as granted
+            from pg_catalog.pg_auth_members m
+            where m.admin_option and m.member in (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER'))
+            order by 1
+            SQL, [$runtime]) as $row) {
+            $grantable[] = 'the runtime or a role it reaches holds ADMIN OPTION on '.($row->granted === $owner ? 'the owner role' : self::roleLabel((string) $row->granted));
+        }
+        $record('the runtime, and every role it reaches, holds no grant option and no ADMIN OPTION', $grantable);
 
         // 15. Default privileges (finding 13).
         $defaults = [];
         foreach ($connection->select(<<<'SQL'
-            select d.defaclobjtype as objtype, case when a.grantee = 0 then 'PUBLIC' else 'the runtime' end as who, a.privilege_type, a.is_grantable
+            select d.defaclobjtype as objtype, a.privilege_type, a.is_grantable,
+                   case when a.grantee = 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(a.grantee) end as grantee
             from pg_catalog.pg_default_acl d
             cross join lateral pg_catalog.aclexplode(d.defaclacl) a
-            where a.grantee in (0, (select oid from pg_catalog.pg_roles where rolname = ?))
-            order by 1, 2, 3
+            where a.grantee = 0 or a.grantee in (select b.oid from pg_catalog.pg_roles b where pg_catalog.pg_has_role(?, b.oid, 'MEMBER'))
+            order by 1, 2, 4
             SQL, [$runtime]) as $row) {
+            $row->who = $row->grantee === $runtime ? 'the runtime' : ($row->grantee === 'PUBLIC' ? 'PUBLIC' : self::roleLabel((string) $row->grantee));
             $allowed = self::ALLOWED_DEFAULTS[(string) $row->objtype] ?? [];
             if ($row->who !== 'the runtime' || (bool) $row->is_grantable || ! in_array($row->privilege_type, $allowed, true)) {
                 $defaults[] = "a default privilege gives {$row->who} {$row->privilege_type} on new objects of type {$row->objtype}".((bool) $row->is_grantable ? ' with grant option' : '');
@@ -491,9 +649,50 @@ final class DatabasePrivilegeCheck
         }
         $record('default privileges give the runtime at most SELECT on new tables and USAGE, SELECT on new sequences', $defaults);
 
+        // Round 2, N5 (pre-existing schema, an owner decision): a foreign-key action
+        // runs with the referencing table owner's rights, so on a table that is
+        // not FULL_DML and has no guard trigger it changes rows the class forbids.
+        // Reported as a NOTE: it does not change the verdict until the owner decides.
+        $notes = [];
+        $restricted = array_keys(array_filter($entries, fn (array $e): bool => $e['class'] !== RuntimePrivilegeClass::FULL_DML));
+        if ($restricted !== []) {
+            $placeholders = implode(', ', array_fill(0, count($restricted), '?'));
+            foreach ($connection->select(<<<SQL
+                select c.relname, k.conname, k.confupdtype, k.confdeltype
+                from pg_catalog.pg_constraint k
+                join pg_catalog.pg_class c on c.oid = k.conrelid
+                join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                where k.contype = 'f' and n.nspname = 'public' and c.relname in ({$placeholders})
+                  and (k.confupdtype not in ('a', 'r') or k.confdeltype not in ('a', 'r'))
+                  and not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = c.oid and not t.tgisinternal)
+                order by 1, 2
+                SQL, $restricted) as $row) {
+                $notes[] = "foreign key {$row->conname} on {$row->relname} (not FULL_DML, no guard trigger) has ON UPDATE {$row->confupdtype} / ON DELETE {$row->confdeltype}: the action changes rows with the owner's rights (owner decision pending)";
+            }
+        }
+
+        $roles = array_map(fn (object $r): string => (string) $r->rolname, $connection->select("select rolname from pg_catalog.pg_roles where rolname not like 'pg\_%'"));
+        $problems = array_values(array_unique(array_map(fn (string $p): string => self::withholdRoleNames($p, $roles), $problems)));
+        $notes = array_map(fn (string $n): string => self::withholdRoleNames($n, $roles), $notes);
         sort($problems);
 
-        return ['status' => $problems === [] ? self::MATCH : self::DRIFT, 'problems' => array_values(array_unique($problems)), 'passed' => $passed];
+        return ['status' => $problems === [] ? self::MATCH : self::DRIFT, 'problems' => $problems, 'passed' => $passed, 'notes' => $notes];
+    }
+
+    /**
+     * Round 2, N6: an object may be named after a role (CREATE SCHEMA AUTHORIZATION
+     * is the usual idiom), so every whole identifier equal to a non-predefined
+     * role name is withheld from the output (OD-R6-6).
+     *
+     * @param  list<string>  $roles
+     */
+    private static function withholdRoleNames(string $text, array $roles): string
+    {
+        foreach ($roles as $role) {
+            $text = (string) preg_replace('/(?<![A-Za-z0-9_$])'.preg_quote($role, '/').'(?![A-Za-z0-9_$])/', '<name withheld>', $text);
+        }
+
+        return $text;
     }
 
     /** search_path is pinned when it names no `$user` and lists pg_temp explicitly and last (finding 9). */
@@ -530,6 +729,6 @@ final class DatabasePrivilegeCheck
     /** @return array{status: int, problems: list<string>, passed: list<string>} */
     private function cannotVerify(string $reason): array
     {
-        return ['status' => self::CANNOT_VERIFY, 'problems' => [$reason], 'passed' => []];
+        return ['status' => self::CANNOT_VERIFY, 'problems' => [$reason], 'passed' => [], 'notes' => []];
     }
 }

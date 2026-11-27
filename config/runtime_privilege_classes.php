@@ -74,6 +74,21 @@ return [
         'CREATE TRIGGER trx_rme_refund_settlement_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_refund_settlement_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
     ],
 
+    /*
+    | R6-B3 review round 2, N4: the SHA-256 of the body (prosrc) of every guard
+    | function, from the migrated PostgreSQL 16 schema. A guard replaced by
+    | CREATE OR REPLACE FUNCTION keeps its owner, its search_path pin and the
+    | trigger text, so only its body shows the change. A migration that changes
+    | a guard function updates its hash in the same PR.
+    */
+    'guard_functions' => [
+        'dms_append_only_guard' => 'dfd6d2b61df53cf08fe2294edb1ec55f75233c9db356fb38a34548a74e5bda5f',
+        'dms_inventory_ledger_guard' => 'c6854280385ed1ef96ddfeb683760285321e716fbc2d70853f850a2fc459fe88',
+        'trx_prpcr_refuse_change' => 'edb5fb9704d21310aaa3d90a701f7f0918988250939c2e4a13b4af618483c8b5',
+        'trx_rme_amendments_guard' => '5783c0e696cc645226f9fc80416c251496d3a30d258a1ba90447e8363fb5e89b',
+        'trx_rme_record_versions_immutable' => '302b4a5d2182a5e2025edfa8582b5badc452ed46cf1aabdd710f176edf860f47',
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [
