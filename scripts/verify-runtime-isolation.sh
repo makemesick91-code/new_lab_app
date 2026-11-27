@@ -504,13 +504,24 @@ done
 # than silently claimed as passing.
 section "CO-TENANT NEGATIVE PROOF"
 
+# R6-B4 review round 2 (N2): every hop into another account starts from an EMPTY
+# environment. The deploy and the rollback export every key of the environment
+# file before this gate runs, and runuser keeps the caller's environment, so a
+# plain hop would hand APP_KEY and the database password to each account it
+# tests (readable in /proc/<pid>/environ by that account's other processes).
+_gate_as() {
+  local u="$1"
+  shift
+  env -i PATH=/usr/bin:/bin runuser -u "$u" -- "$@"
+}
+
 if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
   for intruder in ${DMS_FORBIDDEN_RUNTIME_USERS:-www-data} ${ADDITIONAL_FORBIDDEN_USERS}; do
     [ "$intruder" = "root" ] && continue
     getent passwd "$intruder" >/dev/null 2>&1 || continue
 
     if [ -e "$ENV_FILE" ]; then
-      if runuser -u "$intruder" -- test -r "$ENV_FILE" 2>/dev/null; then
+      if _gate_as "$intruder" test -r "$ENV_FILE" 2>/dev/null; then
         bad "'${intruder}' CAN read the environment file — co-tenant isolation FAILED"
       else
         ok "'${intruder}' cannot read the environment file"
@@ -520,14 +531,14 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
     for rel in ${DMS_PRIVATE_PATHS:-}; do
       p="${APP_DIR}/${rel}"
       [ -d "$p" ] || continue
-      if runuser -u "$intruder" -- test -r "$p" 2>/dev/null; then
+      if _gate_as "$intruder" test -r "$p" 2>/dev/null; then
         bad "'${intruder}' CAN read ${rel} — private clinical storage exposed"
       else
         ok "'${intruder}' cannot read ${rel}"
       fi
       # R6-B4 / F1-B (F1B-13): read on a directory is not the whole question;
       # traverse alone lets a known file name be opened.
-      if runuser -u "$intruder" -- test -x "$p" 2>/dev/null; then
+      if _gate_as "$intruder" test -x "$p" 2>/dev/null; then
         bad "'${intruder}' CAN traverse ${rel} — a known file inside it is reachable"
       else
         ok "'${intruder}' cannot traverse ${rel}"
@@ -535,8 +546,8 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
     done
     # The compiled configuration carries the runtime secrets (rule 211): prove the
     # file itself, not only its directory.
-    if [ -e "${APP_DIR}/bootstrap/cache/config.php" ] || runuser -u "$RUNTIME_USER" -- test -e "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
-      if runuser -u "$intruder" -- test -r "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
+    if [ -e "${APP_DIR}/bootstrap/cache/config.php" ] || _gate_as "$RUNTIME_USER" test -e "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
+      if _gate_as "$intruder" test -r "${APP_DIR}/bootstrap/cache/config.php" 2>/dev/null; then
         bad "'${intruder}' CAN read bootstrap/cache/config.php — the runtime secrets are exposed"
       else
         ok "'${intruder}' cannot read bootstrap/cache/config.php"
@@ -547,7 +558,7 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
   # Positive counterpart: the dedicated runtime must actually be able to work.
   if getent passwd "$RUNTIME_USER" >/dev/null 2>&1; then
     if [ -e "$ENV_FILE" ]; then
-      if runuser -u "$RUNTIME_USER" -- test -r "$ENV_FILE" 2>/dev/null; then
+      if _gate_as "$RUNTIME_USER" test -r "$ENV_FILE" 2>/dev/null; then
         ok "'${RUNTIME_USER}' can read the environment file"
       else
         bad "'${RUNTIME_USER}' CANNOT read the environment file — the runtime would boot with an empty configuration"
@@ -556,7 +567,7 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
     for rel in ${DMS_RUNTIME_WRITABLE_PATHS:-}; do
       p="${APP_DIR}/${rel}"
       [ -d "$p" ] || continue
-      if runuser -u "$RUNTIME_USER" -- test -w "$p" 2>/dev/null; then
+      if _gate_as "$RUNTIME_USER" test -w "$p" 2>/dev/null; then
         ok "'${RUNTIME_USER}' can write ${rel}"
       else
         bad "'${RUNTIME_USER}' CANNOT write ${rel}"
@@ -565,7 +576,7 @@ if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
     for rel in ${DMS_SOURCE_IMMUTABLE_PATHS:-}; do
       p="${APP_DIR}/${rel}"
       [ -e "$p" ] || continue
-      if runuser -u "$RUNTIME_USER" -- test -w "$p" 2>/dev/null; then
+      if _gate_as "$RUNTIME_USER" test -w "$p" 2>/dev/null; then
         bad "'${RUNTIME_USER}' CAN write ${rel} — application source is runtime-writable"
       else
         ok "'${RUNTIME_USER}' cannot write ${rel}"

@@ -259,7 +259,7 @@ runtime_json() {
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
 ADMIN_USER="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_ADMIN_USER)"
 R6_FORBIDDEN_ACCOUNTS="${BUILD_USER} ${ADMIN_USER} ${DMS_FORBIDDEN_RUNTIME_USERS:-root www-data}"
-if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_preflight "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS"; then
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_preflight "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS" "${DMS_PRIVATE_PATHS:-}"; then
   echo "FATAL: the R6-B4 preflight refused the deploy — nothing was changed — NOT GO" >&2
   exit 1
 fi
@@ -481,7 +481,7 @@ echo "== Laravel migrate =="
 r6_runtime_migrate() {
   as_runtime php artisan migrate --force
 }
-if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_migrate "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS" r6_runtime_migrate; then
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_migrate "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS" "${DMS_PRIVATE_PATHS:-}" r6_runtime_migrate; then
   echo "FATAL: the migrate step failed — NOT GO" >&2
   exit 1
 fi
