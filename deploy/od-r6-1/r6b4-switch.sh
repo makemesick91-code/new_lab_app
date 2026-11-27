@@ -92,6 +92,9 @@ R4_SWITCH="$SWITCH"
 _dms_r6_switch_file() { printf '%s\n' "$R4_SWITCH"; }
 read -r -a PRIVATE <<< "$(. deploy/runtime-identity.conf && printf '%s' "$DMS_PRIVATE_PATHS")"
 PRIV="${PRIVATE[*]}"
+normalize() { dms_privsep_repair_runtime_ownership "$RT" "$RT" storage bootstrap/cache >/dev/null && dms_privsep_as_runtime_fn "$RT" "" dms_privsep_normalize_modes "${PRIVATE[@]}"; }
+# The production layout before any R6-B4 step: every deploy normalises the private trees (rule 233 / F8).
+normalize >/dev/null || { echo "HARNESS ERROR: normalize"; exit 3; }
 r6_runtime_migrate() { dms_privsep_as_runtime "$RT" php artisan migrate --force; }
 step() { dms_r6_migrate "$RT" "$RT" "$CO" "$PRIV" r6_runtime_migrate; }
 preflight() { dms_r6_preflight "$RT" "$RT" "$CO" "$PRIV"; }
