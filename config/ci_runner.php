@@ -2032,6 +2032,14 @@ return [
         // critical variants; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenApprovedShaGuardTest.php',
 
+        // DMS-SPN4-READY-PILOT-1 R6-B4 (rule 245): the deploy's migrate step
+        // behind the host switch for the migrator — its preflight before the
+        // backup, the migration account's empty environment and identity
+        // checks, the database identity and pending-migration checks, and the
+        // rollback guard. Selected by the `DeployHarden` token in BOTH critical
+        // variants; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenR6MigratorSwitchTest.php',
+
         // DMS-BK2-BACKUP-RELIABILITY-WSL2-RECOVERY-1 (rule 230): the BK-2
         // workstation contract the deploy preflight relies on (HDD identity
         // states, result semantics that never claim the off-server copy from

@@ -286,16 +286,35 @@ final class MigrationConnection
         }
 
         $owner = (string) config('database.connections.'.self::NAME.'.server_options.role');
+        // R6-B4: the members of an allowlisted extension (pg_stat_statements, which
+        // production may have installed in `public` and must not move) are owned by
+        // whoever created the extension. Exactly those objects — pg_depend deptype
+        // 'e' to that extension — and the row and array types of its relations are
+        // exempt; nothing else in `public` is.
         $row = (array) $db->connection(self::NAME)->selectOne(<<<'SQL'
+            with member as (
+                select d.classid, d.objid
+                from pg_catalog.pg_depend d
+                join pg_catalog.pg_extension e on e.oid = d.refobjid
+                where d.refclassid = 'pg_catalog.pg_extension'::regclass and d.deptype = 'e'
+                  and e.extname = 'pg_stat_statements'
+            )
             select current_user::text as cur,
-                   (select count(*) from pg_namespace n
-                     where n.nspname = 'public' and pg_get_userbyid(n.nspowner) <> ?)
-                 + (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                     where n.nspname = 'public' and pg_get_userbyid(c.relowner) <> ?)
-                 + (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and pg_get_userbyid(p.proowner) <> ?)
-                 + (select count(*) from pg_type t join pg_namespace n on n.oid = t.typnamespace
-                     where n.nspname = 'public' and pg_get_userbyid(t.typowner) <> ?) as foreign_owned
+                   (select count(*) from pg_catalog.pg_namespace n
+                     where n.nspname = 'public' and pg_catalog.pg_get_userbyid(n.nspowner) <> ?)
+                 + (select count(*) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                     where n.nspname = 'public' and pg_catalog.pg_get_userbyid(c.relowner) <> ?
+                       and (c.oid not in (select objid from member where classid = 'pg_catalog.pg_class'::regclass)))
+                 + (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public' and pg_catalog.pg_get_userbyid(p.proowner) <> ?
+                       and (p.oid not in (select objid from member where classid = 'pg_catalog.pg_proc'::regclass)))
+                 + (select count(*) from pg_catalog.pg_type t join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+                     where n.nspname = 'public' and pg_catalog.pg_get_userbyid(t.typowner) <> ?
+                       and (t.oid not in (select objid from member where classid = 'pg_catalog.pg_type'::regclass))
+                       and (t.typrelid not in (select objid from member where classid = 'pg_catalog.pg_class'::regclass))
+                       and (t.typelem = 0 or t.typelem not in (
+                           select r.oid from pg_catalog.pg_type r
+                           where r.typrelid in (select objid from member where classid = 'pg_catalog.pg_class'::regclass)))) as foreign_owned
             SQL, [$owner, $owner, $owner, $owner]);
 
         if (($row['cur'] ?? null) !== $owner) {

@@ -881,3 +881,118 @@ it('accepts a default that sets a protected setting to its safe value (review ro
         $super->exec(fgdpSql('ALTER DATABASE ":db" RESET standard_conforming_strings; ALTER ROLE ":runtime" RESET session_replication_role'));
     }
 })->skip($fgdpSkip, $fgdpSkipReason);
+
+it('reports the split state read-only: not split where the login owns every table (R6-B4)', function () {
+    [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--split-state' => true]);
+
+    expect($code)->toBe(0)->and(trim($output))->toBe('split=0');
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
+
+it('reports the split state read-only as the runtime: split, and unknown when ownership is mixed (R6-B4)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+
+    [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true]);
+    expect($code)->toBe(0)->and(trim($output))->toBe('split=1');
+
+    $super = fgdpSuper();
+    $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":runtime"'));
+    try {
+        DB::purge('fgdp_runtime');
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true]);
+        expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)->and(trim($output))->toBe('split=unknown');
+    } finally {
+        // An ownership round trip folds the runtime's explicit grants into owner rights;
+        // restore its FULL_DML class grant too, as the per-deploy apply would.
+        $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":owner"; GRANT SELECT, INSERT, UPDATE, DELETE ON public.cache TO ":runtime"'));
+    }
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+/** The deploy preflight's application-code-free probe (scripts/lib/r6-migrate.sh), run on a PDO session. */
+function fgdpShellSplitProbe(PDO $pdo): string
+{
+    $lib = (string) file_get_contents(base_path('scripts/lib/r6-migrate.sh'));
+    preg_match("/^_dms_r6_split_sql\\(\\) \\{\\n  cat <<'SQL'\\n(.*?)\\nSQL\\n\\}/ms", $lib, $m);
+    expect($m)->toHaveKey(1);
+
+    return (string) $pdo->query($m[1])->fetchColumn();
+}
+
+it('gives the same unsplit state from the preflight probe as from the command where the login owns every table (production today; R6-B4, OD-R6-2 v6)', function () {
+    $pdo = DB::connection()->getPdo();
+
+    expect(fgdpShellSplitProbe($pdo))->toBe('0')
+        ->and(app(DatabasePrivilegeCheck::class)->splitState(null))->toBeFalse();
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
+
+it('gives the same split state from the preflight probe without application code as from the command (R6-B4, OD-R6-2 v5 A4)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+
+    // Split: the runtime owns no table.
+    expect(fgdpShellSplitProbe(fgdpRuntimePdo()))->toBe('1')
+        ->and(trim(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true])[1]))->toBe('split=1');
+
+    // Mixed ownership: both say unknown.
+    $super = fgdpSuper();
+    $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":runtime"'));
+    try {
+        DB::purge('fgdp_runtime');
+        expect(fgdpShellSplitProbe(fgdpRuntimePdo()))->toBe('unknown')
+            ->and(trim(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--split-state' => true])[1]))->toBe('split=unknown');
+    } finally {
+        $super->exec(fgdpSql('ALTER TABLE public.cache OWNER TO ":owner"; GRANT SELECT, INSERT, UPDATE, DELETE ON public.cache TO ":runtime"'));
+    }
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('reports an empty database as split only when the login neither owns public nor may create in it (R6-B4 review #11)', function () {
+    fgdpUseCluster();
+    $super = fgdpSuper();
+    $db = 'fgdp_empty_'.bin2hex(random_bytes(3));
+    $super->exec("CREATE DATABASE {$db}");
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', fgdpEnv('SOCKET_DIR'), fgdpEnv('PORT'), $db);
+        $runtime = fn () => new PDO($dsn, fgdpEnv('RUNTIME'), (string) fgdpEnv('RUNTIME_PASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        config(['database.connections.fgdp_empty' => config('database.connections.fgdp_runtime'), 'database.connections.fgdp_empty.database' => $db]);
+        DB::purge('fgdp_empty');
+
+        // A fresh database: public belongs to pg_database_owner (the superuser here) and PUBLIC may not create in it.
+        expect(fgdpShellSplitProbe($runtime()))->toBe('1')
+            ->and(app(DatabasePrivilegeCheck::class)->splitState('fgdp_empty'))->toBeTrue();
+
+        // The login owns public: not split.
+        $owner = new PDO($dsn, fgdpEnv('SUPERUSER'), '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $owner->exec(fgdpSql('ALTER SCHEMA public OWNER TO ":runtime"'));
+        $owner = null;
+        DB::purge('fgdp_empty');
+        expect(fgdpShellSplitProbe($runtime()))->toBe('0')
+            ->and(app(DatabasePrivilegeCheck::class)->splitState('fgdp_empty'))->toBeFalse();
+    } finally {
+        DB::purge('fgdp_empty');
+        $super->exec("DROP DATABASE IF EXISTS {$db} WITH (FORCE)");
+    }
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('prints the same identity digest for two sessions on one database, a different one for another database, and no value (R6-B4 review #2)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+
+    [$codeM, $outM] = fgdpRun('foundation:db-privilege-check', ['--database' => 'pgsql_migrate', '--identity' => true]);
+    [$codeR, $outR] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime', '--identity' => true]);
+    expect($codeM)->toBe(0, $outM)->and($codeR)->toBe(0, $outR)
+        ->and(trim($outM))->toMatch('/^identity=[0-9a-f]{64}$/')->and(trim($outM))->toBe(trim($outR))
+        ->and($outR)->not->toContain((string) fgdpEnv('DATABASE'));
+
+    config(['database.connections.fgdp_other' => config('database.connections.fgdp_runtime'), 'database.connections.fgdp_other.database' => 'postgres']);
+    DB::purge('fgdp_other');
+    [$codeO, $outO] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_other', '--identity' => true]);
+    expect(trim($outO))->not->toBe(trim($outR))
+        ->and($codeO === 0 ? trim($outO) : 'identity=unknown')->toMatch('/^identity=([0-9a-f]{64}|unknown)$/');
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('answers identity=unknown with exit 2 when it cannot tell (R6-B4)', function () {
+    config(['database.connections.fgdp_nowhere' => ['driver' => 'pgsql', 'host' => '/nonexistent-r6-socket', 'port' => '1', 'database' => 'x', 'username' => 'x', 'password' => '']]);
+    [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_nowhere', '--identity' => true]);
+
+    expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)->and(trim($output))->toBe('identity=unknown');
+});

@@ -154,6 +154,81 @@ final class DatabasePrivilegeCheck
     }
 
     /**
+     * R6-B4: whether the role split is in place, read-only, as the login the
+     * connection uses: false when that login owns every table in `public` (or
+     * there is none yet), true when it owns none, null when it owns some (or the
+     * catalog cannot be read) — a state no deploy may continue from.
+     */
+    public function splitState(?string $connectionName): ?bool
+    {
+        try {
+            $connection = DB::connection($connectionName);
+            if ($connection->getDriverName() !== 'pgsql') {
+                return null;
+            }
+            $row = $connection->selectOne(<<<'SQL'
+                select count(*) filter (where c.relowner = (select oid from pg_catalog.pg_roles where rolname = session_user)) as own,
+                       count(*) as total
+                from pg_catalog.pg_class c
+                join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public' and c.relkind in ('r', 'p')
+                SQL);
+            $own = (int) $row->own;
+            $total = (int) $row->total;
+            if ($total === 0) {
+                // No table yet: split when the login neither owns schema public nor may create in it.
+                $schema = $connection->selectOne(<<<'SQL'
+                    select (n.nspowner = r.oid) as owns, pg_catalog.has_schema_privilege(r.oid, n.oid, 'CREATE') as can_create
+                    from pg_catalog.pg_namespace n, pg_catalog.pg_roles r
+                    where n.nspname = 'public' and r.rolname = session_user
+                    SQL);
+                if ($schema === null) {
+                    return null;
+                }
+
+                return ! ((bool) $schema->owns || (bool) $schema->can_create);
+            }
+            if ($own === $total) {
+                return false;
+            }
+
+            return $own === 0 ? true : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * R6-B4: a digest of the cluster's system identifier, the postmaster start
+     * time and the current database name, so the deploy can prove that two
+     * sessions (the runtime's and the migration account's) reach the same
+     * database of the same running instance without printing any value.
+     * Read-only; null when it cannot tell.
+     */
+    public function identity(?string $connectionName): ?string
+    {
+        try {
+            $connection = DB::connection($connectionName);
+            if ($connection->getDriverName() !== 'pgsql') {
+                return null;
+            }
+            $row = $connection->selectOne(<<<'SQL'
+                select (select s.system_identifier from pg_catalog.pg_control_system() s)::text as cluster,
+                       extract(epoch from pg_catalog.pg_postmaster_start_time())::bigint::text as started,
+                       pg_catalog.current_database()::text as database
+                SQL);
+            if ($row === null || (string) $row->cluster === '' || (string) $row->started === '' || (string) $row->database === '') {
+                return null;
+            }
+
+            // The start time tells a running instance from a clone of the same cluster lineage (review round 2, N10).
+            return hash('sha256', 'r6-b4-identity|'.$row->cluster.'|'.$row->started.'|'.$row->database);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Only the grant checks (4) for a given runtime: the apply step re-checks its
      * own transaction with this before it commits.
      *
