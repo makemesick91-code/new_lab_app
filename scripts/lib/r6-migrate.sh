@@ -52,6 +52,8 @@ _dms_r6_nsswitch_file() { printf '%s\n' /etc/nsswitch.conf; }
 # The ONE directory the PostgreSQL client is run from, by absolute path, never through PATH (rule 235).
 _dms_r6_pg_bindir() { printf '%s\n' /usr/lib/postgresql/16/bin; }
 _dms_r6_spool_dirs() { printf '%s\n' /var/spool/cron/crontabs /var/spool/cron/atjobs /var/lib/systemd/linger; }
+# The shared directories an unprivileged account can create files in.
+_dms_r6_writable_dirs() { printf '%s\n' /tmp /var/tmp /dev/shm /run/lock; }
 
 # The keys a switch file may hold; any other key, or a value outside the
 # plain-character class, refuses the whole file.
@@ -61,6 +63,15 @@ _dms_r6_keys() { printf '%s\n' "DMS_R6_MIGRATOR DMS_R6_MIGRATION_OS_USER DMS_MIG
 _dms_r6_shared_accounts() { printf '%s\n' "root daemon bin sys sync games man lp mail news uucp proxy www-data backup list irc gnats nobody postgres sshd syslog messagebus _apt systemd-network systemd-resolve systemd-timesync"; }
 
 _dms_r6_err() { echo "r6-migrate: $*" >&2; }
+
+# dms_r6_lock_constants: after sourcing, the deploy and the rollback make the
+# fixed values read-only, so no file sourced later (the environment file) can
+# redefine them (R6-B4 review round 3, R3-6).
+dms_r6_lock_constants() {
+  readonly -f _dms_r6_switch_file _dms_r6_cache_root _dms_r6_trusted_uid _dms_r6_server_account \
+    _dms_r6_nsswitch_file _dms_r6_pg_bindir _dms_r6_spool_dirs _dms_r6_writable_dirs _dms_r6_keys \
+    _dms_r6_shared_accounts _dms_r6_split_sql _dms_r6_identity_sql _dms_r6_session_sql
+}
 
 # _dms_r6_trusted_ancestry <allowed owner uids (space list)> <directory>
 #
@@ -89,13 +100,23 @@ _dms_r6_gids() { id -G -- "$1" 2>/dev/null; }
 # name service with other sources (LDAP, SSSD, NIS…) could hold accounts they
 # never see, so it is refused rather than passed (review round 2, N11).
 _dms_r6_local_accounts_only() {
-  local file
+  local file line rest tok
   file="$(_dms_r6_nsswitch_file)"
   [ -r "$file" ] || return 0
-  if grep -Eq '^(passwd|group|initgroups):.*[[:space:]](ldap|sss|nis|nisplus|winbind|db|extrausers|hesiod)([[:space:]]|$)' "$file"; then
-    _dms_r6_err "the name service has sources beyond local files: the migration account cannot be checked completely — NOT GO"
-    return 1
-  fi
+  # Only `files` and `systemd` (and [action] items) are local; anything else — compat (NIS +entries), ldap, sss… —
+  # is refused, whatever the spacing (review round 3, R3-7).
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    case "$line" in passwd:*|group:*|initgroups:*) ;; *) continue ;; esac
+    rest="$(printf '%s' "${line#*:}" | sed -E 's/\[[^]]*\]/ /g')"
+    for tok in $rest; do
+      case "$tok" in
+        files|systemd) ;;
+        *) _dms_r6_err "the name service has sources beyond local files: the migration account cannot be checked completely — NOT GO"; return 1 ;;
+      esac
+    done
+  done < "$file"
+  return 0
 }
 
 # _dms_r6_account_check <migration account> <runtime user> <runtime group> <other forbidden accounts>
@@ -314,27 +335,80 @@ _dms_r6_as_migrator() {
   return "${PIPESTATUS[0]}"
 }
 
+# _dms_r6_pgrep_any <uid>: 0 when a process runs with that effective or real uid,
+# 1 when none does, 2 when it cannot tell (review round 3, R3-4: an error is
+# never "no process").
+_dms_r6_pgrep_any() {
+  local a=0 b=0
+  pgrep -u "$1" >/dev/null 2>&1 || a=$?
+  pgrep -U "$1" >/dev/null 2>&1 || b=$?
+  if [ "$a" = 0 ] || [ "$b" = 0 ]; then return 0; fi
+  if [ "$a" = 1 ] && [ "$b" = 1 ]; then return 1; fi
+  return 2
+}
+
+# The database sessions of the migration login (it appears in the SQL, which
+# travels on stdin, never on a command line).
+_dms_r6_session_sql() {
+  printf "select count(*) from pg_catalog.pg_stat_activity where usename = '%s'\n" "${DMS_MIGRATE_USERNAME:-}"
+}
+
 # _dms_r6_no_migrator_process <migration account>
 #
-# Nothing of the migration account may outlive a step: no process (killed, and
-# refused, when one is found), no crontab, at job or linger entry (review
-# round 2, N5).
+# Nothing of the migration account may outlive a step (review round 2 N5; round
+# 3 R3-2): no process with its effective or real uid (killed, repeatedly, and
+# refused), no crontab, at job or linger entry, no file it owns or whose group
+# is its own in a shared writable directory (a setuid file there would carry
+# its uid, and peer authentication would map that uid to the migration login),
+# and no database session of the migration login. Any check that cannot run
+# refuses.
 _dms_r6_no_migrator_process() {
-  local mig="$1" uid d
+  local mig="$1" uid gid d out rc found=0 i n
   uid="$(id -u -- "$mig" 2>/dev/null)" || { _dms_r6_err "the migration OS account does not exist — NOT GO"; return 1; }
-  if pgrep -u "$uid" >/dev/null 2>&1; then
-    pkill -KILL -u "$uid" >/dev/null 2>&1 || true
-    _dms_r6_err "a process of the migration OS account was running — killed — NOT GO"
+  gid="$(id -g -- "$mig" 2>/dev/null)" || { _dms_r6_err "the migration OS account does not exist — NOT GO"; return 1; }
+  for i in 1 2 3 4 5; do
+    rc=0; _dms_r6_pgrep_any "$uid" || rc=$?
+    case "$rc" in
+      1) break ;;
+      0) found=1; pkill -KILL -u "$uid" >/dev/null 2>&1 || true; pkill -KILL -U "$uid" >/dev/null 2>&1 || true; sleep 0.2 ;;
+      *) _dms_r6_err "the process check for the migration OS account failed — NOT GO"; return 1 ;;
+    esac
+  done
+  if [ "$found" = 1 ]; then
+    rc=0; _dms_r6_pgrep_any "$uid" || rc=$?
+    if [ "$rc" = 1 ]; then
+      _dms_r6_err "a process of the migration OS account was running — killed — NOT GO"
+    else
+      _dms_r6_err "a process of the migration OS account was running and could not be killed — NOT GO"
+    fi
     return 1
   fi
   for d in $(_dms_r6_spool_dirs); do
     [ -d "$d" ] || continue
-    if [ -e "${d}/${mig}" ] || [ -n "$(find "$d" -maxdepth 1 -user "$uid" -print -quit 2>/dev/null)" ]; then
+    out="$(find "$d" -mindepth 1 -maxdepth 1 -user "$uid" -print -quit 2>/dev/null)" || { _dms_r6_err "the cron, at and linger entries cannot be inspected — NOT GO"; return 1; }
+    if [ -e "${d}/${mig}" ] || [ -n "$out" ]; then
       _dms_r6_err "the migration OS account has a cron, at or linger entry — NOT GO"
       return 1
     fi
   done
-  return 0
+  for d in $(_dms_r6_writable_dirs); do
+    [ -d "$d" ] || continue
+    out="$(find "$d" -mindepth 1 -xdev \( -uid "$uid" -o -gid "$gid" \) -print -quit 2>/dev/null)" || { _dms_r6_err "the shared directories cannot be inspected — NOT GO"; return 1; }
+    if [ -n "$out" ]; then
+      _dms_r6_err "a file of the migration OS account remains in a shared directory — NOT GO"
+      return 1
+    fi
+  done
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    n="$(_dms_r6_root_psql "$(_dms_r6_session_sql)")" || n=""
+    case "$n" in
+      0) return 0 ;;
+      ''|*[!0-9]*) _dms_r6_err "the database sessions of the migration login cannot be inspected — NOT GO"; return 1 ;;
+    esac
+    sleep 0.3
+  done
+  _dms_r6_err "a database session of the migration login remains open — NOT GO"
+  return 1
 }
 
 # The split state, read-only. It mirrors
@@ -406,15 +480,27 @@ _dms_r6_root_psql() {
   dms_privsep_assert_trusted_file "$(_dms_r6_trusted_uid)" .env >/dev/null || return 3
   (
     set +u
+    # Opened once; the open file is checked and read (review round 3, R3-5), and
+    # no directory above it can be written by another account.
+    exec {fd}<./.env || exit 3
+    meta="$(stat -L -c '%u %a %F' -- "/proc/${BASHPID}/fd/${fd}" 2>/dev/null)" || exit 3
+    read -r f_uid f_mode _ <<<"$meta"
+    case "$meta" in *" regular file") ;; *) _dms_r6_err "the environment file is not a regular file — NOT GO"; exit 3 ;; esac
+    if [ "$f_uid" != "$(_dms_r6_trusted_uid)" ] || [ $(( 8#${f_mode} & 8#022 )) -ne 0 ]; then
+      _dms_r6_err "the environment file changed after its trust check — NOT GO"
+      exit 3
+    fi
+    _dms_r6_trusted_ancestry "0 $(_dms_r6_trusted_uid)" "$PWD" || { _dms_r6_err "the application directory can be written by another account — NOT GO"; exit 3; }
     for v in $(compgen -e); do case "$v" in PG*) unset "$v" ;; esac; done
     set -a
-    # shellcheck disable=SC1091
-    . ./.env
+    # shellcheck disable=SC1090
+    . "/proc/${BASHPID}/fd/${fd}"
     set +a
+    exec {fd}<&-
     for v in $(compgen -e); do case "$v" in PG*) unset "$v" ;; esac; done
     export PGHOST="${DB_HOST:-127.0.0.1}" PGPORT="${DB_PORT:-5432}" PGUSER="${DB_USERNAME:-}" PGDATABASE="${DB_DATABASE:-}" \
       PGPASSWORD="${DB_PASSWORD:-}" PGCONNECT_TIMEOUT=10 PGOPTIONS='-c default_transaction_read_only=on -c search_path=pg_catalog'
-    "$psql_bin" -X -A -t -q -v ON_ERROR_STOP=1 -c "$sql" 2>/dev/null
+    "$psql_bin" -X -A -t -q -v ON_ERROR_STOP=1 -f - <<<"$sql" 2>/dev/null
   )
 }
 

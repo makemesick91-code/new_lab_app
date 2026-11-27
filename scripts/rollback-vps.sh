@@ -291,6 +291,7 @@ fi
 # no longer create anything. Unsplit with the switch off, this changes nothing.
 # shellcheck source=lib/r6-migrate.sh
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
+dms_r6_lock_constants
 if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA" "$RUNTIME_USER"; then
   echo "FATAL: the R6 rollback guard refused target ${ROLLBACK_TARGET_SHA} — nothing was backed up or checked out — NOT GO" >&2
   exit 2
@@ -503,6 +504,13 @@ fi
 # A rollback must not silently drop co-tenant isolation. The verifier was staged
 # before the checkout so this gate runs even when the target ref predates it.
 echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
+# R6-B4 review round 3 (R3-6): the environment file was sourced since the guard
+# read the switch; read it again so no environment key decides whether the
+# migration account is among the accounts the gate proves isolated.
+if ! _dms_r6_switch_value_read "$(_dms_r6_trusted_uid)"; then
+  echo "FATAL: the migrator switch file cannot be trusted — NOT GO" >&2
+  exit 2
+fi
 if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --app-dir "$APP_DIR" \
       --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \

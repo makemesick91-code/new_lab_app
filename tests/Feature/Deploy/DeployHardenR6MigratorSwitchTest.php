@@ -54,12 +54,13 @@ function r6mRun(string $body, array $env = [], ?string $cwd = null): array
     $env += [
         'DMS_R6_SWITCH_FILE' => $none.'.conf', 'DMS_R6_TRUSTED_UID' => r6mUid(),
         'DMS_R6_NSSWITCH_FILE' => $none.'.nsswitch', 'DMS_R6_SPOOL_DIRS' => $none.'.spool', 'DMS_R6_PG_BINDIR' => $none.'.bin',
+        'DMS_R6_WRITABLE_DIRS' => $none.'.shared',
     ];
     $functions = [
         'DMS_R6_SWITCH_FILE' => '_dms_r6_switch_file', 'DMS_R6_CACHE_ROOT' => '_dms_r6_cache_root',
         'DMS_R6_TRUSTED_UID' => '_dms_r6_trusted_uid', 'DMS_R6_SERVER_ACCOUNT' => '_dms_r6_server_account',
         'DMS_R6_NSSWITCH_FILE' => '_dms_r6_nsswitch_file', 'DMS_R6_SPOOL_DIRS' => '_dms_r6_spool_dirs',
-        'DMS_R6_PG_BINDIR' => '_dms_r6_pg_bindir',
+        'DMS_R6_PG_BINDIR' => '_dms_r6_pg_bindir', 'DMS_R6_WRITABLE_DIRS' => '_dms_r6_writable_dirs',
     ];
     $define = [];
     foreach ($functions as $key => $function) {
@@ -396,25 +397,73 @@ _dms_r6_as_migrator r6m-mig php artisan migrate --database=pgsql_migrate --force
 
 // ── Nothing of the migration account outlives a step (round 2, N5) ───────────
 
-it('kills and refuses a process of the migration account, and refuses its cron, at or linger entries', function (string $case) {
+it('kills and refuses what the migration account leaves behind: processes, cron/at/linger entries, files in shared directories, database sessions (round 2 N5; round 3 R3-2, R3-4)', function (string $case, string $account, ?string $reason) {
     $dir = r6mTmp();
     mkdir($dir.'/spool', 0700);
-    $body = r6mAccounts();
-    if ($case === 'a running process') {
-        $body .= "\npgrep() { return 0; }\npkill() { echo PKILL \"\$*\" >> ".escapeshellarg($dir.'/pkill.log')."; }";
-    } else {
-        $body .= "\npgrep() { return 1; }";
-        touch($dir.'/spool/r6m-mig');
+    mkdir($dir.'/shared', 0700);
+    $bin = r6mPsql($dir, '0', 0, null, '7712|r6m_app_db|1700000000|r6m_app_login|r6m_app_login', $case === 'a database session' ? '1' : '0');
+    $count = escapeshellarg($dir.'/pgrep.count');
+    $body = r6mAccounts()."\nDMS_MIGRATE_USERNAME=r6m_migrator\nsleep() { :; }";
+    $body .= match ($case) {
+        // Found until pkill ran once.
+        'a running process' => "\npgrep() { [ -e {$count} ] && return 1; return 0; }\npkill() { echo \"PKILL \$*\" >> ".escapeshellarg($dir.'/pkill.log')."; : > {$count}; }",
+        'a process check that errors' => "\npgrep() { return 2; }",
+        default => "\npgrep() { return 1; }",
+    };
+    if ($case === 'a cron entry') {
+        touch($dir.'/spool/'.$account);
+    } elseif ($case === 'a file in a shared directory') {
+        touch($dir.'/shared/left-behind');
     }
-    [$code, $out] = r6mRun($body."\n_dms_r6_no_migrator_process r6m-mig", ['DMS_R6_SPOOL_DIRS' => $dir.'/spool']);
+    [$code, $out] = r6mRun($body."\n_dms_r6_no_migrator_process {$account}", ['DMS_R6_SPOOL_DIRS' => $dir.'/spool', 'DMS_R6_WRITABLE_DIRS' => $dir.'/shared', 'DMS_R6_PG_BINDIR' => $bin], $dir);
 
-    expect($code)->toBe(1, $out)->and($out)->toContain('NOT GO');
-    if ($case === 'a running process') {
-        expect((string) @file_get_contents($dir.'/pkill.log'))->toContain('PKILL -KILL -u 2002')->and($out)->toContain('was running — killed');
+    if ($reason === null) {
+        expect($code)->toBe(0, $out);
     } else {
-        expect($out)->toContain('cron, at or linger entry');
+        expect($code)->toBe(1, $out)->and($out)->toContain($reason)->and($out)->toContain('NOT GO');
     }
-})->with(['a running process', 'a cron entry']);
+    if ($case === 'a running process') {
+        expect((string) file_get_contents($dir.'/pkill.log'))->toContain('PKILL -KILL -u 2002')->and((string) file_get_contents($dir.'/pkill.log'))->toContain('PKILL -KILL -U 2002');
+    }
+    if ($case === 'a database session' || $reason === null) {
+        // The login name travels on stdin, never on psql's command line.
+        expect((string) file_get_contents($dir.'/psql-sql.log'))->toContain("usename = 'r6m_migrator'")
+            ->and((string) file_get_contents($dir.'/psql-argv.log'))->not->toContain('r6m_migrator');
+    }
+})->with([
+    'nothing left' => ['clean', 'r6m-mig', null],
+    'a running process' => ['a running process', 'r6m-mig', 'was running — killed'],
+    'a process check that errors (never read as "none")' => ['a process check that errors', 'r6m-mig', 'process check for the migration OS account failed'],
+    'a cron entry' => ['a cron entry', 'r6m-mig', 'cron, at or linger entry'],
+    // The fixture account with the test user's uid owns the file the test creates.
+    'a file in a shared directory' => ['a file in a shared directory', 'r6m-sockowner', 'remains in a shared directory'],
+    'a database session' => ['a database session', 'r6m-mig', 'database session of the migration login remains open'],
+]);
+
+it('accepts only local name-service sources, whatever the spacing (round 3, R3-7)', function (string $nsswitch, bool $accepted) {
+    $dir = r6mTmp();
+    file_put_contents($dir.'/nsswitch.conf', $nsswitch);
+    [$code, $out] = r6mRun('_dms_r6_local_accounts_only', ['DMS_R6_NSSWITCH_FILE' => $dir.'/nsswitch.conf']);
+
+    expect($code)->toBe($accepted ? 0 : 1, $out);
+})->with([
+    'files systemd, with an action' => ["passwd: files systemd\ngroup: files [NOTFOUND=return] systemd\nhosts: files dns\n", true],
+    'ldap with no space after the colon' => ["passwd:ldap files\n", false],
+    'compat (NIS + entries)' => ["passwd: compat\n", false],
+    'sss on group' => ["passwd: files\ngroup: files sss\n", false],
+]);
+
+it('locks its fixed values against a later file that redefines them (round 3, R3-6)', function () {
+    $dir = r6mTmp();
+    file_put_contents($dir.'/env', "_dms_r6_switch_file() { printf '%s\\n' /tmp/planted.conf; }\n");
+    $proc = proc_open(['bash', '-c', '. '.escapeshellarg(base_path(R6M_LIB)).'; dms_r6_lock_constants; set -a; . '.escapeshellarg($dir.'/env').' 2>/dev/null; set +a; _dms_r6_switch_file'],
+        [1 => ['pipe', 'w']], $pipes, base_path(), ['PATH' => (string) getenv('PATH')]);
+    $out = trim((string) stream_get_contents($pipes[1]));
+    fclose($pipes[1]);
+    proc_close($proc);
+
+    expect($out)->toBe('/etc/dms-r6/migrator.conf');
+});
 
 // ── The migrate step ─────────────────────────────────────────────────────────
 
@@ -444,7 +493,7 @@ function r6mStubs(string $log, array $o = []): string
         '    "test -r '.R6M_PRIVATE.'") return '.$o['readPrivate'].' ;;',
         '    "test -r artisan"|"test -r vendor/autoload.php") return '.$o['readCode'].' ;;',
         '    "test -r "*|"test -w "*) return 1 ;;',
-        '    */psql\ -X*) echo '.escapeshellarg((string) $o['migIdent']).'; return 0 ;;',
+        '    */psql\ -X*) printf "%s\n" "${_DMS_R6_ALLOW[*]}" >> '.escapeshellarg($log.'.allow').'; echo '.escapeshellarg((string) $o['migIdent']).'; return 0 ;;',
         '    *--identity*) echo '.escapeshellarg((string) $o['idMig']).'; return 0 ;;',
         '    *"migrate --database=pgsql_migrate --force") return '.$o['migrate'].' ;;',
         '    *db-privilege-apply*) return '.$o['apply'].' ;;',
@@ -566,12 +615,24 @@ it('refuses before migrating when the switch disagrees with the database (OD-R6-
  * with $identity and anything else with $answer (exit $exit); and an environment
  * file in $envDir (default $dir) with the runtime's synthetic database identity.
  */
-function r6mPsql(string $dir, string $answer, int $exit = 0, ?string $envDir = null, string $identity = '7712|r6m_app_db|1700000000|r6m_app_login|r6m_app_login'): string
+function r6mPsql(string $dir, string $answer, int $exit = 0, ?string $envDir = null, string $identity = '7712|r6m_app_db|1700000000|r6m_app_login|r6m_app_login', string $sessions = '0'): string
 {
     // Returned: the pinned client directory (DMS_R6_PG_BINDIR); the client is never found through PATH (rule 235).
     @mkdir($dir.'/bin', 0700);
-    file_put_contents($dir.'/bin/psql', "#!/bin/sh\nenv > ".escapeshellarg($dir.'/psql-env.log')."\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($dir.'/psql-argv.log')
-        ."\ncase \"\$*\" in *pg_control_system*) printf '%s\\n' ".escapeshellarg($identity).' ;; *) printf \'%s\\n\' '.escapeshellarg($answer)." ;; esac\nexit {$exit}\n");
+    // The SQL arrives on stdin (never on the command line): the fake answers by what it reads.
+    file_put_contents($dir.'/bin/psql', implode("\n", [
+        '#!/bin/sh',
+        'env > '.escapeshellarg($dir.'/psql-env.log'),
+        'printf \'%s\\n\' "$@" > '.escapeshellarg($dir.'/psql-argv.log'),
+        'sql="$(cat)"',
+        'printf \'%s\\n\' "$sql" >> '.escapeshellarg($dir.'/psql-sql.log'),
+        'case "$sql" in',
+        '  *pg_control_system*) printf \'%s\\n\' '.escapeshellarg($identity).' ;;',
+        '  *pg_stat_activity*) printf \'%s\\n\' '.escapeshellarg($sessions).' ;;',
+        '  *) printf \'%s\\n\' '.escapeshellarg($answer).' ;;',
+        'esac',
+        'exit '.$exit,
+    ])."\n");
     chmod($dir.'/bin/psql', 0755);
     file_put_contents(($envDir ?? $dir).'/.env', "DB_HOST=127.0.0.1\nDB_PORT=5432\nDB_DATABASE=r6m_app_db\nDB_USERNAME=r6m_app_login\nDB_PASSWORD=r6m-secret-password\nPGSSLMODE=require\n");
     chmod(($envDir ?? $dir).'/.env', 0640);
@@ -637,7 +698,10 @@ it('checks the migration connection itself in the preflight: same instance and d
         ->and($commands[9])->toStartWith('MIG r6m-mig: '.$path.'/psql -X -A -t -q -v ON_ERROR_STOP=1 -c ')
         // The connection values travel in the environment, never on psql's command line.
         ->and(explode(' | ', r6mCalls($log)[9])[1])->toBe('PATH PGHOST PGPORT PGDATABASE PGUSER PGCONNECT_TIMEOUT PGOPTIONS')
-        ->and($commands[9])->not->toContain('r6m_owner')->and($commands[9])->not->toContain('r6m_migrator');
+        ->and($commands[9])->not->toContain('r6m_owner')->and($commands[9])->not->toContain('r6m_migrator')
+        // …and they say what pgsql_migrate will do: log in as the migration login, act as the owner role, read-only.
+        ->and((string) file_get_contents($log.'.allow'))->toContain('PGUSER=r6m_migrator')
+        ->and((string) file_get_contents($log.'.allow'))->toContain('PGOPTIONS=-c role=r6m_owner -c default_transaction_read_only=on');
     if ($reason === null) {
         expect($code)->toBe(0, $out)->and(end($commands))->toBe('NOPROC');
     } else {
@@ -675,6 +739,18 @@ it('never runs an environment file it must not trust: the trust check comes befo
 
     expect($code)->toBe(1, $out)->and($out)->toContain('root will not source it')->and($out)->toContain('cannot be determined')
         ->and(is_file($dir.'/pwned'))->toBeFalse()->and(is_file($dir.'/psql-env.log'))->toBeFalse();
+});
+
+it('refuses to read the environment file when the directory above it can be written by another account (round 3, R3-5)', function () {
+    $dir = r6mTmp();
+    $log = $dir.'/calls.log';
+    // The pinned client lives elsewhere (its own directory chain is trusted); only the application directory is open.
+    $bin = r6mPsql(r6mTmp(), '0', 0, $dir);
+    chmod($dir, 0770);
+    [$code, $out] = r6mRun(r6mStubs($log)."\n".r6mSwitchOn('0')."\ndms_r6_preflight rt rtgroup '' ''", ['DMS_R6_PG_BINDIR' => $bin], $dir);
+
+    expect($code)->toBe(1, $out)->and($out)->toContain('the application directory can be written by another account')
+        ->and(is_file(dirname($bin).'/psql-env.log'))->toBeFalse();
 });
 
 // ── The rollback guard (IAR-A12, OD-R6-2 v5 A12, review #7; round 2 N4) ─────
@@ -750,6 +826,11 @@ it('wires the preflight before the first mutation, the switch into the migrate s
         ->and(strpos($deploy, 'echo "== Backup DB =="'))->toBeLessThan(strpos($deploy, 'r6_runtime_migrate() {'))
         ->and(strpos($deploy, 'dms_r6_migrate "$RUNTIME_USER"'))->toBeLessThan(strpos($deploy, 'php artisan release:automated-smoke'))
         ->and($deploy)->toContain('--additional-forbidden-users')
+        ->and($deploy)->toContain("scripts/lib/r6-migrate.sh\"\ndms_r6_lock_constants\n")
+        ->and($rollback)->toContain("scripts/lib/r6-migrate.sh\"\ndms_r6_lock_constants\n")
+        // Round 3, R3-6: the rollback re-reads the switch after sourcing the environment file, before its gate.
+        ->and(strpos($rollback, 'source .env'))->toBeLessThan(strrpos($rollback, '_dms_r6_switch_value_read "$(_dms_r6_trusted_uid)"'))
+        ->and(strrpos($rollback, '_dms_r6_switch_value_read "$(_dms_r6_trusted_uid)"'))->toBeLessThan(strrpos($rollback, 'scripts/verify-runtime-isolation.sh'))
         ->and($rollback)->toContain('dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA" "$RUNTIME_USER"')
         ->and(strpos($rollback, 'dms_privsep_assert_trusted_file'))->toBeLessThan(strpos($rollback, 'dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA"'))
         ->and(strpos($rollback, 'dms_r6_rollback_guard'))->toBeLessThan(strpos($rollback, 'TARGET_BACKUP_CONFIG='))
@@ -792,7 +873,9 @@ it('detects extended ACLs, traverse access, primary-group and same-gid accounts 
         // Round 2, N2: every hop into another account starts from an empty environment, through runuser resolved
         // by absolute path (a hop that cannot start must never read as "cannot read").
         ->and($gate)->toContain('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$_GATE_RUNUSER" -u "$u" -- "$@"')
-        ->and(substr_count($gate, 'runuser -u '))->toBe(0);
+        ->and(substr_count($gate, 'runuser -u '))->toBe(0)
+        // Round 3, R3-3: a check that cannot start as an account fails that account's isolation, never passes it.
+        ->and($gate)->toContain("if ! _gate_as \"\$intruder\" true 2>/dev/null; then\n      bad \"a check cannot be run as '\${intruder}' — its isolation is unproven\"");
 
     // Normalisation strips extended ACLs inside the declared private trees only.
     preg_match('/dms_privsep_normalize_modes\(\) \{(.*?)\n\}/s', $privsep, $body);
