@@ -74,7 +74,9 @@ normalize() { (cd "$APP" && dms_privsep_repair_runtime_ownership "$RT" "$RT" sto
 denied() { # account, path → 0 when the account can neither stat nor read the file
   ! runuser -u "$1" -- test -e "$2" 2>/dev/null && ! runuser -u "$1" -- cat "$2" >/dev/null 2>&1
 }
-reads_secret() { runuser -u "$1" -- cat "$2" 2>/dev/null | grep -q "$SECRET"; }
+# grep runs AS the account and reads the file itself: no pipe, so pipefail cannot turn an early grep exit (SIGPIPE in
+# a cat | grep -q pipeline) into a false "cannot read" (run 45920288442 had exactly that harness defect).
+reads_secret() { runuser -u "$1" -- grep -qF -- "$SECRET" "$2" 2>/dev/null; }
 
 echo "== F1B-1 initial creation through the deploy's runtime wrapper (umask 027), then the deploy normalization"
 (cd "$APP" && dms_privsep_as_runtime "$RT" php artisan config:cache --no-interaction >/dev/null)
