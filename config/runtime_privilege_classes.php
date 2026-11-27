@@ -89,6 +89,20 @@ return [
         'trx_rme_record_versions_immutable' => '302b4a5d2182a5e2025edfa8582b5badc452ed46cf1aabdd710f176edf860f47',
     ],
 
+    /*
+    | R6-B3c (pack 63c, C2/C3): the repo-pinned PostgreSQL 16 baseline, the
+    | runtime-visible privilege surface of a fresh initdb with the allowlisted
+    | extensions, for a plain login holding the two monitoring roles. The check
+    | refuses to verify (exit 2) when the file is missing or its SHA-256 differs
+    | from this pin. Regenerate it with `foundation:db-privilege-check
+    | --print-baseline` on a fresh PostgreSQL 16 cluster and re-pin it here and
+    | in FoundationGovernanceDbPrivilegeTest in one reviewed PR.
+    */
+    'baseline' => [
+        'path' => 'tests/Fixtures/r6/pg16-runtime-baseline.txt',
+        'sha256' => '995bcfad0f41696516f73eb85c620f94877bfa7c2a2ea7d14fe551424b8dd44f',
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [
