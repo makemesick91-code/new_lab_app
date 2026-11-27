@@ -1,0 +1,12 @@
+      # PB-7 (DMS-SPN4-READY-PILOT-1, Design Lock row R6-B7) — the same
+      # role-separation tests as the GitHub-hosted gate, through the authoritative
+      # PHP runtime. This host must already provide the PostgreSQL 16 server
+      # binaries and the native PHP runtime: nothing is installed here, and if
+      # either is missing the step FAILS — it never skips.
+      - name: Run the PostgreSQL 16 role-separation tests (PB-7)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
+        env:
+          PB7_PHP_WRAPPER: scripts/ci/self-hosted-php.sh
+        run: bash scripts/ci/r6-role-test-cluster.sh tests/Feature/Foundation/FoundationGovernanceDbPrivilegeTest.php tests/Feature/Foundation/FoundationGovernanceMigrationConnectionTest.php
+

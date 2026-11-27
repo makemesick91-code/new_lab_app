@@ -949,6 +949,8 @@ other edit. The owner-approved amendment (#692) had to:
 | **REM-1 selected, B5 rollback target** (pinned since #692) | `4335c4dc7db9b4d1053b377a3e766b42e17a0ad9d23df81263eee2265a68bdfb` |
 | **O-CI-1 aligned** (REM-1 file plus the O-CI-1 block; §13.17) | `4bfd792d070ce26c61fd49899038df12795fdbd526615840d197120c00dceb43` |
 | **O-CI-1 aligned, B5 rollback target** (§13.17) | `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3` |
+| **PB-7 role separation** (O-CI-1 file plus the PB-7 steps; §13.18) | `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472` |
+| **PB-7 role separation, B5 rollback target** (§13.18) | `d11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09` |
 
 At preparation time, every CI suite passed with the change applied, except the 17 CTRG tests, which failed by design
 until the amendment landed. Pushing a workflow file needs the GitHub `workflow` scope, which was revoked then. The
@@ -1743,6 +1745,68 @@ Mutations that remove `ON_ERROR_STOP`, remove `--single-transaction` or widen th
 client. The clinical-asset suites need one there. Rebuilding that image is a separate, owner-decided change.
 
 ---
+
+### 13.18 PB-7 — PostgreSQL 16 role-separation tests in the critical gate (2026-11-27) — PREPARED
+
+**Authority:** owner directive "R6-B3 ACCEPTANCE AND PARALLEL CRITICAL-PATH EXECUTION" §3 (2026-11-27). Design Lock
+row R6-B7.
+
+**Why:**
+- The real-PostgreSQL role scenarios of `FoundationGovernanceMigrationConnectionTest` (R6-B2b) and
+  `FoundationGovernanceDbPrivilegeTest` (R6-B3) need a cluster with the rule 245 role layout. The job's `postgres:16`
+  service is not one.
+- So in the critical regression step they **skip**. #712 showed 6 skips and #713 showed 109; they are never counted as
+  passes.
+- The R6-B acceptance criterion (§12.5) needs the role-separation tests to run in CI, and
+  `foundation:db-privilege-check` to exit 0 there.
+
+**Change:**
+- **The step:** one step per critical-gate variant, before "Run governance audit commands". It runs
+  `scripts/ci/r6-role-test-cluster.sh` with both suites. The existing critical regression step, its filter, its
+  skips and the classifier are unchanged.
+- **What the script does:**
+  - starts a private, disposable PostgreSQL 16 cluster as the runner user: Unix socket only, no TCP listener;
+  - uses design role names `r6t_*`, peer authentication, and a random, masked password per run. No production value
+    is involved;
+  - runs the suites **serially** with `R6_ROLE_TEST_REQUIRED=1`, so a missing cluster **fails** (both suites carry the
+    switch since #713);
+  - requires the run to report **no skipped and no failed** test;
+  - requires `foundation:db-privilege-apply --apply`, a stable forward SQL, and `foundation:db-privilege-check` exit 0;
+  - removes the cluster on exit and writes `storage/ci-evidence/pb7-role-separation.log`.
+- **Server and client alignment:**
+  - **GitHub-hosted:** the PostgreSQL 16 server comes from the same signed apt source O-CI-1 added, with no system
+    cluster created, and must equal the O-CI-1 client version.
+  - **Self-hosted:** nothing is installed. The host must already provide the PostgreSQL 16 server binaries and the
+    native PHP runtime; otherwise the step fails closed.
+- **Pinned blocks:**
+  - `tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt`, SHA-256
+    `0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a`;
+  - `tests/Fixtures/ci/pb-7-critical-gate-step-self-hosted.yml.txt`, SHA-256
+    `5512d748c336ed35ac4ba5ad80c430ce4591e49a02e548366e382673d4f31079`.
+
+- Pinned script (it holds every fail-closed part, so it is pinned with the workflow): `scripts/ci/r6-role-test-cluster.sh`,
+  SHA-256 `922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b`. It also requires:
+  - a JUnit log of at least 230 tests with no failure, error or skip, and no `todo` or `pending`;
+  - no `->only(` or `->todo(` in either suite;
+  - the PostgreSQL 16 server at exactly the client's package version.
+
+  Its acceptance runs on a fresh database: migrated through `pgsql_migrate`, provisioned as R6-D would provision it,
+  then the first apply must change objects, the check must reach MATCH, and a second apply must change nothing. The
+  password mask goes only to the job log; a password-free step summary is written.
+
+**Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
+- PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;
+- on its B5 rollback target: `d11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09`.
+
+**What `CiTriggerRemovalGovernanceTest` checks:**
+- It classifies the change as `pb7-role-separation` and keeps the B5 removal and restoration between the two new
+  states.
+- It rejects:
+  - the step in one variant only;
+  - `continue-on-error`;
+  - a switched-off requirement;
+  - an extra edit;
+  - removal of the step.
 
 ## Annex A — Supplementary query pack R1-S (read-only; owner-run as the application login role)
 

@@ -82,6 +82,14 @@ Nothing else is an exception. In particular:
   `b89bfd69b76ef6297e72a990eda35ac6fcf5a871f4e4b57a1ae80970ec5988d3`. Between those two the removal and the
   restoration apply as above. A change that removes the alignment again is outside them.
 
+  The PB-7 role-separation step of DMS-SPN4-READY-PILOT-1 (`docs/sprints/dms-spn4-ready-pilot-1.md` §13.18) is
+  **not** one of these classes either. It adds one pinned step to each critical gate
+  (`tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt`, `tests/Fixtures/ci/pb-7-critical-gate-step-self-hosted.yml.txt`)
+  and is released with its sprint. It applies to the O-CI-1 file, giving
+  `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`, and to its rollback target, giving
+  `d11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09`. Between those two the removal and the
+  restoration apply as above. A change that removes the step again is outside them.
+
 ## Registry
 
 ### `dms-biznet-first-production-deploy-infra-1-go`
