@@ -517,13 +517,19 @@ _gate_as() {
   local u="$1"
   shift
   [ -n "$_GATE_RUNUSER" ] || return 125
-  env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$_GATE_RUNUSER" -u "$u" -- "$@"
+  env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$_GATE_RUNUSER" -u "$u" -- "$@" </dev/null
 }
 
 if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
   for intruder in ${DMS_FORBIDDEN_RUNTIME_USERS:-www-data} ${ADDITIONAL_FORBIDDEN_USERS}; do
     [ "$intruder" = "root" ] && continue
     getent passwd "$intruder" >/dev/null 2>&1 || continue
+    # R6-B4 review round 3 (R3-3): every negative proof below reads a failed hop
+    # as "cannot"; first prove that a check can run as this account at all.
+    if ! _gate_as "$intruder" true 2>/dev/null; then
+      bad "a check cannot be run as '${intruder}' — its isolation is unproven"
+      continue
+    fi
 
     if [ -e "$ENV_FILE" ]; then
       if _gate_as "$intruder" test -r "$ENV_FILE" 2>/dev/null; then
