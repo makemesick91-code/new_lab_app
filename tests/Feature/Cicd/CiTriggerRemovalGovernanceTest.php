@@ -64,6 +64,20 @@ const CTRG_OCI1_BLOCK_SHA256 = '779915fd9de322461dfe85b2322928b9640829f98bdc7ddb
 const CTRG_OCI1_HEAD = "          pdftoppm -v\n\n";
 const CTRG_OCI1_TAIL = '      # CICD-CTRL-3 — hard production-database isolation guard. Runs BEFORE any';
 
+// PB-7 (owner directive "R6-B3 ACCEPTANCE AND PARALLEL CRITICAL-PATH EXECUTION" §3, 2026-11-27; Design Lock row
+// R6-B7): both critical-gate variants run the PostgreSQL 16 role-separation tests in a dedicated, serial step against a
+// private, synthetic cluster, failing closed. Like O-CI-1 it is NOT a CG-16 CI trigger class: it adds exactly one
+// pinned step to each critical gate, before "Run governance audit commands", released with its sprint. It applies onto
+// the O-CI-1 file and onto its B5 rollback target. Also pinned in the register and the SPN4 sprint record.
+const CTRG_PB7_SHA256 = '345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472';
+const CTRG_PB7_PRE_REMOVAL_SHA256 = 'd11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09';
+const CTRG_PB7_BLOCKS = [
+    'hosted' => ['tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt', '0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a',
+        "      - name: Run governance audit commands\n        # Always runs — governance is never gated by the classifier.\n        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only\n"],
+    'self-hosted' => ['tests/Fixtures/ci/pb-7-critical-gate-step-self-hosted.yml.txt', '5512d748c336ed35ac4ba5ad80c430ce4591e49a02e548366e382673d4f31079',
+        "      - name: Run governance audit commands\n        # Always runs — governance is never gated by the classifier.\n        run: bash scripts/ci/self-hosted-php.sh bash scripts/ci/foundation-evidence-gates.sh --critical-only\n"],
+];
+
 // The exact lines the removal deletes: pre-removal lines 7–9 and 55–56.
 const CTRG_PUSH_LINES = [
     '  push:',
@@ -196,16 +210,49 @@ function ctrgOci1Strip(string $content): string
     return str_replace($applied, CTRG_OCI1_HEAD.CTRG_OCI1_TAIL, $content);
 }
 
-/** The six approved contents, derived from the checked-in file in any of its approved states. */
+/** PB-7: a pinned step block, verified against its pinned SHA-256. */
+function ctrgPb7Block(string $variant): string
+{
+    [$path, $sha] = CTRG_PB7_BLOCKS[$variant];
+    $block = (string) file_get_contents(base_path($path));
+    expect(hash('sha256', $block))->toBe($sha, "the PB-7 {$variant} block changed without a re-pin");
+
+    return $block;
+}
+
+/** PB-7: $content with exactly the pinned step inserted before "Run governance audit commands" in both critical gates. */
+function ctrgPb7Apply(string $content): string
+{
+    foreach (CTRG_PB7_BLOCKS as $variant => [, , $anchor]) {
+        expect(substr_count($content, $anchor))->toBe(1);
+        $content = str_replace($anchor, ctrgPb7Block($variant).$anchor, $content);
+    }
+
+    return $content;
+}
+
+/** The inverse of ctrgPb7Apply(), used only to derive the approved states from the checked-in file. */
+function ctrgPb7Strip(string $content): string
+{
+    foreach (CTRG_PB7_BLOCKS as $variant => [, , $anchor]) {
+        $applied = ctrgPb7Block($variant).$anchor;
+        expect(substr_count($content, $applied))->toBe(1);
+        $content = str_replace($applied, $anchor, $content);
+    }
+
+    return $content;
+}
+
+/** The eight approved contents, derived from the checked-in file in any of its approved states. */
 function ctrgStates(): array
 {
     $current = ctrgWorkflowRaw();
     $sha = hash('sha256', $current);
     $approved = [CTRG_PRE_REMOVAL_SHA256, CTRG_POST_REMOVAL_SHA256, CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256,
-        CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256];
+        CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256, CTRG_PB7_SHA256, CTRG_PB7_PRE_REMOVAL_SHA256];
     // (`toContain` is variadic, so the reason lives in `toBeTrue`.)
     expect(in_array($sha, $approved, true))
-        ->toBeTrue("the workflow ({$sha}) must be in one of the six approved states; any other change needs its own owner-approved re-pin");
+        ->toBeTrue("the workflow ({$sha}) must be in one of the eight approved states; any other change needs its own owner-approved re-pin");
 
     $post = match ($sha) {
         CTRG_PRE_REMOVAL_SHA256 => ctrgRemove($current),
@@ -214,6 +261,8 @@ function ctrgStates(): array
         CTRG_CG19_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove($current)),
         CTRG_OCI1_SHA256 => ctrgDeselect(ctrgOci1Strip($current)),
         CTRG_OCI1_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove(ctrgOci1Strip($current))),
+        CTRG_PB7_SHA256 => ctrgDeselect(ctrgOci1Strip(ctrgPb7Strip($current))),
+        CTRG_PB7_PRE_REMOVAL_SHA256 => ctrgDeselect(ctrgRemove(ctrgOci1Strip(ctrgPb7Strip($current)))),
     };
 
     return [
@@ -223,6 +272,8 @@ function ctrgStates(): array
         'cg19pre' => ctrgSelect(ctrgRestore($post)),
         'oci1' => ctrgOci1Apply(ctrgSelect($post)),
         'oci1pre' => ctrgOci1Apply(ctrgSelect(ctrgRestore($post))),
+        'pb7' => ctrgPb7Apply(ctrgOci1Apply(ctrgSelect($post))),
+        'pb7pre' => ctrgPb7Apply(ctrgOci1Apply(ctrgSelect(ctrgRestore($post)))),
     ];
 }
 
@@ -267,6 +318,17 @@ function ctrgClassify(string $before, string $after): string
         || ($from === CTRG_CG19_PRE_REMOVAL_SHA256 && $to === CTRG_OCI1_PRE_REMOVAL_SHA256))
         && ctrgOci1Apply($before) === $after) {
         return 'oci1-alignment';
+    }
+    if ($from === CTRG_PB7_PRE_REMOVAL_SHA256 && $to === CTRG_PB7_SHA256 && ctrgRemove($before) === $after) {
+        return 'removal';
+    }
+    if ($from === CTRG_PB7_SHA256 && $to === CTRG_PB7_PRE_REMOVAL_SHA256 && ctrgRestore($before) === $after) {
+        return 'restoration';
+    }
+    if ((($from === CTRG_OCI1_SHA256 && $to === CTRG_PB7_SHA256)
+        || ($from === CTRG_OCI1_PRE_REMOVAL_SHA256 && $to === CTRG_PB7_PRE_REMOVAL_SHA256))
+        && ctrgPb7Apply($before) === $after) {
+        return 'pb7-role-separation';
     }
 
     return 'rejected';
@@ -421,7 +483,27 @@ it('keeps the checked-in workflow in one of the pinned states, which differ by e
         ->and(hash('sha256', $states['oci1']))->toBe(CTRG_OCI1_SHA256)
         ->and(hash('sha256', $states['oci1pre']))->toBe(CTRG_OCI1_PRE_REMOVAL_SHA256)
         ->and(ctrgRemove($states['oci1pre']))->toBe($states['oci1'])
-        ->and(ctrgRestore($states['oci1']))->toBe($states['oci1pre']);
+        ->and(ctrgRestore($states['oci1']))->toBe($states['oci1pre'])
+        ->and(hash('sha256', $states['pb7']))->toBe(CTRG_PB7_SHA256)
+        ->and(hash('sha256', $states['pb7pre']))->toBe(CTRG_PB7_PRE_REMOVAL_SHA256)
+        ->and(ctrgRemove($states['pb7pre']))->toBe($states['pb7'])
+        ->and(ctrgRestore($states['pb7']))->toBe($states['pb7pre']);
+
+    // PB-7 adds exactly one pinned step to each critical gate, before the governance audit, and changes nothing else.
+    $pb7 = Yaml::parse($states['pb7']);
+    $oci1Parsed = Yaml::parse($states['oci1']);
+    foreach (['critical_test_gate', 'critical_test_gate_self_hosted'] as $job) {
+        $names = array_map(fn (array $step) => (string) ($step['name'] ?? ''), $pb7['jobs'][$job]['steps']);
+        $at = array_search('Run the PostgreSQL 16 role-separation tests (PB-7)', $names, true);
+        expect(array_values(array_filter($names, fn (string $n) => str_ends_with($n, '(PB-7)'))))->toBe(['Run the PostgreSQL 16 role-separation tests (PB-7)'])
+            ->and($names[$at + 1])->toBe('Run governance audit commands')
+            ->and(array_values(array_filter($pb7['jobs'][$job]['steps'], fn (array $step) => ! str_ends_with((string) ($step['name'] ?? ''), '(PB-7)'))))->toBe($oci1Parsed['jobs'][$job]['steps'])
+            ->and(array_diff_key($pb7['jobs'][$job], ['steps' => 1]))->toBe(array_diff_key($oci1Parsed['jobs'][$job], ['steps' => 1]))
+            ->and($pb7['jobs'][$job]['steps'][$at]['if'])->toBe("\${{ needs.classify.outputs.run_critical_tests != 'false' }}")
+            ->and($pb7['jobs'][$job]['steps'][$at])->not->toHaveKey('continue-on-error');
+    }
+    expect(array_diff_key($pb7['jobs'], ['critical_test_gate' => 1, 'critical_test_gate_self_hosted' => 1]))->toBe(array_diff_key($oci1Parsed['jobs'], ['critical_test_gate' => 1, 'critical_test_gate_self_hosted' => 1]))
+        ->and(array_diff_key($pb7, ['jobs' => 1]))->toBe(array_diff_key($oci1Parsed, ['jobs' => 1]));
 
     // O-CI-1 adds exactly the pinned block to the hosted critical gate, and changes no other job or key.
     $cg19 = Yaml::parse($states['cg19']);
@@ -481,7 +563,15 @@ it('accepts only the exact removal and the exact restoration', function () {
         // Removing the alignment again, or applying it without REM-1, is outside every class.
         ->and(ctrgClassify($states['oci1'], $states['cg19']))->toBe('rejected')
         ->and(ctrgClassify($states['post'], ctrgOci1Apply($states['post'])))->toBe('rejected')
-        ->and(ctrgClassify($states['oci1'], $states['cg19pre']))->toBe('rejected');
+        ->and(ctrgClassify($states['oci1'], $states['cg19pre']))->toBe('rejected')
+        // PB-7: the role-separation step onto the O-CI-1 file and onto its rollback target, and the B5 classes after it.
+        ->and(ctrgClassify($states['oci1'], $states['pb7']))->toBe('pb7-role-separation')
+        ->and(ctrgClassify($states['oci1pre'], $states['pb7pre']))->toBe('pb7-role-separation')
+        ->and(ctrgClassify($states['pb7pre'], $states['pb7']))->toBe('removal')
+        ->and(ctrgClassify($states['pb7'], $states['pb7pre']))->toBe('restoration')
+        // Removing PB-7 again weakens the gate; applying it without O-CI-1 is outside every class.
+        ->and(ctrgClassify($states['pb7'], $states['oci1']))->toBe('rejected')
+        ->and(ctrgClassify($states['cg19'], ctrgPb7Apply($states['cg19'])))->toBe('rejected');
 });
 
 it('rejects every workflow change other than the exact removal or restoration', function (Closure $mutate, string $from) {
@@ -519,6 +609,11 @@ it('rejects every workflow change other than the exact removal or restoration', 
     'O-CI-1 marked continue-on-error' => [fn (string $pre, string $post) => [ctrgSelect($post), str_replace("      - name: Install and select the PostgreSQL 16 client (O-CI-1)\n        shell: bash\n", "      - name: Install and select the PostgreSQL 16 client (O-CI-1)\n        continue-on-error: true\n        shell: bash\n", ctrgOci1Apply(ctrgSelect($post)))], 'post'],
     'O-CI-1 plus a job edit' => [fn (string $pre, string $post) => [ctrgSelect($post), preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', ctrgOci1Apply(ctrgSelect($post)), 1)], 'post'],
     'O-CI-1 removed again' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), ctrgSelect($post)], 'post'],
+    'PB-7 in the hosted gate only' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), str_replace(CTRG_PB7_BLOCKS['hosted'][2], ctrgPb7Block('hosted').CTRG_PB7_BLOCKS['hosted'][2], ctrgOci1Apply(ctrgSelect($post)))], 'post'],
+    'PB-7 marked continue-on-error' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), str_replace("      - name: Run the PostgreSQL 16 role-separation tests (PB-7)\n", "      - name: Run the PostgreSQL 16 role-separation tests (PB-7)\n        continue-on-error: true\n", ctrgPb7Apply(ctrgOci1Apply(ctrgSelect($post))))], 'post'],
+    'PB-7 with the requirement switched off' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), str_replace('bash scripts/ci/r6-role-test-cluster.sh', 'R6_ROLE_TEST_REQUIRED=0 bash scripts/ci/r6-role-test-cluster.sh', ctrgPb7Apply(ctrgOci1Apply(ctrgSelect($post))))], 'post'],
+    'PB-7 plus a job edit' => [fn (string $pre, string $post) => [ctrgOci1Apply(ctrgSelect($post)), preg_replace('/runs-on: ubuntu-latest/', 'runs-on: ubuntu-22.04', ctrgPb7Apply(ctrgOci1Apply(ctrgSelect($post))), 1)], 'post'],
+    'PB-7 removed again' => [fn (string $pre, string $post) => [ctrgPb7Apply(ctrgOci1Apply(ctrgSelect($post))), ctrgOci1Apply(ctrgSelect($post))], 'post'],
 ]);
 
 /*
@@ -570,7 +665,7 @@ it('selects the CG-19 suites in both critical variants once REM-1 is applied, an
     $sha = hash('sha256', $raw);
     preg_match_all("/--filter='([^']+)'/", $raw, $filters);
     $critical = array_values(array_filter($filters[1], fn (string $f): bool => substr_count($f, '|') > 50));
-    $selected = in_array($sha, [CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256, CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256], true);
+    $selected = in_array($sha, [CTRG_CG19_SHA256, CTRG_CG19_PRE_REMOVAL_SHA256, CTRG_OCI1_SHA256, CTRG_OCI1_PRE_REMOVAL_SHA256, CTRG_PB7_SHA256, CTRG_PB7_PRE_REMOVAL_SHA256], true);
 
     foreach ($critical as $filter) {
         foreach (CTRG_CG19_TOKENS as $token) {
@@ -593,6 +688,12 @@ it('selects the CG-19 suites in both critical variants once REM-1 is applied, an
         ->toContain(CTRG_CG19_SHA256)->toContain(CTRG_CG19_PRE_REMOVAL_SHA256)
         ->toContain(CTRG_OCI1_SHA256)->toContain(CTRG_OCI1_PRE_REMOVAL_SHA256)->toContain(CTRG_OCI1_BLOCK_SHA256)
         ->and(ctrgRegister())->toContain(CTRG_OCI1_SHA256)->toContain(CTRG_OCI1_PRE_REMOVAL_SHA256);
+
+    // PB-7: both states and both block SHA-256s are pinned in the sprint record and the register.
+    expect((string) file_get_contents(base_path('docs/sprints/dms-spn4-ready-pilot-1.md')))
+        ->toContain(CTRG_PB7_SHA256)->toContain(CTRG_PB7_PRE_REMOVAL_SHA256)
+        ->toContain(CTRG_PB7_BLOCKS['hosted'][1])->toContain(CTRG_PB7_BLOCKS['self-hosted'][1])
+        ->and(ctrgRegister())->toContain(CTRG_PB7_SHA256)->toContain(CTRG_PB7_PRE_REMOVAL_SHA256);
 });
 
 /*
