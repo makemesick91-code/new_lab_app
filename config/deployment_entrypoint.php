@@ -191,6 +191,9 @@ return [
             // DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235): the build identity's
             // hand-over, sandboxed run and claim for composer and npm.
             'scripts/lib/build-privsep.sh',
+            // DMS-SPN4-READY-PILOT-1 R6-B4: the migrator switch, its preflight,
+            // the migrate step and the rollback guard, sourced by both scripts.
+            'scripts/lib/r6-migrate.sh',
         ],
         // The live runtime identity authority is overlaid onto the snapshot
         // after the export: rolling the CODE back must never roll the RUNTIME

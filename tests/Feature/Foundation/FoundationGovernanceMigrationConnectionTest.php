@@ -417,8 +417,15 @@ function fgmcSqlState(PDO $pdo, string $sql): string
     }
 }
 
-$fgmcSkip = fn () => ! fgmcClusterConfigured();
+// PB-7 (D4): where the role-test cluster is required (R6_ROLE_TEST_REQUIRED=1, set only by the CI step that
+// starts it), group B never skips: a missing cluster fails, so it can never silently turn into skips (CG-17).
+$fgmcSkip = fn () => ! fgmcClusterConfigured() && getenv('R6_ROLE_TEST_REQUIRED') !== '1';
 $fgmcSkipReason = 'needs the private PostgreSQL 16 role-test cluster (R6_ROLE_TEST_*); no CI job provides it until PB-7';
+
+it('fails closed when the role-test cluster is required but not configured (PB-7, D4)', function () {
+    expect(getenv('R6_ROLE_TEST_REQUIRED') !== '1' || fgmcClusterConfigured())
+        ->toBeTrue('R6_ROLE_TEST_REQUIRED=1 but the role-test cluster (R6_ROLE_TEST_*) is not configured');
+});
 
 it('runs every session as the owner role over a socket by peer, also after a reconnect and a RESET ROLE', function () {
     fgmcUse(fgmcClusterConfig());
@@ -532,6 +539,42 @@ it('rolls back a migration that leaves the owner role through dynamic SQL, by th
             ->and((int) $pdo->query("select count(*) from public.migrations where migration = '2099_01_01_000001_fgmc_backstop'")->fetchColumn())->toBe(0);
     } finally {
         @unlink($file);
+        @rmdir($dir);
+    }
+})->skip($fgmcSkip, $fgmcSkipReason);
+
+it('exempts exactly the members of pg_stat_statements in public from the backstop, nothing else (R6-B4)', function () {
+    if (fgmcEnv('SUPERUSER') === null) {
+        expect(getenv('R6_ROLE_TEST_REQUIRED') !== '1')->toBeTrue('R6_ROLE_TEST_REQUIRED=1 but R6_ROLE_TEST_SUPERUSER is not configured');
+        $this->markTestSkipped('needs R6_ROLE_TEST_SUPERUSER');
+    }
+    fgmcUse(fgmcClusterConfig());
+    $super = fgmcPdo((string) fgmcEnv('SUPERUSER'));
+    $schemaOf = fn (): ?string => $super->query("select n.nspname from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pg_stat_statements'")->fetchColumn() ?: null;
+    $previous = $schemaOf();
+    $super->exec($previous === null ? 'CREATE EXTENSION pg_stat_statements SCHEMA public' : 'ALTER EXTENSION pg_stat_statements SET SCHEMA public');
+
+    $dir = sys_get_temp_dir().'/fgmc-ext-'.bin2hex(random_bytes(4));
+    mkdir($dir);
+    $migrate = function (string $name, string $table) use ($dir): void {
+        file_put_contents("{$dir}/{$name}.php", "<?php\nuse Illuminate\\Database\\Migrations\\Migration;\nuse Illuminate\\Support\\Facades\\DB;\nreturn new class extends Migration { public function up(): void { DB::statement('create table public.{$table} (id int)'); } };\n");
+        Artisan::call('migrate', ['--database' => 'pgsql_migrate', '--path' => $dir, '--realpath' => true, '--force' => true]);
+    };
+    try {
+        // The superuser-owned extension members in public do not stop a migration.
+        $migrate('2099_01_01_000101_fgmc_ext_ok', 'fgmc_ext_ok');
+        expect((bool) $super->query("select to_regclass('public.fgmc_ext_ok') is not null")->fetchColumn())->toBeTrue();
+
+        // Any other foreign-owned object in public still does, and the migration rolls back.
+        $super->exec('CREATE FUNCTION public.fgmc_foreign() RETURNS int LANGUAGE sql AS $$ select 1 $$');
+        expect(fn () => $migrate('2099_01_01_000102_fgmc_ext_refused', 'fgmc_ext_refused'))
+            ->toThrow(RuntimeException::class, 'an object in public is owned by another role');
+        expect((bool) $super->query("select to_regclass('public.fgmc_ext_refused') is not null")->fetchColumn())->toBeFalse();
+    } finally {
+        $super->exec('DROP FUNCTION IF EXISTS public.fgmc_foreign(); DROP TABLE IF EXISTS public.fgmc_ext_ok, public.fgmc_ext_refused');
+        $super->exec("DELETE FROM public.migrations WHERE migration LIKE '2099_01_01_0001%_fgmc_ext_%'");
+        $super->exec($previous === null ? 'DROP EXTENSION pg_stat_statements' : 'ALTER EXTENSION pg_stat_statements SET SCHEMA "'.$previous.'"');
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
         @rmdir($dir);
     }
 })->skip($fgmcSkip, $fgmcSkipReason);

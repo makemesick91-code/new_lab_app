@@ -837,7 +837,8 @@ it('runs composer and npm only as the build identity in deploy and rollback, cla
     }
     expect($code)->toContain('cd / && COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-plugins');
 })->with([
-    'deploy' => ['scripts/deploy-vps.sh', 'as_runtime php artisan migrate --force'],
+    // R6-B4: the migrate step is the host-switched dms_r6_migrate (scripts/lib/r6-migrate.sh).
+    'deploy' => ['scripts/deploy-vps.sh', 'dms_r6_migrate "$RUNTIME_USER" "$RUNTIME_GROUP"'],
     'rollback' => ['scripts/rollback-vps.sh', 'as_runtime php artisan foundation:backup-verify'],
 ]);
 

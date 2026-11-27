@@ -249,6 +249,21 @@ runtime_json() {
     dms_privsep_runtime_output "$RUNTIME_USER" "$@"
 }
 
+# R6-B4 (OD-R6-2 v5 A4): the migrator switch, the migration account, its socket
+# and the database's role-split state (probed read-only WITHOUT application code)
+# are checked HERE, before the first mutation (the secret file, the backup, the
+# checkout), so a refusal leaves the running release untouched. The migrate step
+# re-asserts all of it with the new release's code. Read from the immutable
+# snapshot.
+# shellcheck source=lib/r6-migrate.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
+ADMIN_USER="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_ADMIN_USER)"
+R6_FORBIDDEN_ACCOUNTS="${BUILD_USER} ${ADMIN_USER} ${DMS_FORBIDDEN_RUNTIME_USERS:-root www-data}"
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_preflight "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS"; then
+  echo "FATAL: the R6-B4 preflight refused the deploy — nothing was changed — NOT GO" >&2
+  exit 1
+fi
+
 echo "== Privilege separation preflight (rule 233) =="
 dms_privsep_prepare 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"
 
@@ -458,7 +473,18 @@ dms_build_claim "$BUILD_USER" node_modules public/build
 dms_build_assert_no_symlinks public/build
 
 echo "== Laravel migrate =="
-as_runtime php artisan migrate --force
+# R6-B4: behind the host switch for the migrator (scripts/lib/r6-migrate.sh). With
+# the switch absent or 0 the runtime migrate below runs, unchanged, as the runtime
+# user; with 1 the migration OS account migrates through pgsql_migrate, the
+# runtime grants are applied, and a pending migration or a privilege check that
+# is not MATCH stops the deploy here, before any smoke.
+r6_runtime_migrate() {
+  as_runtime php artisan migrate --force
+}
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_migrate "$RUNTIME_USER" "$RUNTIME_GROUP" "$R6_FORBIDDEN_ACCOUNTS" r6_runtime_migrate; then
+  echo "FATAL: the migrate step failed — NOT GO" >&2
+  exit 1
+fi
 
 echo "== NSF-10 backup verify =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP"
@@ -598,6 +624,7 @@ if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --app-dir "$APP_DIR" \
       --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \
       --additional-private-paths "$DMS_PRIVATE_PATHS" \
+      --additional-forbidden-users "$([ "${DMS_R6_MIGRATOR:-0}" = 1 ] && printf '%s' "${DMS_R6_MIGRATION_OS_USER:-}")" \
       --require-host; then
   echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
   exit 1
