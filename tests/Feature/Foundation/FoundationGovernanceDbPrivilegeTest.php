@@ -1229,13 +1229,32 @@ it('matches structurally on the provisioned layout, with the JSON shape kept and
     fgdpNoRoleName($output);
 })->skip($fgdpSkip, $fgdpSkipReason);
 
-it('reports a privilege no R6-B3 rule enumerates as an extra surface item, and matches once it is undone (R6-B3c)', function (string $inject, string $undo, string $line) {
+/**
+ * $sql as the superuser. A string runs in one call on $super. A list runs one statement per call, because CREATE
+ * and DROP DATABASE cannot run inside a multi-statement string; a [database, statement] pair runs on that database.
+ */
+function fgdpSuperExec(PDO $super, string|array $sql): void
+{
+    foreach (is_string($sql) ? [$sql] : $sql as $step) {
+        if (is_array($step)) {
+            [$database, $statement] = $step;
+            $other = new PDO(sprintf('pgsql:host=%s;port=%s;dbname=%s', fgdpEnv('SOCKET_DIR'), fgdpEnv('PORT'), $database), fgdpEnv('SUPERUSER'), '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $other->exec(fgdpSql($statement));
+            $other = null;
+
+            continue;
+        }
+        $super->exec(fgdpSql($step));
+    }
+}
+
+it('reports a privilege no R6-B3 rule enumerates as an extra surface item, and matches once it is undone (R6-B3c)', function (string|array $inject, string|array $undo, string $line, bool $exactly = false) {
     fgdpUseCluster();
     fgdpMigrated();
     fgdpProvisionedAndGranted();
     $super = fgdpSuper();
 
-    $super->exec(fgdpSql($inject));
+    fgdpSuperExec($super, $inject);
     try {
         [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
         $failures = array_values(array_filter(explode("\n", $output), fn (string $l): bool => str_starts_with($l, 'FAIL  ')));
@@ -1244,9 +1263,12 @@ it('reports a privilege no R6-B3 rule enumerates as an extra surface item, and m
             ->and($output)->toContain("FAIL  surface: extra {$line}\n")
             // No R6-B3 rule sees it: every failure is a structural one.
             ->and(array_values(array_filter($failures, fn (string $l): bool => ! str_starts_with($l, 'FAIL  surface: '))))->toBe([]);
+        if ($exactly) {
+            expect($failures)->toBe(["FAIL  surface: extra {$line}"]);
+        }
         fgdpNoRoleName($output);
     } finally {
-        $super->exec(fgdpSql($undo));
+        fgdpSuperExec($super, $undo);
     }
 
     DB::purge('fgdp_runtime');
@@ -1267,6 +1289,14 @@ it('reports a privilege no R6-B3 rule enumerates as an extra surface item, and m
     // keeps its real schema, so it cannot reproduce the baseline's line for that member.
     'a credential view named like a member, added to the extension from public' => ['CREATE VIEW public.pg_stat_statements AS SELECT rolname, rolpassword FROM pg_catalog.pg_authid; GRANT SELECT ON public.pg_stat_statements TO PUBLIC; ALTER EXTENSION pg_stat_statements ADD VIEW public.pg_stat_statements', 'ALTER EXTENSION pg_stat_statements DROP VIEW public.pg_stat_statements; DROP VIEW public.pg_stat_statements', 'view|public.pg_stat_statements|SELECT|PUBLIC|NO'],
     'a function named like a member, added to the extension from pg_catalog' => ["CREATE FUNCTION pg_catalog.pg_stat_statements(boolean) RETURNS integer LANGUAGE sql AS 'select 1'; ALTER EXTENSION pg_stat_statements ADD FUNCTION pg_catalog.pg_stat_statements(boolean)", 'ALTER EXTENSION pg_stat_statements DROP FUNCTION pg_catalog.pg_stat_statements(boolean); DROP FUNCTION pg_catalog.pg_stat_statements(boolean)', 'function|pg_catalog.pg_stat_statements(boolean)|EXECUTE|PUBLIC|NO'],
+    // Review of the N1 fix, #1: PB-7's acceptance no longer leaves the suites' database behind, so this case keeps the
+    // pg_shdepend branch for other databases covered: a grant in a database the runtime cannot even connect to.
+    'USAGE on a schema in another database the runtime cannot connect to' => [
+        ['DROP DATABASE IF EXISTS fgdp_side WITH (FORCE)', 'CREATE DATABASE fgdp_side TEMPLATE template0', 'REVOKE CONNECT, TEMPORARY ON DATABASE fgdp_side FROM PUBLIC', ['fgdp_side', 'GRANT USAGE ON SCHEMA public TO ":runtime"']],
+        ['DROP DATABASE IF EXISTS fgdp_side WITH (FORCE)'],
+        'object in another database|OTHER_DATABASE pg_namespace|PRIVILEGE|RUNTIME|NO',
+        true, // that line and nothing else
+    ],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 
 it('matches with pg_stat_statements in public as well as in its own schema (R6-B3c, review round 1, #1)', function () {

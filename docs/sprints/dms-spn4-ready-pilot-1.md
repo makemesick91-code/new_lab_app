@@ -1776,8 +1776,9 @@ row R6-B7.
 - **Server and client alignment:**
   - **GitHub-hosted:** the PostgreSQL 16 server comes from the same signed apt source O-CI-1 added, with no system
     cluster created, and must equal the O-CI-1 client version.
-  - **Self-hosted:** nothing is installed. The host must already provide the PostgreSQL 16 server binaries and the
-    native PHP runtime; otherwise the step fails closed.
+  - **Self-hosted:** nothing is installed. The host must already provide the PostgreSQL 16 server binaries, the
+    native PHP runtime, and pg_stat_statements available in the host's PostgreSQL 16; otherwise the step fails
+    closed.
 - **Pinned blocks:**
   - `tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt`, SHA-256
     `0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a`;
@@ -1799,8 +1800,9 @@ row R6-B7.
   acceptance now:
   - drops the suites' database before it starts, instead of revoking CONNECT on it. The runtime's leftover grants
     there (schema, tables, default privileges) would count as 3 extra "object in another database" items;
-  - installs `pg_stat_statements` in `public` as the bootstrap superuser after the migration, as R6-D provisions
-    it. Without it the 6 baseline items of the extension are missing, and the check reports DRIFT.
+  - installs `pg_stat_statements` after the migration, as production has it (PB-8 §5): pg_stat_statements in
+    schema `public`, owned by the bootstrap superuser, created before R6-D. Without it the 6 baseline items of the
+    extension are missing, and the check reports DRIFT.
 
   The workflow and its pinned states are unchanged; only the script SHA-256 is re-pinned, here and in
   `CiTriggerRemovalGovernanceTest`.
