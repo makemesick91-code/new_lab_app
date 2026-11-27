@@ -52,3 +52,10 @@ jobs:
       - name: F1-B config-cache isolation (root on the disposable VM)
         if: success() || failure()
         run: sudo --preserve-env=GITHUB_ACTIONS bash deploy/od-r6-1/f1b-cache.sh "$GITHUB_WORKSPACE"
+
+      # R6-B4 (owner directive "R6-B3 ACCEPTANCE AND PARALLEL CRITICAL-PATH EXECUTION" §4): the deploy's real migrate
+      # step behind the host switch for the migrator, the fixed isolation gate and normalization, PHP-FPM and the
+      # queue worker. Synthetic only, on this disposable VM.
+      - name: R6-B4 migrator switch and F1-B fixes (root on the disposable VM)
+        if: success() || failure()
+        run: sudo --preserve-env=GITHUB_ACTIONS bash deploy/od-r6-1/r6b4-switch.sh "$GITHUB_WORKSPACE"
