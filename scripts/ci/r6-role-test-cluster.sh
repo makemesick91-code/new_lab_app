@@ -19,13 +19,16 @@
 #   2. runs the given suites SERIALLY, in their own process, with
 #      R6_ROLE_TEST_REQUIRED=1, so a missing or broken cluster FAILS instead of
 #      skipping, and requires the run to report no skipped and no failed test;
-#   3. acceptance on a FRESH database: migrated as the owner role through
-#      pgsql_migrate, provisioned as R6-D would (guard search_path pinned
-#      exactly, PUBLIC CONNECT/TEMPORARY revoked on every other database,
-#      monitoring roles WITH INHERIT TRUE), then foundation:db-privilege-apply
-#      --apply must change objects, foundation:db-privilege-check must exit 0 as
-#      the runtime, a second apply must change nothing, and the forward SQL
-#      must be stable (Design Lock §12.5);
+#   3. acceptance on a FRESH database, after the suites' database is dropped:
+#      migrated as the owner role through pgsql_migrate, provisioned as R6-D
+#      would (pg_stat_statements installed by the bootstrap superuser, guard
+#      search_path pinned exactly, PUBLIC CONNECT/TEMPORARY revoked on every
+#      other database, monitoring roles WITH INHERIT TRUE), so the structural
+#      surface check (R6-B3c, check 19) meets a deploy-like cluster; then
+#      foundation:db-privilege-apply --apply must change objects,
+#      foundation:db-privilege-check must exit 0 as the runtime, a second
+#      apply must change nothing, and the forward SQL must be stable (Design
+#      Lock §12.5);
 #   4. removes the cluster on every exit, writes
 #      storage/ci-evidence/pb7-role-separation.log (no password) and a step
 #      summary.
@@ -169,10 +172,13 @@ if [ "${J_TESTS:-0}" -lt "$PB7_MIN_TESTS" ] || [ "${J_FAIL:-1}" != 0 ] || [ "${J
 fi
 
 echo "== PB-7: acceptance on a fresh database, as R6-D and the deploy would do it"
+# The suites' database is dropped, not merely closed to the runtime: revoking CONNECT leaves the runtime's grants on
+# its schema, tables and default privileges in the shared catalog, and the structural check (R6-B3c, check 19)
+# counts them as "object in another database" surface the deploy never provisions.
 "${PSQL[@]}" -d postgres <<'SQL'
+DROP DATABASE r6t_db;
 REVOKE CONNECT, TEMPORARY ON DATABASE postgres FROM PUBLIC;
 REVOKE CONNECT, TEMPORARY ON DATABASE template1 FROM PUBLIC;
-REVOKE CONNECT ON DATABASE r6t_db FROM PUBLIC, r6t_runtime;
 CREATE DATABASE r6t_accept;
 REVOKE CREATE, TEMPORARY ON DATABASE r6t_accept FROM PUBLIC;
 GRANT CONNECT ON DATABASE r6t_accept TO r6t_migrator, r6t_runtime;
@@ -188,6 +194,10 @@ run_as() { # an environment for the acceptance database, then the artisan argume
     )
 }
 run_as migrate --database=pgsql_migrate --force
+# The provisioning step R6-D carries: pg_stat_statements, installed by the bootstrap superuser. The pinned PostgreSQL
+# 16 baseline requires its members, so without it the structural check reports DRIFT (R6-B3c review round 2, N1).
+"${PSQL[@]}" -d r6t_accept -c 'CREATE EXTENSION pg_stat_statements SCHEMA public' >/dev/null \
+    || { echo "::error::PB-7: pg_stat_statements could not be installed in the acceptance database."; exit 1; }
 # The provisioning step R6-D carries: every guard function's search_path, exactly.
 for fn in $("${PSQL[@]}" -d r6t_accept -At -c "select distinct p.oid::regprocedure from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace join pg_proc p on p.oid = t.tgfoid where n.nspname = 'public' and not t.tgisinternal"); do
     "${PSQL[@]}" -d r6t_accept -c "ALTER FUNCTION ${fn} SET search_path = pg_catalog, pg_temp" >/dev/null

@@ -89,6 +89,34 @@ return [
         'trx_rme_record_versions_immutable' => '302b4a5d2182a5e2025edfa8582b5badc452ed46cf1aabdd710f176edf860f47',
     ],
 
+    /*
+    | R6-B3c (pack 63c, C2/C3): the repo-pinned PostgreSQL 16 baseline, the
+    | runtime-visible privilege surface of a fresh initdb with the allowlisted
+    | extensions, for a plain login holding the two monitoring roles. The check
+    | refuses to verify (exit 2) when the file is missing or its SHA-256 differs
+    | from this pin. Regenerate it with `foundation:db-privilege-check
+    | --print-baseline` on a fresh PostgreSQL 16 cluster and re-pin it here and
+    | in FoundationGovernanceDbPrivilegeTest in one reviewed PR.
+    */
+    'baseline' => [
+        'path' => 'tests/Fixtures/r6/pg16-runtime-baseline.txt',
+        'sha256' => '178dad6499b5f8fc1028860364408049e5927db567b83ad4b778415e95497bce',
+    ],
+
+    /*
+    | R6-B3c (PR #716 CI, PostgreSQL 16.16): the reviewed per-minor deltas to the
+    | base above, keyed by server_version_num. A minor release can change what
+    | initdb writes (16.16 added a pg_upgrade function), while a cluster updated in
+    | place keeps its own catalog, so a delta item is optional at or above its
+    | minor and keeps its base state below it. A server newer than the last
+    | reviewed minor is compared with the latest known set (any new difference is
+    | DRIFT). Pinned like the base: a missing or altered file is CANNOT VERIFY.
+    */
+    'baseline_deltas' => [
+        'path' => 'tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt',
+        'sha256' => '2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62',
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [

@@ -1776,8 +1776,9 @@ row R6-B7.
 - **Server and client alignment:**
   - **GitHub-hosted:** the PostgreSQL 16 server comes from the same signed apt source O-CI-1 added, with no system
     cluster created, and must equal the O-CI-1 client version.
-  - **Self-hosted:** nothing is installed. The host must already provide the PostgreSQL 16 server binaries and the
-    native PHP runtime; otherwise the step fails closed.
+  - **Self-hosted:** nothing is installed. The host must already provide the PostgreSQL 16 server binaries, the
+    native PHP runtime, and pg_stat_statements available in the host's PostgreSQL 16; otherwise the step fails
+    closed.
 - **Pinned blocks:**
   - `tests/Fixtures/ci/pb-7-critical-gate-step-hosted.yml.txt`, SHA-256
     `0738929bbac15425d5d5cb516b0c22e79fac8bdd6540e18b8a40a35a34159a7a`;
@@ -1785,7 +1786,7 @@ row R6-B7.
     `5512d748c336ed35ac4ba5ad80c430ce4591e49a02e548366e382673d4f31079`.
 
 - Pinned script (it holds every fail-closed part, so it is pinned with the workflow): `scripts/ci/r6-role-test-cluster.sh`,
-  SHA-256 `922ce9131679dcdce617d010d4163f0de57dd1c36e6daaae913a680fa39a716b`. It also requires:
+  SHA-256 `d9ee606651e8c4188c2e85b3336a8872334e89b79eaf275b1e7e5e5e263c39d6`. It also requires:
   - a JUnit log of at least 230 tests with no failure, error or skip, and no `todo` or `pending`;
   - no `->only(` or `->todo(` in either suite;
   - the PostgreSQL 16 server at exactly the client's package version.
@@ -1793,6 +1794,40 @@ row R6-B7.
   Its acceptance runs on a fresh database: migrated through `pgsql_migrate`, provisioned as R6-D would provision it,
   then the first apply must change objects, the check must reach MATCH, and a second apply must change nothing. The
   password mask goes only to the job log; a password-free step summary is written.
+
+  **Re-pin with R6-B3c (review round 2, N1).** As merged in #714 the script was `922ce913…`. R6-B3c's structural
+  surface check (check 19) compares the runtime's whole surface with the pinned PostgreSQL 16 baseline, so the
+  acceptance now:
+  - drops the suites' database before it starts, instead of revoking CONNECT on it. The runtime's leftover grants
+    there (schema, tables, default privileges) would count as 3 extra "object in another database" items;
+  - installs `pg_stat_statements` after the migration, as production has it (PB-8 §5): pg_stat_statements in
+    schema `public`, owned by the bootstrap superuser, created before R6-D. Without it the 6 baseline items of the
+    extension are missing, and the check reports DRIFT.
+
+  The workflow and its pinned states are unchanged; only the script SHA-256 is re-pinned, here and in
+  `CiTriggerRemovalGovernanceTest`.
+
+  **R6-B3c baseline per PostgreSQL 16 minor (PR #716 CI, 2026-11-28).** The hosted runner's PB-7 step runs
+  PostgreSQL 16.16. Its fresh initdb has one item the 16.15 base lacks:
+  `function|pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])|EXECUTE|PUBLIC|NO`.
+  - **Source:** upstream commit `0c8ffa1ad2f44be4b058a3ec96d9cb0c71f2593f`, "Introduce attribute versioning to
+    prevent unsafe deforming" (CVE-2026-6460, back-patched through 14). It adds pg_proc oid 4551, a pg_upgrade-only
+    function. `REL_16_15` lacks it. `CATALOG_VERSION_NO` is `202307071` in both tags, so the item is version-specific,
+    not specific to the PGDG build. A 16.15 cluster that runs 16.16 binaries has no such row.
+  - **Design:** the base `tests/Fixtures/r6/pg16-runtime-baseline.txt` is unchanged (`178dad64…`). Reviewed
+    per-minor deltas live in `tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt`, SHA-256
+    `2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62`, pinned in
+    `config/runtime_privilege_classes.php` and `FoundationGovernanceDbPrivilegeTest`.
+  - **What a delta does:** the check reads `server_version_num`. A delta item at or below that minor is optional,
+    because which initdb wrote the catalog cannot be read from the server. Below its minor the item keeps its base
+    state. A minor newer than the last reviewed one (16.16) is compared with the latest known set, and a new
+    difference is DRIFT until a reviewed PR adds its delta. A NOTE names an out-of-range minor. There is no pattern
+    and no wildcard.
+  - **Owner check before Gate A / R6-D (read-only):** `SHOW server_version_num` on production.
+    - Production is recorded at 16.15 (160015), which is covered.
+    - If it reports a minor above 160016, check 19 compares it with the 16.16 set. It reports DRIFT only if this
+      cluster's catalog differs from the 16.16 set (an in-place-updated cluster keeps its initdb catalog), which
+      fails closed. A reviewed delta must then be added before R6-D.
 
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
 - PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;

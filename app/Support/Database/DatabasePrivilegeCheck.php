@@ -4,6 +4,7 @@ namespace App\Support\Database;
 
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -50,6 +51,14 @@ use Throwable;
  * 14. the runtime holds no grant option on anything;
  * 15. default privileges give the runtime (or PUBLIC) at most SELECT on new
  *     tables and USAGE, SELECT on new sequences.
+ * 19. R6-B3c: the runtime's exact privilege surface (RuntimePrivilegeSurface)
+ *     equals the expected set: the repo-pinned PostgreSQL 16 baseline, adjusted
+ *     by the reviewed deltas up to the server's minor, plus the registry and the
+ *     rule 245 layout. Any extra or missing item is DRIFT, printed as
+ *     `surface: extra|missing <line>` with role names withheld. The server must
+ *     be PostgreSQL 16 and both fixtures must match their pinned SHA-256, or the
+ *     check cannot verify. A minor outside the reviewed range is a NOTE; its
+ *     surface is compared with the nearest known set. Checks 1–18 stay (C5).
  * The registry itself must agree with the schema (RuntimePrivilegeRegistry::verify).
  *
  * Accepted (review round 1, finding 14): the runtime can always make the check
@@ -76,10 +85,10 @@ final class DatabasePrivilegeCheck
     public const ALLOWED_EXTENSIONS = ['pg_stat_statements', 'plpgsql'];
 
     /** Round 3, findings 1 and 9: settings that must keep their safe value in every runtime session. */
-    private const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off', 'standard_conforming_strings' => 'on'];
+    public const SAFE_SETTINGS = ['session_replication_role' => 'origin', 'lo_compat_privileges' => 'off', 'standard_conforming_strings' => 'on'];
 
     /** Round 4, N4: information_schema relations initdb leaves without an ACL (no PUBLIC SELECT baseline). */
-    private const INFORMATION_SCHEMA_WITHOUT_ACL = ['_pg_foreign_data_wrappers', '_pg_foreign_servers', '_pg_foreign_table_columns', '_pg_foreign_tables', '_pg_user_mappings', 'sql_parts', 'transforms'];
+    public const INFORMATION_SCHEMA_WITHOUT_ACL = ['_pg_foreign_data_wrappers', '_pg_foreign_servers', '_pg_foreign_table_columns', '_pg_foreign_tables', '_pg_user_mappings', 'sql_parts', 'transforms'];
 
     /** Round 3, finding 5: the exact configuration of every guard function (the provisioning value). */
     public const GUARD_FUNCTION_CONFIG = ['search_path=pg_catalog, pg_temp'];
@@ -90,7 +99,7 @@ final class DatabasePrivilegeCheck
      * The full check, as the runtime itself.
      *
      * @param  string|null  $connectionName  the runtime connection; null = the default connection
-     * @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>}
+     * @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>, surface: array<string, mixed>|null}
      */
     public function run(?string $connectionName, string $owner, ?string $expectedRuntime): array
     {
@@ -143,7 +152,20 @@ final class DatabasePrivilegeCheck
                 // queries, and string literals keep their meaning.
                 RuntimeGrantPlan::pinSession($connection);
 
-                return $this->evaluate($connection, (string) $session->ses, $owner, $sessionValues);
+                // R6-B3c: the structural comparison needs the server the baseline
+                // was pinned for, and the committed baseline and its reviewed
+                // per-minor deltas, unaltered, for the server's minor.
+                $version = (int) $connection->selectOne("select pg_catalog.current_setting('server_version_num') as v")->v;
+                if (intdiv($version, 10000) !== RuntimePrivilegeSurface::SERVER_MAJOR) {
+                    return $this->cannotVerify('the server is not PostgreSQL '.RuntimePrivilegeSurface::SERVER_MAJOR.', the major version the privilege baseline is pinned for.');
+                }
+                try {
+                    $baseline = RuntimePrivilegeSurface::baseline($version);
+                } catch (RuntimeException $exception) {
+                    return $this->cannotVerify($exception->getMessage().'.');
+                }
+
+                return $this->evaluate($connection, (string) $session->ses, $owner, $sessionValues, $baseline);
             } finally {
                 // Read only, and nothing to keep.
                 $connection->rollBack();
@@ -297,9 +319,53 @@ final class DatabasePrivilegeCheck
         return $problems;
     }
 
-    /** @return array{status: int, problems: list<string>, passed: list<string>} */
-    /** @param  array<string, string>  $sessionValues */
-    private function evaluate(ConnectionInterface $connection, string $runtime, string $owner, array $sessionValues): array
+    /**
+     * C3 (R6-B3c): the baseline document of a fresh database, generated through
+     * the same enumeration the check compares with, read only and pinned.
+     *
+     * @return array{status: int, text: ?string, problems: list<string>}
+     */
+    public function baseline(?string $connectionName): array
+    {
+        $refuse = fn (string $reason): array => ['status' => self::CANNOT_VERIFY, 'text' => null, 'problems' => [$reason]];
+        try {
+            $connection = DB::connection($connectionName);
+            if ($connection->getDriverName() !== 'pgsql') {
+                return $refuse('the database is not PostgreSQL.');
+            }
+            $connection->beginTransaction();
+            try {
+                if ($connection->transactionLevel() === 1) {
+                    $connection->statement('SET TRANSACTION READ ONLY');
+                    if ((string) $connection->selectOne("select current_setting('transaction_read_only') as ro")->ro !== 'on') {
+                        return $refuse('the generation could not make its transaction read only.');
+                    }
+                }
+                $session = $connection->selectOne('select session_user as ses, current_user as cur');
+                if ($session->ses !== $session->cur) {
+                    return $refuse('the baseline must be generated as the login itself, not under SET ROLE.');
+                }
+                RuntimeGrantPlan::pinSession($connection);
+                if (intdiv((int) $connection->selectOne("select pg_catalog.current_setting('server_version_num') as v")->v, 10000) !== RuntimePrivilegeSurface::SERVER_MAJOR) {
+                    return $refuse('the server is not PostgreSQL '.RuntimePrivilegeSurface::SERVER_MAJOR.'.');
+                }
+                $document = RuntimePrivilegeSurface::baselineDocument($connection);
+
+                return ['status' => $document['text'] === null ? self::CANNOT_VERIFY : self::MATCH] + $document;
+            } finally {
+                $connection->rollBack();
+            }
+        } catch (Throwable $exception) {
+            return $refuse('the catalog could not be read ('.class_basename($exception).').');
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $sessionValues
+     * @param  array{lines: list<string>, optional: list<string>, sha256: string, delta_sha256: string, server_version_num: int, base_version_num: int, reviewed_through: int}  $baseline
+     * @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>, surface: array<string, mixed>}
+     */
+    private function evaluate(ConnectionInterface $connection, string $runtime, string $owner, array $sessionValues, array $baseline): array
     {
         $problems = [];
         $passed = [];
@@ -901,11 +967,42 @@ final class DatabasePrivilegeCheck
         }
         $record('default privileges give the runtime at most SELECT on new tables and USAGE, SELECT on new sequences', $defaults);
 
+        // 19. R6-B3c (pack 63c, C1–C4): the exact privilege surface. Every privilege
+        // the runtime holds, directly, through PUBLIC and through every role it
+        // reaches, must be in the expected set (the pinned PostgreSQL 16 baseline
+        // plus the registry and the rule 245 layout), and every required item must
+        // be held. No rule is needed for a kind nobody enumerated: it is an extra
+        // item. The rules above stay: they cover code integrity and settings. The
+        // reviewed delta items up to the server's minor are optional (baseline()).
+        $surface = RuntimePrivilegeSurface::enumerate($connection, $owner);
+        $expected = (new RuntimePrivilegeSurface($this->registry))->expected($connection, $baseline['lines'], $baseline['optional']);
+        $difference = RuntimePrivilegeSurface::compare($surface, $expected['required'], $expected['permitted']);
+        $structural = [];
+        foreach (['extra' => 'the runtime holds an item outside the expected set', 'missing' => 'the runtime lacks a required item'] as $direction => $meaning) {
+            foreach (array_slice($difference[$direction], 0, RuntimePrivilegeSurface::PRINTED_DIFFERENCES) as $line) {
+                $structural[] = "surface: {$direction} {$line}";
+            }
+            $more = count($difference[$direction]) - RuntimePrivilegeSurface::PRINTED_DIFFERENCES;
+            if ($more > 0) {
+                $structural[] = "surface: {$more} more {$direction} item(s) not listed here ({$meaning}); --json lists every one";
+            }
+        }
+        $record('the runtime\'s privilege surface equals the expected set exactly: the pinned PostgreSQL 16 baseline, the registry and the layout (R6-B3c)', $structural);
+
         // Round 2, N5 (pre-existing schema, an owner decision): a foreign-key action
         // runs with the referencing table owner's rights, so on a table that is
         // not FULL_DML and has no guard trigger it changes rows the class forbids.
         // Reported as a NOTE: it does not change the verdict until the owner decides.
         $notes = [];
+        // R6-B3c: a minor outside the reviewed range is compared with the nearest
+        // known set; the NOTE says so, and the verdict stays the comparison's. (No
+        // product name in it: a superuser called postgres would be withheld there.)
+        $server = RuntimePrivilegeSurface::minorName($baseline['server_version_num']);
+        if ($baseline['server_version_num'] > $baseline['reviewed_through']) {
+            $notes[] = "the server's minor is {$server}, newer than the last reviewed minor (".RuntimePrivilegeSurface::minorName($baseline['reviewed_through']).'): its surface is compared with that minor\'s set, and a new difference is DRIFT until a reviewed PR adds its baseline delta (R6-B3c)';
+        } elseif ($baseline['server_version_num'] < $baseline['base_version_num']) {
+            $notes[] = "the server's minor is {$server}, older than the baseline's minor (".RuntimePrivilegeSurface::minorName($baseline['base_version_num']).'): its surface is compared with the base set, and a difference is DRIFT (R6-B3c)';
+        }
         $restricted = array_keys(array_filter($entries, fn (array $e): bool => $e['class'] !== RuntimePrivilegeClass::FULL_DML));
         if ($restricted !== []) {
             $placeholders = implode(', ', array_fill(0, count($restricted), '?'));
@@ -930,8 +1027,20 @@ final class DatabasePrivilegeCheck
         $problems = array_values(array_unique(array_map(fn (string $p): string => self::withholdRoleNames($p, $roles), $problems)));
         $notes = array_map(fn (string $n): string => self::withholdRoleNames($n, $roles), $notes);
         sort($problems);
+        $withhold = fn (array $lines): array => array_values(array_map(fn (string $l): string => self::withholdRoleNames($l, $roles), $lines));
 
-        return ['status' => $problems === [] ? self::MATCH : self::DRIFT, 'problems' => $problems, 'passed' => $passed, 'notes' => $notes];
+        return ['status' => $problems === [] ? self::MATCH : self::DRIFT, 'problems' => $problems, 'passed' => $passed, 'notes' => $notes, 'surface' => [
+            'verdict' => $difference['extra'] === [] && $difference['missing'] === [] ? 'MATCH' : 'DRIFT',
+            'items' => count($surface),
+            'required' => count($expected['required']),
+            'permitted_present' => count(array_intersect($surface, $expected['permitted'])),
+            'extra' => $withhold($difference['extra']),
+            'missing' => $withhold($difference['missing']),
+            'baseline_sha256' => $baseline['sha256'],
+            'baseline_delta_sha256' => $baseline['delta_sha256'],
+            'server_version_num' => $baseline['server_version_num'],
+            'optional_applied' => count($baseline['optional']),
+        ]];
     }
 
     /**
@@ -943,13 +1052,32 @@ final class DatabasePrivilegeCheck
      */
     public static function withholdRoleNames(string $text, array $roles): string
     {
-        foreach ($roles as $role) {
-            // Round 3, finding 4: case-insensitive and inside longer names too;
-            // over-withholding is the accepted price.
-            $text = (string) preg_replace('/'.preg_quote($role, '/').'/iu', '<name withheld>', $text);
+        // Round 3, finding 4: case-insensitive and inside longer names too;
+        // over-withholding is the accepted price. R6-B3c review round 2, N4/N5:
+        // one pass over every role, the longest name first, so a name inside a
+        // longer one or inside another's escaped form cannot split it; each name
+        // as written, escaped or quoted (RuntimePrivilegeSurface::rolePattern).
+        $roles = array_values(array_unique(array_filter(array_map('strval', $roles), fn (string $r): bool => $r !== '')));
+        if ($roles === []) {
+            return $text;
         }
+        usort($roles, fn (string $a, string $b): int => strlen($b) <=> strlen($a) ?: strcmp($a, $b));
+        static $patterns = [];
+        $key = hash('sha256', implode("\0", $roles));
+        $patterns[$key] ??= '/'.implode('|', array_map(RuntimePrivilegeSurface::rolePattern(...), $roles)).'/iu';
+        $withheld = @preg_replace($patterns[$key], '<name withheld>', $text);
+        if (is_string($withheld)) {
+            return $withheld;
+        }
+        // A name or a text that is not valid UTF-8: every form, byte by byte, longest first.
+        $forms = [];
+        foreach ($roles as $role) {
+            array_push($forms, ...RuntimePrivilegeSurface::roleForms($role));
+        }
+        $forms = array_values(array_unique($forms));
+        usort($forms, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
 
-        return $text;
+        return str_ireplace($forms, '<name withheld>', $text);
     }
 
     /** search_path is pinned when it names no `$user` and lists pg_temp explicitly and last (finding 9). */
@@ -983,9 +1111,9 @@ final class DatabasePrivilegeCheck
         return $bindings;
     }
 
-    /** @return array{status: int, problems: list<string>, passed: list<string>} */
+    /** @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>, surface: null} */
     private function cannotVerify(string $reason): array
     {
-        return ['status' => self::CANNOT_VERIFY, 'problems' => [$reason], 'passed' => [], 'notes' => []];
+        return ['status' => self::CANNOT_VERIFY, 'problems' => [$reason], 'passed' => [], 'notes' => [], 'surface' => null];
     }
 }
