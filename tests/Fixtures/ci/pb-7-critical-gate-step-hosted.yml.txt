@@ -1,0 +1,15 @@
+      # PB-7 (DMS-SPN4-READY-PILOT-1, Design Lock row R6-B7) — the PostgreSQL 16
+      # role-separation tests. The critical regression step above runs these
+      # suites too, where their real-PostgreSQL role scenarios SKIP. This step
+      # runs them again, SERIALLY, in their own process, against a private,
+      # disposable PostgreSQL 16 cluster (Unix socket only, synthetic role names,
+      # a random per-run password, no production value), with
+      # R6_ROLE_TEST_REQUIRED=1 so a missing or broken cluster FAILS instead of
+      # skipping; it requires no skipped test and foundation:db-privilege-check
+      # to exit 0 (Design Lock §12.5). The server comes from the signed
+      # PostgreSQL apt source O-CI-1 added and must match its client.
+      - name: Run the PostgreSQL 16 role-separation tests (PB-7)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
+        run: bash scripts/ci/r6-role-test-cluster.sh tests/Feature/Foundation/FoundationGovernanceDbPrivilegeTest.php tests/Feature/Foundation/FoundationGovernanceMigrationConnectionTest.php
+
