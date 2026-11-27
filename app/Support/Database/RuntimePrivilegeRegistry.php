@@ -48,6 +48,14 @@ final class RuntimePrivilegeRegistry
         'DISCARD ALL' => '/\bDISCARD\s+ALL\b/i',
         'connection property' => '/\b(?:public|protected|private|var)\s+(?:\??string\s+)?\$connection\b/i',
         'named connection' => '/\bconnection\s*\(\s*[\'"]/i',
+        // R6-B3 review round 1, findings 1-3: ways to act with the owner's rights or
+        // to switch the guards off. The read-only check (R6-B3) detects each of them
+        // on the server too; this is only the first line.
+        'SECURITY DEFINER' => '/\bSECURITY\s+DEFINER\b/i',
+        'rewrite rule' => '/\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\b/i',
+        'view' => '/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+|RECURSIVE\s+)?(?:MATERIALIZED\s+)?VIEW\b/i',
+        'trigger switch' => '/\b(?:DISABLE|ENABLE\s+(?:REPLICA|ALWAYS))\s+TRIGGER\b/i',
+        'session_replication_role' => '/\bsession_replication_role\b/i',
     ];
 
     /** @var array<string, mixed> */

@@ -40,6 +40,40 @@ return [
         'owner' => env('DB_MIGRATE_OWNER_ROLE'),
     ],
 
+    /*
+    | R6-B3 review round 1, finding 6: every guard trigger the migrated schema
+    | must carry, as pg_get_triggerdef() prints it (rule 240, rule 244, rule 248
+    | layer 1). foundation:db-privilege-check fails when one is missing or
+    | changed, or when any other trigger exists on a `public` table; a migration
+    | that adds or changes a guard trigger updates this list in the same PR.
+    | FoundationGovernanceDbPrivilegeTest compares it with the PostgreSQL 16
+    | schema.
+    */
+    'guard_triggers' => [
+        'CREATE TRIGGER sys_audit_logs_append_only BEFORE DELETE OR UPDATE ON public.sys_audit_logs FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER sys_audit_logs_append_only_trunc BEFORE TRUNCATE ON public.sys_audit_logs FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_inventory_movements_ledger_guard BEFORE DELETE OR UPDATE ON public.trx_inventory_movements FOR EACH ROW EXECUTE FUNCTION dms_inventory_ledger_guard()',
+        'CREATE TRIGGER trx_inventory_movements_ledger_guard_trunc BEFORE TRUNCATE ON public.trx_inventory_movements FOR EACH STATEMENT EXECUTE FUNCTION dms_inventory_ledger_guard()',
+        'CREATE TRIGGER trx_lab_order_status_logs_append_only BEFORE DELETE OR UPDATE ON public.trx_lab_order_status_logs FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_lab_order_status_logs_append_only_trunc BEFORE TRUNCATE ON public.trx_lab_order_status_logs FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_prpcr_no_truncate BEFORE TRUNCATE ON public.trx_patient_rm_paper_card_registrations FOR EACH STATEMENT EXECUTE FUNCTION trx_prpcr_refuse_change()',
+        'CREATE TRIGGER trx_prpcr_no_update_delete BEFORE DELETE OR UPDATE ON public.trx_patient_rm_paper_card_registrations FOR EACH ROW EXECUTE FUNCTION trx_prpcr_refuse_change()',
+        'CREATE TRIGGER trx_rme_amendments_guard BEFORE DELETE OR UPDATE ON public.trx_rme_amendments FOR EACH ROW EXECUTE FUNCTION trx_rme_amendments_guard()',
+        'CREATE TRIGGER trx_rme_amendments_guard_truncate BEFORE TRUNCATE ON public.trx_rme_amendments FOR EACH STATEMENT EXECUTE FUNCTION trx_rme_amendments_guard()',
+        'CREATE TRIGGER trx_rme_billing_dispute_events_append_only BEFORE DELETE OR UPDATE ON public.trx_rme_billing_dispute_events FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_billing_dispute_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_billing_dispute_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_invoice_correction_events_append_only BEFORE DELETE OR UPDATE ON public.trx_rme_invoice_correction_events FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_invoice_correction_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_invoice_correction_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_overpayment_obligation_events_append_only BEFORE DELETE OR UPDATE ON public.trx_rme_overpayment_obligation_events FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_overpayment_obligation_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_overpayment_obligation_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_record_versions_immutable BEFORE DELETE OR UPDATE ON public.trx_rme_record_versions FOR EACH ROW EXECUTE FUNCTION trx_rme_record_versions_immutable()',
+        'CREATE TRIGGER trx_rme_record_versions_no_truncate BEFORE TRUNCATE ON public.trx_rme_record_versions FOR EACH STATEMENT EXECUTE FUNCTION trx_rme_record_versions_immutable()',
+        'CREATE TRIGGER trx_rme_refund_request_events_append_only BEFORE DELETE OR UPDATE ON public.trx_rme_refund_request_events FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_refund_request_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_refund_request_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_refund_settlement_events_append_only BEFORE DELETE OR UPDATE ON public.trx_rme_refund_settlement_events FOR EACH ROW EXECUTE FUNCTION dms_append_only_guard()',
+        'CREATE TRIGGER trx_rme_refund_settlement_events_append_only_trunc BEFORE TRUNCATE ON public.trx_rme_refund_settlement_events FOR EACH STATEMENT EXECUTE FUNCTION dms_append_only_guard()',
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [

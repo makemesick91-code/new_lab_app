@@ -57,6 +57,37 @@ final class RuntimeGrantPlan
 
     public function __construct(private readonly RuntimePrivilegeRegistry $registry) {}
 
+    /** Placeholder role names of the template SQL, whose SHA-256 is the one ever printed (review round 1, finding 7). */
+    public const TEMPLATE_RUNTIME = 'r6_template_runtime';
+
+    public const TEMPLATE_OWNER = 'r6_template_owner';
+
+    /** Names a role setting must never take: they mean something else in GRANT, or are system roles (finding 12). */
+    private const RESERVED_ROLES = ['public', 'none', 'all', 'current_user', 'current_role', 'session_user', 'user', 'postgres'];
+
+    /** A plain lower-case role name that is not reserved, not `pg_*` and not `postgres`. */
+    public static function plainRole(string $name): bool
+    {
+        return preg_match(self::IDENTIFIER, $name) === 1
+            && ! in_array($name, self::RESERVED_ROLES, true)
+            && ! str_starts_with($name, 'pg_');
+    }
+
+    /**
+     * The SHA-256 of the forward SQL with placeholder role names. It depends only
+     * on the registry and the sequences (both derivable from the public
+     * repository), so it is comparable across environments (R6-C1, IAR-5) and
+     * reveals no role name (OD-R6-6). The SQL that names the real roles is only
+     * ever printed for the administrator, never hashed into a log.
+     *
+     * @param  array<string, array{class: string, columns: list<string>, source?: string}>  $entries
+     * @param  list<string>  $sequences
+     */
+    public static function templateSha256(array $entries, array $sequences): string
+    {
+        return hash('sha256', self::script(self::forwardStatements($entries, $sequences, self::TEMPLATE_RUNTIME), self::TEMPLATE_OWNER, 'forward'));
+    }
+
     public static function quote(string $identifier): string
     {
         if (preg_match(self::IDENTIFIER, $identifier) !== 1) {
@@ -64,6 +95,16 @@ final class RuntimeGrantPlan
         }
 
         return '"'.$identifier.'"';
+    }
+
+    /** A role name, validated by plainRole() and double-quoted. */
+    public static function role(string $name): string
+    {
+        if (! self::plainRole($name)) {
+            throw new InvalidArgumentException('a role name is not a plain, non-reserved lower-case name.');
+        }
+
+        return '"'.$name.'"';
     }
 
     /**
@@ -75,7 +116,7 @@ final class RuntimeGrantPlan
      */
     public static function forwardStatements(array $entries, array $sequences, string $runtime): array
     {
-        $grantee = self::quote($runtime);
+        $grantee = self::role($runtime);
         ksort($entries);
         $sequences = array_values(array_unique($sequences));
         sort($sequences);
@@ -115,7 +156,7 @@ final class RuntimeGrantPlan
      */
     public static function rollbackStatements(array $entries, array $sequences, array $current, string $runtime): array
     {
-        $grantee = self::quote($runtime);
+        $grantee = self::role($runtime);
         $objects = [];
         foreach (array_keys($entries) as $table) {
             $objects[(string) $table] = 'TABLE';
@@ -159,7 +200,7 @@ final class RuntimeGrantPlan
      */
     public static function script(array $statements, string $owner, string $kind): string
     {
-        self::quote($owner);
+        self::role($owner);
         $lines = [
             "-- foundation:db-privilege-apply {$kind} SQL (DMS-SPN4-READY-PILOT-1 R6-B3). Run with psql -X -v ON_ERROR_STOP=1.",
             'BEGIN;',

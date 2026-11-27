@@ -57,8 +57,8 @@ class FoundationDbPrivilegeApplyCommand extends Command
         $runtime = (string) config('runtime_privilege_classes.roles.runtime', '');
         $owner = (string) config('runtime_privilege_classes.roles.owner', '');
         foreach (['runtime' => $runtime, 'owner' => $owner] as $label => $role) {
-            if (preg_match(RuntimeGrantPlan::IDENTIFIER, $role) !== 1) {
-                return $this->refuse("the {$label} role is not configured as a plain role name.");
+            if (! RuntimeGrantPlan::plainRole($role)) {
+                return $this->refuse("the {$label} role is not configured as a plain, non-reserved role name.");
             }
         }
         if ($runtime === $owner) {
@@ -105,6 +105,9 @@ class FoundationDbPrivilegeApplyCommand extends Command
             // the dry run still only reads, and the savepoint is rolled back.
             if ($connection->transactionLevel() === 1) {
                 $connection->statement('SET TRANSACTION READ ONLY');
+                if ((string) $connection->selectOne("select current_setting('transaction_read_only') as ro")->ro !== 'on') {
+                    return $this->refuse('the dry run could not make its transaction read only.');
+                }
             }
             [$entries, $sequences, $errors] = $plan->inputs($connection);
             if ($errors !== []) {
@@ -132,7 +135,8 @@ class FoundationDbPrivilegeApplyCommand extends Command
                 'classes' => $classes,
                 'sequences' => count($sequences),
                 'statements' => count($forward),
-                'forward_sha256' => hash('sha256', RuntimeGrantPlan::script($forward, $owner, 'forward')),
+                // Review round 1, finding 7: only the placeholder template is hashed.
+                'template_sha256' => RuntimeGrantPlan::templateSha256($entries, $sequences),
                 'objects_to_change' => count($changed),
                 'objects_not_owned_by_the_owner_role' => $foreign,
                 'apply_would_refuse' => $foreign > 0,
@@ -163,9 +167,13 @@ class FoundationDbPrivilegeApplyCommand extends Command
         if ((string) $connection->selectOne('select current_user as u')->u !== $owner) {
             return $this->refuse('the session is not the owner role.');
         }
-        $runtimeRole = $connection->selectOne('select rolsuper, rolcanlogin from pg_catalog.pg_roles where rolname = ?', [$runtime]);
-        if ($runtimeRole === null || (bool) $runtimeRole->rolsuper) {
-            return $this->refuse('the runtime role does not exist or is a superuser.');
+        $runtimeRole = $connection->selectOne(
+            "select rolsuper, rolcanlogin, pg_catalog.pg_has_role(oid, ?, 'MEMBER') as reaches_owner from pg_catalog.pg_roles where rolname = ?",
+            [$owner, $runtime]
+        );
+        // Review round 1, finding 12: the grantee must be a plain login that cannot reach the owner role.
+        if ($runtimeRole === null || (bool) $runtimeRole->rolsuper || ! (bool) $runtimeRole->rolcanlogin || (bool) $runtimeRole->reaches_owner) {
+            return $this->refuse('the runtime role does not exist, cannot log in, is a superuser or can reach the owner role.');
         }
 
         try {
@@ -192,7 +200,7 @@ class FoundationDbPrivilegeApplyCommand extends Command
                     throw new RuntimeException('after the grants the runtime still differs from its classes ('.count($problems).'): '.implode('; ', array_slice($problems, 0, 5)));
                 }
 
-                return ['objects' => count($changed), 'statements' => count($statements), 'forward_sha256' => hash('sha256', RuntimeGrantPlan::script($forward, $owner, 'forward'))];
+                return ['objects' => count($changed), 'statements' => count($statements), 'template_sha256' => RuntimeGrantPlan::templateSha256($entries, $sequences)];
             });
         } catch (Throwable $exception) {
             return $this->refuse('nothing was changed: '.self::safeMessage($exception));
@@ -203,7 +211,7 @@ class FoundationDbPrivilegeApplyCommand extends Command
 
             return self::SUCCESS;
         }
-        $this->line("APPLIED: {$applied['statements']} statement(s) for {$applied['objects']} object(s) in one transaction; forward_sha256 {$applied['forward_sha256']}.");
+        $this->line("APPLIED: {$applied['statements']} statement(s) for {$applied['objects']} object(s) in one transaction; template_sha256 {$applied['template_sha256']}.");
 
         return self::SUCCESS;
     }

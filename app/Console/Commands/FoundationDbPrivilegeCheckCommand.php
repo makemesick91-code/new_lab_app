@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Support\Database\DatabasePrivilegeCheck;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 /**
  * DMS-SPN4-READY-PILOT-1 R6-B3 — read-only check of the database role
@@ -27,8 +26,10 @@ class FoundationDbPrivilegeCheckCommand extends Command
 
     public function handle(DatabasePrivilegeCheck $check): int
     {
+        // The connection is resolved inside the check, so a failure to resolve it
+        // is CANNOT VERIFY (exit 2), never DRIFT (review round 1, finding 10).
         $result = $check->run(
-            DB::connection($this->option('database') ?: null),
+            $this->option('database') ?: null,
             (string) config('runtime_privilege_classes.roles.owner', ''),
             (string) config('runtime_privilege_classes.roles.runtime', ''),
         );
