@@ -224,6 +224,19 @@ elif command -v getent >/dev/null 2>&1; then
     else
       ok "no other account has '${RUNTIME_GROUP}' as its primary group"
     fi
+    # R6-B4 review #9: a second group NAME with the runtime gid grants the same
+    # access, and `id -nG` shows a gid only under its first name — compare numbers.
+    ALIAS_GROUPS="$(getent group | awk -F: -v gid="$RUNTIME_GID" -v me="$RUNTIME_GROUP" '$3 == gid && $1 != me { printf " %s", $1 }')"
+    if [ -n "$ALIAS_GROUPS" ]; then
+      bad "group name(s) sharing the gid of '${RUNTIME_GROUP}':${ALIAS_GROUPS} — co-tenant isolation broken"
+    else
+      ok "no other group name shares the gid of '${RUNTIME_GROUP}'"
+    fi
+    # Enumeration lists local accounts only; network sources (LDAP, SSSD, NIS…)
+    # may hold accounts getent does not enumerate. Say so instead of a silent PASS.
+    if grep -Eq '^(passwd|group|initgroups):.*[[:space:]](ldap|sss|nis|nisplus|winbind|db|extrausers|hesiod)([[:space:]]|$)' /etc/nsswitch.conf 2>/dev/null; then
+      skip "complete account enumeration (the name service has sources beyond local files)"
+    fi
   else
     skip "group '${RUNTIME_GROUP}' exists"
   fi

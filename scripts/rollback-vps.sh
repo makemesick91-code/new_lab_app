@@ -284,13 +284,14 @@ if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"; then
   exit 2
 fi
 
-# R6-B4 (IAR-A12): while the database role split is active (host switch
-# DMS_R6_MIGRATOR=1), a target that predates R6-B4 is refused before anything is
+# R6-B4 (IAR-A12): while the database role split is active (the host switch
+# DMS_R6_MIGRATOR=1, or the database not unsplit by the read-only probe of the
+# current release), a target that predates R6-B4 is refused before anything is
 # backed up or checked out: its deploy would migrate as the runtime user, which can
-# no longer create anything. With the switch off this changes nothing.
+# no longer create anything. Unsplit with the switch off, this changes nothing.
 # shellcheck source=lib/r6-migrate.sh
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/r6-migrate.sh"
-if ! dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA"; then
+if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" dms_r6_rollback_guard "$ROLLBACK_TARGET_SHA" "$RUNTIME_USER"; then
   echo "FATAL: the R6 rollback guard refused target ${ROLLBACK_TARGET_SHA} — nothing was backed up or checked out — NOT GO" >&2
   exit 2
 fi
