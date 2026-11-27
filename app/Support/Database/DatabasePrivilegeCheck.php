@@ -199,9 +199,10 @@ final class DatabasePrivilegeCheck
     }
 
     /**
-     * R6-B4: a digest of the cluster's system identifier and the current database
-     * name, so the deploy can prove that two sessions (the runtime's and the
-     * migration account's) reach the same database without printing either value.
+     * R6-B4: a digest of the cluster's system identifier, the postmaster start
+     * time and the current database name, so the deploy can prove that two
+     * sessions (the runtime's and the migration account's) reach the same
+     * database of the same running instance without printing any value.
      * Read-only; null when it cannot tell.
      */
     public function identity(?string $connectionName): ?string
@@ -213,13 +214,15 @@ final class DatabasePrivilegeCheck
             }
             $row = $connection->selectOne(<<<'SQL'
                 select (select s.system_identifier from pg_catalog.pg_control_system() s)::text as cluster,
+                       extract(epoch from pg_catalog.pg_postmaster_start_time())::bigint::text as started,
                        pg_catalog.current_database()::text as database
                 SQL);
-            if ($row === null || (string) $row->cluster === '' || (string) $row->database === '') {
+            if ($row === null || (string) $row->cluster === '' || (string) $row->started === '' || (string) $row->database === '') {
                 return null;
             }
 
-            return hash('sha256', 'r6-b4-identity|'.$row->cluster.'|'.$row->database);
+            // The start time tells a running instance from a clone of the same cluster lineage (review round 2, N10).
+            return hash('sha256', 'r6-b4-identity|'.$row->cluster.'|'.$row->started.'|'.$row->database);
         } catch (Throwable) {
             return null;
         }

@@ -912,11 +912,18 @@ it('reports the split state read-only as the runtime: split, and unknown when ow
 function fgdpShellSplitProbe(PDO $pdo): string
 {
     $lib = (string) file_get_contents(base_path('scripts/lib/r6-migrate.sh'));
-    preg_match('/^_DMS_R6_SPLIT_SQL="(.*?)"$/ms', $lib, $m);
+    preg_match("/^_dms_r6_split_sql\\(\\) \\{\\n  cat <<'SQL'\\n(.*?)\\nSQL\\n\\}/ms", $lib, $m);
     expect($m)->toHaveKey(1);
 
     return (string) $pdo->query($m[1])->fetchColumn();
 }
+
+it('gives the same unsplit state from the preflight probe as from the command where the login owns every table (production today; R6-B4, OD-R6-2 v6)', function () {
+    $pdo = DB::connection()->getPdo();
+
+    expect(fgdpShellSplitProbe($pdo))->toBe('0')
+        ->and(app(DatabasePrivilegeCheck::class)->splitState(null))->toBeFalse();
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'needs PostgreSQL as the test database');
 
 it('gives the same split state from the preflight probe without application code as from the command (R6-B4, OD-R6-2 v5 A4)', function () {
     fgdpUseCluster();

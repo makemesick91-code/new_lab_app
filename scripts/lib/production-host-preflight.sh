@@ -63,7 +63,7 @@ dms_production_host_preflight() {
   # maintenance tools; the deploy and the rollback never pass any.
   local -a tools=("$@")
   if [ "${#tools[@]}" -eq 0 ]; then
-    tools=(git composer node npm php pg_dump runuser nginx systemctl systemd-run pgrep)
+    tools=(git composer node npm php pg_dump psql runuser pkill nginx systemctl systemd-run pgrep)
   fi
 
   echo "== Production host preflight (before any mutation) =="
