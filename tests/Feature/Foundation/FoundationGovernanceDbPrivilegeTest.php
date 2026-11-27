@@ -663,6 +663,14 @@ it('fails on each injected drift and matches again once it is undone', function 
     'an information_schema relation granted to PUBLIC' => ['GRANT SELECT ON information_schema._pg_user_mappings TO PUBLIC', 'REVOKE SELECT ON information_schema._pg_user_mappings FROM PUBLIC', 'system relation information_schema._pg_user_mappings beyond its initial privileges'],
     // N5: any privilege on a sequence outside public.
     'USAGE on a sequence outside public' => ['CREATE SEQUENCE fgdp_ext.fgdp_useq; GRANT USAGE ON SEQUENCE fgdp_ext.fgdp_useq TO ":runtime"', 'DROP SEQUENCE fgdp_ext.fgdp_useq', 'sequence fgdp_ext.fgdp_useq: the runtime holds a privilege on a sequence outside public'],
+    // Review round 5, F1: a monitoring membership usable through SET ROLE but not inherited.
+    'a non-inherited monitoring membership' => ['REVOKE pg_read_all_stats FROM ":runtime"; GRANT pg_read_all_stats TO ":runtime" WITH INHERIT FALSE, SET TRUE', 'REVOKE pg_read_all_stats FROM ":runtime"; GRANT pg_read_all_stats TO ":runtime"', 'the runtime can SET ROLE to pg_read_all_stats without inheriting it'],
+    'a non-inherited membership hiding a table grant' => ['REVOKE pg_read_all_stats FROM ":runtime"; GRANT pg_read_all_stats TO ":runtime" WITH INHERIT FALSE, SET TRUE; GRANT DELETE ON public.trx_rme_record_versions TO pg_read_all_stats', 'REVOKE DELETE ON public.trx_rme_record_versions FROM pg_read_all_stats; REVOKE pg_read_all_stats FROM ":runtime"; GRANT pg_read_all_stats TO ":runtime"', 'the runtime can SET ROLE to pg_read_all_stats without inheriting it'],
+    // F3: the rest of the public inventory.
+    'a standalone composite type in public' => ['CREATE TYPE public.fgdp_pair AS (a int, b int)', 'DROP TYPE public.fgdp_pair', 'public holds relation fgdp_pair (kind c) outside the table registry'],
+    'a text search configuration in public' => ['CREATE TEXT SEARCH CONFIGURATION public.fgdp_ts (COPY = pg_catalog.simple)', 'DROP TEXT SEARCH CONFIGURATION public.fgdp_ts', 'public holds text search configuration fgdp_ts'],
+    'a statistics object in public' => ['CREATE STATISTICS public.fgdp_stx ON key, expiration FROM public.cache', 'DROP STATISTICS public.fgdp_stx', 'public holds statistics object fgdp_stx'],
+    'an overload of a guard function name' => ['CREATE FUNCTION public.dms_append_only_guard(integer) RETURNS integer LANGUAGE sql AS $$ select 1 $$', 'DROP FUNCTION public.dms_append_only_guard(integer)', 'public holds function public.dms_append_only_guard(integer), which is not a pinned guard function'],
     'a wide default privilege' => ['ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT ALL ON TABLES TO ":runtime"', 'ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public REVOKE ALL ON TABLES FROM ":runtime"; ALTER DEFAULT PRIVILEGES FOR ROLE ":owner" IN SCHEMA public GRANT SELECT ON TABLES TO ":runtime"', 'a default privilege gives the runtime INSERT on new objects of type r'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 
@@ -856,5 +864,20 @@ it('withholds every role name in the apply and dry-run output (review round 4, N
         $noLeak($output);
     } finally {
         $super->exec(fgdpSql('DROP SCHEMA ":runtime_x" CASCADE'));
+    }
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('accepts a default that sets a protected setting to its safe value (review round 5, F2)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $super->exec(fgdpSql('ALTER DATABASE ":db" SET standard_conforming_strings = on; ALTER ROLE ":runtime" SET session_replication_role = origin'));
+    try {
+        DB::purge('fgdp_runtime');
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime']);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output);
+    } finally {
+        $super->exec(fgdpSql('ALTER DATABASE ":db" RESET standard_conforming_strings; ALTER ROLE ":runtime" RESET session_replication_role'));
     }
 })->skip($fgdpSkip, $fgdpSkipReason);

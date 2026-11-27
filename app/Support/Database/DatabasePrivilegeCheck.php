@@ -329,10 +329,21 @@ final class DatabasePrivilegeCheck
             'select b.rolname from pg_catalog.pg_roles b where b.rolname <> ? and pg_catalog.pg_has_role(?, b.oid, \'MEMBER\') order by b.rolname',
             [$runtime, $runtime]
         ));
-        $record('the runtime reaches only the monitoring roles', array_map(
+        $memberships = array_map(
             fn (string $r): string => $r === $owner ? 'the runtime is a member of the owner role' : 'the runtime is a member of '.self::roleLabel($r),
             array_values(array_diff($reached, self::ALLOWED_MEMBERSHIPS))
-        ));
+        );
+        // Round 5, F1: every privilege rule asks has_*_privilege(), which counts only
+        // INHERITED privileges. A membership the runtime can SET ROLE into without
+        // inheriting it would let it use privileges none of the rules sees.
+        foreach ($connection->select(<<<'SQL'
+            select b.rolname from pg_catalog.pg_roles b
+            where b.rolname <> ? and pg_catalog.pg_has_role(?, b.oid, 'SET') and not pg_catalog.pg_has_role(?, b.oid, 'USAGE')
+            order by 1
+            SQL, [$runtime, $runtime, $runtime]) as $row) {
+            $memberships[] = 'the runtime can SET ROLE to '.((string) $row->rolname === $owner ? 'the owner role' : self::roleLabel((string) $row->rolname)).' without inheriting it, so its privileges escape every check';
+        }
+        $record('the runtime reaches only the monitoring roles, and inherits every role it can SET', $memberships);
 
         // 3. Ownership, in every database and among shared objects.
         $owned = $connection->selectOne(<<<'SQL'
@@ -620,11 +631,13 @@ final class DatabasePrivilegeCheck
                 select case when s.setrole = 0 then 'every role' else 'the runtime role' end as who,
                        case when s.setdatabase = 0 then 'every database' else 'this database' end as scope
                 from pg_catalog.pg_db_role_setting s
-                cross join lateral unnest(s.setconfig) as cfg(setting)
+                cross join lateral pg_catalog.unnest(s.setconfig) as cfg(setting)
                 where s.setrole in (0, (select oid from pg_catalog.pg_roles where rolname = ?))
-                  and s.setdatabase in (0, (select oid from pg_catalog.pg_database where datname = current_database()))
-                  and lower(split_part(cfg.setting, '=', 1)) = ?
-                SQL, [$runtime, $setting]) as $row) {
+                  and s.setdatabase in (0, (select oid from pg_catalog.pg_database where datname = pg_catalog.current_database()))
+                  and pg_catalog.lower(pg_catalog.split_part(cfg.setting, '=', 1)) = ?
+                  -- Round 5, F2: a default that sets the safe value is hardening, not drift.
+                  and pg_catalog.lower(pg_catalog.btrim(pg_catalog.substr(cfg.setting, pg_catalog.strpos(cfg.setting, '=') + 1), ' "''')) <> ?
+                SQL, [$runtime, $setting, $safe]) as $row) {
                 $replication[] = "a default sets {$setting} for {$row->who} in {$row->scope}";
             }
         }
@@ -734,10 +747,11 @@ final class DatabasePrivilegeCheck
         $notExtension = "not exists (select 1 from pg_catalog.pg_depend d where d.classid = %s and d.objid = %s and d.deptype = 'e')";
         $guardNames = array_keys((array) config('runtime_privilege_classes.guard_functions', []));
         foreach ($connection->select(
-            "select p.oid::regprocedure::text as signature, p.proname from pg_catalog.pg_proc p where p.pronamespace = 'public'::regnamespace and "
+            "select p.oid::regprocedure::text as signature, p.proname, (p.pronargs = 0 and p.prorettype = 'pg_catalog.trigger'::regtype) as is_trigger from pg_catalog.pg_proc p where p.pronamespace = 'public'::regnamespace and "
             .sprintf($notExtension, "'pg_catalog.pg_proc'::regclass", 'p.oid').' order by 1'
         ) as $row) {
-            if (! in_array((string) $row->proname, $guardNames, true)) {
+            // Round 5, F3: a guard is exempt only as name() returning trigger, not under any signature.
+            if (! in_array((string) $row->proname, $guardNames, true) || ! (bool) $row->is_trigger) {
                 $inventory[] = "public holds function {$row->signature}, which is not a pinned guard function";
             }
         }
@@ -745,6 +759,9 @@ final class DatabasePrivilegeCheck
             'operator' => ['pg_operator', 'oprnamespace', 'o.oid::regoperator::text'],
             'conversion' => ['pg_conversion', 'connamespace', 'o.conname::text'],
             'collation' => ['pg_collation', 'collnamespace', 'o.collname::text'],
+            'text search configuration' => ['pg_ts_config', 'cfgnamespace', 'o.cfgname::text'],
+            'text search dictionary' => ['pg_ts_dict', 'dictnamespace', 'o.dictname::text'],
+            'statistics object' => ['pg_statistic_ext', 'stxnamespace', 'o.stxname::text'],
         ] as $kind => [$catalog, $column, $label]) {
             foreach ($connection->select(
                 "select {$label} as name from pg_catalog.{$catalog} o where o.{$column} = 'public'::regnamespace and "
@@ -761,7 +778,7 @@ final class DatabasePrivilegeCheck
             $inventory[] = "public holds type {$row->typname}";
         }
         foreach ($connection->select(
-            "select c.relname, c.relkind from pg_catalog.pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm', 'f') and "
+            "select c.relname, c.relkind from pg_catalog.pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm', 'f', 'c') and "
             .sprintf($notExtension, "'pg_catalog.pg_class'::regclass", 'c.oid').' order by 1'
         ) as $row) {
             $inventory[] = "public holds relation {$row->relname} (kind {$row->relkind}) outside the table registry";
