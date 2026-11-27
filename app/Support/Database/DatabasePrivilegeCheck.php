@@ -52,11 +52,13 @@ use Throwable;
  * 15. default privileges give the runtime (or PUBLIC) at most SELECT on new
  *     tables and USAGE, SELECT on new sequences.
  * 19. R6-B3c: the runtime's exact privilege surface (RuntimePrivilegeSurface)
- *     equals the expected set: the repo-pinned PostgreSQL 16 baseline plus the
- *     registry and the rule 245 layout. Any extra or missing item is DRIFT,
- *     printed as `surface: extra|missing <line>` with role names withheld. The
- *     server must be PostgreSQL 16 and the baseline fixture must match its
- *     pinned SHA-256, or the check cannot verify. Checks 1–18 stay (C5).
+ *     equals the expected set: the repo-pinned PostgreSQL 16 baseline, adjusted
+ *     by the reviewed deltas up to the server's minor, plus the registry and the
+ *     rule 245 layout. Any extra or missing item is DRIFT, printed as
+ *     `surface: extra|missing <line>` with role names withheld. The server must
+ *     be PostgreSQL 16 and both fixtures must match their pinned SHA-256, or the
+ *     check cannot verify. A minor outside the reviewed range is a NOTE; its
+ *     surface is compared with the nearest known set. Checks 1–18 stay (C5).
  * The registry itself must agree with the schema (RuntimePrivilegeRegistry::verify).
  *
  * Accepted (review round 1, finding 14): the runtime can always make the check
@@ -151,12 +153,14 @@ final class DatabasePrivilegeCheck
                 RuntimeGrantPlan::pinSession($connection);
 
                 // R6-B3c: the structural comparison needs the server the baseline
-                // was pinned for, and the committed baseline itself, unaltered.
-                if (intdiv((int) $connection->selectOne("select pg_catalog.current_setting('server_version_num') as v")->v, 10000) !== RuntimePrivilegeSurface::SERVER_MAJOR) {
+                // was pinned for, and the committed baseline and its reviewed
+                // per-minor deltas, unaltered, for the server's minor.
+                $version = (int) $connection->selectOne("select pg_catalog.current_setting('server_version_num') as v")->v;
+                if (intdiv($version, 10000) !== RuntimePrivilegeSurface::SERVER_MAJOR) {
                     return $this->cannotVerify('the server is not PostgreSQL '.RuntimePrivilegeSurface::SERVER_MAJOR.', the major version the privilege baseline is pinned for.');
                 }
                 try {
-                    $baseline = RuntimePrivilegeSurface::baseline();
+                    $baseline = RuntimePrivilegeSurface::baseline($version);
                 } catch (RuntimeException $exception) {
                     return $this->cannotVerify($exception->getMessage().'.');
                 }
@@ -358,7 +362,7 @@ final class DatabasePrivilegeCheck
 
     /**
      * @param  array<string, string>  $sessionValues
-     * @param  array{lines: list<string>, sha256: string}  $baseline
+     * @param  array{lines: list<string>, optional: list<string>, sha256: string, delta_sha256: string, server_version_num: int, base_version_num: int, reviewed_through: int}  $baseline
      * @return array{status: int, problems: list<string>, passed: list<string>, notes: list<string>, surface: array<string, mixed>}
      */
     private function evaluate(ConnectionInterface $connection, string $runtime, string $owner, array $sessionValues, array $baseline): array
@@ -968,9 +972,10 @@ final class DatabasePrivilegeCheck
         // reaches, must be in the expected set (the pinned PostgreSQL 16 baseline
         // plus the registry and the rule 245 layout), and every required item must
         // be held. No rule is needed for a kind nobody enumerated: it is an extra
-        // item. The rules above stay: they cover code integrity and settings.
+        // item. The rules above stay: they cover code integrity and settings. The
+        // reviewed delta items up to the server's minor are optional (baseline()).
         $surface = RuntimePrivilegeSurface::enumerate($connection, $owner);
-        $expected = (new RuntimePrivilegeSurface($this->registry))->expected($connection, $baseline['lines']);
+        $expected = (new RuntimePrivilegeSurface($this->registry))->expected($connection, $baseline['lines'], $baseline['optional']);
         $difference = RuntimePrivilegeSurface::compare($surface, $expected['required'], $expected['permitted']);
         $structural = [];
         foreach (['extra' => 'the runtime holds an item outside the expected set', 'missing' => 'the runtime lacks a required item'] as $direction => $meaning) {
@@ -989,6 +994,15 @@ final class DatabasePrivilegeCheck
         // not FULL_DML and has no guard trigger it changes rows the class forbids.
         // Reported as a NOTE: it does not change the verdict until the owner decides.
         $notes = [];
+        // R6-B3c: a minor outside the reviewed range is compared with the nearest
+        // known set; the NOTE says so, and the verdict stays the comparison's. (No
+        // product name in it: a superuser called postgres would be withheld there.)
+        $server = RuntimePrivilegeSurface::minorName($baseline['server_version_num']);
+        if ($baseline['server_version_num'] > $baseline['reviewed_through']) {
+            $notes[] = "the server's minor is {$server}, newer than the last reviewed minor (".RuntimePrivilegeSurface::minorName($baseline['reviewed_through']).'): its surface is compared with that minor\'s set, and a new difference is DRIFT until a reviewed PR adds its baseline delta (R6-B3c)';
+        } elseif ($baseline['server_version_num'] < $baseline['base_version_num']) {
+            $notes[] = "the server's minor is {$server}, older than the baseline's minor (".RuntimePrivilegeSurface::minorName($baseline['base_version_num']).'): its surface is compared with the base set, and a difference is DRIFT (R6-B3c)';
+        }
         $restricted = array_keys(array_filter($entries, fn (array $e): bool => $e['class'] !== RuntimePrivilegeClass::FULL_DML));
         if ($restricted !== []) {
             $placeholders = implode(', ', array_fill(0, count($restricted), '?'));
@@ -1023,6 +1037,9 @@ final class DatabasePrivilegeCheck
             'extra' => $withhold($difference['extra']),
             'missing' => $withhold($difference['missing']),
             'baseline_sha256' => $baseline['sha256'],
+            'baseline_delta_sha256' => $baseline['delta_sha256'],
+            'server_version_num' => $baseline['server_version_num'],
+            'optional_applied' => count($baseline['optional']),
         ]];
     }
 

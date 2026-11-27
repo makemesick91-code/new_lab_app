@@ -25,6 +25,7 @@ use App\Support\Database\RuntimeGrantPlan;
 use App\Support\Database\RuntimePrivilegeClass;
 use App\Support\Database\RuntimePrivilegeRegistry;
 use App\Support\Database\RuntimePrivilegeSurface;
+use Illuminate\Database\Connectors\PostgresConnector;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\PostgresConnection;
 use Illuminate\Support\Facades\Artisan;
@@ -310,7 +311,7 @@ it('pins the PostgreSQL 16 baseline fixture by SHA-256 and keeps it canonical (R
 
     expect(hash('sha256', $text))->toBe(FGDP_BASELINE_SHA256)
         ->and(config('runtime_privilege_classes.baseline'))->toBe(['path' => $relative, 'sha256' => FGDP_BASELINE_SHA256])
-        ->and(RuntimePrivilegeSurface::baseline())->toBe(['lines' => $lines, 'sha256' => FGDP_BASELINE_SHA256])
+        ->and(RuntimePrivilegeSurface::baseline(160015))->toMatchArray(['lines' => $lines, 'optional' => [], 'sha256' => FGDP_BASELINE_SHA256])
         ->and($text)->toMatch('/^# Server: PostgreSQL 16$/m')
         ->and($text)->toContain("\n# Items: ".count($lines)."\n")
         ->and($lines)->toBe($canonical)
@@ -396,10 +397,149 @@ it('permits only the closed, reviewed set of optional items (R6-B3c)', function 
 
 it('refuses a baseline fixture that is missing or does not match its pin (R6-B3c, C2)', function () {
     config(['runtime_privilege_classes.baseline.sha256' => str_repeat('0', 64)]);
-    expect(fn () => RuntimePrivilegeSurface::baseline())->toThrow(RuntimeException::class, 'does not match its pinned SHA-256');
+    expect(fn () => RuntimePrivilegeSurface::baseline(160015))->toThrow(RuntimeException::class, 'does not match its pinned SHA-256');
 
     config(['runtime_privilege_classes.baseline' => ['path' => 'tests/Fixtures/r6/fgdp-no-such-baseline.txt', 'sha256' => FGDP_BASELINE_SHA256]]);
-    expect(fn () => RuntimePrivilegeSurface::baseline())->toThrow(RuntimeException::class, 'is missing');
+    expect(fn () => RuntimePrivilegeSurface::baseline(160015))->toThrow(RuntimeException::class, 'is missing');
+});
+
+// R6-B3c (PR #716 CI on PostgreSQL 16.16): the reviewed per-minor deltas to the base. Re-pinning them is a reviewed
+// change of this literal, of config/runtime_privilege_classes.php and of the delta file, in one PR.
+const FGDP_BASELINE_DELTAS_SHA256 = '2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62';
+const FGDP_PG1616_ITEM = 'function|pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])|EXECUTE|PUBLIC|NO';
+
+/**
+ * The baseline document a fresh initdb of minor $version prints: the base with every reviewed delta up to that minor
+ * applied ('+' added, '-' removed) and its item count updated. On the base minor it is the base, byte for byte.
+ */
+function fgdpFreshDocument(int $version): string
+{
+    $text = (string) file_get_contents(base_path('tests/Fixtures/r6/pg16-runtime-baseline.txt'));
+    $lines = RuntimePrivilegeSurface::documentLines($text);
+    foreach (RuntimePrivilegeSurface::baselineDeltas($lines)['items'] as $item) {
+        if ($item['version'] <= $version) {
+            $lines = $item['sign'] === '+' ? [...$lines, $item['line']] : array_values(array_diff($lines, [$item['line']]));
+        }
+    }
+    sort($lines, SORT_STRING);
+    $header = array_values(array_filter(explode("\n", $text), fn (string $line): bool => str_starts_with($line, '#')));
+    $header = array_map(fn (string $line): string => str_starts_with($line, '# Items: ') ? '# Items: '.count($lines) : $line, $header);
+
+    return implode("\n", [...$header, ...$lines])."\n";
+}
+
+/** The server's own minor, read as the superuser. */
+function fgdpServerVersion(): int
+{
+    return (int) fgdpSuper()->query("select pg_catalog.current_setting('server_version_num')")->fetchColumn();
+}
+
+/**
+ * Runs $body with the delta file replaced by $text, pinned to its own hash; the committed pin is restored and the
+ * test-only file removed afterwards, whatever happens.
+ */
+function fgdpWithDeltaFile(string $text, Closure $body): void
+{
+    $committed = config('runtime_privilege_classes.baseline_deltas');
+    $relative = 'storage/framework/testing/fgdp-deltas-'.bin2hex(random_bytes(6)).'.txt';
+    file_put_contents(base_path($relative), $text);
+    try {
+        config(['runtime_privilege_classes.baseline_deltas' => ['path' => $relative, 'sha256' => hash('sha256', $text)]]);
+        $body();
+    } finally {
+        config(['runtime_privilege_classes.baseline_deltas' => $committed]);
+        @unlink(base_path($relative));
+    }
+}
+
+it('pins the reviewed per-minor baseline deltas: 16.16 adds one pg_upgrade function, optional from 16.16 on (R6-B3c)', function () {
+    $relative = 'tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt';
+    $text = (string) file_get_contents(base_path($relative));
+    $base = RuntimePrivilegeSurface::documentLines((string) file_get_contents(base_path('tests/Fixtures/r6/pg16-runtime-baseline.txt')));
+
+    expect(hash('sha256', $text))->toBe(FGDP_BASELINE_DELTAS_SHA256)
+        ->and(config('runtime_privilege_classes.baseline_deltas'))->toBe(['path' => $relative, 'sha256' => FGDP_BASELINE_DELTAS_SHA256])
+        ->and(RuntimePrivilegeSurface::baselineDeltas($base))->toBe([
+            'items' => [['version' => 160016, 'sign' => '+', 'line' => FGDP_PG1616_ITEM]],
+            'base' => 160015, 'reviewed_through' => 160016, 'sha256' => FGDP_BASELINE_DELTAS_SHA256,
+        ])
+        // The upstream evidence is cited next to the item.
+        ->and($text)->toContain('0c8ffa1ad2f44be4b058a3ec96d9cb0c71f2593f')
+        ->and($text)->toContain('202307071');
+
+    // Below the delta's minor the item keeps its base state (absent, so extra); at or above it, it is optional,
+    // never required; an unknown newer minor gets the latest known set. Nothing is removed from the required base.
+    foreach ([160014 => [], 160015 => [], 160016 => [FGDP_PG1616_ITEM], 160017 => [FGDP_PG1616_ITEM], 169999 => [FGDP_PG1616_ITEM]] as $version => $optional) {
+        expect(RuntimePrivilegeSurface::baseline($version))->toBe([
+            'lines' => $base, 'optional' => $optional, 'sha256' => FGDP_BASELINE_SHA256, 'delta_sha256' => FGDP_BASELINE_DELTAS_SHA256,
+            'server_version_num' => $version, 'base_version_num' => 160015, 'reviewed_through' => 160016,
+        ]);
+    }
+
+    // A fresh initdb of the base minor prints the base byte for byte; one of 16.16 prints it with the one item more.
+    $expected = [...$base, FGDP_PG1616_ITEM];
+    sort($expected, SORT_STRING);
+    $sixteen = fgdpFreshDocument(160016);
+    expect(fgdpFreshDocument(160015))->toBe((string) file_get_contents(base_path('tests/Fixtures/r6/pg16-runtime-baseline.txt')))
+        ->and(hash('sha256', fgdpFreshDocument(160015)))->toBe(FGDP_BASELINE_SHA256)
+        ->and(RuntimePrivilegeSurface::documentLines($sixteen))->toBe($expected)
+        ->and($sixteen)->toContain("\n# Items: ".count($expected)."\n");
+});
+
+it('refuses a baseline delta file that is missing, unpinned or malformed (R6-B3c)', function (?string $text, string $message) {
+    if ($text === null) {
+        config(['runtime_privilege_classes.baseline_deltas.sha256' => str_repeat('0', 64)]);
+        expect(fn () => RuntimePrivilegeSurface::baseline(160016))->toThrow(RuntimeException::class, 'the PostgreSQL 16 baseline delta file does not match its pinned SHA-256');
+
+        config(['runtime_privilege_classes.baseline_deltas' => ['path' => 'tests/Fixtures/r6/fgdp-no-such-deltas.txt', 'sha256' => FGDP_BASELINE_DELTAS_SHA256]]);
+        expect(fn () => RuntimePrivilegeSurface::baseline(160016))->toThrow(RuntimeException::class, 'the PostgreSQL 16 baseline delta file is missing');
+
+        return;
+    }
+    fgdpWithDeltaFile($text, function () use ($message): void {
+        expect(fn () => RuntimePrivilegeSurface::baseline(160016))->toThrow(RuntimeException::class, "the PostgreSQL 16 baseline delta file is malformed: {$message}");
+    });
+})->with([
+    'altered or missing' => [null, ''],
+    'a pattern instead of an exact line' => ["base|160015\nreviewed-through|160016\n160016|+|function|pg_catalog.binary_upgrade_*|EXECUTE|PUBLIC\n", 'an item is not a baseline line'],
+    'a layout kind' => ["base|160015\nreviewed-through|160016\n160016|+|membership|pg_monitor|MEMBER|RUNTIME|NO\n", 'an item is not a baseline line'],
+    'a grant to the runtime, which no initdb makes' => ["base|160015\nreviewed-through|160016\n160016|+|table|pg_catalog.pg_authid|SELECT|RUNTIME|NO\n", 'an item is not a baseline line'],
+    'a + item the base already has' => ["base|160015\nreviewed-through|160016\n160016|+|function|pg_catalog.binary_upgrade_set_missing_value(oid,text,text)|EXECUTE|PUBLIC|NO\n", "an item's sign contradicts the base"],
+    'a - item the base does not have' => ["base|160015\nreviewed-through|160016\n160016|-|".FGDP_PG1616_ITEM."\n", "an item's sign contradicts the base"],
+    'an item listed twice' => ["base|160015\nreviewed-through|160017\n160016|+|".FGDP_PG1616_ITEM."\n160017|+|".FGDP_PG1616_ITEM."\n", 'an item is listed twice'],
+    'an item beyond the reviewed minor' => ["base|160015\nreviewed-through|160016\n160017|+|".FGDP_PG1616_ITEM."\n", 'an item is keyed outside the reviewed range'],
+    'an item at the base minor' => ["base|160015\nreviewed-through|160016\n160015|+|".FGDP_PG1616_ITEM."\n", 'an item is keyed outside the reviewed range'],
+    'another major' => ["base|160015\nreviewed-through|160016\n170000|+|".FGDP_PG1616_ITEM."\n", 'a line is neither a version line nor an item line'],
+    'no reviewed-through line' => ["base|160015\n160016|+|".FGDP_PG1616_ITEM."\n", 'the base and reviewed-through minors are missing or out of order'],
+    'two base lines' => ["base|160015\nbase|160014\nreviewed-through|160016\n", 'a base line'],
+    'an unknown directive' => ["base|160015\nreviewed-through|160016\nignore|binary_upgrade_\n", 'a line is neither a version line nor an item line'],
+]);
+
+it('cannot verify when the baseline delta file does not match its pin (R6-B3c)', function () {
+    fgdpRoles('fgdp_runtime', 'fgdp_owner');
+    // A fake PostgreSQL 16.16 session: every session assertion holds; the altered delta file stops the check.
+    $fake = Mockery::mock(PostgresConnection::class)->shouldIgnoreMissing();
+    $fake->shouldReceive('setReadWriteType')->andReturnSelf();
+    $fake->shouldReceive('getDriverName')->andReturn('pgsql');
+    $fake->shouldReceive('transactionLevel')->andReturn(1);
+    $fake->shouldReceive('selectOne')->andReturnUsing(fn (string $sql): object => match (true) {
+        str_contains($sql, 'transaction_read_only') => (object) ['ro' => 'on'],
+        str_contains($sql, 'session_user as ses') => (object) ['ses' => 'fgdp_runtime', 'cur' => 'fgdp_runtime', 'sch' => 'public'],
+        str_contains($sql, 'from pg_catalog.pg_roles where rolname = ?') => (object) ['n' => 1],
+        str_contains($sql, 'server_version_num') => (object) ['v' => '160016'],
+        default => (object) ['v' => 'origin'],
+    });
+    config(['database.connections.fgdp_fake' => ['driver' => 'fgdp_fake'], 'runtime_privilege_classes.baseline_deltas.sha256' => str_repeat('0', 64)]);
+    DB::extend('fgdp_fake', fn () => $fake);
+    try {
+        [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fake']);
+    } finally {
+        DB::purge('fgdp_fake');
+    }
+
+    expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY)
+        ->and($output)->toContain('ERROR the PostgreSQL 16 baseline delta file does not match its pinned SHA-256.');
+    $fake->shouldNotHaveReceived('select');
 });
 
 it('cannot verify, and generates no baseline, on a server that is not PostgreSQL 16 (R6-B3c, review round 1, #5d)', function () {
@@ -1031,8 +1171,11 @@ it('accepts a default that sets a protected setting to its safe value (review ro
 /** The restricted built-in's initial privilege as initdb records it: EXECUTE for the bootstrap superuser only. */
 const FGDP_RESTORE_INIT_PRIVS = "INSERT INTO pg_catalog.pg_init_privs SELECT 'pg_catalog.pg_read_binary_file(text)'::regprocedure, 'pg_catalog.pg_proc'::regclass, 0, 'i', ARRAY[pg_catalog.makeaclitem(10, 10, 'EXECUTE', false)] WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_init_privs WHERE objoid = 'pg_catalog.pg_read_binary_file(text)'::regprocedure AND classoid = 'pg_catalog.pg_proc'::regclass)";
 
-/** The structural comparison alone, as the runtime, in a pinned read-only transaction: no R6-B3 rule runs. */
-function fgdpSurfaceDifference(): array
+/**
+ * The structural comparison alone, as the runtime, in a pinned read-only transaction: no R6-B3 rule runs. The
+ * baseline is the one for the server's own minor, or for $version when a test simulates another minor.
+ */
+function fgdpSurfaceDifference(?int $version = null): array
 {
     DB::purge('fgdp_runtime');
     $runtime = DB::connection('fgdp_runtime');
@@ -1041,7 +1184,8 @@ function fgdpSurfaceDifference(): array
         $runtime->statement('SET TRANSACTION READ ONLY');
         RuntimeGrantPlan::pinSession($runtime);
         $surface = RuntimePrivilegeSurface::enumerate($runtime, fgdpEnv('OWNER'));
-        $expected = (new RuntimePrivilegeSurface(new RuntimePrivilegeRegistry))->expected($runtime, RuntimePrivilegeSurface::baseline()['lines']);
+        $baseline = RuntimePrivilegeSurface::baseline($version ?? (int) $runtime->selectOne("select pg_catalog.current_setting('server_version_num') as v")->v);
+        $expected = (new RuntimePrivilegeSurface(new RuntimePrivilegeRegistry))->expected($runtime, $baseline['lines'], $baseline['optional']);
 
         return RuntimePrivilegeSurface::compare($surface, $expected['required'], $expected['permitted']);
     } finally {
@@ -1096,17 +1240,23 @@ function fgdpWithFreshDatabase(Closure $body): void
     }
 }
 
-it('regenerates the pinned baseline byte for byte from a fresh database (R6-B3c, C3)', function () {
+it('regenerates the pinned baseline, with the reviewed deltas up to the server\'s minor, byte for byte from a fresh database (R6-B3c, C3)', function () {
     fgdpUseCluster();
     fgdpMigrated();
     fgdpProvisionedAndGranted();
+    $version = fgdpServerVersion();
 
-    fgdpWithFreshDatabase(function (): void {
+    fgdpWithFreshDatabase(function () use ($version): void {
         [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
 
+        // The cluster is a fresh initdb of the running minor (PB-7's step), so the fresh database must print the
+        // base adjusted by every reviewed delta up to that minor: the base itself on 16.15, plus one line on 16.16.
+        // A difference in a newer minor fails here until a reviewed PR adds its delta.
         expect($code)->toBe(0, $output)
-            ->and(hash('sha256', $output))->toBe(FGDP_BASELINE_SHA256)
-            ->and($output)->toBe((string) file_get_contents(base_path('tests/Fixtures/r6/pg16-runtime-baseline.txt')));
+            ->and($output)->toBe(fgdpFreshDocument($version));
+        if ($version <= RuntimePrivilegeSurface::baseline($version)['base_version_num']) {
+            expect(hash('sha256', $output))->toBe(FGDP_BASELINE_SHA256);
+        }
         fgdpNoRoleName($output, false);
     });
 })->skip($fgdpSkip, $fgdpSkipReason);
@@ -1122,7 +1272,7 @@ it('generates the baseline beside a role whose name is part of a built-in name, 
         $super->exec('CREATE ROLE fdw_validator NOLOGIN');
         try {
             [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
-            expect($code)->toBe(0, $output)->and(hash('sha256', $output))->toBe(FGDP_BASELINE_SHA256);
+            expect($code)->toBe(0, $output)->and($output)->toBe(fgdpFreshDocument(fgdpServerVersion()));
         } finally {
             $super->exec('DROP ROLE fdw_validator');
         }
@@ -1159,7 +1309,7 @@ it('refuses to generate a baseline when an initial privilege was changed, and ge
         }
         DB::purge('fgdp_fresh');
         [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
-        expect($code)->toBe(0, $output)->and(hash('sha256', $output))->toBe(FGDP_BASELINE_SHA256);
+        expect($code)->toBe(0, $output)->and($output)->toBe(fgdpFreshDocument(fgdpServerVersion()));
     });
 })->with([
     'a catalog readable by PUBLIC' => ['GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC', 'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges that differ from their initial privileges'],
@@ -1223,6 +1373,8 @@ it('matches structurally on the provisioned layout, with the JSON shape kept and
         ->and($report['surface']['extra'])->toBe([])
         ->and($report['surface']['missing'])->toBe([])
         ->and($report['surface']['baseline_sha256'])->toBe(FGDP_BASELINE_SHA256)
+        ->and($report['surface']['baseline_delta_sha256'])->toBe(FGDP_BASELINE_DELTAS_SHA256)
+        ->and($report['surface']['server_version_num'])->toBe(fgdpServerVersion())
         ->and($report['surface']['items'])->toBe($report['surface']['required'] + $report['surface']['permitted_present'])
         ->and($report['passed'])->toContain("the runtime's privilege surface equals the expected set exactly: the pinned PostgreSQL 16 baseline, the registry and the layout (R6-B3c)")
         ->and(fgdpSurfaceDifference())->toBe(['extra' => [], 'missing' => []]);
@@ -1314,6 +1466,135 @@ it('matches with pg_stat_statements in public as well as in its own schema (R6-B
             ->and(fgdpSurfaceDifference())->toBe(['extra' => [], 'missing' => []]);
     } finally {
         $super->exec(fgdpSql('ALTER EXTENSION pg_stat_statements SET SCHEMA fgdp_ext; GRANT USAGE ON SCHEMA fgdp_ext TO ":runtime"'));
+    }
+
+    DB::purge('fgdp_runtime');
+    expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+/**
+ * The test seam for a minor this cluster does not run: the runtime connection, as `fgdp_sim`, on which only the
+ * server_version_num read answers $version. Every other query reaches the real cluster; no production path reads it.
+ */
+function fgdpSimulatedMinor(int $version): string
+{
+    config(['database.connections.fgdp_sim' => config('database.connections.fgdp_runtime')]);
+    DB::purge('fgdp_sim');
+    DB::extend('fgdp_sim', fn (array $config): PostgresConnection => new class((new PostgresConnector)->connect($config), (string) $config['database'], '', $config, $version) extends PostgresConnection
+    {
+        public function __construct($pdo, string $database, string $prefix, array $config, private readonly int $simulated)
+        {
+            parent::__construct($pdo, $database, $prefix, $config);
+        }
+
+        public function selectOne($query, $bindings = [], $useReadPdo = true)
+        {
+            $row = parent::selectOne($query, $bindings, $useReadPdo);
+            if (is_string($query) && str_contains($query, "current_setting('server_version_num')") && is_object($row)) {
+                $row->v = (string) $this->simulated;
+            }
+
+            return $row;
+        }
+    });
+
+    return 'fgdp_sim';
+}
+
+/** Whether the cluster's own initdb created the 16.16 function (a fresh initdb of 16.16 or later, as PB-7's CI is). */
+function fgdpHasPg1616Function(): bool
+{
+    return (bool) fgdpSuper()->query("select pg_catalog.to_regprocedure('pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])') is not null")->fetchColumn();
+}
+
+/** The 16.16 function as a fresh 16.16 initdb has it (upstream 0c8ffa1a, pg_proc oid 4551), made by the superuser. */
+const FGDP_PG1616_CREATE = "CREATE FUNCTION pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[]) RETURNS void LANGUAGE sql AS 'select 1'";
+const FGDP_PG1616_DROP = 'DROP FUNCTION pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])';
+
+/** @return list<string> the FAIL lines of a check's output */
+function fgdpFailures(string $output): array
+{
+    return array_values(array_filter(explode("\n", $output), fn (string $l): bool => str_starts_with($l, 'FAIL  ')));
+}
+
+it('checks a 16.16 server against the base and the reviewed delta: the new function matches there, and is extra below 16.16 or without the delta (R6-B3c, PR #716 CI)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $extra = ['FAIL  surface: extra '.FGDP_PG1616_ITEM];
+    $check = fn (int $version): array => fgdpRun('foundation:db-privilege-check', ['--database' => fgdpSimulatedMinor($version)]);
+    // On a 16.15 cluster the function is made here; a 16.16 cluster (PB-7 in CI) already has it from initdb.
+    $native = fgdpHasPg1616Function();
+
+    if (! $native) {
+        // A cluster updated in place to 16.16 keeps its 16.15 catalog, without the function: that matches too.
+        [$code, $output] = $check(160016);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output)
+            ->and($output)->not->toContain("NOTE  the server's minor");
+        $super->exec(FGDP_PG1616_CREATE);
+    }
+    try {
+        [$code, $output] = $check(160016);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output)
+            ->and(fgdpSurfaceDifference(160016))->toBe(['extra' => [], 'missing' => []]);
+
+        // Below 16.16 the item keeps its base state: exactly that extra line, and no R6-B3 rule sees it.
+        [$code, $output] = $check(160015);
+        expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)->and(fgdpFailures($output))->toBe($extra);
+
+        // Without the reviewed delta, a 16.16 server reports it as well.
+        fgdpWithDeltaFile("base|160015\nreviewed-through|160016\n", function () use ($check, $extra): void {
+            [$code, $output] = $check(160016);
+            expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)->and(fgdpFailures($output))->toBe($extra);
+        });
+    } finally {
+        if (! $native) {
+            $super->exec(FGDP_PG1616_DROP);
+        }
+    }
+
+    DB::purge('fgdp_runtime');
+    expect(fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_runtime'])[0])->toBe(DatabasePrivilegeCheck::MATCH);
+})->skip($fgdpSkip, $fgdpSkipReason);
+
+it('checks an unknown newer minor against the latest known set: a further new item is DRIFT, with a NOTE; an older minor gets the base (R6-B3c)', function () {
+    fgdpUseCluster();
+    fgdpMigrated();
+    fgdpProvisionedAndGranted();
+    $super = fgdpSuper();
+    $check = fn (int $version): array => fgdpRun('foundation:db-privilege-check', ['--database' => fgdpSimulatedMinor($version)]);
+    $newer = "NOTE  the server's minor is 16.17, newer than the last reviewed minor (16.16)";
+    $native = fgdpHasPg1616Function();
+
+    if (! $native) {
+        $super->exec(FGDP_PG1616_CREATE);
+    }
+    try {
+        // 16.17 is not reviewed: it is compared with the 16.16 set, so the 16.16 item matches ...
+        [$code, $output] = $check(160017);
+        expect($code)->toBe(DatabasePrivilegeCheck::MATCH, $output)->and($output)->toContain($newer);
+
+        // ... and anything a 16.17 initdb might add is DRIFT until a reviewed PR adds its delta.
+        $super->exec("CREATE FUNCTION pg_catalog.fgdp_minor_builtin() RETURNS integer LANGUAGE sql AS 'select 1'");
+        try {
+            [$code, $output] = $check(160017);
+            expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)
+                ->and(fgdpFailures($output))->toBe(['FAIL  surface: extra function|pg_catalog.fgdp_minor_builtin()|EXECUTE|PUBLIC|NO'])
+                ->and($output)->toContain($newer);
+        } finally {
+            $super->exec('DROP FUNCTION pg_catalog.fgdp_minor_builtin()');
+        }
+
+        // An older minor than the base is compared with the base: the 16.16 item is extra there.
+        [$code, $output] = $check(160014);
+        expect($code)->toBe(DatabasePrivilegeCheck::DRIFT, $output)
+            ->and(fgdpFailures($output))->toBe(['FAIL  surface: extra '.FGDP_PG1616_ITEM])
+            ->and($output)->toContain("NOTE  the server's minor is 16.14, older than the baseline's minor (16.15)");
+    } finally {
+        if (! $native) {
+            $super->exec(FGDP_PG1616_DROP);
+        }
     }
 
     DB::purge('fgdp_runtime');

@@ -1,0 +1,21 @@
+# R6-B3c PostgreSQL 16 runtime privilege baseline: reviewed deltas by minor release (DMS-SPN4-READY-PILOT-1, rule 245).
+# The base, tests/Fixtures/r6/pg16-runtime-baseline.txt, is a fresh initdb of the base minor below. A minor release
+# can change what initdb writes without a catalog version bump, and a cluster whose binaries are updated in place keeps
+# the catalog its own initdb wrote. So on a server at or above a delta's minor, that delta's item is OPTIONAL (a '+'
+# item may be present, a '-' item may be absent); below it, the item keeps its base state. A server newer than the
+# last reviewed minor is compared with the latest known set: any new difference is DRIFT until a reviewed PR adds its
+# delta here and re-pins this file (SHA-256 in config/runtime_privilege_classes.php and in
+# FoundationGovernanceDbPrivilegeTest).
+# Format: base|<server_version_num>, reviewed-through|<server_version_num>, then one line per item:
+# <server_version_num>|+ or -|kind|object identity|privilege|via role|grantable ('+': a fresh initdb of that minor has
+# the item, the base does not; '-': the base has it, a fresh initdb of that minor does not). No pattern, no wildcard.
+#
+# 160016 (PostgreSQL 16.16, released 2026-11-12): upstream commit 0c8ffa1ad2f44be4b058a3ec96d9cb0c71f2593f,
+# "Introduce attribute versioning to prevent unsafe deforming" (CVE-2026-6460; back-patched through 14), adds pg_proc
+# oid 4551, binary_upgrade_set_next_attribute_versions(pg_lsn[]), with PostgreSQL's default ACL (PUBLIC EXECUTE).
+# Like the base's other binary_upgrade_* functions it raises an error outside binary-upgrade mode
+# (CHECK_IS_BINARY_UPGRADE). REL_16_15 lacks it; CATALOG_VERSION_NO is 202307071 in both tags, so a 16.15 cluster
+# running 16.16 binaries has no such row.
+base|160015
+reviewed-through|160016
+160016|+|function|pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])|EXECUTE|PUBLIC|NO

@@ -44,6 +44,10 @@ use RuntimeException;
  * of PERMITTED lines may be present or absent; each one is a PostgreSQL default
  * that duplicates a grant the runtime holds anyway, an inert grant, a
  * restriction, or the default privileges R6-B3 already bounds (see permitted()).
+ * The base is a fresh initdb of one minor; the reviewed per-minor deltas
+ * (tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt, pinned the same way) make
+ * an item a later minor's initdb added or dropped optional on a server at or
+ * above that minor (see baseline()).
  *
  * Not claimed (C6): a superuser can still edit any catalog this reads; the
  * comparison proves the surface at the time of the check.
@@ -293,11 +297,14 @@ final class RuntimePrivilegeSurface
 
     /**
      * C2: the expected set. `required` must all be present; `permitted` may be.
+     * $optional: the baseline delta items that apply to the server's minor
+     * (baseline()['optional']); they are permitted, never required.
      *
      * @param  list<string>  $baseline
+     * @param  list<string>  $optional
      * @return array{required: list<string>, permitted: list<string>}
      */
-    public function expected(ConnectionInterface $connection, array $baseline): array
+    public function expected(ConnectionInterface $connection, array $baseline, array $optional = []): array
     {
         [$entries] = $this->registry->expected();
         $guards = array_map('strval', array_keys((array) config('runtime_privilege_classes.guard_functions', [])));
@@ -362,8 +369,10 @@ final class RuntimePrivilegeSurface
 
         $required = array_values(array_unique($required));
         sort($required, SORT_STRING);
+        $permitted = array_values(array_unique([...self::permitted($public), ...$optional]));
+        sort($permitted, SORT_STRING);
 
-        return ['required' => $required, 'permitted' => self::permitted($public)];
+        return ['required' => $required, 'permitted' => $permitted];
     }
 
     /**
@@ -434,25 +443,132 @@ final class RuntimePrivilegeSurface
     }
 
     /**
-     * The committed baseline lines, after its SHA-256 is checked against the pin.
+     * The baseline for a PostgreSQL 16 server, from the committed base and the
+     * reviewed per-minor deltas, each checked against its pin.
      *
-     * @return array{lines: list<string>, sha256: string}
+     * A minor release can change what initdb writes without a catalog version
+     * bump (16.16 added binary_upgrade_set_next_attribute_versions), and a cluster
+     * whose binaries are updated in place keeps the catalog its own initdb wrote.
+     * Which initdb wrote a catalog cannot be read from the server, so an item of a
+     * delta at or below the server's minor is OPTIONAL: `lines` (required) drops
+     * it and `optional` (added to the permitted set) holds it. An item of a later
+     * minor keeps its base state, and a server newer than the last reviewed minor
+     * gets the latest known set: a new difference is DRIFT until a reviewed PR
+     * adds its delta. Nothing is matched by pattern.
+     *
+     * @return array{lines: list<string>, optional: list<string>, sha256: string, delta_sha256: string, server_version_num: int, base_version_num: int, reviewed_through: int}
      */
-    public static function baseline(): array
+    public static function baseline(int $serverVersionNum): array
     {
-        $relative = (string) config('runtime_privilege_classes.baseline.path', '');
-        $pinned = strtolower((string) config('runtime_privilege_classes.baseline.sha256', ''));
+        [$text, $sha256] = self::pinnedFile('runtime_privilege_classes.baseline', 'the PostgreSQL 16 baseline fixture');
+        $lines = self::documentLines($text);
+        $deltas = self::baselineDeltas($lines);
+
+        $optional = [];
+        foreach ($deltas['items'] as $item) {
+            if ($item['version'] <= $serverVersionNum) {
+                $optional[] = $item['line'];
+            }
+        }
+        $drop = array_fill_keys($optional, true);
+
+        return [
+            'lines' => array_values(array_filter($lines, fn (string $line): bool => ! isset($drop[$line]))),
+            'optional' => $optional,
+            'sha256' => $sha256,
+            'delta_sha256' => $deltas['sha256'],
+            'server_version_num' => $serverVersionNum,
+            'base_version_num' => $deltas['base'],
+            'reviewed_through' => $deltas['reviewed_through'],
+        ];
+    }
+
+    /**
+     * The reviewed per-minor deltas, validated against the base lines; any
+     * malformed, out-of-range, duplicate or inconsistent line refuses (the check
+     * then cannot verify).
+     *
+     * @param  list<string>  $baseLines
+     * @return array{items: list<array{version: int, sign: string, line: string}>, base: int, reviewed_through: int, sha256: string}
+     */
+    public static function baselineDeltas(array $baseLines): array
+    {
+        [$text, $sha256] = self::pinnedFile('runtime_privilege_classes.baseline_deltas', 'the PostgreSQL 16 baseline delta file');
+        $refuse = fn (string $why): RuntimeException => new RuntimeException("the PostgreSQL 16 baseline delta file is malformed: {$why}");
+        $major = '/\A'.self::SERVER_MAJOR.'\d{4}\z/';
+        $inBase = array_fill_keys($baseLines, true);
+        $base = $reviewed = null;
+        $items = [];
+        $seen = [];
+        foreach (self::documentLines($text) as $entry) {
+            $fields = explode('|', $entry, 3);
+            if (count($fields) === 2 && in_array($fields[0], ['base', 'reviewed-through'], true)) {
+                if (preg_match($major, $fields[1]) !== 1 || ($fields[0] === 'base' ? $base : $reviewed) !== null) {
+                    throw $refuse("a {$fields[0]} line");
+                }
+                if ($fields[0] === 'base') {
+                    $base = (int) $fields[1];
+                } else {
+                    $reviewed = (int) $fields[1];
+                }
+
+                continue;
+            }
+            if (count($fields) !== 3 || preg_match($major, $fields[0]) !== 1 || ! in_array($fields[1], ['+', '-'], true)) {
+                throw $refuse('a line is neither a version line nor an item line');
+            }
+            [$version, $sign, $line] = $fields;
+            // The same shape as a base line: five fields, no control byte, a grant option flag, not a layout kind,
+            // and PUBLIC or a predefined role as the grantee (initdb grants nothing to a role of the deployment).
+            $parts = explode('|', $line);
+            if (preg_match('/\A[^|\x00-\x1F]+(\|[^|\x00-\x1F]+){3}\|(YES|NO)\z/', $line) !== 1
+                || in_array($parts[0], self::LAYOUT_KINDS, true)
+                || ($parts[3] !== self::PUBLIC && ! str_starts_with($parts[3], 'pg_'))) {
+                throw $refuse('an item is not a baseline line');
+            }
+            if (isset($seen[$line])) {
+                throw $refuse('an item is listed twice');
+            }
+            if (($sign === '+') === isset($inBase[$line])) {
+                throw $refuse('an item\'s sign contradicts the base');
+            }
+            $seen[$line] = true;
+            $items[] = ['version' => (int) $version, 'sign' => $sign, 'line' => $line];
+        }
+        if ($base === null || $reviewed === null || $base > $reviewed) {
+            throw $refuse('the base and reviewed-through minors are missing or out of order');
+        }
+        foreach ($items as $item) {
+            if ($item['version'] <= $base || $item['version'] > $reviewed) {
+                throw $refuse('an item is keyed outside the reviewed range');
+            }
+        }
+
+        return ['items' => $items, 'base' => $base, 'reviewed_through' => $reviewed, 'sha256' => $sha256];
+    }
+
+    /** @return array{0: string, 1: string} a committed file's text and SHA-256, refused when missing or unpinned */
+    private static function pinnedFile(string $key, string $label): array
+    {
+        $relative = (string) config("{$key}.path", '');
+        $pinned = strtolower((string) config("{$key}.sha256", ''));
         $path = base_path($relative);
         if ($relative === '' || ! is_file($path)) {
-            throw new RuntimeException('the PostgreSQL 16 baseline fixture is missing');
+            throw new RuntimeException("{$label} is missing");
         }
         $text = (string) file_get_contents($path);
         $sha256 = hash('sha256', $text);
         if ($pinned === '' || ! hash_equals($pinned, $sha256)) {
-            throw new RuntimeException('the PostgreSQL 16 baseline fixture does not match its pinned SHA-256');
+            throw new RuntimeException("{$label} does not match its pinned SHA-256");
         }
 
-        return ['lines' => self::documentLines($text), 'sha256' => $sha256];
+        return [$text, $sha256];
+    }
+
+    /** "16.16" for 160016. */
+    public static function minorName(int $serverVersionNum): string
+    {
+        return intdiv($serverVersionNum, 10000).'.'.($serverVersionNum % 10000);
     }
 
     /** @return list<string> the item lines of a baseline document (comments and blank lines dropped) */
@@ -516,8 +632,9 @@ final class RuntimePrivilegeSurface
             '# R6-B3c PostgreSQL 16 runtime privilege baseline (DMS-SPN4-READY-PILOT-1, rule 245, pack 63c C2/C3).',
             '# Generated by `php artisan foundation:db-privilege-check --print-baseline`, connected as a plain login that holds',
             '# pg_read_all_settings and pg_read_all_stats WITH INHERIT TRUE, in a fresh database of a fresh initdb cluster.',
-            // Review round 1, #2: the major only, so the pinned bytes do not depend on the 16.x minor
-            // (catalog contents are fixed per major); the generator's exact minor goes into the evidence.
+            // Review round 1, #2: the major only; the generator's exact minor goes into the evidence. A minor
+            // release can still change initdb's catalog contents (16.16 did): the reviewed per-minor deltas
+            // (baselineDeltas()) carry that, and a fresh initdb of a newer minor prints the base plus its deltas.
             '# Server: PostgreSQL '.intdiv($version, 10000),
             "# Extensions: {$extensions}",
             '# Excluded (governed by the deployment layout): '.implode(', ', self::LAYOUT_KINDS).', and the public and extension schemas.',

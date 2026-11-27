@@ -103,6 +103,20 @@ return [
         'sha256' => '178dad6499b5f8fc1028860364408049e5927db567b83ad4b778415e95497bce',
     ],
 
+    /*
+    | R6-B3c (PR #716 CI, PostgreSQL 16.16): the reviewed per-minor deltas to the
+    | base above, keyed by server_version_num. A minor release can change what
+    | initdb writes (16.16 added a pg_upgrade function), while a cluster updated in
+    | place keeps its own catalog, so a delta item is optional at or above its
+    | minor and keeps its base state below it. A server newer than the last
+    | reviewed minor is compared with the latest known set (any new difference is
+    | DRIFT). Pinned like the base: a missing or altered file is CANNOT VERIFY.
+    */
+    'baseline_deltas' => [
+        'path' => 'tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt',
+        'sha256' => '2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62',
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [

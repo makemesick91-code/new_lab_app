@@ -1807,6 +1807,27 @@ row R6-B7.
   The workflow and its pinned states are unchanged; only the script SHA-256 is re-pinned, here and in
   `CiTriggerRemovalGovernanceTest`.
 
+  **R6-B3c baseline per PostgreSQL 16 minor (PR #716 CI, 2026-11-28).** The hosted runner's PB-7 step runs
+  PostgreSQL 16.16. Its fresh initdb has one item the 16.15 base lacks:
+  `function|pg_catalog.binary_upgrade_set_next_attribute_versions(pg_lsn[])|EXECUTE|PUBLIC|NO`.
+  - **Source:** upstream commit `0c8ffa1ad2f44be4b058a3ec96d9cb0c71f2593f`, "Introduce attribute versioning to
+    prevent unsafe deforming" (CVE-2026-6460, back-patched through 14). It adds pg_proc oid 4551, a pg_upgrade-only
+    function. `REL_16_15` lacks it. `CATALOG_VERSION_NO` is `202307071` in both tags, so the item is version-specific,
+    not specific to the PGDG build. A 16.15 cluster that runs 16.16 binaries has no such row.
+  - **Design:** the base `tests/Fixtures/r6/pg16-runtime-baseline.txt` is unchanged (`178dad64…`). Reviewed
+    per-minor deltas live in `tests/Fixtures/r6/pg16-runtime-baseline-deltas.txt`, SHA-256
+    `2668ae2f455932d28b585cb4497f16539cbe00dac19f9be3edb99c487761fa62`, pinned in
+    `config/runtime_privilege_classes.php` and `FoundationGovernanceDbPrivilegeTest`.
+  - **What a delta does:** the check reads `server_version_num`. A delta item at or below that minor is optional,
+    because which initdb wrote the catalog cannot be read from the server. Below its minor the item keeps its base
+    state. A minor newer than the last reviewed one (16.16) is compared with the latest known set, and a new
+    difference is DRIFT until a reviewed PR adds its delta. A NOTE names an out-of-range minor. There is no pattern
+    and no wildcard.
+  - **Owner check before Gate A / R6-D (read-only):** `SHOW server_version_num` on production.
+    - Production is recorded at 16.15 (160015), which is covered.
+    - If it reports a minor above 160016, check 19 compares it with the 16.16 set. It reports DRIFT only if that
+      minor's catalog differs, which fails closed. A reviewed delta must then be added before R6-D.
+
 **Pinned workflow states (re-pin; owner confirmation of these exact values before merge):**
 - PB-7 on the O-CI-1 file: `345d59fdb70dcdc5596cda52593d4cfec4622ce81fe4313d97dccc6424194472`;
 - on its B5 rollback target: `d11c71af2c4e64653d0435fc915c134cc56a2b68bf955e0444beb557a4dc3c09`.
