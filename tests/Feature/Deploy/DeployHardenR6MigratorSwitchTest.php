@@ -762,6 +762,22 @@ it('wires the preflight before the first mutation, the switch into the migrate s
         ->and((string) file_get_contents(base_path('scripts/lib/production-host-preflight.sh')))->toContain('pg_dump psql runuser');
 });
 
+it('runs every isolation-gate hop through the real runuser with an empty environment (round 2, N2)', function () {
+    $dir = r6mTmp();
+    $gate = (string) file_get_contents(base_path('scripts/verify-runtime-isolation.sh'));
+    preg_match('/^_GATE_RUNUSER=.*?\n_gate_as\(\) \{.*?\n\}\n/ms', $gate, $m);
+    expect($m)->toHaveKey(0);
+    $path = r6mFakeRunuser($dir);
+
+    [$code, $out] = r6mRun("export APP_KEY=base64:r6m-secret-key DB_PASSWORD=r6m-secret-password\n".$m[0]."\n_gate_as r6m-co test -r .env", ['PATH' => $path]);
+    $env = (string) file_get_contents($dir.'/env.log');
+    $names = array_values(array_diff(array_filter(array_map(fn (string $l) => explode('=', $l, 2)[0], explode("\n", trim($env)))), ['_']));
+
+    expect($code)->toBe(0, $out)
+        ->and($names)->toBe(['PATH'])->and($env)->not->toContain('r6m-secret')
+        ->and(explode("\n", trim((string) file_get_contents($dir.'/argv.log'))))->toBe(['-u', 'r6m-co', '--', 'test', '-r', '.env']);
+});
+
 it('detects extended ACLs, traverse access, primary-group and same-gid accounts in private paths, and strips ACLs only there (F1-B)', function () {
     $gate = (string) file_get_contents(base_path('scripts/verify-runtime-isolation.sh'));
     $privsep = (string) file_get_contents(base_path('scripts/lib/runtime-privsep.sh'));
@@ -773,9 +789,10 @@ it('detects extended ACLs, traverse access, primary-group and same-gid accounts 
         ->and($gate)->toContain("grep -c '+\$'")
         ->and($gate)->toContain('CAN traverse')
         ->and($gate)->toContain('CAN read bootstrap/cache/config.php')
-        // Round 2, N2: every hop into another account starts from an empty environment.
-        ->and($gate)->toContain('env -i PATH=/usr/bin:/bin runuser -u "$u" -- "$@"')
-        ->and(substr_count($gate, 'runuser -u '))->toBe(1);
+        // Round 2, N2: every hop into another account starts from an empty environment, through runuser resolved
+        // by absolute path (a hop that cannot start must never read as "cannot read").
+        ->and($gate)->toContain('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$_GATE_RUNUSER" -u "$u" -- "$@"')
+        ->and(substr_count($gate, 'runuser -u '))->toBe(0);
 
     // Normalisation strips extended ACLs inside the declared private trees only.
     preg_match('/dms_privsep_normalize_modes\(\) \{(.*?)\n\}/s', $privsep, $body);

@@ -509,10 +509,15 @@ section "CO-TENANT NEGATIVE PROOF"
 # file before this gate runs, and runuser keeps the caller's environment, so a
 # plain hop would hand APP_KEY and the database password to each account it
 # tests (readable in /proc/<pid>/environ by that account's other processes).
+# runuser is resolved here, by absolute path: the emptied environment's PATH
+# must not decide whether a hop runs at all, because a hop that cannot start
+# would read as "cannot read" and the gate would pass without testing anything.
+_GATE_RUNUSER="$(command -v runuser 2>/dev/null || true)"
 _gate_as() {
   local u="$1"
   shift
-  env -i PATH=/usr/bin:/bin runuser -u "$u" -- "$@"
+  [ -n "$_GATE_RUNUSER" ] || return 125
+  env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$_GATE_RUNUSER" -u "$u" -- "$@"
 }
 
 if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
