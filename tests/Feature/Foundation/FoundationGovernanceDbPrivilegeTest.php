@@ -334,6 +334,24 @@ it('escapes every field of a surface line, so no object name can forge a separat
         ->and(RuntimePrivilegeSurface::line('schema', "caf\u{E9}", 'USAGE', 'PUBLIC', true))->toBe('schema|caf\xC3\xA9|USAGE|PUBLIC|YES');
 });
 
+it('withholds role names in one pass, longest first, as written, escaped or quoted, in any case (R6-B3c, review round 2, N4/N5)', function () {
+    $withhold = fn (string $text, array $roles): string => DatabasePrivilegeCheck::withholdRoleNames($text, $roles);
+
+    // A name inside a longer one, and a name inside another's escaped form, no longer split it.
+    expect($withhold('schema|zz_owner_ops|USAGE', ['zz_owner', 'zz_owner_ops']))->toBe('schema|<name withheld>|USAGE')
+        ->and($withhold('schema|"r\xC3\xB4le_x"|USAGE', ['xC3', "r\u{F4}le_x"]))->toBe('schema|"<name withheld>"|USAGE')
+        // Upper- and lower-case non-ASCII letters mixed differently from the role name.
+        ->and($withhold('schema|"\xC3\xA9t\xC3\x89_role"|USAGE', ["\u{C9}t\u{C9}_role"]))->toBe('schema|"<name withheld>"|USAGE')
+        ->and($withhold("\u{E9}T\u{C9}_ROLE owns it", ["\u{C9}t\u{C9}_role"]))->toBe('<name withheld> owns it')
+        ->and($withhold('schema|"ops\x7Cadmin"|USAGE, also ops|admin', ['ops|admin']))->toBe('schema|"<name withheld>"|USAGE, also <name withheld>')
+        ->and($withhold('schema|"qu""ote"|USAGE', ['qu"ote']))->toBe('schema|"<name withheld>"|USAGE')
+        ->and($withhold('schema|"back\x5Cslash"|USAGE', ['back\\slash']))->toBe('schema|"<name withheld>"|USAGE')
+        // R6-B3 behaviour kept: caseless, inside longer names.
+        ->and($withhold('the runtime can CREATE in schema ZZ_RUNTIME_data', ['zz_runtime']))->toBe('the runtime can CREATE in schema <name withheld>_data')
+        // A name that is not valid UTF-8 falls back to a byte-wise replacement instead of failing.
+        ->and($withhold("schema|\xFF|USAGE and schema|\\xFF|USAGE", ["\xFF"]))->toBe('schema|<name withheld>|USAGE and schema|<name withheld>|USAGE');
+});
+
 it('compares exactly: an extra or a missing item is DRIFT, a permitted item is neither (R6-B3c, C4)', function () {
     $required = ['table|public.t|SELECT|RUNTIME|NO', 'type|public.t|USAGE|PUBLIC|NO'];
     $permitted = ['schema|public|USAGE|PUBLIC|NO'];
@@ -1043,6 +1061,12 @@ function fgdpNoRoleName(string $output, bool $withSuperuser = true): void
     }
 }
 
+/** $alter (an ALTER … prefix) OWNER TO the bootstrap superuser, OID 10, whatever the cluster calls it. */
+function fgdpToBootstrap(string $alter): string
+{
+    return "DO \$fgdp\$ BEGIN EXECUTE pg_catalog.format('{$alter} OWNER TO %I', (SELECT rolname FROM pg_catalog.pg_roles WHERE oid = 10)); END \$fgdp\$";
+}
+
 /**
  * A fresh database with the allowlisted extensions, reachable as the runtime through the `fgdp_fresh`
  * connection; the runtime is then a plain login holding exactly the two monitoring roles WITH INHERIT TRUE
@@ -1122,14 +1146,16 @@ it('refuses to generate a baseline when an initial privilege was changed, and ge
     fgdpProvisionedAndGranted();
 
     fgdpWithFreshDatabase(function (PDO $fresh) use ($inject, $undo, $reason): void {
-        $fresh->exec($inject);
+        $fresh->exec(fgdpSql($inject));
         try {
             [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
             expect($code)->toBe(DatabasePrivilegeCheck::CANNOT_VERIFY, $output)
-                ->and($output)->toContain("ERROR {$reason}")
+                ->and($output)->toMatch('/^ERROR the (database|cluster) is not fresh: /m')
+                ->and($output)->toContain($reason)
                 ->and($output)->toContain('DB PRIVILEGE BASELINE: CANNOT GENERATE');
+            fgdpNoRoleName($output);
         } finally {
-            $fresh->exec($undo);
+            $fresh->exec(fgdpSql($undo));
         }
         DB::purge('fgdp_fresh');
         [$code, $output] = fgdpRun('foundation:db-privilege-check', ['--database' => 'fgdp_fresh', '--print-baseline' => true]);
@@ -1143,6 +1169,15 @@ it('refuses to generate a baseline when an initial privilege was changed, and ge
     'an extension member beyond its extension\'s initial privilege' => ['GRANT EXECUTE ON FUNCTION public.pg_stat_statements_reset(oid, oid, bigint) TO PUBLIC', 'REVOKE EXECUTE ON FUNCTION public.pg_stat_statements_reset(oid, oid, bigint) FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
     'a tablespace grant' => ['GRANT CREATE ON TABLESPACE pg_default TO PUBLIC', 'REVOKE CREATE ON TABLESPACE pg_default FROM PUBLIC', 'the database is not fresh: 1 object(s) carry privileges'],
     'a parameter ACL' => ['GRANT SET ON PARAMETER log_statement TO PUBLIC', 'REVOKE SET ON PARAMETER log_statement FROM PUBLIC', 'the cluster is not fresh: pg_parameter_acl holds 1 row(s)'],
+    // Review round 2, N2: a new owner's default ACL is not an initial privilege.
+    'a built-in function owned by the login' => ['ALTER FUNCTION pg_catalog.pg_sleep(double precision) OWNER TO ":runtime"', fgdpToBootstrap('ALTER FUNCTION pg_catalog.pg_sleep(double precision)'), 'object(s) created by initdb are no longer owned by the bootstrap superuser'],
+    'a built-in type owned by a monitoring role' => ['ALTER TYPE pg_catalog.int4 OWNER TO pg_read_all_stats', fgdpToBootstrap('ALTER TYPE pg_catalog.int4'), 'object(s) created by initdb are no longer owned by the bootstrap superuser'],
+    'the information_schema schema owned by the login' => ['ALTER SCHEMA information_schema OWNER TO ":runtime"', fgdpToBootstrap('ALTER SCHEMA information_schema'), 'object(s) created by initdb are no longer owned by the bootstrap superuser'],
+    'an information_schema view owned by a monitoring role' => ['ALTER VIEW information_schema.tables OWNER TO pg_read_all_stats', fgdpToBootstrap('ALTER VIEW information_schema.tables'), 'object(s) created by initdb are no longer owned by the bootstrap superuser'],
+    // Review round 2, N3: a member added outside its extension's schema is an object beyond the extension.
+    'a function added to pg_stat_statements from pg_catalog' => ["CREATE FUNCTION pg_catalog.zz_probe() RETURNS integer LANGUAGE sql AS 'select 1'; ALTER EXTENSION pg_stat_statements ADD FUNCTION pg_catalog.zz_probe()", 'ALTER EXTENSION pg_stat_statements DROP FUNCTION pg_catalog.zz_probe(); DROP FUNCTION pg_catalog.zz_probe()', 'the database is not fresh: 1 object(s) or default(s) exist beyond initdb and the allowlisted extensions'],
+    // Review round 2, N6: a column whose initial grant was revoked entirely has a NULL ACL again.
+    'a catalog column grant revoked from PUBLIC' => ['REVOKE SELECT (subname) ON pg_catalog.pg_subscription FROM PUBLIC', 'GRANT SELECT (subname) ON pg_catalog.pg_subscription TO PUBLIC', 'the database is not fresh: 1 object(s) carry privileges that differ from their initial privileges'],
 ])->skip($fgdpSkip, $fgdpSkipReason);
 
 it('refuses to generate a baseline from a database that is not fresh, and names no role (R6-B3c, C3)', function () {

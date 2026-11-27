@@ -562,17 +562,27 @@ final class RuntimePrivilegeSurface
         $allowedList = "'".implode("', '", DatabasePrivilegeCheck::ALLOWED_EXTENSIONS)."'";
         $leftovers = (int) $connection->selectOne(<<<SQL
             with member as (
-                select d.classid, d.objid from pg_catalog.pg_depend d join pg_catalog.pg_extension e on e.oid = d.refobjid
+                -- Review round 2, N3: a member counts only in its extension's own schema, as
+                -- enumerate() names it; one added elsewhere is an object beyond the extension.
+                select d.classid, d.objid, e.extnamespace from pg_catalog.pg_depend d join pg_catalog.pg_extension e on e.oid = d.refobjid
                 where d.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass and d.deptype = 'e' and e.extname in ({$allowedList})
             ),
-            memberrel as (select objid as oid from member where classid = 'pg_catalog.pg_class'::pg_catalog.regclass),
+            memberrel as (
+                select c.oid from pg_catalog.pg_class c
+                join member m on m.classid = 'pg_catalog.pg_class'::pg_catalog.regclass and m.objid = c.oid and m.extnamespace = c.relnamespace
+            ),
+            memberproc as (
+                select p.oid from pg_catalog.pg_proc p
+                join member m on m.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass and m.objid = p.oid and m.extnamespace = p.pronamespace
+            ),
             membertype as (
                 select t.oid from pg_catalog.pg_type t
-                where t.oid in (select objid from member where classid = 'pg_catalog.pg_type'::pg_catalog.regclass) or t.typrelid in (select oid from memberrel)
+                where exists (select 1 from member m where m.classid = 'pg_catalog.pg_type'::pg_catalog.regclass and m.objid = t.oid and m.extnamespace = t.typnamespace)
+                   or t.typrelid in (select oid from memberrel)
             )
             select (select count(*) from pg_catalog.pg_class c where c.oid >= {$first} and c.oid not in (select oid from memberrel)
                       and not (c.relkind = 't' and exists (select 1 from pg_catalog.pg_class p where p.reltoastrelid = c.oid and p.oid in (select oid from memberrel))))
-                 + (select count(*) from pg_catalog.pg_proc p where p.oid >= {$first} and p.oid not in (select objid from member where classid = 'pg_catalog.pg_proc'::pg_catalog.regclass))
+                 + (select count(*) from pg_catalog.pg_proc p where p.oid >= {$first} and p.oid not in (select oid from memberproc))
                  + (select count(*) from pg_catalog.pg_type t where t.oid >= {$first} and t.oid not in (select oid from membertype) and t.typelem not in (select oid from membertype))
                  + (select count(*) from pg_catalog.pg_namespace n where n.oid >= {$first}
                       and n.oid not in (select e.extnamespace from pg_catalog.pg_extension e where e.extname in ({$allowedList})))
@@ -609,8 +619,12 @@ final class RuntimePrivilegeSurface
                 from pg_catalog.pg_class c
                 union all
                 -- A column has no default privilege; NULL, not '{}' (aclexplode refuses a zero-dimensional array).
+                -- Review round 2, N6: also a column whose initial grant was revoked entirely (attacl NULL again).
                 select 'pg_catalog.pg_class'::pg_catalog.regclass, a.attrelid, a.attnum, a.attacl, null::pg_catalog.aclitem[], null, 0::pg_catalog.oid
-                from pg_catalog.pg_attribute a where a.attacl is not null
+                from pg_catalog.pg_attribute a
+                where a.attnum > 0 and (a.attacl is not null or exists (
+                    select 1 from pg_catalog.pg_init_privs i
+                    where i.classoid = 'pg_catalog.pg_class'::pg_catalog.regclass and i.objoid = a.attrelid and i.objsubid = a.attnum))
                 union all
                 select 'pg_catalog.pg_proc'::pg_catalog.regclass, p.oid, 0, p.proacl, pg_catalog.acldefault('f', p.proowner), null, p.proowner from pg_catalog.pg_proc p
                 union all
@@ -640,10 +654,36 @@ final class RuntimePrivilegeSurface
                 from cur x
                 left join pg_catalog.pg_init_privs i on i.classoid = x.cls and i.objoid = x.oid and i.objsubid = x.sub
             )
-            select count(*) as n from compared where now is distinct from initial
+            -- ... and, from the pg_init_privs side, an initial privilege whose object is gone.
+            select (select count(*) from compared where now is distinct from initial)
+                 + (select count(*) from pg_catalog.pg_init_privs i
+                    where not exists (select 1 from cur x where x.cls = i.classoid and x.oid = i.objoid and x.sub = i.objsubid)) as n
             SQL, [$withoutAcl])->n;
         if ($changed > 0) {
             $problems[] = "the database is not fresh: {$changed} object(s) carry privileges that differ from their initial privileges (initdb's or their extension's)";
+        }
+        // Review round 2, N2: a new owner's default ACL replaces the bootstrap superuser's, and
+        // the comparison above would take it as initial. Everything initdb creates is owned by
+        // OID 10, the public schema aside (pg_database_owner); a tablespace too.
+        $owned = (int) $connection->selectOne(<<<SQL
+            select (select count(*) from pg_catalog.pg_class where oid < {$first} and relowner <> 10)
+                 + (select count(*) from pg_catalog.pg_proc where oid < {$first} and proowner <> 10)
+                 + (select count(*) from pg_catalog.pg_type where oid < {$first} and typowner <> 10)
+                 + (select count(*) from pg_catalog.pg_namespace where oid < {$first} and nspowner <> 10
+                      and not (nspname = 'public' and nspowner = 'pg_database_owner'::pg_catalog.regrole))
+                 + (select count(*) from pg_catalog.pg_language where oid < {$first} and lanowner <> 10)
+                 + (select count(*) from pg_catalog.pg_collation where oid < {$first} and collowner <> 10)
+                 + (select count(*) from pg_catalog.pg_conversion where oid < {$first} and conowner <> 10)
+                 + (select count(*) from pg_catalog.pg_operator where oid < {$first} and oprowner <> 10)
+                 + (select count(*) from pg_catalog.pg_opclass where oid < {$first} and opcowner <> 10)
+                 + (select count(*) from pg_catalog.pg_opfamily where oid < {$first} and opfowner <> 10)
+                 + (select count(*) from pg_catalog.pg_ts_config where oid < {$first} and cfgowner <> 10)
+                 + (select count(*) from pg_catalog.pg_ts_dict where oid < {$first} and dictowner <> 10)
+                 + (select count(*) from pg_catalog.pg_extension where oid < {$first} and extowner <> 10)
+                 + (select count(*) from pg_catalog.pg_tablespace where oid < {$first} and spcowner <> 10) as n
+            SQL)->n;
+        if ($owned > 0) {
+            $problems[] = "the database is not fresh: {$owned} object(s) created by initdb are no longer owned by the bootstrap superuser";
         }
         $parameters = (int) $connection->selectOne('select count(*) as n from pg_catalog.pg_parameter_acl')->n;
         if ($parameters > 0) {
@@ -651,6 +691,37 @@ final class RuntimePrivilegeSurface
         }
 
         return $problems;
+    }
+
+    /**
+     * Review round 2, N4: a regular-expression fragment (for the `/iu` flags) that
+     * matches the role name character by character as written, as escape() prints
+     * it, or quote-doubled, each character in any case, so a name whose upper- and
+     * lower-case non-ASCII letters are mixed differently is still found.
+     */
+    public static function rolePattern(string $role): string
+    {
+        $characters = mb_check_encoding($role, 'UTF-8') ? (preg_split('//u', $role, -1, PREG_SPLIT_NO_EMPTY) ?: []) : str_split($role);
+        $pattern = '';
+        foreach ($characters as $character) {
+            $variants = [$character];
+            if (mb_check_encoding($character, 'UTF-8')) {
+                $variants[] = mb_strtolower($character, 'UTF-8');
+                $variants[] = mb_strtoupper($character, 'UTF-8');
+            }
+            $alternatives = [];
+            foreach (array_unique($variants) as $variant) {
+                $alternatives[] = preg_quote($variant, '/');
+                $alternatives[] = preg_quote(self::escape($variant), '/');
+            }
+            if ($character === '"') {
+                $alternatives[] = preg_quote('""', '/');
+            }
+            $alternatives = array_values(array_unique($alternatives));
+            $pattern .= count($alternatives) === 1 ? $alternatives[0] : '(?:'.implode('|', $alternatives).')';
+        }
+
+        return $pattern;
     }
 
     /**

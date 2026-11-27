@@ -1035,21 +1035,32 @@ final class DatabasePrivilegeCheck
      */
     public static function withholdRoleNames(string $text, array $roles): string
     {
-        foreach ($roles as $role) {
-            // Round 3, finding 4: case-insensitive and inside longer names too;
-            // over-withholding is the accepted price.
-            $text = (string) preg_replace('/'.preg_quote($role, '/').'/iu', '<name withheld>', $text);
-            // R6-B3c review round 1, #4: a surface line escapes `|`, `\`, control and
-            // non-ASCII bytes and prints names quote_ident()ed, so the name is also
-            // withheld in those forms (they are ASCII: a byte-wise caseless match).
-            foreach (RuntimePrivilegeSurface::roleForms($role) as $form) {
-                if ($form !== $role) {
-                    $text = str_ireplace($form, '<name withheld>', $text);
-                }
-            }
+        // Round 3, finding 4: case-insensitive and inside longer names too;
+        // over-withholding is the accepted price. R6-B3c review round 2, N4/N5:
+        // one pass over every role, the longest name first, so a name inside a
+        // longer one or inside another's escaped form cannot split it; each name
+        // as written, escaped or quoted (RuntimePrivilegeSurface::rolePattern).
+        $roles = array_values(array_unique(array_filter(array_map('strval', $roles), fn (string $r): bool => $r !== '')));
+        if ($roles === []) {
+            return $text;
         }
+        usort($roles, fn (string $a, string $b): int => strlen($b) <=> strlen($a) ?: strcmp($a, $b));
+        static $patterns = [];
+        $key = hash('sha256', implode("\0", $roles));
+        $patterns[$key] ??= '/'.implode('|', array_map(RuntimePrivilegeSurface::rolePattern(...), $roles)).'/iu';
+        $withheld = @preg_replace($patterns[$key], '<name withheld>', $text);
+        if (is_string($withheld)) {
+            return $withheld;
+        }
+        // A name or a text that is not valid UTF-8: every form, byte by byte, longest first.
+        $forms = [];
+        foreach ($roles as $role) {
+            array_push($forms, ...RuntimePrivilegeSurface::roleForms($role));
+        }
+        $forms = array_values(array_unique($forms));
+        usort($forms, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
 
-        return $text;
+        return str_ireplace($forms, '<name withheld>', $text);
     }
 
     /** search_path is pinned when it names no `$user` and lists pg_temp explicitly and last (finding 9). */
