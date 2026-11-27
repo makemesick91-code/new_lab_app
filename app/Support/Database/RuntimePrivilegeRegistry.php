@@ -48,6 +48,14 @@ final class RuntimePrivilegeRegistry
         'DISCARD ALL' => '/\bDISCARD\s+ALL\b/i',
         'connection property' => '/\b(?:public|protected|private|var)\s+(?:\??string\s+)?\$connection\b/i',
         'named connection' => '/\bconnection\s*\(\s*[\'"]/i',
+        // R6-B3 review round 1, findings 1-3: ways to act with the owner's rights or
+        // to switch the guards off. The read-only check (R6-B3) detects each of them
+        // on the server too; this is only the first line.
+        'SECURITY DEFINER' => '/\bSECURITY\s+DEFINER\b/i',
+        'rewrite rule' => '/\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\b/i',
+        'view' => '/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+|RECURSIVE\s+)?(?:MATERIALIZED\s+)?VIEW\b/i',
+        'trigger switch' => '/\b(?:DISABLE|ENABLE\s+(?:REPLICA|ALWAYS))\s+TRIGGER\b/i',
+        'session_replication_role' => '/\bsession_replication_role\b/i',
     ];
 
     /** @var array<string, mixed> */
@@ -120,10 +128,12 @@ final class RuntimePrivilegeRegistry
      *
      * @return list<string>
      */
-    public function verify(ConnectionInterface $connection): array
+    public function verify(ConnectionInterface $connection, ?string $schemaName = null): array
     {
         [$entries, $errors] = $this->expected();
-        $schema = $this->schemaColumns($connection);
+        // R6-B3 review round 4, N1: the privilege check pins search_path to pg_catalog,
+        // so it names the schema instead of relying on current_schema().
+        $schema = $this->schemaColumns($connection, $schemaName);
 
         foreach (array_keys($schema) as $table) {
             if (! isset($entries[$table])) {
@@ -275,7 +285,7 @@ final class RuntimePrivilegeRegistry
     }
 
     /** @return array<string, list<string>> table => columns, for the connection's current schema */
-    private function schemaColumns(ConnectionInterface $connection): array
+    private function schemaColumns(ConnectionInterface $connection, ?string $schemaName = null): array
     {
         $columns = [];
 
@@ -285,9 +295,9 @@ final class RuntimePrivilegeRegistry
                 FROM pg_catalog.pg_class c
                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                 JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-                WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+                WHERE n.nspname = coalesce(?::name, current_schema()) AND c.relkind IN ('r', 'p') AND NOT c.relispartition
                 ORDER BY c.relname, a.attnum
-                SQL);
+                SQL, [$schemaName]);
             foreach ($rows as $row) {
                 $columns[(string) $row->table_name][] = (string) $row->column_name;
             }

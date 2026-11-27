@@ -417,8 +417,15 @@ function fgmcSqlState(PDO $pdo, string $sql): string
     }
 }
 
-$fgmcSkip = fn () => ! fgmcClusterConfigured();
+// PB-7 (D4): where the role-test cluster is required (R6_ROLE_TEST_REQUIRED=1, set only by the CI step that
+// starts it), group B never skips: a missing cluster fails, so it can never silently turn into skips (CG-17).
+$fgmcSkip = fn () => ! fgmcClusterConfigured() && getenv('R6_ROLE_TEST_REQUIRED') !== '1';
 $fgmcSkipReason = 'needs the private PostgreSQL 16 role-test cluster (R6_ROLE_TEST_*); no CI job provides it until PB-7';
+
+it('fails closed when the role-test cluster is required but not configured (PB-7, D4)', function () {
+    expect(getenv('R6_ROLE_TEST_REQUIRED') !== '1' || fgmcClusterConfigured())
+        ->toBeTrue('R6_ROLE_TEST_REQUIRED=1 but the role-test cluster (R6_ROLE_TEST_*) is not configured');
+});
 
 it('runs every session as the owner role over a socket by peer, also after a reconnect and a RESET ROLE', function () {
     fgmcUse(fgmcClusterConfig());

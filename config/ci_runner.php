@@ -1461,6 +1461,16 @@ return [
         // the `FoundationGovernance` token in BOTH critical variants; declared so a
         // rename cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceMigrationConnectionTest.php',
+        // DMS-SPN4-READY-PILOT-1 R6-B3 (rule 245 #6; D-Q3-b; Design Lock §12.5,
+        // §13.4 N-9): foundation:db-privilege-apply prints and applies exactly the
+        // class grants (dry run by default, --apply on pgsql_migrate only, one
+        // transaction, exact rollback) and foundation:db-privilege-check verifies
+        // read-only, as the runtime, that the database matches. The PostgreSQL
+        // role scenarios run only against a private role-test cluster: in CI they
+        // SKIP (never reported as a pass) until PB-7 adds the role-separation job.
+        // Selected by the `FoundationGovernance` token in BOTH critical variants;
+        // declared so a rename cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceDbPrivilegeTest.php',
 
         // BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the clinical UI capability
         // must mirror the server capability for the same act.

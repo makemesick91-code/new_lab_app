@@ -1,0 +1,260 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Support\Database\DatabasePrivilegeCheck;
+use App\Support\Database\MigrationConnection;
+use App\Support\Database\RuntimeGrantPlan;
+use App\Support\Database\RuntimePrivilegeRegistry;
+use Illuminate\Console\Command;
+use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
+
+/**
+ * DMS-SPN4-READY-PILOT-1 R6-B3 — the per-deploy runtime grants.
+ *
+ * - No option: a DRY RUN. It reads the catalog in a READ ONLY transaction and
+ *   reports the plan, its SHA-256 and what --apply would change. Nothing is
+ *   executed.
+ * - --print-sql: prints the forward SQL; with --rollback, the SQL that restores
+ *   the runtime's current grants exactly. Executes nothing.
+ * - --apply: executes, in one transaction on `pgsql_migrate` as the owner role,
+ *   the statements of every object whose runtime grants differ from its class;
+ *   then re-checks the grants inside the same transaction and rolls back on any
+ *   difference. It refuses on any other connection, and while any table or
+ *   sequence is not owned by the owner role (provisioning, R6-D, comes first).
+ *
+ * Exit 0 on success; 1 on a refusal or a failed apply.
+ */
+class FoundationDbPrivilegeApplyCommand extends Command
+{
+    protected $signature = 'foundation:db-privilege-apply
+        {--print-sql : Print the forward SQL and execute nothing}
+        {--rollback : With --print-sql, print the SQL that restores the runtime\'s current grants}
+        {--apply : Execute the grants on pgsql_migrate as the owner role, in one transaction}
+        {--database= : The connection a dry run or --print-sql reads (default: the default connection)}
+        {--json : Print the result as JSON}';
+
+    protected $description = 'Per-deploy runtime grants from the privilege registry (R6-B3). Dry run by default; --print-sql; --apply on pgsql_migrate only.';
+
+    /** @var list<string> role names withheld from every line this command prints (review round 4, N3) */
+    private array $withheld = [];
+
+    public function handle(RuntimeGrantPlan $plan, RuntimePrivilegeRegistry $registry): int
+    {
+        if ($this->option('apply') && $this->option('print-sql')) {
+            return $this->refuse('--apply and --print-sql exclude each other.');
+        }
+        if ($this->option('rollback') && ! $this->option('print-sql')) {
+            return $this->refuse('--rollback only prints: use it with --print-sql. A rollback is run by the administrator with psql.');
+        }
+        $database = $this->option('database') ?: null;
+        if ($this->option('apply') && $database !== null && $database !== MigrationConnection::NAME) {
+            return $this->refuse('--apply runs only on '.MigrationConnection::NAME.'.');
+        }
+
+        $runtime = (string) config('runtime_privilege_classes.roles.runtime', '');
+        $owner = (string) config('runtime_privilege_classes.roles.owner', '');
+        foreach (['runtime' => $runtime, 'owner' => $owner] as $label => $role) {
+            if (! RuntimeGrantPlan::plainRole($role)) {
+                return $this->refuse("the {$label} role is not configured as a plain, non-reserved role name.");
+            }
+        }
+        if ($runtime === $owner) {
+            return $this->refuse('the runtime role and the owner role must differ.');
+        }
+        $this->withheld = [$runtime, $owner];
+
+        try {
+            if ($this->option('apply')) {
+                return $this->apply($plan, DB::connection(MigrationConnection::NAME), $runtime, $owner);
+            }
+
+            return $this->readOnly($plan, DB::connection($database), $runtime, $owner);
+        } catch (Throwable $exception) {
+            return $this->refuse(self::safeMessage($exception));
+        }
+    }
+
+    /**
+     * A refusal's text. A database error carries the connection details and role
+     * names, so only its class and SQLSTATE are shown (OD-R6-6); this command's
+     * own refusals and the pgsql_migrate guard's carry no configured value.
+     */
+    private static function safeMessage(Throwable $exception): string
+    {
+        if ($exception instanceof QueryException || $exception instanceof \PDOException) {
+            // The driver code is not always the SQLSTATE (a failed connect reports 7);
+            // the five-character state is read from the message, and nothing else of it.
+            $state = preg_match('/SQLSTATE\[([0-9A-Z]{5})\]/', $exception->getMessage(), $m) === 1 ? $m[1] : 'unknown';
+
+            return 'the database refused a statement ('.class_basename($exception).', SQLSTATE '.$state.').';
+        }
+        if ($exception instanceof InvalidArgumentException || $exception instanceof RuntimeException) {
+            return $exception->getMessage();
+        }
+
+        return 'unexpected '.class_basename($exception).'.';
+    }
+
+    private function readOnly(RuntimeGrantPlan $plan, ConnectionInterface $connection, string $runtime, string $owner): int
+    {
+        $connection->beginTransaction();
+        try {
+            // Inside an outer transaction (a test's) the mode can no longer be set;
+            // the dry run still only reads, and the savepoint is rolled back.
+            if ($connection->transactionLevel() === 1) {
+                $connection->statement('SET TRANSACTION READ ONLY');
+                if ((string) $connection->selectOne("select current_setting('transaction_read_only') as ro")->ro !== 'on') {
+                    return $this->refuse('the dry run could not make its transaction read only.');
+                }
+            }
+            [$entries, $sequences, $errors] = $plan->inputs($connection);
+            $this->loadRoleNames($connection);
+            if ($errors !== []) {
+                return $this->refuse('the registry does not agree with the schema', $errors);
+            }
+            $forward = RuntimeGrantPlan::forwardStatements($entries, $sequences, $runtime);
+            $current = RuntimeGrantPlan::currentGrants($connection, $runtime);
+
+            if ($this->option('print-sql')) {
+                $statements = $this->option('rollback')
+                    ? RuntimeGrantPlan::rollbackStatements($entries, $sequences, $current, $runtime)
+                    : $forward;
+                $this->output->write(RuntimeGrantPlan::script($statements, $owner, $this->option('rollback') ? 'rollback' : 'forward'));
+
+                return self::SUCCESS;
+            }
+
+            $changed = RuntimeGrantPlan::changedObjects(RuntimeGrantPlan::expectedGrants($entries, $sequences), $current);
+            $foreign = $this->foreignOwned($connection, $owner);
+            $classes = array_count_values(array_column($entries, 'class'));
+            ksort($classes);
+            $report = [
+                'mode' => 'dry-run',
+                'tables' => count($entries),
+                'classes' => $classes,
+                'sequences' => count($sequences),
+                'statements' => count($forward),
+                // Review round 1, finding 7: only the placeholder template is hashed.
+                'template_sha256' => RuntimeGrantPlan::templateSha256($entries, $sequences),
+                'objects_to_change' => count($changed),
+                'objects_not_owned_by_the_owner_role' => $foreign,
+                'apply_would_refuse' => $foreign > 0,
+            ];
+
+            if ($this->option('json')) {
+                $this->say((string) json_encode($report + ['changed' => $changed], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+                return self::SUCCESS;
+            }
+            $this->say('DRY RUN: nothing is executed.');
+            foreach ($report as $key => $value) {
+                $this->say(sprintf('  %s: %s', $key, is_array($value) ? json_encode($value) : var_export($value, true)));
+            }
+            foreach (array_slice($changed, 0, 50) as $name) {
+                $this->say("  would change: {$name}");
+            }
+
+            return self::SUCCESS;
+        } finally {
+            $connection->rollBack();
+        }
+    }
+
+    private function apply(RuntimeGrantPlan $plan, ConnectionInterface $connection, string $runtime, string $owner): int
+    {
+        // The pgsql_migrate guard has already asserted the session on connect.
+        if ((string) $connection->selectOne('select current_user as u')->u !== $owner) {
+            return $this->refuse('the session is not the owner role.');
+        }
+        $runtimeRole = $connection->selectOne(
+            "select rolsuper, rolcanlogin, pg_catalog.pg_has_role(oid, ?, 'MEMBER') as reaches_owner from pg_catalog.pg_roles where rolname = ?",
+            [$owner, $runtime]
+        );
+        // Review round 1, finding 12: the grantee must be a plain login that cannot reach the owner role.
+        if ($runtimeRole === null || (bool) $runtimeRole->rolsuper || ! (bool) $runtimeRole->rolcanlogin || (bool) $runtimeRole->reaches_owner) {
+            return $this->refuse('the runtime role does not exist, cannot log in, is a superuser or can reach the owner role.');
+        }
+
+        try {
+            $applied = $connection->transaction(function () use ($plan, $connection, $runtime, $owner): array {
+                $connection->statement("SET LOCAL lock_timeout = '5s'");
+                $connection->statement("SET LOCAL statement_timeout = '120s'");
+                [$entries, $sequences, $errors] = $plan->inputs($connection);
+                $this->loadRoleNames($connection);
+                if ($errors !== []) {
+                    throw new RuntimeException('the registry does not agree with the schema: '.implode('; ', array_slice($errors, 0, 5)));
+                }
+                if (($foreign = $this->foreignOwned($connection, $owner)) > 0) {
+                    throw new RuntimeException("{$foreign} table(s) or sequence(s) in public are not owned by the owner role: provisioning (R6-D) comes first.");
+                }
+
+                $forward = RuntimeGrantPlan::forwardStatements($entries, $sequences, $runtime);
+                $changed = RuntimeGrantPlan::changedObjects(RuntimeGrantPlan::expectedGrants($entries, $sequences), RuntimeGrantPlan::currentGrants($connection, $runtime));
+                $statements = RuntimeGrantPlan::statementsFor($forward, $changed);
+                foreach ($statements as $statement) {
+                    $connection->statement($statement);
+                }
+
+                $problems = DatabasePrivilegeCheck::grantProblems($connection, $runtime, $entries);
+                if ($problems !== []) {
+                    throw new RuntimeException('after the grants the runtime still differs from its classes ('.count($problems).'): '.implode('; ', array_slice($problems, 0, 5)));
+                }
+
+                return ['objects' => count($changed), 'statements' => count($statements), 'template_sha256' => RuntimeGrantPlan::templateSha256($entries, $sequences)];
+            });
+        } catch (Throwable $exception) {
+            return $this->refuse('nothing was changed: '.self::safeMessage($exception));
+        }
+
+        if ($this->option('json')) {
+            $this->say((string) json_encode(['mode' => 'apply'] + $applied, JSON_PRETTY_PRINT));
+
+            return self::SUCCESS;
+        }
+        $this->say("APPLIED: {$applied['statements']} statement(s) for {$applied['objects']} object(s) in one transaction; template_sha256 {$applied['template_sha256']}.");
+
+        return self::SUCCESS;
+    }
+
+    /** Tables and sequences in public whose owner is not the owner role. */
+    private function foreignOwned(ConnectionInterface $connection, string $owner): int
+    {
+        return (int) $connection->selectOne(
+            "select count(*) as n from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p', 'S') and pg_catalog.pg_get_userbyid(c.relowner) <> ?",
+            [$owner]
+        )->n;
+    }
+
+    /** @param  list<string>  $details */
+    private function refuse(string $reason, array $details = []): int
+    {
+        $this->error(DatabasePrivilegeCheck::withholdRoleNames("db-privilege-apply refused: {$reason}", $this->withheld));
+        foreach (array_slice($details, 0, 50) as $detail) {
+            $this->say("  {$detail}");
+        }
+
+        return self::FAILURE;
+    }
+
+    /** Every line except --print-sql passes here: no role name is printed (review round 4, N3). */
+    private function say(string $line): void
+    {
+        $this->line(DatabasePrivilegeCheck::withholdRoleNames($line, $this->withheld));
+    }
+
+    /** Adds every non-predefined role name of the cluster to the withheld names. */
+    private function loadRoleNames(ConnectionInterface $connection): void
+    {
+        $names = array_map(fn (object $r): string => (string) $r->rolname, $connection->select('select rolname from pg_catalog.pg_roles'));
+        $this->withheld = array_values(array_unique(array_merge(
+            $this->withheld,
+            array_filter($names, fn (string $name): bool => ! str_starts_with($name, 'pg_'))
+        )));
+    }
+}
