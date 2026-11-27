@@ -134,6 +134,12 @@ sleep 1
 pgrep -u "$MIG" >/dev/null 2>&1 && fail "R6-B4-12 a process of the migration account survived" || pass "R6-B4-12 the process was killed"
 wait 2>/dev/null || true
 
+echo "== R6-B4-14 a file the migration account leaves in a shared directory is refused (review round 3, R3-2)"
+runuser -u "$MIG" -- touch /tmp/r4-left-behind
+OUT="$(preflight 2>&1)"; RC=$?
+[ "$RC" != 0 ] && grep -q "remains in a shared directory" <<<"$OUT" && pass "R6-B4-14 the preflight refuses a file of the migration account in /tmp" || fail "R6-B4-14 rc=$RC :: $(tail -c 300 <<<"$OUT")"
+rm -f /tmp/r4-left-behind
+
 echo "== R6-B4-13 an environment file root must not trust is never read (review round 2, N1)"
 cp -p .env "$ROOT/env.bak"
 printf 'R4_PAYLOAD=$(touch %s/pwned)\n' "$ROOT" >> .env; chmod 0660 .env
