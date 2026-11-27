@@ -124,6 +124,9 @@ OUT="$(step 2>&1)"; RC=$?
 [ "$RC" != 0 ] && grep -q "does not reach the runtime's database" <<<"$OUT" && pass "R6-B4-10 a switch pointing at another database is refused before migrating" || fail "R6-B4-10 rc=$RC :: $(tail -c 300 <<<"$OUT")"
 [ "$("${SU[@]}" -d r6t_db2 -At -c "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'")" = 0 ] && pass "R6-B4-10 nothing was created in the other database" || fail "R6-B4-10 objects landed in the other database"
 sed -i 's/^DMS_MIGRATE_DATABASE=.*/DMS_MIGRATE_DATABASE=r6t_db/' "$SWITCH"
+# The extra database carries PUBLIC CONNECT by default, which the privilege check rightly reports (another database
+# the runtime can connect to): remove it before the steps that expect MATCH.
+"${SU[@]}" -d postgres -c "DROP DATABASE r6t_db2" >/dev/null || { echo "HARNESS ERROR: drop r6t_db2"; exit 3; }
 mkdir -p "$ROOT/open"; chmod 1777 "$ROOT/open"; sed -i "s|^DMS_MIGRATE_SOCKET_DIR=.*|DMS_MIGRATE_SOCKET_DIR=$ROOT/open|" "$SWITCH"
 OUT="$(step 2>&1)"; RC=$?
 [ "$RC" != 0 ] && grep -q "migration socket" <<<"$OUT" && pass "R6-B4-10 a socket directory others can write is refused" || fail "R6-B4-10 socket rc=$RC :: $(tail -c 300 <<<"$OUT")"
