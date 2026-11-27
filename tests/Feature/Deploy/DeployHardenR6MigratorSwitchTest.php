@@ -241,15 +241,21 @@ it('refuses a switch path that is not a regular file, or under a directory anoth
     $dir = r6mTmp();
     $real = r6mSwitch($dir, r6mValid());
     $file = match ($case) {
-        'symlink' => (function () use ($dir, $real) { symlink($real, $dir.'/link.conf');
+        'symlink' => (function () use ($dir, $real) {
+            symlink($real, $dir.'/link.conf');
 
-            return $dir.'/link.conf'; })(),
-        'directory' => (function () use ($dir) { mkdir($dir.'/d.conf', 0700);
+            return $dir.'/link.conf';
+        })(),
+        'directory' => (function () use ($dir) {
+            mkdir($dir.'/d.conf', 0700);
 
-            return $dir.'/d.conf'; })(),
-        'group-writable parent' => (function () use ($dir, $real) { chmod($dir, 0770);
+            return $dir.'/d.conf';
+        })(),
+        'group-writable parent' => (function () use ($dir, $real) {
+            chmod($dir, 0770);
 
-            return $real; })(),
+            return $real;
+        })(),
     };
     [$code, $out] = r6mRun(r6mAccounts().'
 dms_r6_switch_read "$(_dms_r6_trusted_uid)" rt rtgroup', ['DMS_R6_SWITCH_FILE' => $file]);
