@@ -86,10 +86,15 @@ DMS_MIGRATE_OWNER_ROLE=r6t_owner
 DMS_PRIVILEGE_RUNTIME_ROLE=r6t_runtime
 CONF
 chown root:root "$SWITCH"; chmod 0600 "$SWITCH"
-# The library takes its paths from itself, never from the environment (rule 233); a harness sets them after sourcing.
-DMS_R6_SWITCH_FILE="$SWITCH"
+# The library's fixed values are functions (never the environment or the environment file, rule 233); this harness
+# redefines only the switch path after sourcing.
+R4_SWITCH="$SWITCH"
+_dms_r6_switch_file() { printf '%s\n' "$R4_SWITCH"; }
+read -r -a PRIVATE <<< "$(. deploy/runtime-identity.conf && printf '%s' "$DMS_PRIVATE_PATHS")"
+PRIV="${PRIVATE[*]}"
 r6_runtime_migrate() { dms_privsep_as_runtime "$RT" php artisan migrate --force; }
-step() { dms_r6_migrate "$RT" "$RT" "$CO" r6_runtime_migrate; }
+step() { dms_r6_migrate "$RT" "$RT" "$CO" "$PRIV" r6_runtime_migrate; }
+preflight() { dms_r6_preflight "$RT" "$RT" "$CO" "$PRIV"; }
 
 echo "== R6-B4-1 the switch file must be trusted"
 chmod 0620 "$SWITCH"; step >/dev/null 2>&1 && fail "R6-B4-1 a group-writable switch file was accepted" || pass "R6-B4-1 a group-writable switch file is refused"
@@ -111,15 +116,34 @@ grep -q '^R4_ALLOWED=1$' <<<"$LEAK" && pass "R6-B4-8 the allowlisted values arri
 note "R6-B4-8 environment names the migration account received: $(sed -n '2,$p' <<<"$LEAK" | cut -d= -f1 | sort | tr '\n' ' ')"
 
 echo "== R6-B4-9 the preflight, before the first mutation, without application code"
-OUT="$(dms_r6_preflight "$RT" "$RT" "$CO" 2>&1)"; RC=$?
-[ "$RC" = 0 ] && grep -q "the database state agrees" <<<"$OUT" && pass "R6-B4-9 switch 1 on the provisioned (split, still empty) database: the preflight agrees" || fail "R6-B4-9 preflight rc=$RC :: $(tail -c 300 <<<"$OUT")"
-OUT="$(DMS_R6_SWITCH_FILE=$ROOT/absent.conf dms_r6_preflight "$RT" "$RT" "$CO" 2>&1)"; RC=$?
+OUT="$(preflight 2>&1)"; RC=$?
+[ "$RC" = 0 ] && grep -q "the database state agrees" <<<"$OUT" && pass "R6-B4-9 switch 1 on the provisioned (split, still empty) database: the preflight (migration connection included) agrees" || fail "R6-B4-9 preflight rc=$RC :: $(tail -c 300 <<<"$OUT")"
+OUT="$(R4_SWITCH=$ROOT/absent.conf preflight 2>&1)"; RC=$?
 [ "$RC" != 0 ] && grep -q "already split" <<<"$OUT" && pass "R6-B4-9 switch 0 on a split database is refused in the preflight" || fail "R6-B4-9 switch 0 on a split database: rc=$RC :: $(tail -c 300 <<<"$OUT")"
 grep -qE 'r6t_(runtime|owner|migrator|db)' <<<"$OUT" && fail "R6-B4-9 a configured value appears in the preflight output" || pass "R6-B4-9 no configured value in the preflight output"
+
+echo "== R6-B4-12 a process of the migration account is killed and refused (review round 2, N5)"
+runuser -u "$MIG" -- sleep 300 >/dev/null 2>&1 &
+sleep 1
+OUT="$(preflight 2>&1)"; RC=$?
+[ "$RC" != 0 ] && grep -q "was running — killed" <<<"$OUT" && pass "R6-B4-12 the preflight refuses while a process of the migration account runs" || fail "R6-B4-12 rc=$RC :: $(tail -c 300 <<<"$OUT")"
+sleep 1
+pgrep -u "$MIG" >/dev/null 2>&1 && fail "R6-B4-12 a process of the migration account survived" || pass "R6-B4-12 the process was killed"
+wait 2>/dev/null || true
+
+echo "== R6-B4-13 an environment file root must not trust is never read (review round 2, N1)"
+cp -p .env "$ROOT/env.bak"
+printf 'R4_PAYLOAD=$(touch %s/pwned)\n' "$ROOT" >> .env; chmod 0660 .env
+OUT="$(preflight 2>&1)"; RC=$?
+[ "$RC" != 0 ] && grep -q "root will not source it" <<<"$OUT" && pass "R6-B4-13 a group-writable environment file is refused before it is read" || fail "R6-B4-13 rc=$RC :: $(tail -c 300 <<<"$OUT")"
+[ -e "$ROOT/pwned" ] && fail "R6-B4-13 the untrusted environment file was executed" || pass "R6-B4-13 nothing in the untrusted environment file ran"
+cp -p "$ROOT/env.bak" .env; chown root:"$RT" .env; chmod 0640 .env
 
 echo "== R6-B4-10 the migration connection must reach the runtime's database (review #2)"
 "${SU[@]}" -d postgres -c "CREATE DATABASE r6t_db2" -c "GRANT CONNECT ON DATABASE r6t_db2 TO r6t_migrator" >/dev/null
 sed -i 's/^DMS_MIGRATE_DATABASE=.*/DMS_MIGRATE_DATABASE=r6t_db2/' "$SWITCH"
+OUT="$(preflight 2>&1)"; RC=$?
+[ "$RC" != 0 ] && grep -q "does not reach the runtime's database" <<<"$OUT" && pass "R6-B4-10 the preflight refuses a switch pointing at another database (round 2, N3)" || fail "R6-B4-10 preflight rc=$RC :: $(tail -c 300 <<<"$OUT")"
 OUT="$(step 2>&1)"; RC=$?
 [ "$RC" != 0 ] && grep -q "does not reach the runtime's database" <<<"$OUT" && pass "R6-B4-10 a switch pointing at another database is refused before migrating" || fail "R6-B4-10 rc=$RC :: $(tail -c 300 <<<"$OUT")"
 [ "$("${SU[@]}" -d r6t_db2 -At -c "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'")" = 0 ] && pass "R6-B4-10 nothing was created in the other database" || fail "R6-B4-10 objects landed in the other database"
@@ -154,9 +178,10 @@ echo "== R6-B4-3 switch 1 after provisioning: idempotent migrate and grants, no 
 OUT="$(step 2>&1)"; RC=$?
 [ "$RC" = 0 ] && grep -q "DB PRIVILEGE CHECK: MATCH" <<<"$OUT" && grep -q "APPLIED: 0 statement" <<<"$OUT" && pass "R6-B4-3 GO: nothing to migrate, 0 grant statements, MATCH" || fail "R6-B4-3 rc=$RC :: $(tail -c 500 <<<"$OUT")"
 grep -qE 'r6t_(runtime|owner|migrator)' <<<"$OUT" && fail "R6-B4-3 a role name appears in the step output" || pass "R6-B4-3 no role name in the step output"
+pgrep -u "$MIG" >/dev/null 2>&1 && fail "R6-B4-3 a process of the migration account outlived the step" || pass "R6-B4-3 no process of the migration account outlived the step"
 
 echo "== R6-B4-4 switch 0 on the split database is refused before migrating (OD-R6-2 v5 A4)"
-OUT="$(DMS_R6_SWITCH_FILE=$ROOT/absent.conf step 2>&1)"; RC=$?
+OUT="$(R4_SWITCH=$ROOT/absent.conf step 2>&1)"; RC=$?
 [ "$RC" != 0 ] && grep -q "already split" <<<"$OUT" && pass "R6-B4-4 switch 0 on a split database is refused (the runtime must never migrate after the split)" || fail "R6-B4-4 rc=$RC :: $(tail -c 300 <<<"$OUT")"
 
 echo "== R6-B4-5 config cache: creation by the runtime wrapper, then the deploy normalization"
