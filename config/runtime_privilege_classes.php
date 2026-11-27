@@ -25,6 +25,21 @@
 | entry, an unknown class or a missing column.
 */
 return [
+    /*
+    | R6-B3: the roles the grants (foundation:db-privilege-apply) and the check
+    | (foundation:db-privilege-check) refer to. The names come from the
+    | environment only, never from the repository (OD-R6-6), and each is
+    | validated as a plain role name before it reaches any SQL.
+    | - runtime: the login that receives the class grants; by default the
+    |   application's own database login.
+    | - owner: the NOLOGIN owner role; the same value as the startup role of
+    |   the `pgsql_migrate` connection.
+    */
+    'roles' => [
+        'runtime' => env('DB_PRIVILEGE_RUNTIME_ROLE', env('DB_USERNAME')),
+        'owner' => env('DB_MIGRATE_OWNER_ROLE'),
+    ],
+
     'historical_through' => '2026_11_18_300001_add_unassigned_reason_to_trx_rme_patient_doctor_assignments_table',
 
     'tables' => [
